@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { compareProfitAndLoss } from "../accounting/compare";
 import {
   accountLedgerCsv,
   csvAmount,
   csvFileName,
+  profitAndLossComparisonCsv,
   profitAndLossCsv,
   toCsv,
 } from "../accounting/export";
@@ -70,6 +72,42 @@ describe("report CSVs", () => {
     expect(rows).toContain("Income,4000,Sales,500.00");
     expect(rows).toContain("Operating expenses,6350,Rent,200.00");
     expect(rows.at(-1)).toBe(",,Net profit,300.00");
+  });
+
+  it("adds the earlier period and the change as columns when comparing", () => {
+    const now = profitAndLoss([
+      {
+        accountId: "s",
+        code: "4000",
+        name: "Sales",
+        type: "income",
+        subtype: "income",
+        balance: "-600.0000",
+      },
+    ]);
+    const before = profitAndLoss([
+      {
+        accountId: "s",
+        code: "4000",
+        name: "Sales",
+        type: "income",
+        subtype: "income",
+        balance: "-500.0000",
+      },
+    ]);
+    const rows = lines(
+      profitAndLossComparisonCsv(
+        compareProfitAndLoss(now, before),
+        meta,
+        "2024-01-01 to 2024-12-31",
+      ),
+    );
+    expect(rows).toContain("Compared with,2024-01-01 to 2024-12-31");
+    expect(rows).toContain(
+      "Section,Code,Account,2025-01-01 to 2025-12-31,2024-01-01 to 2024-12-31,Change",
+    );
+    expect(rows).toContain("Income,4000,Sales,600.00,500.00,100.00");
+    expect(rows.at(-1)).toBe(",,Net profit,600.00,500.00,100.00");
   });
 
   it("writes an account's lines with debits, credits and the running balance", () => {

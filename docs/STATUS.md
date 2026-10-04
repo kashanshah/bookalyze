@@ -417,7 +417,11 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
      in the period. Sales tax is split across the taxed lines; Wave's account group and type
      names come from `WAVE_TYPES`. A unit test reads the file back through our own Wave importer.
      Up to 200,000 lines per file (shorter period otherwise).
-   - [ ] Comparison columns on profit and loss.
+   - [x] Comparison columns on profit and loss. "Compare with" (`?compare=previous|last-year`):
+     the period just before (whole months step back by months, otherwise by days) or the same
+     dates a year earlier (month ends kept). Each account shows this period, the earlier one and
+     the change with a percentage; accounts only active earlier still get a row. Core
+     `accounting/compare.ts`; the CSV gets the same columns.
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.

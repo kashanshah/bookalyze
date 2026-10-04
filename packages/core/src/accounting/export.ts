@@ -1,5 +1,6 @@
 import { minorUnits } from "../currency";
 import { AMOUNT_SCALE, formatDecimal, parseDecimal, roundUnits } from "../money";
+import type { ComparisonSection, ProfitAndLossComparison } from "./compare";
 import type {
   AccountLedger,
   BalanceSheet,
@@ -88,6 +89,59 @@ export function profitAndLossCsv(pnl: ProfitAndLoss, meta: ReportMeta): string {
       pnl.netProfit.startsWith("-") ? "Net loss" : "Net profit",
       csvAmount(pnl.netProfit, c),
     ],
+  ]);
+}
+
+function comparisonRows(section: ComparisonSection, currency: string): CsvCell[][] {
+  const c = currency;
+  return [
+    ...section.rows.map((r) => [
+      section.label,
+      r.code,
+      r.name,
+      csvAmount(r.amount, c),
+      csvAmount(r.prior, c),
+      csvAmount(r.change, c),
+    ]),
+    [
+      section.label,
+      null,
+      `Total ${section.label.toLowerCase()}`,
+      csvAmount(section.total, c),
+      csvAmount(section.priorTotal, c),
+      csvAmount(section.change, c),
+    ],
+  ];
+}
+
+/** Profit and loss with comparison columns; `priorPeriod` names the earlier period. */
+export function profitAndLossComparisonCsv(
+  cmp: ProfitAndLossComparison,
+  meta: ReportMeta,
+  priorPeriod: string,
+): string {
+  const c = meta.currency;
+  const net = (label: string, t: { amount: string; prior: string; change: string }) => [
+    null,
+    null,
+    label,
+    csvAmount(t.amount, c),
+    csvAmount(t.prior, c),
+    csvAmount(t.change, c),
+  ];
+  return toCsv([
+    ["Company", meta.company],
+    ["Report", meta.report],
+    ["Period", meta.period],
+    ["Compared with", priorPeriod],
+    ["Currency", meta.currency],
+    [],
+    ["Section", "Code", "Account", meta.period, priorPeriod, "Change"],
+    ...comparisonRows(cmp.income, c),
+    ...comparisonRows(cmp.costOfSales, c),
+    net("Gross profit", cmp.grossProfit),
+    ...comparisonRows(cmp.expenses, c),
+    net(cmp.netProfit.amount.startsWith("-") ? "Net loss" : "Net profit", cmp.netProfit),
   ]);
 }
 

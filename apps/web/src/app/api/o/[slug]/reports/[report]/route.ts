@@ -5,6 +5,7 @@ import {
   csvFileName,
   formatTaxRate,
   generalLedgerSummaryCsv,
+  profitAndLossComparisonCsv,
   profitAndLossCsv,
   type ReportMeta,
   salesTaxCsv,
@@ -37,7 +38,7 @@ export async function GET(
   const ctx = await getAccountingContext(slug);
   const search = new URL(request.url).searchParams;
   const query: ReportQuery = {};
-  for (const key of ["from", "to", "date", "account"] as const) {
+  for (const key of ["from", "to", "date", "account", "compare"] as const) {
     const value = search.get(key);
     if (value) query[key] = value;
   }
@@ -60,9 +61,15 @@ export async function GET(
 
   switch (report) {
     case "profit-and-loss": {
-      const { from, to, pnl } = await loadProfitAndLoss(ctx, query);
+      const { from, to, pnl, comparison } = await loadProfitAndLoss(ctx, query);
       return file(
-        profitAndLossCsv(pnl, meta("Profit and loss", `${from} to ${to}`)),
+        comparison
+          ? profitAndLossComparisonCsv(
+              comparison,
+              meta("Profit and loss", `${from} to ${to}`),
+              `${comparison.from} to ${comparison.to}`,
+            )
+          : profitAndLossCsv(pnl, meta("Profit and loss", `${from} to ${to}`)),
         "profit and loss",
         from,
         "to",

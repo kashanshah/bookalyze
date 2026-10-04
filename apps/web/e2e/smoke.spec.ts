@@ -209,6 +209,15 @@ test("bookkeeping: chart of accounts, journal entries, reversal and reports", as
   await page.getByRole("link", { name: "Reports", exact: true }).click();
   await page.getByRole("link", { name: /Profit and loss/ }).click();
   await expect(page.getByText("Net profit")).toBeVisible();
+  // Compared with the previous period: each account shows what it was and the change.
+  await choose(page.locator("#compare"), "Previous period");
+  await expect(page).toHaveURL(/compare=previous/);
+  await expect(page.getByText(/compared with/)).toBeVisible();
+  // The rent entry was reversed, so neither period has income or expenses left.
+  await expect(page.getByText("Nothing in either period.").first()).toBeVisible();
+  const compareCsv = await downloadCsv();
+  expect(compareCsv).toContain("Compared with,");
+  expect(compareCsv).toMatch(/Section,Code,Account,[^,]+,[^,]+,Change/);
 
   // Once there are entries the main currency is locked, and finished periods can be closed.
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(

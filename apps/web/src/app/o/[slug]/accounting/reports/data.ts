@@ -1,8 +1,11 @@
 import "server-only";
 import {
   balanceSheet,
+  compareProfitAndLoss,
+  comparisonPeriod,
   fiscalYearFor,
   generalLedgerSummary,
+  isCompareMode,
   profitAndLoss,
   salesTaxSummary,
   trialBalance,
@@ -26,7 +29,14 @@ import { filingPeriods, resolveDate, resolveFilingRange, resolveRange } from "./
  * numbers for the same URL parameters.
  */
 
-export type ReportQuery = { from?: string; to?: string; date?: string; account?: string };
+export type ReportQuery = {
+  from?: string;
+  to?: string;
+  date?: string;
+  account?: string;
+  /** Profit and loss: "previous" or "last-year" adds comparison columns. */
+  compare?: string;
+};
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const LEDGER_LINE_LIMIT = 1000;
@@ -40,8 +50,15 @@ function setup(ctx: AccountingContext) {
 export async function loadProfitAndLoss(ctx: AccountingContext, query: ReportQuery) {
   const { today, cfg } = setup(ctx);
   const { from, to, presets } = resolveRange(query, today, cfg);
-  const pnl = profitAndLoss(await inOrg(ctx, (tx) => accountBalances(tx, { from, to })));
-  return { from, to, presets, pnl };
+  const compare = isCompareMode(query.compare) ? query.compare : "none";
+  const prior = compare === "none" ? null : comparisonPeriod(from, to, compare);
+  const [pnl, priorPnl] = await inOrg(ctx, async (tx) => [
+    profitAndLoss(await accountBalances(tx, { from, to })),
+    prior ? profitAndLoss(await accountBalances(tx, prior)) : null,
+  ]);
+  const comparison =
+    priorPnl && prior ? { ...prior, ...compareProfitAndLoss(pnl, priorPnl) } : null;
+  return { from, to, presets, pnl, compare, comparison };
 }
 
 export async function loadBalanceSheet(ctx: AccountingContext, query: ReportQuery) {

@@ -1,5 +1,6 @@
 export * from "./accounts";
 export * from "./chart-template";
+export * from "./compare";
 export * from "./export";
 export * from "./fx";
 export * from "./journal";
