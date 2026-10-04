@@ -30,6 +30,8 @@ export default async function BalanceSheetPage({
   const today = nowIn(ctx.profile.timezone).date;
   const { date, presets } = resolveDate(await searchParams, today, cfg);
   const fy = fiscalYearFor(date, cfg);
+  // An account's lines this financial year, with everything before it as the opening balance.
+  const ledger = { slug, from: fy.start, to: date };
   const bs = await inOrg(ctx, async (tx) =>
     balanceSheet(
       await accountBalances(tx, { to: date }),
@@ -52,18 +54,21 @@ export default async function BalanceSheetPage({
           section={bs.assets}
           currency={currency}
           locale={locale}
+          ledger={ledger}
           emptyText="No assets yet."
         />
         <ReportSectionRows
           section={bs.liabilities}
           currency={currency}
           locale={locale}
+          ledger={ledger}
           emptyText="No liabilities."
         />
         <ReportSectionRows
           section={bs.equity}
           currency={currency}
           locale={locale}
+          ledger={ledger}
           emptyText="No equity yet."
         />
         <TotalRow

@@ -1,5 +1,5 @@
 import type { ReportSection } from "@bookalyze/core";
-import { ArrowLeft, Check, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
@@ -41,16 +41,57 @@ export function ReportCard({ children }: { children: React.ReactNode }) {
   );
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Where an account's lines for a period are, or null for rows that aren't one account. */
+export type LedgerLink = { slug: string; from: string; to: string };
+export function ledgerHref(link: LedgerLink, accountId: string): string | null {
+  if (!UUID.test(accountId)) return null;
+  const query = new URLSearchParams({ from: link.from, to: link.to, account: accountId });
+  return `/o/${link.slug}/accounting/reports/general-ledger?${query}`;
+}
+
+/** An account's name, linked to its lines in the general ledger when `href` is set. */
+export function AccountCell({
+  code,
+  name,
+  href,
+}: {
+  code: string | null;
+  name: string;
+  href: string | null;
+}) {
+  const label = (
+    <>
+      {code ? <span className="me-2 font-mono text-muted-foreground text-xs">{code}</span> : null}
+      {name}
+    </>
+  );
+  if (!href) return <span className="min-w-0">{label}</span>;
+  return (
+    <Link
+      href={href}
+      className="group inline-flex min-w-0 items-baseline gap-1 underline-offset-4 hover:text-primary hover:underline print:no-underline"
+    >
+      <span className="min-w-0">{label}</span>
+      <ChevronRight className="size-3.5 shrink-0 self-center opacity-0 transition-opacity group-hover:opacity-100 rtl:rotate-180 print:hidden" />
+    </Link>
+  );
+}
+
 export function ReportSectionRows({
   section,
   currency,
   locale,
   emptyText,
+  ledger,
 }: {
   section: ReportSection;
   currency: string;
   locale: string;
   emptyText?: string;
+  /** Link each account to its lines in the general ledger for this period. */
+  ledger?: LedgerLink;
 }) {
   return (
     <div className="border-b last:border-b-0">
@@ -68,12 +109,11 @@ export function ReportSectionRows({
               key={row.accountId}
               className="flex items-baseline justify-between gap-4 px-5 py-2 text-sm sm:px-6"
             >
-              <span className="min-w-0">
-                {row.code ? (
-                  <span className="me-2 font-mono text-muted-foreground text-xs">{row.code}</span>
-                ) : null}
-                {row.name}
-              </span>
+              <AccountCell
+                code={row.code}
+                name={row.name}
+                href={ledger ? ledgerHref(ledger, row.accountId) : null}
+              />
               <Amount value={row.amount} currency={currency} locale={locale} />
             </li>
           ))}

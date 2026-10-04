@@ -397,9 +397,15 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
    "Dropdowns"). Still to come: recently used categories at the top, and remembering a vendor's
    usual category.
 8. [ ] **More reports:**
-   - General ledger and account transactions (click an account on any report to drill in).
-   - CSV and PDF export.
-   - Comparison columns on profit and loss.
+   - [x] General ledger and account transactions. `reports/general-ledger`: every account's
+     opening, debits, credits and closing for a period; `?account=` lists one account's lines
+     with a running balance (first 1,000 lines; totals and closing always cover the period).
+     Accounts on the trial balance, profit and loss and balance sheet link into it (balance
+     sheet and trial balance use the financial year to date, so the opening is everything
+     before it). Queries: `ledgerActivity`, `accountLedgerLines` (db `reports.ts`); shaping:
+     `generalLedgerSummary`, `accountLedger` (core).
+   - [ ] CSV and PDF export.
+   - [ ] Comparison columns on profit and loss.
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.

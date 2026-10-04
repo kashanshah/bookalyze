@@ -1,7 +1,7 @@
 "use client";
 
 import { Printer } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
@@ -10,16 +10,22 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import type { DatePreset, RangePreset } from "./periods";
 
-function useNavigate() {
+/** Replaces some search params, keeping the others (such as the general ledger's account). */
+export function useNavigate() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
   return {
     pending,
-    go: (params: Record<string, string>) =>
-      startTransition(() =>
-        router.replace(`${pathname}?${new URLSearchParams(params)}`, { scroll: false }),
-      ),
+    go: (params: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams);
+      for (const [key, value] of Object.entries(params)) {
+        if (value === null) next.delete(key);
+        else next.set(key, value);
+      }
+      startTransition(() => router.replace(`${pathname}?${next}`, { scroll: false }));
+    },
   };
 }
 

@@ -26,6 +26,7 @@ export default async function ProfitAndLossPage({
     today,
     fiscalConfigOf(ctx.profile),
   );
+  const ledger = { slug, from, to };
   const pnl = profitAndLoss(await inOrg(ctx, (tx) => accountBalances(tx, { from, to })));
 
   return (
@@ -39,11 +40,17 @@ export default async function ProfitAndLossPage({
       />
       <RangeControls from={from} to={to} presets={presets} />
       <ReportCard>
-        <ReportSectionRows section={pnl.income} currency={currency} locale={locale} />
+        <ReportSectionRows
+          section={pnl.income}
+          currency={currency}
+          locale={locale}
+          ledger={ledger}
+        />
         <ReportSectionRows
           section={pnl.costOfSales}
           currency={currency}
           locale={locale}
+          ledger={ledger}
           emptyText="No cost of goods sold in this period."
         />
         <TotalRow
@@ -52,7 +59,12 @@ export default async function ProfitAndLossPage({
           currency={currency}
           locale={locale}
         />
-        <ReportSectionRows section={pnl.expenses} currency={currency} locale={locale} />
+        <ReportSectionRows
+          section={pnl.expenses}
+          currency={currency}
+          locale={locale}
+          ledger={ledger}
+        />
         <TotalRow
           label={pnl.netProfit.startsWith("-") ? "Net loss" : "Net profit"}
           value={pnl.netProfit}

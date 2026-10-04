@@ -1,4 +1,4 @@
-import { trialBalance } from "@bookalyze/core";
+import { fiscalYearFor, trialBalance } from "@bookalyze/core";
 import { accountBalances } from "@bookalyze/db";
 import type { Metadata } from "next";
 import { Amount } from "@/components/accounting/amount";
@@ -7,7 +7,7 @@ import { getAccountingContext, inOrg } from "@/server/accounting";
 import { fiscalConfigOf } from "@/server/org";
 import { resolveDate } from "../periods";
 import { DateControls } from "../report-controls";
-import { BalanceCheck, ReportCard, ReportHeader } from "../report-parts";
+import { AccountCell, BalanceCheck, ledgerHref, ReportCard, ReportHeader } from "../report-parts";
 
 export const metadata: Metadata = { title: "Trial balance" };
 
@@ -22,7 +22,9 @@ export default async function TrialBalancePage({
   const ctx = await getAccountingContext(slug);
   const { locale, baseCurrency: currency } = ctx.profile;
   const today = nowIn(ctx.profile.timezone).date;
-  const { date, presets } = resolveDate(await searchParams, today, fiscalConfigOf(ctx.profile));
+  const cfg = fiscalConfigOf(ctx.profile);
+  const { date, presets } = resolveDate(await searchParams, today, cfg);
+  const ledger = { slug, from: fiscalYearFor(date, cfg).start, to: date };
   const tb = trialBalance(await inOrg(ctx, (tx) => accountBalances(tx, { to: date })));
 
   return (
@@ -57,14 +59,11 @@ export default async function TrialBalancePage({
                     key={row.accountId}
                     className="grid grid-cols-[minmax(0,1fr)_7.5rem_7.5rem] gap-4 px-5 py-2 text-sm sm:grid-cols-[minmax(0,1fr)_10rem_10rem] sm:px-6"
                   >
-                    <span className="min-w-0">
-                      {row.code ? (
-                        <span className="me-2 font-mono text-muted-foreground text-xs">
-                          {row.code}
-                        </span>
-                      ) : null}
-                      {row.name}
-                    </span>
+                    <AccountCell
+                      code={row.code}
+                      name={row.name}
+                      href={ledgerHref(ledger, row.accountId)}
+                    />
                     <span className="text-end">
                       {row.debit ? (
                         <Amount value={row.debit} currency={currency} locale={locale} />
