@@ -117,6 +117,25 @@
   [data-disabled] {
     cursor: not-allowed;
   }
+  /*
+   * iOS Safari draws date and time inputs natively: taller than other fields, centred text and a
+   * minimum width that overflows narrow layouts. Drop the native look so they match every other
+   * input (height, padding, alignment); the native picker still opens on tap.
+   */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    max-width: 100%;
+  }
+  input::-webkit-date-and-time-value {
+    margin: 0;
+    text-align: start;
+    min-height: 1.5em;
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv11", "ss01";
