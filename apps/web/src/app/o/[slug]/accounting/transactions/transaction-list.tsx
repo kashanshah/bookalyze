@@ -231,7 +231,15 @@ export function TransactionList({
                     ? `Split (${row.splits.length})`
                     : name(row.splits[0]?.accountId);
               const contactName = row.contactId ? contactNames.get(row.contactId) : undefined;
-              const money = formatMoney(row.amount, row.currency, ctx.locale);
+              // Between currencies, show each side in its own currency: what arrived when viewing the
+              // receiving account, what left when viewing the sending one, both otherwise.
+              const sent = formatMoney(row.amount, row.currency, ctx.locale);
+              const got =
+                row.receivedAmount && row.receivedCurrency
+                  ? formatMoney(row.receivedAmount, row.receivedCurrency, ctx.locale)
+                  : null;
+              const money = got && direction === "in" ? got : sent;
+              const arrived = got && direction === "move" ? got : null;
               return (
                 <li
                   key={row.id}
@@ -301,6 +309,11 @@ export function TransactionList({
                     >
                       {direction === "in" ? "+" : direction === "out" ? "−" : ""}
                       {money}
+                      {arrived ? (
+                        <span className="block font-normal text-muted-foreground text-xs">
+                          → {arrived}
+                        </span>
+                      ) : null}
                     </span>
                   </button>
                 </li>

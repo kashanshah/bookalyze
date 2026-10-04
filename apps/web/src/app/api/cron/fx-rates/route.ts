@@ -1,0 +1,19 @@
+import { env } from "@/server/env";
+import { syncBankOfCanada } from "@/server/fx";
+
+/**
+ * Daily exchange rates (scheduled in vercel.json). Vercel Cron calls this with
+ * "Authorization: Bearer $CRON_SECRET"; anything else is refused. Re-fetches the last ten days so
+ * late corrections and missed runs are picked up.
+ */
+export async function GET(request: Request) {
+  const secret = env().CRON_SECRET;
+  if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  const end = new Date().toISOString().slice(0, 10);
+  const startDate = new Date();
+  startDate.setUTCDate(startDate.getUTCDate() - 10);
+  const stored = await syncBankOfCanada(startDate.toISOString().slice(0, 10), end);
+  return Response.json({ stored });
+}

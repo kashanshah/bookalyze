@@ -32,6 +32,8 @@ const schema = z.object({
   AWS_S3_BUCKET: z.string().optional(),
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  /** Secret Vercel Cron sends as a bearer token to scheduled routes (e.g. the daily FX sync). */
+  CRON_SECRET: z.string().min(16).optional(),
   /** "s3", or "local" to keep files on disk (development and CI only). */
   STORAGE_DRIVER: z.enum(["s3", "local", ""]).optional(),
 });

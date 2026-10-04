@@ -113,6 +113,8 @@ export const transactionSchema = z.object({
   fromAccountId: z.string().trim().max(64).optional(),
   toAccountId: z.string().trim().max(64).optional(),
   amount: amountText.optional(),
+  /** Transfers between currencies: what arrived, in the receiving account's currency. */
+  received: amountText.optional(),
   /** Receipts uploaded while creating the transaction, attached once it's saved. */
   attachmentIds: z.array(z.uuid()).max(50).optional(),
   /** The customer (money in) or vendor (money out). Empty for none. */

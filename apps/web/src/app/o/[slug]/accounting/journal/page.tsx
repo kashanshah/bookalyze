@@ -41,6 +41,7 @@ export default async function JournalPage({
           .select({
             entryId: schema.journalLines.journalEntryId,
             amount: schema.journalLines.amount,
+            currency: schema.journalLines.currency,
             accountName: schema.accounts.name,
           })
           .from(schema.journalLines)
@@ -118,12 +119,17 @@ export default async function JournalPage({
             {entries.map((e, i) => {
               const entryLines = linesByEntry.get(e.id) ?? [];
               const names = [...new Set(entryLines.map((l) => l.accountName))];
-              const totalStr = formatDecimal(
-                entryLines.reduce((t, l) => {
-                  const units = parseDecimal(l.amount);
-                  return units > 0n ? t + units : t;
-                }, 0n),
-              );
+              // The entry's size in its own currency: debits, or credits for entries (like a
+              // cross-currency transfer) whose debits are in another currency.
+              let debits = 0n;
+              let credits = 0n;
+              for (const l of entryLines) {
+                if (l.currency !== e.currency) continue;
+                const units = parseDecimal(l.amount);
+                if (units > 0n) debits += units;
+                else credits -= units;
+              }
+              const totalStr = formatDecimal(debits > credits ? debits : credits);
               return (
                 <li
                   key={e.id}

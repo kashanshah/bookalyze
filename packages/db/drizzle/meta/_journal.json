@@ -71,6 +71,20 @@
       "when": 1791125676973,
       "tag": "0009_contacts",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791127088261,
+      "tag": "0010_fx",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791127103306,
+      "tag": "0011_fx_invariants",
+      "breakpoints": true
     }
   ]
 }

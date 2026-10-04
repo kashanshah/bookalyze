@@ -179,7 +179,14 @@ export const journalLines = pgTable(
     lineNo: smallint("line_no").notNull(),
     accountId: uuid("account_id").notNull(),
     description: text("description"),
-    /** Signed, in the entry currency: debits positive, credits negative. */
+    /**
+     * The line's currency: the entry currency, except for lines in another currency such as the
+     * receiving side of a cross-currency transfer. Must match the account's currency if it has one.
+     */
+    currency: char("currency", { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    /** Signed, in the line currency: debits positive, credits negative. */
     amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
     /** Signed, in the organization's base currency. */
     baseAmount: numeric("base_amount", { precision: 20, scale: 4 }).notNull(),

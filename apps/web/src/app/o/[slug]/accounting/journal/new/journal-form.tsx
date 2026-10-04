@@ -13,6 +13,7 @@ import { Check, Info, Plus, Scale, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { RateField } from "@/components/accounting/rate-field";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -217,31 +218,18 @@ export function JournalForm({
             </NativeSelect>
           </Field>
           {foreign ? (
-            <Field
-              label="Exchange rate"
-              htmlFor="fxRate"
+            <RateField
+              slug={slug}
+              id="fxRate"
+              currency={currency}
+              baseCurrency={baseCurrency}
+              date={date}
+              value={fxRate}
+              onChange={setFxRate}
               error={errors.fxRate}
-              hint={`How many ${baseCurrency} one ${currency} was worth on this date.`}
+              locale={locale}
               className="fade-in-0 slide-in-from-top-1 animate-in duration-200"
-            >
-              <div className="relative">
-                <span className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                  1 {currency} =
-                </span>
-                <Input
-                  id="fxRate"
-                  inputMode="decimal"
-                  value={fxRate}
-                  onChange={(e) => setFxRate(e.target.value)}
-                  placeholder="1.3650"
-                  className="tabular ps-20 pe-14 text-end"
-                  aria-invalid={Boolean(errors.fxRate)}
-                />
-                <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                  {baseCurrency}
-                </span>
-              </div>
-            </Field>
+            />
           ) : (
             <div className="hidden lg:block" />
           )}

@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-04, phase 1, slice 5 (customers and vendors)._
+_Last updated: 2026-10-04, phase 1, slice 6 (exchange rates and cross-currency transfers)._
 
 ---
 
@@ -22,7 +22,7 @@ _Last updated: 2026-10-04, phase 1, slice 5 (customers and vendors)._
 | Phase | State |
 |---|---|
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
-| 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts) and 5 (customers and vendors) are done |
+| 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors) and 6 (exchange rates) are done |
 | 1b. Wave migration | Not started. Needs a real Wave export from the owner (kept outside the repo) |
 | 2. Banking, plus Entity & compliance | Not started |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
@@ -112,9 +112,9 @@ Real company details are entered in the app and never committed.
   - Reports: profit and loss with period presets from the financial year; balance sheet and trial
     balance as of any date; print.
 - **Tests:**
-  - Core: 36 at slice 1, 43 after slice 3.
-  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5.
-  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors).
+  - Core: 36 at slice 1, 43 after slice 3, 51 after slice 6.
+  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5, 37 after slice 6.
+  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors), 11 after slice 6 (exchange rates).
 
 ### Phase 1, slice 2: closed periods
 - **Closing the books:**
@@ -214,6 +214,40 @@ Real company details are entered in the app and never committed.
 - **E2E:** the `signIn` helper retries after Better Auth's sign-in rate limit, because the suite
   signs in often.
 
+### Phase 1, slice 6: exchange rates and transfers between currencies
+- **Line currencies** (migrations `0010` and `0011`):
+  - `journal_lines.currency` is backfilled from the entry, so entries can mix currencies.
+  - The balance trigger now requires base amounts to sum to zero always, and amounts to sum to
+    zero when every line shares one currency.
+  - A new trigger refuses a line whose currency differs from its account's currency.
+- **Rates table:** `fx_rates (date, base, quote, rate, source)`.
+  - Global, not per company: rates are public data. The app may insert and update, never delete.
+  - Bank of Canada rates are stored with base CAD.
+- **Core** (`accounting/fx.ts`):
+  - `parseBankOfCanada()` reads the Bank of Canada responses.
+  - `crossRate()` derives any pair through CAD, using exact fractions rounded once.
+  - The AED peg (3.6725 to USD) is handled as `PEGGED_CURRENCIES`.
+  - `prepareTransfer()` (`accounting/transactions.ts`) records each side in its own currency.
+    The base amount comes from the side already in the main currency, so the bank's real rate is
+    what's booked. A rate is asked for only when neither side is the main currency.
+  - `describeTransaction()` returns `receivedAmount` and `receivedCurrency` for these transfers.
+- **Database helpers** (`packages/db/src/fx.ts`):
+  - `upsertFxRates()`.
+  - `fxRateOn()` returns the latest rate on or before a date, within a week, so weekends and
+    holidays are covered.
+  - `missingCadRates()`.
+- **Web:**
+  - `server/fx.ts` has `syncBankOfCanada()`, using the Valet API with 14 currencies, and
+    `suggestRate()`, which fetches the missing week on demand for back-dated entries.
+  - `/api/cron/fx-rates` is scheduled weekdays at 22:15 UTC by `apps/web/vercel.json`. It needs
+    `CRON_SECRET`.
+  - The `RateField` component pre-fills the Bank of Canada or fixed rate on transactions and
+    journal entries. It follows the date until the person types their own rate.
+  - Transfers between currencies ask for "Amount sent" and "Amount received" and show the bank's
+    rate.
+  - Lists show both sides of a transfer between currencies. Journal pages show mixed entries line
+    by line, with totals in the main currency.
+
 ---
 
 ## 3. Next up (in order)
@@ -232,11 +266,9 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
    currencies.
 4. [x] **Contacts (customers and vendors).** Done in slice 5. Still to come: contacts on
    individual journal lines (for multi-party entries), and merging duplicate contacts.
-5. [ ] **FX rates:**
-   - `fx_rates` table and a daily Bank of Canada Valet job for CAD organizations.
-   - AED is pegged at 3.6725 to USD.
-   - Pre-fill the exchange rate in the journal form.
-   - Needs Vercel Cron.
+5. [x] **Exchange rates and transfers between currencies.** Done in slice 6. Still to come:
+   - Unrealized gain or loss on foreign-currency balances at period end (phase 7).
+   - Splitting a bank conversion fee from the exchange rate, when the bank shows it separately.
 6. [ ] **Tax engine with Canada (GST/HST) and UAE (VAT) packs.**
    - Each company's tax setup is a setting in the UI, never code or seed data: registered or
      not, registration number, filing frequency (monthly, quarterly or yearly) and the date
@@ -249,6 +281,7 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
    - Comparison columns on profit and loss.
 
 ### Phase 0 leftovers
+- [ ] `CRON_SECRET` must be set in Vercel (Production) for the daily rates job. See SETUP.md.
 - [ ] Encrypted credential vault (`APP_ENCRYPTION_KEY`, AES-GCM) and a `connections` table, for
   SP-API, Wise and others.
 - [ ] Platform admin console: list organizations, set plans, overrides.
@@ -380,6 +413,12 @@ screenshots work well).
   cell and shift every later heading. Wrap them in a plain `<span>`.
 - **A Radix dialog that is closing** swallows clicks for about 300ms. Key the dialog per opening
   (see `transaction-list.tsx`) when it can reopen straight away.
+- **Migrations that UPDATE `journal_lines` must pause the deferred `journal_lines_balanced`
+  trigger** (`DISABLE TRIGGER` … `ENABLE TRIGGER`, see `0010_fx.sql`). Otherwise its pending
+  events block any later `ALTER TABLE` in the same migration run. Test databases start empty, so
+  CI won't catch this. Apply new migrations to a dev database that has entries before pushing.
+- **This sandbox can't reach bankofcanada.ca** (egress policy). Rate tests use a sample of
+  Valet's format, and the e2e test stores today's rate itself. Live fetching happens on Vercel.
 - **Mobile inputs must be at least 16px** or iOS zooms in on focus. `Input` and `NativeSelect` use
   `text-base sm:text-sm`. Keep that when adding new controls.
 - **Uploads never go through server actions or route bodies on Vercel** (4.5 MB limit). The

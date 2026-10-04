@@ -55,7 +55,7 @@ export type TransactionRow = {
   reviewed: boolean;
   /** Number of receipts and files attached. */
   attachments: number;
-  lines: { accountId: string; amount: string; description: string | null }[];
+  lines: { accountId: string; currency: string; amount: string; description: string | null }[];
   view: TransactionView;
 };
 
@@ -120,6 +120,7 @@ export async function listTransactions(
     .select({
       entryId: journalLines.journalEntryId,
       accountId: journalLines.accountId,
+      currency: journalLines.currency,
       amount: journalLines.amount,
       description: journalLines.description,
       subtype: accounts.subtype,
@@ -148,11 +149,14 @@ export async function listTransactions(
   );
   const rows: TransactionRow[] = [];
   for (const entry of entries) {
-    const entryLines = (byEntry.get(entry.id) ?? []).map(({ accountId, amount, description }) => ({
-      accountId,
-      amount,
-      description,
-    }));
+    const entryLines = (byEntry.get(entry.id) ?? []).map(
+      ({ accountId, currency, amount, description }) => ({
+        accountId,
+        currency,
+        amount,
+        description,
+      }),
+    );
     const view = describeTransaction(entryLines, (id) => moneyIds.has(id));
     if (view) {
       rows.push({

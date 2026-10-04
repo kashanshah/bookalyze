@@ -73,7 +73,10 @@ export default async function JournalEntryPage({
   const lockedThrough = ctx.profile.booksLockedThrough;
   const closed = Boolean(lockedThrough && entry.date <= lockedThrough);
   const number = formatEntryNumber(entry.entryNumber);
-  const foreign = entry.currency !== base;
+  // Entries that mix currencies (cross-currency transfers) show each line in its own currency
+  // and total in the main currency.
+  const mixed = new Set(lines.map(({ line }) => line.currency)).size > 1;
+  const foreign = entry.currency !== base || mixed;
   const reversedBy = related.find((r) => r.id === entry.reversedByEntryId);
   const reverses = related.find((r) => r.id === entry.reversesEntryId);
   const sum = (pick: (amount: bigint) => boolean, field: "amount" | "baseAmount") =>
@@ -184,8 +187,10 @@ export default async function JournalEntryPage({
         <div>
           <dt className="text-muted-foreground text-xs">Currency</dt>
           <dd className="mt-1 font-medium text-sm">
-            {entry.currency}
-            {foreign ? (
+            {mixed
+              ? [...new Set(lines.map(({ line }) => line.currency))].join(" → ")
+              : entry.currency}
+            {entry.currency !== base ? (
               <span className="tabular ms-1.5 font-normal text-muted-foreground">
                 1 {entry.currency} = {entry.fxRate.replace(/\.?0+$/, "")} {base}
               </span>
@@ -240,20 +245,20 @@ export default async function JournalEntryPage({
                 </span>
                 <span className="col-start-2 row-span-2 row-start-1 self-center text-end text-sm md:col-start-auto md:row-span-1 md:row-start-auto">
                   {amount > 0n ? (
-                    <Amount value={abs} currency={entry.currency} locale={locale} />
+                    <Amount value={abs} currency={line.currency} locale={locale} />
                   ) : (
                     <span className="hidden md:inline" />
                   )}
                   {amount < 0n ? (
                     <span className="md:hidden">
-                      <Amount value={abs} currency={entry.currency} locale={locale} />
+                      <Amount value={abs} currency={line.currency} locale={locale} />
                       <span className="ms-1 text-muted-foreground text-xs">Cr</span>
                     </span>
                   ) : null}
                 </span>
                 <span className="hidden text-end text-sm md:block">
                   {amount < 0n ? (
-                    <Amount value={abs} currency={entry.currency} locale={locale} />
+                    <Amount value={abs} currency={line.currency} locale={locale} />
                   ) : null}
                 </span>
                 {foreign ? (
@@ -272,8 +277,8 @@ export default async function JournalEntryPage({
           <span className="text-end">
             <span className="me-1 font-normal text-muted-foreground text-xs md:hidden">Debits</span>
             <Amount
-              value={sum((v) => v > 0n, "amount")}
-              currency={entry.currency}
+              value={sum((v) => v > 0n, mixed ? "baseAmount" : "amount")}
+              currency={mixed ? base : entry.currency}
               locale={locale}
             />
           </span>
@@ -282,8 +287,8 @@ export default async function JournalEntryPage({
               Credits
             </span>
             <Amount
-              value={sum((v) => v < 0n, "amount")}
-              currency={entry.currency}
+              value={sum((v) => v < 0n, mixed ? "baseAmount" : "amount")}
+              currency={mixed ? base : entry.currency}
               locale={locale}
             />
           </span>

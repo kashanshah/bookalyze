@@ -86,3 +86,20 @@ export function convertUnits(units: bigint, rate: string, decimals: number): big
 export function sumDecimals(values: readonly string[]): string {
   return formatDecimal(values.reduce((total, v) => total + parseDecimal(v), 0n));
 }
+
+/** Divides two decimal strings exactly, rounding the result to `scale` places. */
+export function divideDecimals(
+  numerator: string,
+  denominator: string,
+  scale: number = RATE_SCALE,
+): string {
+  const n = parseDecimal(numerator, RATE_SCALE);
+  const d = parseDecimal(denominator, RATE_SCALE);
+  return formatDecimal(divRound(n * pow10(scale), d), scale);
+}
+
+/** Multiplies two decimal strings exactly, rounding the result to `scale` places. */
+export function multiplyDecimals(a: string, b: string, scale: number = RATE_SCALE): string {
+  const product = parseDecimal(a, RATE_SCALE) * parseDecimal(b, RATE_SCALE);
+  return formatDecimal(divRound(product, pow10(2 * RATE_SCALE - scale)), scale);
+}
