@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-04, phase 1, slice 1 (ledger foundations)._
+_Last updated: 2026-10-04, phase 1, slice 2 (closed periods)._
 
 ---
 
@@ -22,7 +22,7 @@ _Last updated: 2026-10-04, phase 1, slice 1 (ledger foundations)._
 | Phase | State |
 |---|---|
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
-| 1. Ledger & accounting core | **In progress.** Slice 1 (ledger, chart of accounts, journal entries, reports) is done |
+| 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports) and 2 (closed periods) are done |
 | 1b. Wave migration | Not started. Needs a real Wave export from the owner (kept outside the repo) |
 | 2. Banking, plus Entity & compliance | Not started |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
@@ -72,7 +72,7 @@ Real company details are entered in the app and never committed.
 - **Landing page:** `apps/landing/`, static with a PHP waitlist endpoint that writes to a Resend
   segment.
 
-### Phase 1, slice 1: ledger foundations (this PR)
+### Phase 1, slice 1: ledger foundations
 - **Money maths** (`packages/core/src/money.ts`):
   - Exact BigInt decimal arithmetic on strings, no floats anywhere.
   - Rounds half away from zero.
@@ -113,8 +113,27 @@ Real company details are entered in the app and never committed.
     balance as of any date; print.
 - **Tests:**
   - Core: 36.
-  - Database: 18 (ledger invariants, RLS, helpers).
+  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2.
   - E2E: 7, including the full bookkeeping flow.
+
+### Phase 1, slice 2: closed periods
+- **Closing the books:**
+  - `organization_profiles.books_locked_through`, set in Company settings → "Close the books"
+    (owners and admins only, audited).
+  - Quick picks for the end of the last financial year and the end of last month.
+  - "Reopen all periods" asks for a second click.
+- **Enforcement:**
+  - `postJournalEntry()` refuses dates on or before the lock with `LedgerError` code
+    `period_locked`; actions turn it into an inline date error.
+  - A database trigger (migration `0006_period_locks`) refuses them too.
+  - Reversals must be dated in an open period.
+- **In the forms:**
+  - The entry form and the reversal dialog default to the first open day and warn inline.
+  - Entries in a closed period show a "Closed period" badge.
+- **Main currency lock:** the currency can't change once a company has journal entries. The UI
+  disables it, the server action refuses it, and a database trigger refuses it.
+- **Env files:** the database scripts and `next.config.ts` now read the repo-root `.env.local`
+  before `.env`.
 
 ---
 
@@ -123,11 +142,7 @@ Real company details are entered in the app and never committed.
 Pick from the top. Each item is roughly one PR. Tick items here as they land.
 
 ### Phase 1: remaining slices
-1. [ ] **Period locks.**
-   - Add a per-org `books_locked_through` date (new table or column) and a DB trigger rejecting
-     journal entries dated on or before it.
-   - UI to set it in Company settings (owners and admins only).
-   - The reversal dialog should default to the first open date.
+1. [x] **Period locks.** Done in slice 2.
 2. [ ] **File uploads (S3) + attachments**, also listed under phase 0 leftovers.
    - `attachments` and `attachment_links` tables (PLAN.md §3.1); presigned upload URLs; private
      bucket keyed `org/{orgId}/…`.
@@ -193,6 +208,8 @@ formats with synthetic fixtures in tests. Plan: PLAN.md §3.2.
     uncategorized income and expense, and FX gain and loss.
   - They can be renamed but not archived, and their type can't change.
   - Look them up by `system_key`, never by name or code.
+- **Closed periods:** nothing may be dated on or before `books_locked_through`. Every write goes
+  through `postJournalEntry()`, which checks it, and the database checks again.
 - **Year end:** there are no closing entries. The balance sheet computes current-year and
   prior-year profit from income and expense balances, using the financial year from
   `fiscalYearFor()`.
@@ -263,8 +280,11 @@ screenshots work well).
 
 - **Drizzle wraps Postgres errors.** The real message and code are on `error.cause` (see
   `pgError()` in the accounting actions).
-- **Never run `pkill -f <pattern>`** in an agent shell; it can kill the shell itself. Use
-  `kill $(lsof -t -i:3000)`.
+- **Never run `pkill -f <pattern>`** in an agent shell; it can kill the shell itself. Find
+  servers with `ps aux | grep next-server` and kill them by PID. `lsof -i:3000` can miss them.
+- **A stale `next start` on port 3000** makes Playwright reuse it (`reuseExistingServer`) and
+  serve an old build. Symptoms: "This page couldn't load", `ChunkLoadError` or missing chunks.
+  Kill it before running e2e.
 - **TypeScript is pinned to 6.0.3.** TS 7 native breaks the toolchain here.
 - **Better Auth rate limiting** can trip in e2e. The tests wait where needed.
 - **Server-only modules** (`@/server/*`) import `"server-only"`. Client components may only

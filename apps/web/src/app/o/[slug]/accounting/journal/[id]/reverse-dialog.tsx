@@ -17,6 +17,7 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { formatDate, nextDay } from "@/lib/dates";
 import { reverseJournalEntryAction } from "../../actions";
 
 /** Posted entries can't be edited; reversing posts an equal and opposite entry. */
@@ -25,11 +26,16 @@ export function ReverseDialog({
   entryId,
   entryNumber,
   today,
+  lockedThrough,
+  locale,
 }: {
   slug: string;
   entryId: string;
   entryNumber: string;
+  /** Today, or the first open day if today is in a closed period. */
   today: string;
+  lockedThrough: string | null;
+  locale: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -74,12 +80,17 @@ export function ReverseDialog({
             label="Date of the reversal"
             htmlFor="reverse-date"
             error={error}
-            hint="Usually today, or the same date as the original to undo it in that period."
+            hint={
+              lockedThrough
+                ? `Usually today. Books are closed through ${formatDate(lockedThrough, locale)}, so it must be later.`
+                : "Usually today, or the same date as the original to undo it in that period."
+            }
           >
             <Input
               id="reverse-date"
               type="date"
               required
+              min={lockedThrough ? nextDay(lockedThrough) : undefined}
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />

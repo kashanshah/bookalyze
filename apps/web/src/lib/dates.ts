@@ -29,3 +29,15 @@ export function formatDate(value: string, locale = "en-CA", style: "medium" | "l
     timeZone: "UTC",
   }).format(new Date(`${value}T00:00:00Z`));
 }
+
+/** The day after an ISO date. */
+export function nextDay(value: string): string {
+  const d = new Date(`${value}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** `date`, moved to the first open day if it falls on or before `lockedThrough`. */
+export function openDate(date: string, lockedThrough: string | null | undefined): string {
+  return lockedThrough && date <= lockedThrough ? nextDay(lockedThrough) : date;
+}

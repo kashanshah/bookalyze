@@ -66,7 +66,7 @@ function SettingsForm({
   }, [state]);
 
   return (
-    <form action={action} onChange={() => setDirty(true)} className="pb-24">
+    <form action={action} onChange={() => setDirty(true)}>
       {!canEdit ? (
         <Alert className="mb-6">Only owners and admins can change these settings.</Alert>
       ) : null}

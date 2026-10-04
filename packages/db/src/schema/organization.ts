@@ -53,6 +53,11 @@ export const organizationProfiles = pgTable(
     firstFiscalYearStart: date("first_fiscal_year_start"),
     incorporationDate: date("incorporation_date"),
     planKey: text("plan_key").notNull().default("internal_unlimited"),
+    /**
+     * Books are closed through this date: no journal entry may be dated on or before it
+     * (enforced by a trigger, see migration 0006_period_locks). Null means nothing is closed.
+     */
+    booksLockedThrough: date("books_locked_through"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

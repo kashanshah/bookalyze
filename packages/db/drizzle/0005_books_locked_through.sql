@@ -1,0 +1,1 @@
+ALTER TABLE "organization_profiles" ADD COLUMN "books_locked_through" date;

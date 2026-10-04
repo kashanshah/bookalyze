@@ -1,15 +1,16 @@
 import { formatDecimal, parseDecimal } from "@bookalyze/core";
 import { formatEntryNumber, schema } from "@bookalyze/db";
 import { eq, inArray } from "drizzle-orm";
-import { ArrowLeft, Plus, Undo2 } from "lucide-react";
+import { ArrowLeft, Lock, Plus, Undo2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDate, nowIn } from "@/lib/dates";
+import { formatDate, nowIn, openDate } from "@/lib/dates";
 import { getAccountingContext, inOrg } from "@/server/accounting";
 import { ReverseDialog } from "./reverse-dialog";
 
@@ -66,6 +67,8 @@ export default async function JournalEntryPage({
   if (!data) notFound();
 
   const { entry, author, lines, related } = data;
+  const lockedThrough = ctx.profile.booksLockedThrough;
+  const closed = Boolean(lockedThrough && entry.date <= lockedThrough);
   const number = formatEntryNumber(entry.entryNumber);
   const foreign = entry.currency !== base;
   const reversedBy = related.find((r) => r.id === entry.reversedByEntryId);
@@ -94,7 +97,17 @@ export default async function JournalEntryPage({
 
       <PageHeader
         eyebrow={<span className="font-mono">{number}</span>}
-        title={entry.memo || "Journal entry"}
+        title={
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+            {entry.memo || "Journal entry"}
+            {closed ? (
+              <Badge variant="secondary" title="This entry is dated in a closed period.">
+                <Lock />
+                Closed period
+              </Badge>
+            ) : null}
+          </span>
+        }
         actions={
           <div className="flex gap-2">
             {!entry.reversedByEntryId && !entry.reversesEntryId ? (
@@ -102,7 +115,9 @@ export default async function JournalEntryPage({
                 slug={slug}
                 entryId={entry.id}
                 entryNumber={number}
-                today={nowIn(ctx.profile.timezone).date}
+                today={openDate(nowIn(ctx.profile.timezone).date, lockedThrough)}
+                lockedThrough={lockedThrough}
+                locale={locale}
               />
             ) : null}
             <Button asChild>

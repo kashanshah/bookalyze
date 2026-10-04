@@ -34,24 +34,43 @@ export async function updateProfileAction(
   }
 
   const values = profileValues(parsed.data);
-  await withOrg(getDb(), { orgId: ctx.org.id, userId: ctx.session.user.id }, async (tx) => {
-    if (ctx.profile) {
-      await tx.update(schema.organizationProfiles).set(values);
-    } else {
-      await tx
-        .insert(schema.organizationProfiles)
-        .values({ organizationId: ctx.org.id, ...values });
-    }
-    await audit(tx, {
-      orgId: ctx.org.id,
-      actorUserId: ctx.session.user.id,
-      action: "organization.profile_updated",
-      entityType: "organization_profile",
-      entityId: ctx.org.id,
-      before: { name: ctx.org.name, ...ctx.profile },
-      after: { name: name.data, ...values },
-    });
-  });
+  const result = await withOrg(
+    getDb(),
+    { orgId: ctx.org.id, userId: ctx.session.user.id },
+    async (tx) => {
+      if (ctx.profile && ctx.profile.baseCurrency !== values.baseCurrency) {
+        const [entry] = await tx
+          .select({ id: schema.journalEntries.id })
+          .from(schema.journalEntries)
+          .limit(1);
+        if (entry) {
+          return {
+            errors: {
+              baseCurrency: "The main currency can't change once you have journal entries.",
+            },
+          };
+        }
+      }
+      if (ctx.profile) {
+        await tx.update(schema.organizationProfiles).set(values);
+      } else {
+        await tx
+          .insert(schema.organizationProfiles)
+          .values({ organizationId: ctx.org.id, ...values });
+      }
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "organization.profile_updated",
+        entityType: "organization_profile",
+        entityId: ctx.org.id,
+        before: { name: ctx.org.name, ...ctx.profile },
+        after: { name: name.data, ...values },
+      });
+      return null;
+    },
+  );
+  if (result) return result;
   if (name.data !== ctx.org.name) {
     await getAuth().api.updateOrganization({
       body: { organizationId: ctx.org.id, data: { name: name.data } },
