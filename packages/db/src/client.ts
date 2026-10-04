@@ -31,13 +31,22 @@ export function createDb(connectionString: string, poolConfig: pg.PoolConfig = {
 const globalForDb = globalThis as unknown as { __bookalyzeDb?: ReturnType<typeof createDb> };
 
 /**
- * The app's shared database handle, connected as the runtime role (DATABASE_URL), for which
+ * The connection string the app uses: APP_DATABASE_URL when set, else DATABASE_URL. Hosts that
+ * manage DATABASE_URL themselves (Vercel's Neon integration sets it to the owner role) can point
+ * the app at the runtime role through APP_DATABASE_URL instead.
+ */
+export function appDatabaseUrl(): string | undefined {
+  return process.env.APP_DATABASE_URL || process.env.DATABASE_URL || undefined;
+}
+
+/**
+ * The app's shared database handle, connected as the runtime role (appDatabaseUrl()), for which
  * row-level security is enforced. Cached on globalThis so dev hot reloads reuse the pool.
  */
 export function getDb(): Database {
   if (!globalForDb.__bookalyzeDb) {
-    const url = process.env.DATABASE_URL;
-    if (!url) throw new Error("DATABASE_URL is not set");
+    const url = appDatabaseUrl();
+    if (!url) throw new Error("APP_DATABASE_URL or DATABASE_URL must be set");
     globalForDb.__bookalyzeDb = createDb(url);
   }
   return globalForDb.__bookalyzeDb.db;
@@ -89,7 +98,7 @@ export async function assertRlsEnforced(db: Database): Promise<void> {
   const row = result.rows[0];
   if (!row || row.bypass || row.owns) {
     throw new Error(
-      "Refusing to query tenant data: DATABASE_URL connects as a role that bypasses row-level security (a superuser, BYPASSRLS or the tables' owner, e.g. neondb_owner). Use the runtime role (bookalyze_app, a member of app_runtime). See docs/SETUP.md.",
+      "Refusing to query tenant data: the app's database connection (APP_DATABASE_URL, else DATABASE_URL) uses a role that bypasses row-level security (a superuser, BYPASSRLS or the tables' owner, e.g. neondb_owner). Set APP_DATABASE_URL to the runtime role (bookalyze_app, a member of app_runtime). See docs/SETUP.md.",
     );
   }
 }

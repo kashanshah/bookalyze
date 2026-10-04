@@ -466,9 +466,10 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
   merging (or just before) with:
   ```bash
   DATABASE_URL_MIGRATOR='<Neon owner, direct, sslmode=verify-full>' \
-  DATABASE_URL='<Neon bookalyze_app, pooled>' pnpm db:migrate
+  APP_DATABASE_URL='<Neon bookalyze_app, pooled>' pnpm db:migrate
   ```
-  `DATABASE_URL` is needed so the migrator can grant the runtime role (`app_runtime`) to it.
+  The runtime URL (`APP_DATABASE_URL`, else `DATABASE_URL`) is needed so the migrator can grant
+  the runtime role (`app_runtime`) to it.
 
 ### Before pushing
 ```bash
@@ -572,8 +573,9 @@ screenshots work well).
   - In e2e, use `choose(trigger, "Option label")` from `e2e/helpers.ts`, not `selectOption`.
 - **Tenant isolation fails closed.** `withOrg()` checks once per pool that the connection's role
   doesn't bypass RLS (superuser, BYPASSRLS, or owner/member of the tables' owner such as Neon's
-  `neondb_owner`), and refuses tenant queries otherwise. Production `DATABASE_URL` must be
-  `bookalyze_app` on the pooled host.
+  `neondb_owner`), and refuses tenant queries otherwise. The app connects with `APP_DATABASE_URL`
+  when set, else `DATABASE_URL`; production uses `APP_DATABASE_URL` = `bookalyze_app` on the
+  pooled host, because Vercel's Neon Storage integration owns and locks `DATABASE_URL` (owner).
 - **Drizzle leaves the column unqualified** (`"id"`) when a query selects from one table. Inside a
   hand-written subquery, qualify outer columns yourself (`"journal_entries"."id"`) or Postgres
   reports `column reference "id" is ambiguous`.
