@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { latestLink, signIn, signOut, signUp, verifyEmail, withOwnerDb } from "./helpers";
+import { choose, latestLink, signIn, signOut, signUp, verifyEmail, withOwnerDb } from "./helpers";
 
 // Unique emails per run so the suite can run against a reused database.
 const run = Date.now().toString(36);
@@ -40,11 +40,11 @@ test("owner signs up, verifies email and sets up a company with the wizard", asy
 
   // Step 2: location, with currency suggested from the country.
   await expect(page.getByRole("heading", { name: "Where you operate" })).toBeVisible();
-  await page.locator("#countryCode").selectOption("AE");
-  await expect(page.locator("#baseCurrency")).toHaveValue("AED");
-  await page.locator("#countryCode").selectOption("CA");
-  await expect(page.locator("#baseCurrency")).toHaveValue("CAD");
-  await page.locator("#subdivisionCode").selectOption("CA-ON");
+  await choose(page.locator("#countryCode"), "United Arab Emirates");
+  await expect(page.locator("#baseCurrency")).toContainText("AED");
+  await choose(page.locator("#countryCode"), "Canada");
+  await expect(page.locator("#baseCurrency")).toContainText("CAD");
+  await choose(page.locator("#subdivisionCode"), "Ontario");
   await page.getByRole("button", { name: "Continue" }).click();
 
   // Step 3: financial year with a live preview of the short first year.
@@ -134,9 +134,9 @@ test("bookkeeping: chart of accounts, journal entries, reversal and reports", as
       .first()
       .click();
     await page.getByLabel("Description", { exact: true }).fill(memo);
-    await page.getByLabel("Account for line 1").selectOption({ label: debit });
+    await choose(page.getByLabel("Account for line 1"), debit);
     await page.getByLabel("Debit").nth(0).fill(amount);
-    await page.getByLabel("Account for line 2").selectOption({ label: credit });
+    await choose(page.getByLabel("Account for line 2"), credit);
     await page.getByLabel("Credit").nth(1).fill("1");
     await expect(page.getByText(/Out by/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Post entry" })).toBeDisabled();
@@ -212,9 +212,9 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
 
   // Money in.
   await page.getByRole("button", { name: "Add income" }).click();
-  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
   await page.locator("#tx-memo").fill("Client payment");
-  await page.getByLabel("Category 1", { exact: true }).selectOption({ label: "4000 · Sales" });
+  await choose(page.getByLabel("Category 1", { exact: true }), "4000 · Sales");
   await page.getByLabel("Amount 1").fill("800");
   await page.getByRole("button", { name: "Add transaction" }).click();
   await expect(page.getByText("Transaction added")).toBeVisible();
@@ -223,16 +223,12 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
 
   // Money out, split across two categories.
   await page.getByRole("button", { name: "Add expense" }).click();
-  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
   await page.locator("#tx-memo").fill("Supplies and shipping");
-  await page
-    .getByLabel("Category 1", { exact: true })
-    .selectOption({ label: "6250 · Office supplies" });
+  await choose(page.getByLabel("Category 1", { exact: true }), "6250 · Office supplies");
   await page.getByLabel("Amount 1").fill("40");
   await page.getByRole("button", { name: "Split into categories" }).click();
-  await page
-    .getByLabel("Category 2", { exact: true })
-    .selectOption({ label: "6400 · Shipping and postage" });
+  await choose(page.getByLabel("Category 2", { exact: true }), "6400 · Shipping and postage");
   await page.getByLabel("Amount 2").fill("25.50");
   await expect(page.getByText("$65.50")).toBeVisible();
   await page.getByRole("button", { name: "Add transaction" }).click();
@@ -243,10 +239,10 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
   // Review, and filter by status.
   await payment.getByRole("button", { name: /as reviewed/ }).click();
   await expect(payment.getByRole("button", { name: /as not reviewed/ })).toBeVisible();
-  await page.getByLabel("Status").selectOption("unreviewed");
+  await choose(page.getByLabel("Status"), "Needs review");
   await expect(page.getByText("Supplies and shipping")).toBeVisible();
   await expect(page.getByText("Client payment")).toHaveCount(0);
-  await page.getByLabel("Status").selectOption("reviewed");
+  await choose(page.getByLabel("Status"), "Reviewed");
   await expect(page.getByText("Client payment")).toBeVisible();
 
   // Edit keeps the review tick and replaces the amount.
@@ -260,7 +256,7 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
   ).toBeVisible();
 
   // Remove.
-  await page.getByLabel("Status").selectOption("");
+  await choose(page.getByLabel("Status"), "Reviewed or not");
   await page.getByText("Supplies and shipping").click();
   await page.getByRole("button", { name: "Remove", exact: true }).click();
   await page.getByRole("button", { name: "Click again to remove" }).click();
@@ -268,7 +264,7 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
   await expect(page.getByText("Supplies and shipping")).toHaveCount(0);
 
   // One account at a time, with its balance: 5,000 + 850.
-  await page.getByLabel("Account", { exact: true }).selectOption({ label: "1010 · RBC Chequing" });
+  await choose(page.getByLabel("Account", { exact: true }), "1010 · RBC Chequing");
   await expect(page.getByText("RBC Chequing balance")).toBeVisible();
   await expect(page.getByText("$5,850.00")).toBeVisible();
 });
@@ -319,11 +315,9 @@ test("receipts: inbox, attach to a transaction, and attach while adding one", as
 
   // Attach while adding a new transaction: saved together.
   await page.getByRole("button", { name: "Add expense" }).click();
-  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
   await page.locator("#tx-memo").fill("Printer paper");
-  await page
-    .getByLabel("Category 1", { exact: true })
-    .selectOption({ label: "6250 · Office supplies" });
+  await choose(page.getByLabel("Category 1", { exact: true }), "6250 · Office supplies");
   await page.getByLabel("Amount 1").fill("12.99");
   await page
     .getByLabel("Upload receipts")
@@ -356,26 +350,25 @@ test("customers and vendors: add, pick on transactions, totals and filter", asyn
   // Money in from the customer.
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
   await page.getByRole("button", { name: "Add income" }).click();
-  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
   await page.locator("#tx-memo").fill("Consulting invoice 101");
-  await page.locator("#tx-contact").selectOption({ label: "Northwind Traders" });
-  await page.getByLabel("Category 1", { exact: true }).selectOption({ label: "4000 · Sales" });
+  await choose(page.locator("#tx-contact"), "Northwind Traders");
+  await choose(page.getByLabel("Category 1", { exact: true }), "4000 · Sales");
   await page.getByLabel("Amount 1").fill("1500");
   await page.getByRole("button", { name: "Add transaction" }).click();
   await expect(page.getByText("Sales · Northwind Traders")).toBeVisible();
 
   // Money out to a vendor created on the spot.
   await page.getByRole("button", { name: "Add expense" }).click();
-  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
   await page.locator("#tx-memo").fill("Toner");
-  await page.locator("#tx-contact").selectOption({ label: "+ Add a new vendor…" });
+  await page.locator("#tx-contact").click();
+  await page.getByRole("button", { name: "Add a new vendor" }).click();
   await page.locator("#tx-new-contact").fill("Office Depot");
   await page.locator("#tx-new-contact").press("Enter");
   await expect(page.getByText("Office Depot added")).toBeVisible();
-  await expect(page.locator("#tx-contact")).toHaveValue(/[0-9a-f-]{36}/);
-  await page
-    .getByLabel("Category 1", { exact: true })
-    .selectOption({ label: "6250 · Office supplies" });
+  await expect(page.locator("#tx-contact")).toHaveText("Office Depot");
+  await choose(page.getByLabel("Category 1", { exact: true }), "6250 · Office supplies");
   await page.getByLabel("Amount 1").fill("30");
   await page.getByRole("button", { name: "Add transaction" }).click();
   await expect(page.getByText("Office supplies · Office Depot")).toBeVisible();
@@ -416,18 +409,18 @@ test("exchange rates: suggested rate, USD income and a USD → CAD transfer", as
   await page.getByRole("button", { name: "Add account" }).click();
   await page.getByLabel("Name").fill("Wise USD");
   await page.getByLabel("Code (optional)").fill("1020");
-  await page.locator("#currency").selectOption("USD");
+  await choose(page.locator("#currency"), /^USD · /);
   await page.getByRole("button", { name: "Add account" }).last().click();
   await expect(page.getByText("Account added")).toBeVisible();
 
   // Money in to the USD account: the rate is suggested.
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
   await page.getByRole("button", { name: "Add income" }).click();
-  await page.locator("#tx-money").selectOption({ label: "1020 · Wise USD (USD)" });
+  await choose(page.locator("#tx-money"), "1020 · Wise USD (USD)");
   await expect(page.locator("#tx-rate")).toHaveValue("1.365");
   await expect(page.getByText(/Bank of Canada rate for/)).toBeVisible();
   await page.locator("#tx-memo").fill("US client payment");
-  await page.getByLabel("Category 1", { exact: true }).selectOption({ label: "4000 · Sales" });
+  await choose(page.getByLabel("Category 1", { exact: true }), "4000 · Sales");
   await page.getByLabel("Amount 1").fill("1000");
   await page.getByRole("button", { name: "Add transaction" }).click();
   await expect(
@@ -436,8 +429,8 @@ test("exchange rates: suggested rate, USD income and a USD → CAD transfer", as
 
   // Move USD into the CAD account: what left and what arrived.
   await page.getByRole("button", { name: "Transfer" }).click();
-  await page.locator("#tx-from").selectOption({ label: "1020 · Wise USD (USD)" });
-  await page.locator("#tx-to").selectOption({ label: "1010 · RBC Chequing" });
+  await choose(page.locator("#tx-from"), "1020 · Wise USD (USD)");
+  await choose(page.locator("#tx-to"), "1010 · RBC Chequing");
   await page.locator("#tx-memo").fill("Convert to CAD");
   await page.locator("#tx-amount").fill("500");
   await page.locator("#tx-received").fill("680");
@@ -448,7 +441,7 @@ test("exchange rates: suggested rate, USD income and a USD → CAD transfer", as
   await expect(conversion).toContainText("US$500.00");
   await expect(conversion.getByText("→ $680.00")).toBeVisible();
 
-  await page.getByLabel("Account", { exact: true }).selectOption({ label: "1010 · RBC Chequing" });
+  await choose(page.getByLabel("Account", { exact: true }), "1010 · RBC Chequing");
   await expect(
     page.locator("li", { hasText: "Convert to CAD" }).getByText("+$680.00"),
   ).toBeVisible();
@@ -465,7 +458,7 @@ test("sales tax: Ontario setup, HST on transactions and the filing report", asyn
   // The registration started by the setup: add the (synthetic) number and file monthly.
   await page.getByRole("button", { name: /Canada Revenue Agency \(GST\/HST\)/ }).click();
   await page.locator("#reg-number").fill("123456789 RT0001");
-  await page.locator("#reg-frequency").selectOption("monthly");
+  await choose(page.locator("#reg-frequency"), "Monthly");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Registration saved")).toBeVisible();
   await expect(page.getByText(/123456789 RT0001 · Files monthly/)).toBeVisible();
@@ -473,22 +466,20 @@ test("sales tax: Ontario setup, HST on transactions and the filing report", asyn
   // A $113 sale with HST included, and a $56.50 purchase with HST to claim back.
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
   await page.getByRole("button", { name: "Add income" }).click();
-  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
   await page.locator("#tx-memo").fill("Website sale");
-  await page.getByLabel("Category 1", { exact: true }).selectOption({ label: "4000 · Sales" });
-  await page.getByLabel("Sales tax 1").selectOption({ label: "HST 13% (Ontario)" });
+  await choose(page.getByLabel("Category 1", { exact: true }), "4000 · Sales");
+  await choose(page.getByLabel("Sales tax 1"), "HST 13% (Ontario)");
   await page.getByLabel("Amount 1").fill("113");
   await expect(page.getByText("Includes $13.00 HST 13% (Ontario) you collected.")).toBeVisible();
   await page.getByRole("button", { name: "Add transaction" }).click();
   await expect(page.getByText("Transaction added")).toBeVisible();
 
   await page.getByRole("button", { name: "Add expense" }).click();
-  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
   await page.locator("#tx-memo").fill("Printer ink");
-  await page
-    .getByLabel("Category 1", { exact: true })
-    .selectOption({ label: "6250 · Office supplies" });
-  await page.getByLabel("Sales tax 1").selectOption({ label: "HST 13% (Ontario)" });
+  await choose(page.getByLabel("Category 1", { exact: true }), "6250 · Office supplies");
+  await choose(page.getByLabel("Sales tax 1"), "HST 13% (Ontario)");
   await page.getByLabel("Amount 1").fill("56.50");
   await expect(
     page.getByText("Includes $6.50 HST 13% (Ontario) you can claim back."),
@@ -500,7 +491,7 @@ test("sales tax: Ontario setup, HST on transactions and the filing report", asyn
   // Reopening shows the amount with tax included and the rate picked.
   await page.locator("li", { hasText: "Website sale" }).getByRole("button").last().click();
   await expect(page.getByLabel("Amount 1")).toHaveValue("113");
-  await expect(page.getByLabel("Sales tax 1")).toHaveValue(/[0-9a-f-]{36}/);
+  await expect(page.getByLabel("Sales tax 1")).toHaveText("HST 13% (Ontario)");
   await page.getByRole("button", { name: "Cancel" }).click();
 
   // The report for today: $13 collected, $6.50 to claim back, $6.50 owing.
@@ -513,6 +504,33 @@ test("sales tax: Ontario setup, HST on transactions and the filing report", asyn
   await expect(page.getByText("Tax you can claim back").locator("..")).toContainText("$6.50");
   await expect(page.getByText("You owe").locator("..")).toContainText("$6.50");
   await expect(page.locator("li", { hasText: "HST 13% (Ontario)" })).toContainText("$100.00");
+});
+
+test("searchable dropdowns: type to filter and pick with the keyboard", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("button", { name: "Add expense" }).click();
+  const category = page.getByLabel("Category 1", { exact: true });
+  await category.focus();
+  // Typing on the closed dropdown opens it and starts the search.
+  await page.keyboard.press("o");
+  const search = page.getByPlaceholder("Search categories or codes");
+  await expect(search).toHaveValue("o");
+  await search.pressSequentially("ffice");
+  const options = page.getByRole("listbox").getByRole("option");
+  await expect(options).toHaveCount(1);
+  await expect(options.first()).toHaveAccessibleName("6250 · Office supplies");
+  await page.keyboard.press("Enter");
+  await expect(category).toHaveText("6250 · Office supplies");
+  // Codes match too, and an empty search says so.
+  await category.click();
+  await search.fill("6400");
+  await expect(options).toHaveCount(1);
+  await search.fill("zzzz");
+  await expect(page.getByText("No category matches.")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Add a transaction" })).toBeVisible();
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {

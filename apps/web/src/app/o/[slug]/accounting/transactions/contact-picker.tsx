@@ -1,17 +1,15 @@
 "use client";
 
-import { Check, X } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { saveContactAction } from "../contacts/actions";
 import type { ContactOption } from "./types";
-
-const NEW = "__new__";
 
 /**
  * Optional customer (money in) or vendor (money out) for a transaction, with an inline way to
@@ -103,19 +101,33 @@ export function ContactPicker({
   }
   return (
     <Field label={label} htmlFor="tx-contact" error={error}>
-      <NativeSelect
+      <Combobox
         id="tx-contact"
         value={value}
-        onChange={(e) => (e.target.value === NEW ? setAdding(true) : onChange(e.target.value))}
-      >
-        <option value="">No {role}</option>
-        {options.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-        <option value={NEW}>+ Add a new {role}…</option>
-      </NativeSelect>
+        onChange={onChange}
+        options={[
+          { value: "", label: `No ${role}` },
+          ...options.map((c) => ({ value: c.id, label: c.name })),
+        ]}
+        searchable={options.length > 5}
+        searchPlaceholder={`Search ${role}s`}
+        emptyText={`No ${role} with that name yet.`}
+        invalid={Boolean(error)}
+        footer={(query, close) => (
+          <button
+            type="button"
+            onClick={() => {
+              close();
+              setName(query.trim());
+              setAdding(true);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-start font-medium text-primary text-sm transition-colors hover:bg-accent"
+          >
+            <Plus className="size-4" />
+            {query.trim() ? `Add “${query.trim()}” as a new ${role}` : `Add a new ${role}`}
+          </button>
+        )}
+      />
     </Field>
   );
 }

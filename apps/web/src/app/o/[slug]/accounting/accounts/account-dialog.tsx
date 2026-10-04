@@ -10,6 +10,7 @@ import {
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +22,6 @@ import {
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { type FieldErrors, saveAccountAction } from "../actions";
@@ -167,18 +167,13 @@ function AccountForm({
           error={errors.subtype}
           hint="Decides where it appears on your reports."
         >
-          <NativeSelect
+          <Combobox
             id="subtype"
             value={subtype}
             disabled={account?.isSystem}
-            onChange={(e) => chooseSubtype(e.target.value)}
-          >
-            {subtypesOf(type).map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </NativeSelect>
+            onChange={chooseSubtype}
+            options={subtypesOf(type).map((s) => ({ value: s.key, label: s.label }))}
+          />
         </Field>
 
         <div className="grid gap-5 sm:grid-cols-[1fr_8rem]">
@@ -215,19 +210,18 @@ function AccountForm({
               : "Leave as “Any currency” unless this account only ever holds one."
           }
         >
-          <NativeSelect
+          <Combobox
             id="currency"
             value={currency}
             disabled={account?.isUsed}
-            onChange={(e) => setCurrency(e.target.value)}
-          >
-            {needsCurrency ? null : <option value="">Any currency</option>}
-            {currencies.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.code} · {c.name}
-              </option>
-            ))}
-          </NativeSelect>
+            onChange={setCurrency}
+            placeholder="Choose a currency…"
+            searchPlaceholder="Search currencies"
+            options={[
+              ...(needsCurrency ? [] : [{ value: "", label: "Any currency" }]),
+              ...currencies.map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` })),
+            ]}
+          />
         </Field>
 
         <Field label="Description (optional)" htmlFor="description" error={errors.description}>

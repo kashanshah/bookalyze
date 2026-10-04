@@ -14,8 +14,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -142,37 +142,41 @@ export function TransactionList({
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
-        <NativeSelect
+        <Combobox
           aria-label="Account"
           value={filters.account}
-          onChange={(e) => set({ account: e.target.value })}
-        >
-          <option value="">All accounts</option>
-          {ctx.moneyAccounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.label}
-            </option>
-          ))}
-        </NativeSelect>
-        <NativeSelect
+          onChange={(v) => set({ account: v })}
+          options={[
+            { value: "", label: "All accounts" },
+            ...ctx.moneyAccounts.map((a) => ({
+              value: a.id,
+              label: a.label,
+              keywords: a.currency,
+            })),
+          ]}
+          searchPlaceholder="Search accounts"
+        />
+        <Combobox
           aria-label="Type"
           value={filters.kind}
-          onChange={(e) => set({ kind: e.target.value })}
-        >
-          <option value="">Money in and out</option>
-          <option value="deposit">Money in</option>
-          <option value="withdrawal">Money out</option>
-          <option value="transfer">Transfers</option>
-        </NativeSelect>
-        <NativeSelect
+          onChange={(v) => set({ kind: v })}
+          options={[
+            { value: "", label: "Money in and out" },
+            { value: "deposit", label: "Money in" },
+            { value: "withdrawal", label: "Money out" },
+            { value: "transfer", label: "Transfers" },
+          ]}
+        />
+        <Combobox
           aria-label="Status"
           value={filters.status}
-          onChange={(e) => set({ status: e.target.value })}
-        >
-          <option value="">Reviewed or not</option>
-          <option value="unreviewed">Needs review</option>
-          <option value="reviewed">Reviewed</option>
-        </NativeSelect>
+          onChange={(v) => set({ status: v })}
+          options={[
+            { value: "", label: "Reviewed or not" },
+            { value: "unreviewed", label: "Needs review" },
+            { value: "reviewed", label: "Reviewed" },
+          ]}
+        />
         <div className="relative">
           <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input

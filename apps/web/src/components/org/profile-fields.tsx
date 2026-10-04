@@ -13,9 +13,9 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ChoiceCards } from "@/components/ui/choice-card";
+import { Combobox } from "@/components/ui/combobox";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { localeLabel, timezoneLabel } from "@/lib/format";
 import { type FieldErrors, LOCALE_OPTIONS } from "@/lib/validation/org-profile";
 import type { CountryOption, CurrencyOption, ProfileState } from "./profile-state";
@@ -82,18 +82,17 @@ export function EntityTypePicker({
 }) {
   if (compact) {
     return (
-      <NativeSelect
+      <Combobox
         id="entityType"
         name="entityType"
         value={state.entityType}
-        onChange={(e) => state.setEntityType(e.target.value)}
-      >
-        {ENTITY_CHOICES.map((c) => (
-          <option key={c.value} value={c.value}>
-            {c.label}
-          </option>
-        ))}
-      </NativeSelect>
+        onChange={state.setEntityType}
+        options={ENTITY_CHOICES.map((c) => ({
+          value: c.value,
+          label: c.label,
+          description: c.description,
+        }))}
+      />
     );
   }
   return (
@@ -141,37 +140,34 @@ export function LocationFields({
   return (
     <div className="grid gap-5 sm:grid-cols-2">
       <Field label="Country" htmlFor="countryCode" error={errors?.countryCode}>
-        <NativeSelect
+        <Combobox
           id="countryCode"
           name="countryCode"
           value={state.countryCode}
-          onChange={(e) => state.changeCountry(e.target.value, { lockCurrency: currencyLocked })}
-        >
-          {countries.map((c) => (
-            <option key={c.code} value={c.code}>
-              {c.name}
-            </option>
-          ))}
-        </NativeSelect>
+          onChange={(code) => state.changeCountry(code, { lockCurrency: currencyLocked })}
+          options={countries.map((c) => ({ value: c.code, label: c.name, keywords: c.code }))}
+          searchPlaceholder="Search countries"
+        />
       </Field>
       <Field
         label="Province, state or region"
         htmlFor="subdivisionCode"
         error={errors?.subdivisionCode}
       >
-        <NativeSelect
+        <Combobox
           id="subdivisionCode"
           name="subdivisionCode"
           value={state.subdivisionCode}
-          onChange={(e) => state.setSubdivisionCode(e.target.value)}
-        >
-          <option value="">{state.subdivisions.length ? "Choose one…" : "Not applicable"}</option>
-          {state.subdivisions.map((s) => (
-            <option key={s.code} value={s.code}>
-              {s.name}
-            </option>
-          ))}
-        </NativeSelect>
+          onChange={state.setSubdivisionCode}
+          placeholder={state.subdivisions.length ? "Choose one…" : "Not applicable"}
+          disabled={state.subdivisions.length === 0}
+          options={state.subdivisions.map((s) => ({
+            value: s.code,
+            label: s.name,
+            keywords: s.code,
+          }))}
+          searchPlaceholder="Search"
+        />
       </Field>
       <Field
         label="Main currency"
@@ -183,19 +179,15 @@ export function LocationFields({
         }
         error={errors?.baseCurrency}
       >
-        <NativeSelect
+        <Combobox
           id="baseCurrency"
           name={currencyLocked ? undefined : "baseCurrency"}
           value={state.baseCurrency}
-          onChange={(e) => state.setBaseCurrency(e.target.value)}
+          onChange={state.setBaseCurrency}
           disabled={currencyLocked}
-        >
-          {currencies.map((c) => (
-            <option key={c.code} value={c.code}>
-              {c.code} · {c.name}
-            </option>
-          ))}
-        </NativeSelect>
+          options={currencies.map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` }))}
+          searchPlaceholder="Search currencies"
+        />
         {currencyLocked ? (
           <input type="hidden" name="baseCurrency" value={state.baseCurrency} />
         ) : null}
@@ -206,29 +198,27 @@ export function LocationFields({
         hint="Decides when your days and periods start and end."
         error={errors?.timezone}
       >
-        <NativeSelect
+        <Combobox
           id="timezone"
           name="timezone"
           value={state.timezone}
-          onChange={(e) => state.setTimezone(e.target.value)}
-        >
-          {countryTimezones.length ? (
-            <optgroup label={country?.name ?? "Country"}>
-              {countryTimezones.map((tz) => (
-                <option key={tz} value={tz}>
-                  {tzLabels.get(tz)}
-                </option>
-              ))}
-            </optgroup>
-          ) : null}
-          <optgroup label="All time zones">
-            {otherTimezones.map((tz) => (
-              <option key={tz} value={tz}>
-                {tzLabels.get(tz)}
-              </option>
-            ))}
-          </optgroup>
-        </NativeSelect>
+          onChange={state.setTimezone}
+          options={[
+            ...countryTimezones.map((tz) => ({
+              value: tz,
+              label: tzLabels.get(tz) ?? tz,
+              keywords: tz,
+              group: country?.name ?? "Country",
+            })),
+            ...otherTimezones.map((tz) => ({
+              value: tz,
+              label: tzLabels.get(tz) ?? tz,
+              keywords: tz,
+              group: "All time zones",
+            })),
+          ]}
+          searchPlaceholder="Search cities or zones"
+        />
       </Field>
       <Field
         label="Number and date format"
@@ -237,18 +227,14 @@ export function LocationFields({
         hint={preview ? <span className="tabular">Looks like: {preview}</span> : undefined}
         error={errors?.locale}
       >
-        <NativeSelect
+        <Combobox
           id="locale"
           name="locale"
           value={state.locale}
-          onChange={(e) => state.setLocale(e.target.value)}
-        >
-          {locales.map((l) => (
-            <option key={l} value={l}>
-              {localeLabel(l)}
-            </option>
-          ))}
-        </NativeSelect>
+          onChange={state.setLocale}
+          options={locales.map((l) => ({ value: l, label: localeLabel(l), keywords: l }))}
+          searchPlaceholder="Search languages or regions"
+        />
       </Field>
     </div>
   );
@@ -342,38 +328,32 @@ export function FiscalYearFields({
               htmlFor="fiscalYearEndMonth"
               error={errors?.fiscalYearEndMonth}
             >
-              <NativeSelect
+              <Combobox
                 id="fiscalYearEndMonth"
                 name="fiscalYearEndMonth"
-                value={state.fiscalYearEndMonth}
-                onChange={(e) => {
-                  const m = Number(e.target.value);
+                value={String(state.fiscalYearEndMonth)}
+                onChange={(v) => {
+                  const m = Number(v);
                   state.setFiscalYearEndMonth(m);
                   state.setFiscalYearEndDay(daysIn(m));
                 }}
-              >
-                {MONTHS.map((name, i) => (
-                  <option key={name} value={i + 1}>
-                    {name}
-                  </option>
-                ))}
-              </NativeSelect>
+                options={MONTHS.map((name, i) => ({ value: String(i + 1), label: name }))}
+                searchable={false}
+              />
             </Field>
             <Field label="On day" htmlFor="fiscalYearEndDay" error={errors?.fiscalYearEndDay}>
-              <NativeSelect
+              <Combobox
                 id="fiscalYearEndDay"
                 name="fiscalYearEndDay"
-                value={state.fiscalYearEndDay}
-                onChange={(e) => state.setFiscalYearEndDay(Number(e.target.value))}
-              >
-                {Array.from({ length: daysIn(state.fiscalYearEndMonth) }, (_, i) => i + 1).map(
-                  (d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ),
-                )}
-              </NativeSelect>
+                value={String(state.fiscalYearEndDay)}
+                onChange={(v) => state.setFiscalYearEndDay(Number(v))}
+                options={Array.from({ length: daysIn(state.fiscalYearEndMonth) }, (_, i) => ({
+                  value: String(i + 1),
+                  label: String(i + 1),
+                }))}
+                searchable={false}
+                contentClassName="w-[max(var(--radix-popover-trigger-width),7rem)]"
+              />
             </Field>
           </div>
         )}

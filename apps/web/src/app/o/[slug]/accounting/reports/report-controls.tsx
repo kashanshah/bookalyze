@@ -4,9 +4,9 @@ import { Printer } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import type { DatePreset, RangePreset } from "./periods";
 
@@ -48,24 +48,20 @@ export function RangeControls({
     <div className="flex flex-wrap items-end gap-3 print:hidden">
       <div className="grid gap-2">
         <Label htmlFor="period">Period</Label>
-        <NativeSelect
+        <Combobox
           id="period"
           value={current}
-          onChange={(e) => {
-            const preset = presets.find((p) => p.key === e.target.value);
+          onChange={(key) => {
+            const preset = presets.find((p) => p.key === key);
             if (preset) go({ from: preset.from, to: preset.to });
           }}
-          className="min-w-56"
-        >
-          {presets.map((p) => (
-            <option key={p.key} value={p.key}>
-              {p.label}
-            </option>
-          ))}
-          <option value="custom" disabled>
-            Custom dates
-          </option>
-        </NativeSelect>
+          wrapperClassName="min-w-56"
+          searchable={false}
+          options={[
+            ...presets.map((p) => ({ value: p.key, label: p.label })),
+            { value: "custom", label: "Custom dates", disabled: true },
+          ]}
+        />
       </div>
       <div className="grid gap-2">
         <Label htmlFor="from">From</Label>
@@ -105,24 +101,20 @@ export function DateControls({ date, presets }: { date: string; presets: DatePre
     <div className="flex flex-wrap items-end gap-3 print:hidden">
       <div className="grid gap-2">
         <Label htmlFor="as-of-preset">As of</Label>
-        <NativeSelect
+        <Combobox
           id="as-of-preset"
           value={current}
-          onChange={(e) => {
-            const preset = presets.find((p) => p.key === e.target.value);
+          onChange={(key) => {
+            const preset = presets.find((p) => p.key === key);
             if (preset) go({ date: preset.date });
           }}
-          className="min-w-48"
-        >
-          {presets.map((p) => (
-            <option key={p.key} value={p.key}>
-              {p.label}
-            </option>
-          ))}
-          <option value="custom" disabled>
-            Custom date
-          </option>
-        </NativeSelect>
+          wrapperClassName="min-w-48"
+          searchable={false}
+          options={[
+            ...presets.map((p) => ({ value: p.key, label: p.label })),
+            { value: "custom", label: "Custom date", disabled: true },
+          ]}
+        />
       </div>
       <div className="grid gap-2">
         <Label htmlFor="as-of">Date</Label>

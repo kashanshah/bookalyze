@@ -27,6 +27,7 @@ import { RateField } from "@/components/accounting/rate-field";
 import { ReceiptsPanel } from "@/components/accounting/receipts-panel";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +38,6 @@ import {
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import type { AttachmentSummary } from "@/lib/attachments";
 import { formatDate, nextDay } from "@/lib/dates";
@@ -281,13 +281,38 @@ function TransactionForm({
     });
   }
 
-  const moneyOptions = (exclude?: string) =>
-    ctx.moneyAccounts.map((a) => (
-      <option key={a.id} value={a.id} disabled={a.id === exclude}>
-        {a.label}
-        {a.currency !== ctx.baseCurrency ? ` (${a.currency})` : ""}
-      </option>
-    ));
+  const moneyOptions = (exclude?: string): ComboboxOption[] =>
+    ctx.moneyAccounts.map((a) => ({
+      value: a.id,
+      label: a.currency !== ctx.baseCurrency ? `${a.label} (${a.currency})` : a.label,
+      keywords: a.currency,
+      disabled: a.id === exclude,
+    }));
+  // The likeliest categories first: expenses for money out, income for money in.
+  const typeOrder =
+    kind === "withdrawal"
+      ? ["expense", "asset", "liability", "equity", "income"]
+      : ["income", "liability", "equity", "asset", "expense"];
+  const categoryGroups = [...ctx.categories].sort(
+    (a, b) => typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type),
+  );
+  const categoryOptions: ComboboxOption[] = categoryGroups.flatMap((group) =>
+    group.options.map((o) => ({
+      value: o.id,
+      label: o.label,
+      group: accountTypes[group.type].label,
+    })),
+  );
+  const taxOptions = (current: string): ComboboxOption[] => [
+    { value: "", label: "No tax" },
+    ...ctx.taxRates
+      .filter((r) => !r.isArchived || r.id === current)
+      .map((r) => ({
+        value: r.id,
+        label: r.name,
+        description: r.isRecoverable ? undefined : "Can't be claimed back",
+      })),
+  ];
 
   return (
     <form
@@ -367,44 +392,46 @@ function TransactionForm({
               htmlFor="tx-money"
               error={errors.moneyAccountId}
             >
-              <NativeSelect
+              <Combobox
                 id="tx-money"
                 value={moneyAccountId}
-                onChange={(e) => {
-                  setMoneyAccountId(e.target.value);
+                options={moneyOptions()}
+                placeholder="Choose an account…"
+                invalid={Boolean(errors.moneyAccountId)}
+                onChange={(v) => {
+                  setMoneyAccountId(v);
                   clearError("moneyAccountId");
                 }}
-              >
-                {moneyOptions()}
-              </NativeSelect>
+              />
             </Field>
           )}
           {kind === "transfer" ? (
             <>
               <Field label="From" htmlFor="tx-from" error={errors.fromAccountId}>
-                <NativeSelect
+                <Combobox
                   id="tx-from"
                   value={fromAccountId}
-                  onChange={(e) => {
-                    setFromAccountId(e.target.value);
+                  options={moneyOptions(toAccountId)}
+                  placeholder="Choose an account…"
+                  invalid={Boolean(errors.fromAccountId)}
+                  onChange={(v) => {
+                    setFromAccountId(v);
                     clearError("fromAccountId");
                   }}
-                >
-                  {moneyOptions(toAccountId)}
-                </NativeSelect>
+                />
               </Field>
               <Field label="To" htmlFor="tx-to" error={errors.toAccountId}>
-                <NativeSelect
+                <Combobox
                   id="tx-to"
                   value={toAccountId}
-                  onChange={(e) => {
-                    setToAccountId(e.target.value);
+                  options={moneyOptions(fromAccountId)}
+                  placeholder="Choose an account…"
+                  invalid={Boolean(errors.toAccountId)}
+                  onChange={(v) => {
+                    setToAccountId(v);
                     clearError("toAccountId");
                   }}
-                >
-                  <option value="">Choose an account…</option>
-                  {moneyOptions(fromAccountId)}
-                </NativeSelect>
+                />
               </Field>
               <Field
                 label={crossCurrency ? `Amount sent (${currency})` : `Amount (${currency})`}
@@ -514,51 +541,35 @@ function TransactionForm({
                       <label htmlFor={`split-account-${s.key}`} className="sr-only">
                         Category {index + 1}
                       </label>
-                      <NativeSelect
+                      <Combobox
                         id={`split-account-${s.key}`}
                         value={s.accountId}
-                        aria-invalid={Boolean(error)}
-                        className={cn(!s.accountId && "text-muted-foreground")}
+                        options={categoryOptions}
+                        placeholder="Choose a category…"
+                        searchPlaceholder="Search categories or codes"
+                        emptyText="No category matches. Add one in your chart of accounts."
+                        invalid={Boolean(error)}
                         wrapperClassName={cn(showTax && "col-span-3 sm:col-span-1")}
-                        onChange={(e) => {
-                          updateSplit(s.key, { accountId: e.target.value });
+                        onChange={(v) => {
+                          updateSplit(s.key, { accountId: v });
                           clearError(`splits.${index}`);
                         }}
-                      >
-                        <option value="">Choose a category…</option>
-                        {ctx.categories.map((group) => (
-                          <optgroup key={group.type} label={accountTypes[group.type].label}>
-                            {group.options.map((o) => (
-                              <option key={o.id} value={o.id}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </NativeSelect>
+                      />
                       {showTax ? (
                         <>
                           <label htmlFor={`split-tax-${s.key}`} className="sr-only">
                             Sales tax {index + 1}
                           </label>
-                          <NativeSelect
+                          <Combobox
                             id={`split-tax-${s.key}`}
                             value={s.taxRateId}
+                            options={taxOptions(s.taxRateId)}
                             className={cn(!s.taxRateId && "text-muted-foreground")}
-                            onChange={(e) => {
-                              updateSplit(s.key, { taxRateId: e.target.value });
+                            onChange={(v) => {
+                              updateSplit(s.key, { taxRateId: v });
                               clearError(`splits.${index}`);
                             }}
-                          >
-                            <option value="">No tax</option>
-                            {ctx.taxRates
-                              .filter((r) => !r.isArchived || r.id === s.taxRateId)
-                              .map((r) => (
-                                <option key={r.id} value={r.id}>
-                                  {r.name}
-                                </option>
-                              ))}
-                          </NativeSelect>
+                          />
                         </>
                       ) : null}
                       <label htmlFor={`split-amount-${s.key}`} className="sr-only">

@@ -1,12 +1,12 @@
 "use client";
 
 import { Send } from "lucide-react";
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { type InviteState, inviteMemberAction } from "./actions";
 
@@ -16,10 +16,12 @@ export function InviteForm({ slug }: { slug: string }) {
     {},
   );
   const formRef = useRef<HTMLFormElement>(null);
+  const [role, setRole] = useState("member");
   useEffect(() => {
     if (state.invited) {
       toast.success(`Invitation sent to ${state.invited}`);
       formRef.current?.reset();
+      setRole("member");
     } else if (state.error) {
       toast.error(state.error);
     }
@@ -43,10 +45,25 @@ export function InviteForm({ slug }: { slug: string }) {
         </div>
         <div className="grid gap-2">
           <Label htmlFor="invite-role">Access level</Label>
-          <NativeSelect id="invite-role" name="role" defaultValue="member">
-            <option value="member">Member</option>
-            <option value="admin">Admin</option>
-          </NativeSelect>
+          <Combobox
+            id="invite-role"
+            name="role"
+            value={role}
+            onChange={setRole}
+            contentClassName="w-72"
+            options={[
+              {
+                value: "member",
+                label: "Member",
+                description: "Can do the books and see reports.",
+              },
+              {
+                value: "admin",
+                label: "Admin",
+                description: "Can also change settings and invite people.",
+              },
+            ]}
+          />
         </div>
         <Button type="submit" disabled={pending}>
           {pending ? <Spinner /> : <Send />}

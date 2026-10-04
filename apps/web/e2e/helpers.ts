@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import pg from "pg";
 
 const MAIL_LOG = ".dev-mail.log";
@@ -72,4 +72,23 @@ export async function withOwnerDb<T>(fn: (client: pg.Client) => Promise<T>): Pro
   } finally {
     await client.end();
   }
+}
+
+/**
+ * Picks an option in a searchable dropdown (`Combobox`): opens it, types to filter when it has a
+ * search box, and clicks the option with this exact label.
+ */
+export async function choose(trigger: Locator, option: string | RegExp) {
+  await trigger.click();
+  const page = trigger.page();
+  const search = page.locator('input[role="combobox"][aria-autocomplete="list"]');
+  await expect(page.getByRole("listbox")).toBeVisible();
+  if (typeof option === "string" && (await search.count()) > 0) {
+    await search.fill(option.replace(/ \(.*\)$/, ""));
+  }
+  await page
+    .getByRole("listbox")
+    .getByRole("option", { name: option, exact: typeof option === "string" })
+    .click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
 }
