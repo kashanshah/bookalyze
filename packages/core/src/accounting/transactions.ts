@@ -16,6 +16,7 @@ import {
   parsePositive,
   prepareJournalEntry,
 } from "./journal";
+import { splitTaxIncluded, type TaxRateInfo } from "./tax";
 
 /**
  * Transactions are the everyday view of the ledger: money moving in or out of a "money account"
@@ -33,8 +34,16 @@ export function isMoneyAccountSubtype(subtype: string): boolean {
 export const TRANSACTION_KINDS = ["deposit", "withdrawal", "transfer"] as const;
 export type TransactionKind = (typeof TRANSACTION_KINDS)[number];
 
-/** A category line. Amounts are positive in the transaction's direction, negative against it. */
-export type TransactionSplit = { accountId: string; amount: string; description?: string };
+/**
+ * A category line. Amounts are positive in the transaction's direction, negative against it, and
+ * include tax when `taxRateId` is set.
+ */
+export type TransactionSplit = {
+  accountId: string;
+  amount: string;
+  description?: string;
+  taxRateId?: string;
+};
 
 export type TransactionInput =
   | {
@@ -58,6 +67,8 @@ export type TransactionInput =
 export function transactionLines(
   input: TransactionInput,
   memo?: string | null,
+  /** Sales tax rates by id and the currency's decimals, to split tax out of tax-inclusive splits. */
+  tax?: { rates: ReadonlyMap<string, TaxRateInfo>; decimals: number },
 ): JournalLineInput[] {
   if (input.kind === "transfer") {
     return [
@@ -67,23 +78,42 @@ export function transactionLines(
   }
   const deposit = input.kind === "deposit";
   let total = 0n;
-  const categoryLines: JournalLineInput[] = input.splits.map((split) => {
+  const categoryLines: JournalLineInput[] = input.splits.flatMap((split) => {
     // A negative split goes the other way, e.g. marketplace fees taken out of a payout.
     const raw = split.amount.trim();
     const negative = raw.startsWith("-");
     const amount = negative ? raw.slice(1) : raw;
+    let units: bigint | null = null;
     try {
-      const units = parseDecimal(amount || "0");
+      units = parseDecimal(amount || "0");
       total += negative ? -units : units;
     } catch {
       // Invalid amounts are reported by prepareJournalEntry on the category line.
     }
     const credit = deposit !== negative;
-    return {
-      accountId: split.accountId,
-      description: split.description || undefined,
-      ...(credit ? { credit: amount } : { debit: amount }),
-    };
+    const side = (value: string) => (credit ? { credit: value } : { debit: value });
+    const rate = split.taxRateId ? tax?.rates.get(split.taxRateId) : undefined;
+    const description = split.description || undefined;
+    if (!rate || units === null || units === 0n) {
+      return [{ accountId: split.accountId, description, ...side(amount) }];
+    }
+    // Tax collected on sales is always split out; tax paid only when it can be claimed back.
+    if (!deposit && !rate.isRecoverable) {
+      return [{ accountId: split.accountId, description, taxRateId: rate.id, ...side(amount) }];
+    }
+    const { net, tax: taxUnits } = splitTaxIncluded(units, rate.rate, tax?.decimals ?? 2);
+    const lines: JournalLineInput[] = [
+      { accountId: split.accountId, description, taxRateId: rate.id, ...side(formatDecimal(net)) },
+    ];
+    if (taxUnits !== 0n) {
+      lines.push({
+        accountId: rate.accountId,
+        description: rate.name,
+        taxRateId: rate.id,
+        ...side(formatDecimal(taxUnits)),
+      });
+    }
+    return lines;
   });
   const moneyLine: JournalLineInput = {
     accountId: input.moneyAccountId,
@@ -101,6 +131,7 @@ export type LedgerLine = {
   description?: string | null;
   /** The line's currency, when known (needed to describe cross-currency transfers). */
   currency?: string;
+  taxRateId?: string | null;
 };
 
 export type TransactionView = {
@@ -160,11 +191,12 @@ export function describeTransaction(
     kind,
     amount: formatDecimal(abs(net)),
     moneyAccountIds: [...new Set(money.map((l) => l.accountId))],
-    splits: others.map((l) => ({
+    splits: mergeTaxLines(others).map((l) => ({
       accountId: l.accountId,
       // Category amounts are shown in the transaction's direction (positive normally).
-      amount: formatDecimal(kind === "deposit" ? -parseDecimal(l.amount) : parseDecimal(l.amount)),
+      amount: formatDecimal(kind === "deposit" ? -l.units : l.units),
       description: l.description ?? undefined,
+      ...(l.taxRateId ? { taxRateId: l.taxRateId } : {}),
     })),
   };
 }
@@ -292,4 +324,36 @@ export function prepareTransfer(
       ],
     },
   };
+}
+
+/**
+ * Folds each tax line into the category line before it (same tax rate), so a taxed split reads
+ * back as one tax-inclusive amount, the way it was entered.
+ */
+function mergeTaxLines(lines: readonly LedgerLine[]) {
+  type Merged = {
+    accountId: string;
+    units: bigint;
+    description?: string | null;
+    taxRateId?: string | null;
+    hasTax: boolean;
+  };
+  const merged: Merged[] = [];
+  for (const line of lines) {
+    const previous = merged[merged.length - 1];
+    const units = parseDecimal(line.amount);
+    if (line.taxRateId && previous?.taxRateId === line.taxRateId && !previous.hasTax) {
+      previous.units += units;
+      previous.hasTax = true;
+      continue;
+    }
+    merged.push({
+      accountId: line.accountId,
+      units,
+      description: line.description,
+      taxRateId: line.taxRateId,
+      hasTax: false,
+    });
+  }
+  return merged;
 }

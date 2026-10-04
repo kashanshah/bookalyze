@@ -454,6 +454,67 @@ test("exchange rates: suggested rate, USD income and a USD → CAD transfer", as
   ).toBeVisible();
 });
 
+test("sales tax: Ontario setup, HST on transactions and the filing report", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Sales tax", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Set up Canada: GST/HST" })).toBeVisible();
+  await page.getByRole("button", { name: "Add 3 rates" }).click();
+  await expect(page.getByText("3 rates added")).toBeVisible();
+  await expect(page.getByText("HST 13% (Ontario)")).toBeVisible();
+
+  // The registration started by the setup: add the (synthetic) number and file monthly.
+  await page.getByRole("button", { name: /Canada Revenue Agency \(GST\/HST\)/ }).click();
+  await page.locator("#reg-number").fill("123456789 RT0001");
+  await page.locator("#reg-frequency").selectOption("monthly");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Registration saved")).toBeVisible();
+  await expect(page.getByText(/123456789 RT0001 · Files monthly/)).toBeVisible();
+
+  // A $113 sale with HST included, and a $56.50 purchase with HST to claim back.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("button", { name: "Add income" }).click();
+  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await page.locator("#tx-memo").fill("Website sale");
+  await page.getByLabel("Category 1", { exact: true }).selectOption({ label: "4000 · Sales" });
+  await page.getByLabel("Sales tax 1").selectOption({ label: "HST 13% (Ontario)" });
+  await page.getByLabel("Amount 1").fill("113");
+  await expect(page.getByText("Includes $13.00 HST 13% (Ontario) you collected.")).toBeVisible();
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await page.locator("#tx-memo").fill("Printer ink");
+  await page
+    .getByLabel("Category 1", { exact: true })
+    .selectOption({ label: "6250 · Office supplies" });
+  await page.getByLabel("Sales tax 1").selectOption({ label: "HST 13% (Ontario)" });
+  await page.getByLabel("Amount 1").fill("56.50");
+  await expect(
+    page.getByText("Includes $6.50 HST 13% (Ontario) you can claim back."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  const ink = page.locator("li", { hasText: "Printer ink" });
+  await expect(ink).toContainText("−$56.50");
+
+  // Reopening shows the amount with tax included and the rate picked.
+  await page.locator("li", { hasText: "Website sale" }).getByRole("button").last().click();
+  await expect(page.getByLabel("Amount 1")).toHaveValue("113");
+  await expect(page.getByLabel("Sales tax 1")).toHaveValue(/[0-9a-f-]{36}/);
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  // The report for today: $13 collected, $6.50 to claim back, $6.50 owing.
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    new Date(),
+  );
+  const slug = new URL(page.url()).pathname.split("/")[2];
+  await page.goto(`/o/${slug}/accounting/reports/sales-tax?from=${today}&to=${today}`);
+  await expect(page.getByText("Tax you collected").locator("..")).toContainText("$13.00");
+  await expect(page.getByText("Tax you can claim back").locator("..")).toContainText("$6.50");
+  await expect(page.getByText("You owe").locator("..")).toContainText("$6.50");
+  await expect(page.locator("li", { hasText: "HST 13% (Ontario)" })).toContainText("$100.00");
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

@@ -93,3 +93,64 @@ export function resolveDate(params: { date?: string }, today: string, cfg: Fisca
     presets: datePresets(today, cfg),
   };
 }
+
+/**
+ * Sales tax filing periods up to today, newest first: months, quarters of the financial year, or
+ * financial years. Labels mark the period in progress and the last finished one (usually the one
+ * being filed).
+ */
+export function filingPeriods(
+  today: string,
+  cfg: FiscalYearConfig,
+  frequency: "monthly" | "quarterly" | "annual",
+  locale: string,
+): RangePreset[] {
+  let periods: { from: string; to: string; label: string }[];
+  if (frequency === "monthly") {
+    const monthName = new Intl.DateTimeFormat(locale, {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    periods = [];
+    let month = monthOf(today);
+    for (let i = 0; i < 12; i++) {
+      periods.push({ ...month, label: monthName.format(new Date(`${month.from}T00:00:00Z`)) });
+      month = monthOf(addDays(month.from, -1));
+    }
+  } else if (frequency === "quarterly") {
+    const current = fiscalQuarters(today, cfg);
+    const before = fiscalQuarters(addDays(current[0]?.start ?? today, -1), cfg);
+    periods = [...before, ...current]
+      .filter((q) => q.start <= today)
+      .reverse()
+      .slice(0, 8)
+      .map((q) => ({ from: q.start, to: q.end, label: q.label }));
+  } else {
+    const fy = fiscalYearFor(today, cfg);
+    const last = previousFiscalYear(today, cfg);
+    const older = previousFiscalYear(last.start, cfg);
+    periods = [fy, last, older].map((y) => ({ from: y.start, to: y.end, label: y.label }));
+  }
+  const lastDone = periods.findIndex((p) => p.to < today);
+  return periods.map((p, i) => ({
+    key: `${p.from}_${p.to}`,
+    label:
+      p.to >= today
+        ? `${p.label} (in progress)`
+        : i === lastDone
+          ? `${p.label} (last period)`
+          : p.label,
+    from: p.from,
+    to: p.to,
+  }));
+}
+
+/** The range in the URL, or the last finished filing period by default. */
+export function resolveFilingRange(params: { from?: string; to?: string }, presets: RangePreset[]) {
+  const fallback = presets.find((p) => p.label.endsWith("(last period)")) ?? presets[0];
+  let from = isIsoDate(params.from) ? params.from : (fallback?.from as string);
+  let to = isIsoDate(params.to) ? params.to : (fallback?.to as string);
+  if (from > to) [from, to] = [to, from];
+  return { from, to };
+}

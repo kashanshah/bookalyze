@@ -34,11 +34,16 @@ const REPORTS = [
     body: "Every account's debit or credit balance. Your accountant's starting point at year end.",
     icon: Scale,
   },
+  {
+    href: "sales-tax",
+    title: "Sales tax",
+    body: "Tax collected and paid for each filing period, and what you owe or get back.",
+    icon: ReceiptText,
+  },
 ] as const;
 
 const COMING = [
   { title: "General ledger", body: "Every line posted to each account.", icon: BookOpen },
-  { title: "Sales tax", body: "Tax collected and paid, ready for filing.", icon: ReceiptText },
   {
     title: "Export to CSV and PDF",
     body: "Share any report with your accountant.",
@@ -56,7 +61,7 @@ export default async function ReportsPage({ params }: { params: Promise<{ slug: 
         title="Reports"
         description={`Financial statements for ${ctx.org.name}, always up to date and following your financial year.`}
       />
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {REPORTS.map((r, i) => (
           <Link
             key={r.href}
@@ -82,7 +87,7 @@ export default async function ReportsPage({ params }: { params: Promise<{ slug: 
       </div>
       <section className="grid gap-3">
         <h2 className="font-medium text-muted-foreground text-sm">On the way</h2>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2">
           {COMING.map((r) => (
             <div key={r.title} className="flex gap-3 rounded-2xl border border-dashed p-4">
               <r.icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />

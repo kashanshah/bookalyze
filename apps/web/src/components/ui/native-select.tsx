@@ -3,9 +3,17 @@ import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 /** A styled native <select>; fast and accessible for long lists like countries. */
-export function NativeSelect({ className, children, ...props }: React.ComponentProps<"select">) {
+export function NativeSelect({
+  className,
+  wrapperClassName,
+  children,
+  ...props
+}: React.ComponentProps<"select"> & {
+  /** Classes for the wrapper, which is the layout item (e.g. grid spans). */
+  wrapperClassName?: string;
+}) {
   return (
-    <div className="relative">
+    <div className={cn("relative", wrapperClassName)}>
       <select
         data-slot="native-select"
         className={cn(

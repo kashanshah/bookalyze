@@ -2,9 +2,11 @@
 
 import {
   isMoneyAccountSubtype,
+  minorUnits,
   parseDecimal,
   prepareJournalEntry,
   prepareTransfer,
+  type TaxRateInfo,
   type TransactionInput,
   transactionLines,
 } from "@bookalyze/core";
@@ -14,6 +16,7 @@ import {
   getContact,
   LedgerError,
   linkAttachments,
+  listTaxRates,
   postJournalEntry,
   replaceJournalEntry,
   schema,
@@ -92,6 +95,7 @@ export async function saveTransactionAction(
   let currency: string;
   let splitIndex: number[] = [];
   let crossCurrency = false;
+  let taxRates = new Map<string, TaxRateInfo>();
   if (value.kind === "transfer") {
     const from = byId.get(value.fromAccountId ?? "");
     const to = byId.get(value.toAccountId ?? "");
@@ -131,6 +135,40 @@ export async function saveTransactionAction(
         splitErrors[`splits.${i}`] = "To move money between your accounts, use Transfer.";
       } else if (!s.amount) splitErrors[`splits.${i}`] = "Enter an amount.";
     });
+    // Sales tax: rates must belong to the company; retired rates only stay on older transactions.
+    if (splits.some((s) => s.taxRateId)) {
+      const { rows, kept } = await inOrg(ctx, async (tx) => {
+        const rows = await listTaxRates(tx, { includeArchived: true });
+        // Rates already on the transaction being edited.
+        const used = value.id
+          ? await tx
+              .select({ id: schema.journalLines.taxRateId })
+              .from(schema.journalLines)
+              .where(eq(schema.journalLines.journalEntryId, value.id))
+          : [];
+        return { rows, kept: new Set(used.map((u) => u.id)) };
+      });
+      taxRates = new Map(
+        rows.map((r) => [
+          r.id,
+          {
+            id: r.id,
+            name: r.name,
+            rate: r.rate,
+            accountId: r.accountId,
+            isRecoverable: r.isRecoverable,
+          },
+        ]),
+      );
+      splits.forEach((s, j) => {
+        if (!s.taxRateId) return;
+        const rate = rows.find((r) => r.id === s.taxRateId);
+        if (!rate || (rate.isArchived && !kept.has(rate.id))) {
+          splitErrors[`splits.${splitIndex[j]}`] =
+            "Choose a tax rate from your sales tax settings.";
+        }
+      });
+    }
     if (Object.keys(splitErrors).length) return { ok: false, errors: splitErrors };
     let total = 0n;
     for (const s of splits) {
@@ -166,7 +204,10 @@ export async function saveTransactionAction(
             currency,
             baseCurrency: base,
             fxRate: value.fxRate,
-            lines: transactionLines(txInput, value.memo),
+            lines: transactionLines(txInput, value.memo, {
+              rates: taxRates,
+              decimals: minorUnits(currency),
+            }),
           },
           toLedgerMap(accounts),
         );

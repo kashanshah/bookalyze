@@ -85,6 +85,13 @@
       "when": 1791127103306,
       "tag": "0011_fx_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791128714279,
+      "tag": "0012_sales_tax",
+      "breakpoints": true
     }
   ]
 }
