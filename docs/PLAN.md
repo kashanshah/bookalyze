@@ -1,6 +1,6 @@
 # Backoffice: Product & Development Plan
 
-> Status: **Draft v0.3.** Updated with the decisions from the first two reviews (see [§11 Decision log](#11-decision-log)). Nothing is built yet.
+> Status: **v0.4.** All initial decisions are made (see [§11 Decision log](#11-decision-log)). Phase 0 is in progress.
 
 ## 0. Key decisions (TL;DR)
 
@@ -19,7 +19,9 @@
 | Hosting | **Vercel** (app, background workflows, cron, preview deploy per branch) + **Neon** Postgres (via the Vercel Marketplace: point-in-time restore, a database branch per preview) + **AWS S3**. Three vendors, no servers to manage. |
 | Secrets | System secrets in env vars. Per-organization credentials (SP-API, Wise, eBay…) stored **encrypted in the DB** (envelope encryption, AES-256-GCM), managed from Settings, never sent back to the browser after saving. |
 | Cutover | Run in **parallel with Wave** until the new P&L and Balance Sheet match Wave to the cent for at least one closed period. |
-| Name | Recommended: **Bookalyze** (`bookalyze.com`). See [§10](#10-product-name--domain). |
+| Sign-in | Email + password and **Sign in with Google**. Accounts link by verified email, Google users can **set a password** and then use either method, plus email verification, password reset and 2FA (TOTP). |
+| Entity & compliance | Each org stores its legal profile (entity type, jurisdiction, registration numbers, directors/owners, documents) and a **compliance calendar** with reminders (license renewals, annual returns, tax filings). |
+| Name | **Bookalyze** (`bookalyze.com`). Decided. See [§10](#10-product-name--domain). |
 
 ---
 
@@ -38,9 +40,11 @@ User ──< Membership (role) >── Organization
 
 | Org | Location | Base currency | Default sales tax | FY end | Banks | Modules enabled |
 |---|---|---|---|---|---|---|
-| Kazomo Inc. | Canada · Ontario | CAD | HST 13% | 31 Dec | RBC (CSV), Wise (API) | Accounting, Banking, Commerce (Amazon via the "Kazomo – Momal Fatima" SP-API app), Inventory, Reviews, Analytics |
-| Teknoffice Technologies Inc. | Canada · Ontario | CAD | HST 13% | 31 Dec | RBC (CSV), Wise (API) | **Accounting, Banking only** (Wave replacement). Amazon.ca and eBay US income is recorded from bank deposits, as in Wave today. Commerce can be switched on later. |
-| Kazomo For Online Selling | UAE (emirate to confirm) | AED | VAT 5% | 31 Dec | Wio (CSV/statement import) | Accounting, Banking first; Commerce (Amazon.ae, Noon) in phase 4b, after the Canadian companies |
+| Kazomo Inc. | Canada · Ontario (federal CBCA corporation, incorporated Jun 2026) | CAD | HST 13% *if GST/HST-registered (to confirm)* | 31 Dec, with a **short first year** (incorporation → 31 Dec 2026) | RBC (CSV), Wise (API) | Accounting, Banking, Commerce (Amazon via the "Kazomo – Momal Fatima" SP-API app), Inventory, Reviews, Analytics |
+| Teknoffice Technologies Inc. | Canada · Ontario (Ontario corporation, incorporated Oct 2024) | CAD | HST 13% *if GST/HST-registered (to confirm)* | 31 Dec | RBC (CSV), Wise (API) | **Accounting, Banking only** (Wave replacement). Amazon.ca and eBay US income is recorded from bank deposits, as in Wave today. Commerce can be switched on later. |
+| Kazomo For Online Selling | UAE · Dubai (Sole Establishment, DET e-Trader license, renewed annually) | AED | **Not VAT-registered** (no TRN on the license): no VAT charged, and VAT on marketplace fees is a cost. The app monitors turnover against the VAT registration threshold. | 31 Dec | Wio (CSV/statement import) | Accounting, Banking first; Commerce (Amazon.ae, Noon) in phase 4b, after the Canadian companies |
+
+Real registration numbers, addresses and owner details are entered in the app (Settings → Company), **not committed to this repository**.
 
 ### Localization & jurisdictions (any country, any state)
 
@@ -74,14 +78,30 @@ Everything location-specific is **data**, so a business anywhere in the world ca
 ### Organization settings (all editable in Settings → General)
 
 - **Location, currency, timezone, locale:** see above.
+- **Legal entity type:** corporation, sole proprietorship/establishment, partnership, LLC, nonprofit, and so on. It drives the **equity section** of the chart of accounts: a corporation gets Share Capital, Retained Earnings and Dividends; a sole establishment gets Owner's Capital and Owner's Drawings.
+- **First fiscal year start:** defaults to the incorporation date, so a company formed mid-year gets a correct **short first year** (e.g. 23 Jun – 31 Dec).
 - **Fiscal year end** is stored as month + day:
   - The default is 31 Dec (a calendar year).
   - Any other end works, e.g. 30 Jun for a Pakistan July–June year (FY 2026-27 = 1 Jul 2026 – 30 Jun 2027).
   - Report presets follow it: *This fiscal year, Last fiscal year, Fiscal Q1–Q4, Year to date*.
   - Retained earnings are **computed** (P&L accounts before the fiscal-year start roll into Retained Earnings at report time, as Wave does). Changing the FY end later therefore needs no reposting; the reports simply re-slice. A change is logged in the audit trail and warns about the transitional short year.
-- **Tax registrations:** GST/HST number, QST number, UAE TRN, etc.
+- **Tax registrations:** GST/HST number, QST number, UAE TRN, etc. Each has a status (registered / not registered) and an effective date. "Not registered" means no tax is charged on sales and tax paid on expenses is not recoverable.
+- **Threshold monitors** (data in tax packs) compare rolling turnover with registration thresholds, e.g. the UAE VAT mandatory threshold or Canada's small-supplier limit. Confirm the current figures with your tax advisor.
 - **Lock date:** "books closed through" a date.
 - **Modules:** see §5.
+
+### Authentication
+
+| Capability | How |
+|---|---|
+| Email + password sign-up | Better Auth `emailAndPassword`, with email verification and password reset sent via Resend. |
+| **Sign in / sign up with Google** | Better Auth Google provider (OAuth 2.0 client in your Google Cloud project). |
+| One account, both methods | **Account linking by verified email.** Signing in with Google using the same email as an existing password account links them instead of creating a duplicate. |
+| **Google users set a password** | Account → Security → "Set a password" (Better Auth `setPassword`). Afterwards the user can sign in with Google *or* email + password, and can unlink Google if they prefer. |
+| Password change, sign out everywhere | Account → Security, which also lists active sessions. |
+| 2FA (TOTP) | Better Auth `twoFactor`. Optional for everyone; required for Owners/Admins before a production launch. |
+| Preview deployments | Google only accepts exact redirect URLs, so Vercel previews route the OAuth callback through the production URL (Better Auth OAuth proxy). |
+| Sign-up policy | `SIGNUP_MODE=invite_only` (default while private: only invited emails and platform admins) or `open` (public launch). |
 
 ### Roles & security
 
@@ -130,6 +150,7 @@ packages/
     inventory/         products, listings, suppliers, POs, lots, movements, COGS
     analytics/         SKU profitability, reorder planning, alerts
     reviews/           Amazon review request engine
+    entity/            company profile, people, document vault, compliance calendar
   integrations/
     amazon-sp/  amazon-ads/  wise/  ebay/  noon/  fx-rates/
     importers/         CSV, OFX, Wave data export
@@ -323,7 +344,24 @@ The planner shows which SKUs to order now, how many, and by when, and it can cre
 
 **Dashboards:** revenue, gross margin, net profit, EBITDA (from tagged accounts), cash position across currencies, channel mix, and top/bottom SKUs.
 
-### 3.8 Settings & connections
+### 3.8 Entity & compliance
+
+A small module that pays off quickly for anyone running several companies.
+
+- **Company profile:** legal name, trade name, entity type, jurisdiction of incorporation (e.g. federal CBCA, Ontario OBCA, Dubai DET), incorporation date, and registered address. It also holds typed **registration identifiers**, for example:
+  - Canada: Business Number (BN) with program accounts (RC, RT…), corporation number, Ontario Corporation Number (OCN).
+  - UAE: trade license no., commercial register no., TRN.
+  - Pakistan: NTN, STRN.
+- **People:** directors, officers, owners and individuals with significant control, with share percentages and start/end dates.
+- **Document vault:** trade licenses, articles, corporate profiles and filings, stored in S3 with expiry dates. Expiring documents raise reminders.
+- **Compliance calendar** of recurring obligations, generated from **compliance packs** (data, like tax packs) plus your own custom items. Examples:
+  - Dubai trade license annual renewal (from the license expiry date).
+  - Corporations Canada annual return (filing window after the anniversary date).
+  - Ontario annual return, T2 corporate tax return and GST/HST returns (from the fiscal year end and filing frequency).
+  - UAE VAT and corporate tax returns once registered.
+- **Reminders:** email via Resend at configurable lead times (e.g. 30/7/1 days), plus a dashboard widget showing what is due.
+
+### 3.9 Settings & connections
 
 | Level | Where | Examples |
 |---|---|---|
@@ -346,6 +384,8 @@ reference   countries, subdivisions, currencies, timezones, tax_packs (global, r
 platform    users, organizations, organization_settings, memberships, invitations,
             audit_logs, plans, plan_features, org_entitlement_overrides, org_modules,
             secrets, connections, usage_events
+entity      entity_identifiers, entity_people, compliance_obligations,
+            compliance_reminders (documents reuse attachments)
 files       attachments, attachment_links
 accounting  accounts, journal_entries, journal_lines, contacts, tax_jurisdictions,
             tax_rates, tax_groups, tax_registrations, fx_rates, period_locks
@@ -395,10 +435,10 @@ Sizes are rough and assume focused work with Claude Code doing most of the imple
 
 | Phase | Scope | Done when | Size |
 |---|---|---|---|
-| **0. Foundations** | Monorepo, CI (lint, typecheck, tests), Next.js + Tailwind + shadcn shell (logical properties for future RTL), Drizzle + Neon, Better Auth + orgs + roles, RLS, org switcher, **reference data (countries, subdivisions, currencies, timezones) + org localization settings (location, currency, timezone, locale, fiscal year end)**, **module toggles + entitlement registry**, platform admin basics, audit log, secrets vault, **S3 upload service**, Vercel Workflows + Cron wiring, preview deploys, seed the 3 orgs, `CLAUDE.md` conventions. Lovable/Figma prototypes of the key screens in parallel. | You can log in, switch between the 3 orgs, toggle modules (Teknoffice shows only Accounting + Banking), upload a file to S3, save an encrypted connection; CI green; preview URL per PR. | 1–2 wks |
+| **0. Foundations** | Monorepo, CI (lint, typecheck, tests), Next.js + Tailwind + shadcn shell (logical properties for future RTL), Drizzle + Neon, Better Auth (**email/password + Google, account linking, set-password for Google users**, email verification/reset) + orgs + roles, RLS, org switcher, **reference data (countries, subdivisions, currencies, timezones) + org localization settings (location, currency, timezone, locale, fiscal year end)**, **module toggles + entitlement registry**, platform admin basics, audit log, secrets vault, **S3 upload service**, Vercel Workflows + Cron wiring, preview deploys, seed the 3 orgs, `CLAUDE.md` conventions. Lovable/Figma prototypes of the key screens in parallel. | You can log in, switch between the 3 orgs, toggle modules (Teknoffice shows only Accounting + Banking), upload a file to S3, save an encrypted connection; CI green; preview URL per PR. | 1–2 wks |
 | **1. Ledger & accounting core** | CoA (Wave taxonomy + generic and country templates), ledger engine with invariants and property-based tests, Transactions UI, **multi-receipt attachments + Receipts inbox**, journal entries, FX rates, **generic tax engine + Canada and UAE tax packs**, period locks, fiscal-year-aware reports (P&L, BS, TB, GL, Account Transactions, Sales Tax). | You can keep your books for a month entirely in the new app, receipts included. | 3–4 wks |
 | **1b. Wave migration** | Import wizard: CoA, contacts, **full transaction history**, **receipts ZIP → S3 + matching**, verification reports. | Full history imported for all 3 orgs, **P&L and Balance Sheet match Wave to the cent for every year**, and every receipt is linked or sitting in the inbox. | 1–2 wks |
-| **2. Banking** | CSV/OFX importer + mappings (RBC, Wio), Wise API sync + webhooks, dedupe, rules, transfer matching, reconciliation. | Wise syncs automatically; a monthly RBC import + review takes under 10 minutes; accounts reconcile. **Teknoffice can switch off Wave here.** | 2–3 wks |
+| **2. Banking** | CSV/OFX importer + mappings (RBC, Wio), Wise API sync + webhooks, dedupe, rules, transfer matching, reconciliation. Plus **Entity & compliance** (company profile, document vault, compliance calendar + email reminders), which is small. | Wise syncs automatically; a monthly RBC import + review takes under 10 minutes; accounts reconcile. **Teknoffice can switch off Wave here.** | 2–3 wks |
 | **3. Commerce connections, orders & review requests** | Connections (SP-API BYO credentials), channels CRUD, order sync, **review request engine** (manual, bulk, auto rules). Kazomo Inc. first. | Bulk and automatic review requests running for Kazomo. | 2 wks |
 | **4. Settlements → accounting** | Settlement/finance import, channel account mapping, summarized settlement entries, payout ↔ bank deposit matching. Kazomo Inc. (Amazon.ca). | Settlements post automatically and reconcile to deposits; channel P&L visible. | 2–3 wks |
 | **4b. UAE commerce** | Kazomo For Online Selling: Amazon.ae connection (EU endpoint), **Noon** (API if access is granted, otherwise report import), review requests and settlements for both, VAT on marketplace fees. | UAE settlements reconcile to Wio deposits; review requests running on Amazon.ae. | 2 wks |
@@ -413,7 +453,7 @@ Sizes are rough and assume focused work with Claude Code doing most of the imple
 
 ## 8. Working with Claude Code
 
-- **`CLAUDE.md`** (created in phase 0) holds the stack, folder conventions, the module pattern, money/FX rules, the RLS rule ("every query is org-scoped"), test commands, and "never" rules (no floats for money, no editing posted entries, no secrets in logs, **no financial exports committed to git**).
+- **`CLAUDE.md`** (created in phase 0) holds the stack, folder conventions, the module pattern, money/FX rules, the RLS rule ("every query is org-scoped"), test commands, and "never" rules (no floats for money, no editing posted entries, no secrets in logs, **no financial exports, company documents or personal data committed to git**).
 - **Work in PR-sized tasks.** Break each phase into GitHub issues. Use plan mode for anything touching the ledger, tenancy or security, and review those PRs line by line.
 - **Tests are the guardrail:** ledger invariants (fast-check property tests), golden report fixtures, and recorded SP-API/Wise responses as fixtures (also the Amazon SP-API sandbox). Fixtures use **synthetic data shaped like the real exports**, never your real books.
 - **Model tiers:** use the most capable tier for data-model/ledger/FX/COGS/security design and hard reconciliation bugs, the default tier for everyday feature work, and the fast tier for routine UI, CRUD, tests and docs.
@@ -438,9 +478,14 @@ Sizes are rough and assume focused work with Claude Code doing most of the imple
 
 ## 10. Product name & domain
 
-**Recommendation: Bookalyze, at `bookalyze.com`.** It combines *books* and *analyze*, which is exactly the product: bookkeeping plus seller analytics.
+**Decided: Bookalyze, at `bookalyze.com`.** It combines *books* and *analyze*, which is exactly the product: bookkeeping plus seller analytics.
 
-Domains below showed as **available in a registry lookup on 2026-10-04**. Nothing is reserved. Run a trademark search (CIPO, USPTO, UAE) before buying.
+**To do:**
+- Buy `bookalyze.com`, plus `bookalyse.com` and `bookalyze.ca` as redirects.
+- Run a trademark search (CIPO, USPTO, UAE) and consider filing once the product is public.
+- Point `app.bookalyze.com` at Vercel.
+
+Domains below showed as **available in a registry lookup on 2026-10-04**.
 
 | Option | Verdict | Domains available |
 |---|---|---|
@@ -478,7 +523,11 @@ A domain like 3dboxstudio.com works well because it is *both* a memorable brand 
 | 2026-10-04 | No Wave invoicing in use, so invoices/bills/AR/AP move to phase 8 (public launch). |
 | 2026-10-04 | UAE commerce (Amazon.ae + Noon) comes after the Canadian companies, as **phase 4b**. |
 
+| 2026-10-04 | Name: **Bookalyze** (`bookalyze.com`). |
+| 2026-10-04 | Kazomo For Online Selling is a **Dubai** sole establishment (DET e-Trader license), **not VAT-registered**. Kazomo Inc. is a federal (CBCA) corporation with a short first fiscal year (Jun–Dec 2026); Teknoffice is an Ontario corporation. Entity type and first fiscal year start become org settings, and an Entity & compliance module is added. |
+| 2026-10-04 | Sign-in: **email + password and Google**, with account linking, and Google users can set a password. |
+
 ### Still open
 
-1. **Name:** confirm **Bookalyze** (recommended) or TekAccounts, then buy the domain(s).
-2. **UAE emirate** for Kazomo For Online Selling (address and registration details only; VAT is federal).
+1. **GST/HST registration** for Kazomo Inc. and Teknoffice: is each registered (BN with an RT program account), and is filing monthly, quarterly or annual? This sets the default tax behaviour.
+2. **Google OAuth client** for sign-in: you create it in Google Cloud Console (steps in `docs/SETUP.md`).
