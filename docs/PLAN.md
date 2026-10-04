@@ -235,6 +235,10 @@ A generic default CoA works in any country. Country templates add local touches 
 
 ### 3.2 Wave migration (full history + receipts)
 
+> **Built as a generic importer** (see STATUS.md, "Phase 1b"): Wave is one source among
+> QuickBooks, Xero, Zoho Books, Sage and any CSV of journal lines. The steps below are the
+> original plan; receipts and contact files are still to come.
+
 Wave's **Data Export** (Business settings → Data Export; Owner/Admin only) provides accounting transactions, customers, vendors, invoices, bills and a **Receipts ZIP** with every uploaded receipt in its original file type. Download links are emailed and expire after 24 hours.
 
 **Import wizard (per org):**

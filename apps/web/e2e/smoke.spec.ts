@@ -533,6 +533,70 @@ test("searchable dropdowns: type to filter and pick with the keyboard", async ({
   await expect(page.getByRole("heading", { name: "Add a transaction" })).toBeVisible();
 });
 
+test("import: a Wave export, matched accounts, a safe re-run and undo", async ({ page }) => {
+  // Synthetic data in Wave's export layout: a sale with HST and a card purchase.
+  const csv = [
+    "Transaction ID,Transaction Date,Account Name,Transaction Description,Transaction Line Description,Amount (One column),Debit Amount (Two Column Approach),Credit Amount (Two Column Approach),Customer,Vendor,Account Group,Account Type",
+    "W-1,2026-08-03,Old Chequing,Website order 1001,,226.00,226.00,,Lakeside Studio,,Assets,Cash and Bank",
+    "W-1,2026-08-03,Sales,Website order 1001,,-200.00,,200.00,Lakeside Studio,,Income,Income",
+    "W-1,2026-08-03,GST/HST Payable,Website order 1001,HST,-26.00,,26.00,Lakeside Studio,,Liabilities & Credit Cards,Sales Taxes",
+    "W-2,2026-08-04,Office Supplies,Paper and toner,,84.75,84.75,,,Paper Co,Expenses,Operating Expense",
+    "W-2,2026-08-04,Old Visa,Paper and toner,,-84.75,,84.75,,Paper Co,Liabilities & Credit Cards,Credit Card",
+  ].join("\n");
+  const file = { name: "wave-transactions.csv", mimeType: "text/csv", buffer: Buffer.from(csv) };
+
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Import", exact: true }).click();
+  await expect(page.getByText("Bring your books with you")).toBeVisible();
+  await page.getByRole("link", { name: "Start an import" }).click();
+  await expect(page.getByText("How to export from Wave")).toBeVisible();
+  await page.getByLabel("CSV file to import").setInputFiles(file);
+
+  // Columns were recognised from Wave's names.
+  await expect(page.getByText("Match the columns")).toBeVisible();
+  await expect(page.locator("#col-entryRef")).toHaveText("Transaction ID");
+  await expect(page.locator("#col-debit")).toHaveText("Debit Amount (Two Column Approach)");
+  await expect(page.getByText(/2 transactions from/)).toBeVisible();
+  await page.getByRole("button", { name: "Next: accounts" }).click();
+
+  // Existing accounts are matched by name; the rest are created by type.
+  await expect(
+    page.getByText(/5 accounts in the file: 3 match accounts you have, 2 will be added/),
+  ).toBeVisible();
+  await expect(page.getByLabel("Where Old Visa goes")).toHaveText("New account: Credit card");
+  await expect(page.getByLabel("Where Sales goes")).toHaveText("4000 · Sales");
+  await page.getByRole("button", { name: "Next: review" }).click();
+
+  await expect(page.getByText("Ready to import")).toBeVisible();
+  await page.getByRole("button", { name: "Import 2 transactions" }).click();
+  await expect(page.getByRole("heading", { name: "2 transactions imported" })).toBeVisible();
+
+  // The imported sale shows on Transactions with its customer.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await expect(page.getByText("Website order 1001")).toBeVisible();
+  await expect(page.getByText(/Lakeside Studio/).first()).toBeVisible();
+
+  // Importing the same file again changes nothing.
+  await page.getByRole("link", { name: "Import", exact: true }).click();
+  await page.getByRole("link", { name: "Import from a file" }).click();
+  await page.getByLabel("CSV file to import").setInputFiles(file);
+  await page.getByRole("button", { name: "Next: accounts" }).click();
+  await page.getByRole("button", { name: "Next: review" }).click();
+  await page.getByRole("button", { name: "Import 2 transactions" }).click();
+  await expect(page.getByRole("heading", { name: "0 transactions imported" })).toBeVisible();
+  await expect(page.getByText("2 were already in your books")).toBeVisible();
+
+  // Undo the first import: its transactions and new accounts go.
+  await page.getByRole("link", { name: "Back to imports" }).click();
+  const first = page.locator("li", { hasText: "2 transactions from" });
+  await first.getByRole("button", { name: "Undo import" }).click();
+  await first.getByRole("button", { name: "Click again to remove everything it added" }).click();
+  await expect(page.getByText("Import undone: 2 transactions removed")).toBeVisible();
+  await expect(first.getByText("Undone")).toBeVisible();
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await expect(page.getByText("Website order 1001")).toHaveCount(0);
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();
