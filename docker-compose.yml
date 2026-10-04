@@ -1,0 +1,15 @@
+# Local Postgres for development: `pnpm db:up`, then `pnpm db:setup`.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - bookalyze-db:/var/lib/postgresql/data
+      - ./packages/db/scripts/dev-db-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+volumes:
+  bookalyze-db:
