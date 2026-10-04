@@ -163,6 +163,21 @@ test("bookkeeping: chart of accounts, journal entries, reversal and reports", as
   await expect(page.getByText("Assets equal liabilities plus equity.")).toBeVisible();
   await expect(page.getByText("Profit for this financial year")).toBeVisible();
 
+  // Any account on a report opens its lines in the general ledger, with a running balance.
+  await page.getByRole("link", { name: /RBC Chequing/ }).click();
+  await expect(page).toHaveURL(/\/reports\/general-ledger\?.*account=/);
+  await expect(page.getByRole("heading", { name: /RBC Chequing/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Owner investment/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /October rent/ })).toBeVisible();
+  await expect(page.getByText("Closing balance")).toBeVisible();
+  await expect(page.getByText("$3,800.00").last()).toBeVisible();
+  // "All accounts" shows each account's opening, debits, credits and closing.
+  await choose(page.getByLabel("Account", { exact: true }), "All accounts");
+  await expect(page.getByRole("link", { name: /Rent/ }).first()).toBeVisible();
+  await expect(page.getByText("Total posted in the period")).toBeVisible();
+  await page.getByRole("link", { name: /Owner contributions/ }).click();
+  await expect(page.getByRole("heading", { name: /Owner contributions/ })).toBeVisible();
+
   // Posted entries are reversed, not edited.
   await page.getByRole("link", { name: "Journal entries", exact: true }).click();
   await page.getByRole("link", { name: /October rent/ }).click();

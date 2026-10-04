@@ -211,3 +211,129 @@ export function balanceSheet(
     balanced: parseDecimal(assets.total) === liabilitiesAndEquity,
   };
 }
+
+export type LedgerActivity = {
+  accountId: string;
+  code: string | null;
+  name: string;
+  type: AccountType;
+  subtype: string;
+  /** Signed sum before the period starts: positive = net debit. */
+  opening: string;
+  /** Debits and credits posted in the period, both positive. */
+  debits: string;
+  credits: string;
+};
+
+export type GeneralLedgerRow = Omit<ReportRow, "amount"> & {
+  /** Opening and closing are in the account's natural direction. */
+  opening: string;
+  debits: string;
+  credits: string;
+  closing: string;
+};
+
+export type GeneralLedgerSummary = {
+  groups: { type: AccountType; label: string; rows: GeneralLedgerRow[] }[];
+  totalDebits: string;
+  totalCredits: string;
+};
+
+/** Each account with a balance or activity: opening, debits, credits and closing for a period. */
+export function generalLedgerSummary(activity: LedgerActivity[]): GeneralLedgerSummary {
+  let totalDebits = 0n;
+  let totalCredits = 0n;
+  const groups = ACCOUNT_TYPES.map((type) => {
+    const rows = activity
+      .filter((a) => a.type === type)
+      .map((a) => {
+        const opening = parseDecimal(a.opening);
+        const debits = parseDecimal(a.debits);
+        const credits = parseDecimal(a.credits);
+        return { a, opening, debits, credits };
+      })
+      .filter((r) => r.opening !== 0n || r.debits !== 0n || r.credits !== 0n)
+      .sort((x, y) => byCode(x.a, y.a))
+      .map(({ a, opening, debits, credits }) => {
+        totalDebits += debits;
+        totalCredits += credits;
+        return {
+          accountId: a.accountId,
+          code: a.code,
+          name: a.name,
+          subtype: a.subtype,
+          opening: formatDecimal(natural(type, opening)),
+          debits: formatDecimal(debits),
+          credits: formatDecimal(credits),
+          closing: formatDecimal(natural(type, opening + debits - credits)),
+        };
+      });
+    return { type, label: accountTypes[type].label, rows };
+  }).filter((g) => g.rows.length > 0);
+  return {
+    groups,
+    totalDebits: formatDecimal(totalDebits),
+    totalCredits: formatDecimal(totalCredits),
+  };
+}
+
+export type LedgerLineInput = {
+  id: string;
+  /** Signed base amount: positive = debit. */
+  amount: string;
+};
+
+export type AccountLedgerLine<T extends LedgerLineInput> = T & {
+  debit: string | null;
+  credit: string | null;
+  /** Running balance after this line, in the account's natural direction. */
+  balance: string;
+};
+
+export type AccountLedger<T extends LedgerLineInput> = {
+  opening: string;
+  lines: AccountLedgerLine<T>[];
+  totalDebit: string;
+  totalCredit: string;
+  closing: string;
+};
+
+/**
+ * One account's lines for a period with a running balance. `opening` is the signed balance
+ * before the period; `lines` must already be in date order. Pass `periodTotals` when `lines` is
+ * only the start of a longer list, so the totals and closing balance still cover the period.
+ */
+export function accountLedger<T extends LedgerLineInput>(
+  type: AccountType,
+  opening: string,
+  lines: readonly T[],
+  periodTotals?: { debits: string; credits: string },
+): AccountLedger<T> {
+  let balance = parseDecimal(opening);
+  let debit = 0n;
+  let credit = 0n;
+  const shaped = lines.map((line) => {
+    const amount = parseDecimal(line.amount);
+    balance += amount;
+    if (amount > 0n) debit += amount;
+    else credit -= amount;
+    return {
+      ...line,
+      debit: amount > 0n ? formatDecimal(amount) : null,
+      credit: amount < 0n ? formatDecimal(-amount) : null,
+      balance: formatDecimal(natural(type, balance)),
+    };
+  });
+  if (periodTotals) {
+    debit = parseDecimal(periodTotals.debits);
+    credit = parseDecimal(periodTotals.credits);
+    balance = parseDecimal(opening) + debit - credit;
+  }
+  return {
+    opening: formatDecimal(natural(type, parseDecimal(opening))),
+    lines: shaped,
+    totalDebit: formatDecimal(debit),
+    totalCredit: formatDecimal(credit),
+    closing: formatDecimal(natural(type, balance)),
+  };
+}
