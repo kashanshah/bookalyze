@@ -34,6 +34,11 @@ function s3() {
   const e = env();
   client ??= new S3Client({
     region: e.AWS_REGION,
+    // Recent SDKs add a checksum to presigned uploads by default, computed over an empty body,
+    // so S3 rejects the real file with 403. Browsers upload with a plain PUT: only checksum
+    // when an operation requires it.
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
     credentials: {
       accessKeyId: e.AWS_ACCESS_KEY_ID ?? "",
       secretAccessKey: e.AWS_SECRET_ACCESS_KEY ?? "",
