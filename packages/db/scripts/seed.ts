@@ -5,11 +5,9 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { withVerifiedSsl } from "../src/client";
 import * as schema from "../src/schema";
+import { migratorUrl } from "./migrator-url";
 
-const url = process.env.DATABASE_URL_MIGRATOR;
-if (!url) throw new Error("DATABASE_URL_MIGRATOR is not set");
-
-const pool = new pg.Pool({ connectionString: withVerifiedSsl(url), max: 1 });
+const pool = new pg.Pool({ connectionString: withVerifiedSsl(migratorUrl()), max: 1 });
 const db = drizzle(pool, { schema, casing: "snake_case" });
 
 function chunks<T>(rows: readonly T[], size = 500): T[][] {

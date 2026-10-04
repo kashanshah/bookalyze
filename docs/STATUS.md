@@ -465,11 +465,10 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 - **Migrations aren't run by Vercel.** When a PR adds a migration, run it against Neon after
   merging (or just before) with:
   ```bash
-  DATABASE_URL_MIGRATOR='<Neon owner, direct, sslmode=verify-full>' \
-  APP_DATABASE_URL='<Neon bookalyze_app, pooled>' pnpm db:migrate
+  DATABASE_URL_MIGRATOR='<Neon owner, direct (DATABASE_URL_UNPOOLED)>' pnpm db:migrate
   ```
-  The runtime URL (`APP_DATABASE_URL`, else `DATABASE_URL`) is needed so the migrator can grant
-  the runtime role (`app_runtime`) to it.
+  The migrator falls back to `DATABASE_URL_UNPOOLED`, then `DATABASE_URL`, so after
+  `vercel env pull` a bare `pnpm db:migrate` works too.
 
 ### Before pushing
 ```bash
@@ -571,11 +570,14 @@ screenshots work well).
     Track it in state (see `touched` in `components/org/profile-state.ts`).
   - Pass `name` to post the value with a form (it renders a hidden input).
   - In e2e, use `choose(trigger, "Option label")` from `e2e/helpers.ts`, not `selectOption`.
-- **Tenant isolation fails closed.** `withOrg()` checks once per pool that the connection's role
-  doesn't bypass RLS (superuser, BYPASSRLS, or owner/member of the tables' owner such as Neon's
-  `neondb_owner`), and refuses tenant queries otherwise. The app connects with `APP_DATABASE_URL`
-  when set, else `DATABASE_URL`; production uses `APP_DATABASE_URL` = `bookalyze_app` on the
-  pooled host, because Vercel's Neon Storage integration owns and locks `DATABASE_URL` (owner).
+- **Tenant isolation lives in `withOrg()`.** Production logs in as Neon's owner (`DATABASE_URL`
+  from Vercel's Storage integration), which bypasses RLS on its own. `withOrg()` switches each
+  transaction to `app_runtime` (`set_config('role', 'app_runtime', true)`, i.e. SET LOCAL ROLE,
+  safe with PgBouncer), so RLS applies inside. Outside `withOrg()` the app has owner rights:
+  query tenant tables only inside it. `tenant-access.test.ts` lists the web files that use
+  `getDb()` directly (reviewed: sign-in, membership and reference tables only) and fails when a
+  new one appears. Migration 0015 grants the owner SET on `app_runtime` (Postgres 16 doesn't
+  give a role's creator that by default). Local dev and CI still log in as `bookalyze_app`.
 - **Drizzle leaves the column unqualified** (`"id"`) when a query selects from one table. Inside a
   hand-written subquery, qualify outer columns yourself (`"journal_entries"."id"`) or Postgres
   reports `column reference "id" is ambiguous`.
