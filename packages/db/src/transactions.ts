@@ -6,6 +6,7 @@ import {
   type TransactionView,
 } from "@bookalyze/core";
 import { and, count, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
+import { copyAttachmentLinks, countAttachments } from "./attachments";
 import type { Transaction } from "./client";
 import { LedgerError, postJournalEntry, reverseJournalEntry } from "./ledger";
 import { accounts, journalEntries, journalLines, transactionReviews } from "./schema/accounting";
@@ -49,6 +50,8 @@ export type TransactionRow = {
   fxRate: string;
   source: string;
   reviewed: boolean;
+  /** Number of receipts and files attached. */
+  attachments: number;
   lines: { accountId: string; amount: string; description: string | null }[];
   view: TransactionView;
 };
@@ -133,6 +136,11 @@ export async function listTransactions(
   const byEntry = new Map<string, typeof lines>();
   for (const line of lines) byEntry.set(line.entryId, [...(byEntry.get(line.entryId) ?? []), line]);
 
+  const attachmentCounts = await countAttachments(
+    tx,
+    "journal_entry",
+    entries.map((e) => e.id),
+  );
   const rows: TransactionRow[] = [];
   for (const entry of entries) {
     const entryLines = (byEntry.get(entry.id) ?? []).map(({ accountId, amount, description }) => ({
@@ -141,7 +149,15 @@ export async function listTransactions(
       description,
     }));
     const view = describeTransaction(entryLines, (id) => moneyIds.has(id));
-    if (view) rows.push({ ...entry, reviewed: Boolean(entry.reviewed), lines: entryLines, view });
+    if (view) {
+      rows.push({
+        ...entry,
+        reviewed: Boolean(entry.reviewed),
+        attachments: attachmentCounts.get(entry.id) ?? 0,
+        lines: entryLines,
+        view,
+      });
+    }
   }
   return { rows, total: totalRow?.n ?? 0 };
 }
@@ -168,7 +184,7 @@ export async function setTransactionReviewed(
 /**
  * Replaces a posted entry with a corrected one: reverses the original on its own date (so the
  * period it was in is corrected, not a later one) and posts the new entry. Keeps the review
- * status. Both writes happen in the caller's transaction.
+ * status and attached files. Both writes happen in the caller's transaction.
  */
 export async function replaceJournalEntry(
   tx: Transaction,
@@ -204,6 +220,14 @@ export async function replaceJournalEntry(
     reference: input.reference,
     memo: input.memo,
     entry: input.entry,
+  });
+  // Receipts stay with the transaction (the original keeps its links too, for history).
+  await copyAttachmentLinks(tx, {
+    orgId: input.orgId,
+    entityType: "journal_entry",
+    fromEntityId: input.entryId,
+    toEntityId: posted.id,
+    userId: input.userId,
   });
   if (review) {
     await setTransactionReviewed(tx, {

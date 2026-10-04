@@ -17,6 +17,8 @@ export type TxRow = {
   currency: string;
   fxRate: string;
   reviewed: boolean;
+  /** Number of receipts and files attached. */
+  attachments: number;
   kind: TransactionKind;
   /** Positive amount moved, in the transaction currency. */
   amount: string;

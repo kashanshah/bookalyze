@@ -27,6 +27,13 @@ const schema = z.object({
     ),
   /** Production URL that handles OAuth callbacks for preview deployments (Better Auth OAuth proxy). */
   OAUTH_PROXY_PRODUCTION_URL: z.url().optional(),
+  /** Receipts and documents. See docs/SETUP.md for the bucket, CORS and IAM setup. */
+  AWS_REGION: z.string().default("ca-central-1"),
+  AWS_S3_BUCKET: z.string().optional(),
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  /** "s3", or "local" to keep files on disk (development and CI only). */
+  STORAGE_DRIVER: z.enum(["s3", "local", ""]).optional(),
 });
 
 export type Env = z.infer<typeof schema>;

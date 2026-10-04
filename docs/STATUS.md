@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-04, phase 1, slice 3 (transactions)._
+_Last updated: 2026-10-04, phase 1, slice 4 (receipts)._
 
 ---
 
@@ -22,7 +22,7 @@ _Last updated: 2026-10-04, phase 1, slice 3 (transactions)._
 | Phase | State |
 |---|---|
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
-| 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods) and 3 (transactions) are done |
+| 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions) and 4 (receipts) are done |
 | 1b. Wave migration | Not started. Needs a real Wave export from the owner (kept outside the repo) |
 | 2. Banking, plus Entity & compliance | Not started |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
@@ -113,8 +113,8 @@ Real company details are entered in the app and never committed.
     balance as of any date; print.
 - **Tests:**
   - Core: 36 at slice 1, 43 after slice 3.
-  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3.
-  - E2E: 7 at slice 1, 8 after slice 3 (adds the transactions flow).
+  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4.
+  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow).
 
 ### Phase 1, slice 2: closed periods
 - **Closing the books:**
@@ -160,6 +160,36 @@ Real company details are entered in the app and never committed.
   - Database: `listTransactions()`, `setTransactionReviewed()`, `replaceJournalEntry()`,
     `voidJournalEntry()` in `packages/db/src/transactions.ts`.
 
+### Phase 1, slice 4: receipts and files
+- **Storage** (`apps/web/src/server/storage.ts`):
+  - The `s3` driver uses a private bucket. The browser uploads straight to it with a presigned
+    PUT, and viewing redirects to a presigned GET (5 minutes).
+  - The `local` driver keeps files in `apps/web/.uploads`, for development and CI
+    (`STORAGE_DRIVER=local`). Uploads go through `/api/storage/upload` with an HMAC-signed token.
+  - The `none` driver applies in production when S3 isn't configured. The UI says so.
+  - Setup steps: SETUP.md → "AWS S3".
+- **Upload flow:**
+  1. `requestUploadAction` checks type and size (PDF and images including HEIC, up to 20 MB),
+     creates a `pending` attachment and returns the upload target.
+  2. The browser uploads directly, with progress (`apps/web/src/lib/upload.ts`).
+  3. `completeUploadAction` checks the stored size and marks the attachment `ready`.
+- **Viewing:** `/api/o/[slug]/attachments/[id]` checks membership and row-level security. Add
+  `?download=1` to download.
+- **Database** (migration `0008`):
+  - `attachments` holds file metadata with the `storage_key`.
+  - `attachment_links` connects files to records (`entity_type` is `journal_entry` for now; many
+    to many).
+  - Helpers live in `packages/db/src/attachments.ts`.
+  - When a transaction is edited, its files are copied to the replacement entry.
+- **Screens:**
+  - **Receipts inbox** (`/accounting/receipts`): upload first, then attach each file to a
+    transaction found with search, or delete it. Only unlinked files can be deleted.
+  - The transaction dialog has a "Receipts and files" section. Files attach immediately on an
+    existing transaction, or on save for a new one, and stay editable in closed periods.
+  - The journal entry page has the same section.
+  - A paperclip and count appear on transaction rows.
+- **Mobile:** inputs and selects are 16px on phones, so iOS no longer zooms in on focus.
+
 ---
 
 ## 3. Next up (in order)
@@ -168,11 +198,11 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 
 ### Phase 1: remaining slices
 1. [x] **Period locks.** Done in slice 2.
-2. [ ] **File uploads (S3) + attachments**, also listed under phase 0 leftovers.
-   - `attachments` and `attachment_links` tables (PLAN.md §3.1); presigned upload URLs; private
-     bucket keyed `org/{orgId}/…`.
-   - Attach one or many receipts to a journal entry, with inline preview.
-   - Then the **Receipts inbox**: upload first, match later.
+2. [x] **File uploads (S3), attachments and the receipts inbox.** Done in slice 4. Still to
+   come:
+   - Suggested matches (date, amount, vendor) and OCR.
+   - Forwarding receipts by email.
+   - A daily clean-up of `pending` attachments that were never completed (harmless meanwhile).
 3. [x] **Transactions screen.** Done in slice 3. Still to come: a receipt count once
    attachments exist, bulk review and bulk categorize, and transfers between different
    currencies.
@@ -326,6 +356,10 @@ screenshots work well).
   cell and shift every later heading. Wrap them in a plain `<span>`.
 - **A Radix dialog that is closing** swallows clicks for about 300ms. Key the dialog per opening
   (see `transaction-list.tsx`) when it can reopen straight away.
+- **Mobile inputs must be at least 16px** or iOS zooms in on focus. `Input` and `NativeSelect` use
+  `text-base sm:text-sm`. Keep that when adding new controls.
+- **Uploads never go through server actions or route bodies on Vercel** (4.5 MB limit). The
+  browser uploads to S3 with a presigned URL.
 - **`next start` logs "The destination stream closed early"** during e2e navigation. It's harmless
   noise from aborted RSC streams.
 - **Root `.env` loading:** `apps/web/next.config.ts` loads the root `.env` with dotenv.

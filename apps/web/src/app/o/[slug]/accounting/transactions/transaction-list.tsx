@@ -1,7 +1,14 @@
 "use client";
 
 import { formatMoney } from "@bookalyze/core";
-import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Check, Search } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowRightLeft,
+  ArrowUpRight,
+  Check,
+  Paperclip,
+  Search,
+} from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -243,8 +250,20 @@ export function TransactionList({
                     <span className="tabular col-start-1 row-start-2 text-muted-foreground text-xs md:row-start-auto md:text-foreground md:text-sm">
                       {formatDate(row.date, ctx.locale)}
                     </span>
-                    <span className="col-start-1 row-start-1 truncate font-medium text-sm md:col-start-auto md:row-start-auto">
-                      {row.memo || category}
+                    <span className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5 md:col-start-auto md:row-start-auto">
+                      <span className="truncate font-medium text-sm">{row.memo || category}</span>
+                      {row.attachments ? (
+                        <span
+                          className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground text-xs"
+                          title={`${row.attachments} ${row.attachments === 1 ? "file" : "files"} attached`}
+                        >
+                          <Paperclip className="size-3.5" />
+                          {row.attachments > 1 ? row.attachments : null}
+                          <span className="sr-only">
+                            {row.attachments} {row.attachments === 1 ? "file" : "files"} attached
+                          </span>
+                        </span>
+                      ) : null}
                     </span>
                     <span className="hidden truncate text-muted-foreground text-sm md:block">
                       {row.kind === "transfer" ? "—" : name(row.moneyAccountIds[0])}

@@ -273,6 +273,76 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
   await expect(page.getByText("$5,850.00")).toBeVisible();
 });
 
+test("receipts: inbox, attach to a transaction, and attach while adding one", async ({ page }) => {
+  // A 1×1 PNG and a tiny PDF, both synthetic.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    "base64",
+  );
+  const pdf = Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
+  await signIn(page, owner.email, owner.password);
+
+  // Upload to the inbox first, then attach it to its transaction.
+  await page.getByRole("link", { name: "Receipts", exact: true }).click();
+  await expect(page.getByText("Your inbox is empty")).toBeVisible();
+  await page.getByLabel("Upload receipts").setInputFiles({
+    name: "march-receipt.pdf",
+    mimeType: "application/pdf",
+    buffer: pdf,
+  });
+  await expect(page.getByText("march-receipt.pdf added to your inbox")).toBeVisible();
+  await page.getByRole("button", { name: "Attach", exact: true }).click();
+  await page.getByLabel("Search transactions").fill("Client");
+  await page.getByRole("button", { name: /Client payment/ }).click();
+  await expect(page.getByText("Attached to Client payment")).toBeVisible();
+  await expect(page.getByText("Your inbox is empty")).toBeVisible();
+
+  // The transaction shows it, and its dialog can add and remove more.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  const payment = page.locator("li", { hasText: "Client payment" });
+  await expect(payment.getByText("1 file attached")).toBeAttached();
+  await payment.getByText("Client payment", { exact: true }).click();
+  await expect(page.getByRole("link", { name: /march-receipt\.pdf/ })).toBeVisible();
+  const href = await page.getByRole("link", { name: /march-receipt\.pdf/ }).getAttribute("href");
+  const file = await page.request.get(href ?? "");
+  expect(file.status()).toBe(200);
+  expect(file.headers()["content-type"]).toBe("application/pdf");
+
+  await page
+    .getByLabel("Upload receipts")
+    .setInputFiles({ name: "photo.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByText("Receipt attached")).toBeVisible();
+  await expect(page.getByRole("img", { name: "photo.png" })).toBeVisible();
+  await page.getByRole("button", { name: "Remove photo.png" }).click();
+  await expect(page.getByText("Removed. The file is back in your receipts inbox.")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  // Attach while adding a new transaction: saved together.
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await page.locator("#tx-memo").fill("Printer paper");
+  await page
+    .getByLabel("Category 1", { exact: true })
+    .selectOption({ label: "6250 · Office supplies" });
+  await page.getByLabel("Amount 1").fill("12.99");
+  await page
+    .getByLabel("Upload receipts")
+    .setInputFiles({ name: "paper.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByRole("img", { name: "paper.png" })).toBeVisible();
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(
+    page.locator("li", { hasText: "Printer paper" }).getByText("1 file attached"),
+  ).toBeAttached();
+
+  // The removed photo waits in the inbox, and can be deleted there.
+  await page.getByRole("link", { name: "Receipts", exact: true }).click();
+  await expect(page.getByText("photo.png")).toBeVisible();
+  await page.getByRole("button", { name: "Delete photo.png" }).click();
+  await page.getByRole("button", { name: "Confirm delete photo.png" }).click();
+  await expect(page.getByText("Receipt deleted")).toBeVisible();
+  await expect(page.getByText("Your inbox is empty")).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

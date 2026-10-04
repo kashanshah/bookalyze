@@ -21,3 +21,4 @@ test-results/
 playwright-report/
 next-env.d.ts
 *.tsbuildinfo
+/apps/web/.uploads/

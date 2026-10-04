@@ -76,3 +76,57 @@ either way. Signing in with Google using an existing account's email links the t
    DKIM, and optionally DMARC) at your domain registrar. Wait for "Verified".
 2. **API Keys → Create** (sending access) → `RESEND_API_KEY`.
 3. `EMAIL_FROM="Bookalyze <no-reply@bookalyze.com>"`.
+
+## AWS S3 (receipts and documents)
+
+Files are uploaded by the browser straight to a private S3 bucket using short-lived signed links,
+and opened the same way. Nothing in the bucket is public. Locally you can skip S3: with
+`STORAGE_DRIVER=local`, files are kept in `apps/web/.uploads` (git-ignored).
+
+1. **Create the bucket** (AWS console → S3 → Create bucket):
+   - Name: e.g. `bookalyze-files-prod`. Region: `ca-central-1` (Canada).
+   - Keep **Block all public access** on.
+   - Turn **Bucket Versioning** on, so deleted or overwritten files can be recovered.
+   - Default encryption: SSE-S3 is fine.
+2. **Allow browser uploads (CORS).** Bucket → Permissions → Cross-origin resource sharing (CORS):
+   ```json
+   [
+     {
+       "AllowedOrigins": ["https://app.bookalyze.com", "https://*.vercel.app", "http://localhost:3000"],
+       "AllowedMethods": ["PUT", "GET"],
+       "AllowedHeaders": ["Content-Type"],
+       "ExposeHeaders": ["ETag"],
+       "MaxAgeSeconds": 3000
+     }
+   ]
+   ```
+   Drop `http://localhost:3000` if you only use S3 in production. If your previews use a custom
+   domain, add it instead of `https://*.vercel.app`.
+3. **Create an IAM user for the app** (IAM → Users → Create user, no console access). Attach an
+   inline policy that only reaches this bucket:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+         "Resource": "arn:aws:s3:::bookalyze-files-prod/*"
+       }
+     ]
+   }
+   ```
+   Then Security credentials → Create access key → "Application running outside AWS".
+4. **Add the settings** to Vercel (Production and Preview) and, if you want S3 locally, to your
+   root `.env.local`:
+   ```bash
+   AWS_REGION=ca-central-1
+   AWS_S3_BUCKET=bookalyze-files-prod
+   AWS_ACCESS_KEY_ID=…
+   AWS_SECRET_ACCESS_KEY=…
+   ```
+   Leave `STORAGE_DRIVER` unset on Vercel; it uses S3 when these are present. Redeploy after
+   adding them. Until they're set, the Receipts page explains that storage isn't connected.
+
+Optional: use a separate bucket (e.g. `bookalyze-files-preview`) for Preview deployments so test
+uploads never mix with real receipts.

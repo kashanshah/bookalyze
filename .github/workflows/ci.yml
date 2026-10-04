@@ -34,6 +34,8 @@ jobs:
       BETTER_AUTH_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
       BETTER_AUTH_URL: http://localhost:3000
       EMAIL_DEV_LOG: "true"
+      # Receipts are stored on disk in CI (no S3).
+      STORAGE_DRIVER: local
       SIGNUP_MODE: invite_only
       PLATFORM_ADMIN_EMAILS: owner@example.com
     steps:
