@@ -1,6 +1,6 @@
 import "server-only";
 import { DEFAULT_ENABLED_MODULES, MODULE_KEYS } from "@bookalyze/core";
-import { getDb, schema, withOrg } from "@bookalyze/db";
+import { createDefaultChart, getDb, schema, withOrg } from "@bookalyze/db";
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import type { OrgProfileInput } from "@/lib/validation/org-profile";
@@ -73,6 +73,7 @@ export async function createOrganization(userId: string, name: string, input: Or
           updatedBy: userId,
         })),
       );
+      await createDefaultChart(tx, { orgId: org.id, baseCurrency: input.baseCurrency, userId });
       await audit(tx, {
         orgId: org.id,
         actorUserId: userId,

@@ -431,6 +431,8 @@ Plan entitlements (what the plan ALLOWS)  ∩  Org module toggles (what the org 
 
 ## 7. Roadmap
 
+> Live progress (what's done, in progress and next) is tracked in [`docs/STATUS.md`](STATUS.md).
+
 Sizes are rough and assume focused work with Claude Code doing most of the implementation and you reviewing.
 
 | Phase | Scope | Done when | Size |

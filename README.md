@@ -2,6 +2,7 @@
 
 Bookkeeping, banking and marketplace sales for every company you run, in one calm place.
 
+- **Status, next steps & how we work (start here):** [docs/STATUS.md](docs/STATUS.md)
 - **Product plan & roadmap:** [docs/PLAN.md](docs/PLAN.md)
 - **Setup (local, Neon, Vercel, Google, Resend):** [docs/SETUP.md](docs/SETUP.md)
 - **Brand & colours:** [docs/BRAND.md](docs/BRAND.md)

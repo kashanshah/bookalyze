@@ -1,0 +1,15 @@
+---
+description: Bookalyze project context, status and rules
+alwaysApply: true
+---
+
+This is Bookalyze, a multi-company accounting and e-commerce back office. Before making changes:
+
+- Read @docs/STATUS.md: what's done, what's next, ledger rules, recipes and gotchas. Update it in
+  the same change when you finish or start something.
+- Follow @CLAUDE.md: stack, commands and project rules for tenancy (RLS via `withOrg`), money
+  (exact decimals, never floats), the ledger (immutable posted entries) and design (premium,
+  plain language, mobile and dark mode). These rules apply to every agent, not only Claude.
+- Use @docs/PLAN.md for product context and the roadmap.
+
+Run `pnpm lint && pnpm typecheck && pnpm test` before committing.

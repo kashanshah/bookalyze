@@ -105,6 +105,80 @@ test("financial year follows settings, including a short first year", async ({ p
   await expect(page.getByText("FY2026-27")).toBeVisible();
 });
 
+test("bookkeeping: chart of accounts, journal entries, reversal and reports", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+
+  // New companies start with the standard chart of accounts.
+  await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
+  await expect(page.getByText("Cash on hand")).toBeVisible();
+  await page.getByRole("button", { name: "Add account" }).click();
+  await page.getByLabel("Name").fill("RBC Chequing");
+  await page.getByLabel("Code (optional)").fill("1010");
+  await page.getByRole("button", { name: "Add account" }).last().click();
+  await expect(page.getByText("Account added")).toBeVisible();
+  await expect(page.getByText("RBC Chequing")).toBeVisible();
+
+  // Codes are unique per company.
+  await page.getByRole("button", { name: "Add account" }).click();
+  await page.getByLabel("Name").fill("Duplicate");
+  await page.getByLabel("Code (optional)").fill("1010");
+  await page.getByRole("button", { name: "Add account" }).last().click();
+  await expect(page.getByText("Another account already uses this code.")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  // A balanced entry: the owner puts money in.
+  const postEntry = async (memo: string, debit: string, credit: string, amount: string) => {
+    await page.getByRole("link", { name: "Journal entries", exact: true }).click();
+    await page
+      .getByRole("link", { name: /New (journal )?entry/ })
+      .first()
+      .click();
+    await page.getByLabel("Description", { exact: true }).fill(memo);
+    await page.getByLabel("Account for line 1").selectOption({ label: debit });
+    await page.getByLabel("Debit").nth(0).fill(amount);
+    await page.getByLabel("Account for line 2").selectOption({ label: credit });
+    await page.getByLabel("Credit").nth(1).fill("1");
+    await expect(page.getByText(/Out by/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Post entry" })).toBeDisabled();
+    await page.getByLabel("Credit").nth(1).fill(amount);
+    await expect(page.getByText("Balanced", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Post entry" }).click();
+    await expect(page).toHaveURL(/\/accounting\/journal\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole("heading", { name: memo })).toBeVisible();
+  };
+  await postEntry("Owner investment", "1010 · RBC Chequing", "3000 · Owner contributions", "5000");
+  await expect(page.getByText("JE-0001", { exact: true })).toBeVisible();
+  await postEntry("October rent", "6350 · Rent", "1010 · RBC Chequing", "1,200.00");
+
+  // Reports reflect both entries.
+  await page.getByRole("link", { name: "Reports", exact: true }).click();
+  await page.getByRole("link", { name: /Trial balance/ }).click();
+  await expect(page.getByText("Debits equal credits.")).toBeVisible();
+  await expect(page.getByText("$3,800.00")).toBeVisible();
+  await page.getByRole("link", { name: "All reports" }).click();
+  await page.getByRole("link", { name: /Profit and loss/ }).click();
+  await expect(page.getByText("Net loss")).toBeVisible();
+  await page.getByRole("link", { name: "All reports" }).click();
+  await page.getByRole("link", { name: /Balance sheet/ }).click();
+  await expect(page.getByText("Assets equal liabilities plus equity.")).toBeVisible();
+  await expect(page.getByText("Profit for this financial year")).toBeVisible();
+
+  // Posted entries are reversed, not edited.
+  await page.getByRole("link", { name: "Journal entries", exact: true }).click();
+  await page.getByRole("link", { name: /October rent/ }).click();
+  await page.getByRole("button", { name: "Reverse" }).click();
+  await page.getByRole("button", { name: "Reverse entry" }).click();
+  await expect(page.getByText(/JE-0002 reversed by JE-0003/)).toBeVisible();
+  await expect(page.getByText("This entry reverses")).toBeVisible();
+  await page.getByRole("link", { name: "JE-0002" }).click();
+  await expect(page.getByText(/This entry was reversed by/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reverse" })).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Reports", exact: true }).click();
+  await page.getByRole("link", { name: /Profit and loss/ }).click();
+  await expect(page.getByText("Net profit")).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

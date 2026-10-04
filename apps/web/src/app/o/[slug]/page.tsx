@@ -7,22 +7,10 @@ import Link from "next/link";
 import { MODULE_ICONS } from "@/components/shell/module-icons";
 import { Badge } from "@/components/ui/badge";
 import { ProgressRing } from "@/components/ui/progress-ring";
+import { nowIn } from "@/lib/dates";
 import { timezoneLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { fiscalConfigOf, getOrgContext } from "@/server/org";
-
-function nowIn(timezone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "numeric",
-    hourCycle: "h23",
-  }).formatToParts(new Date());
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  return { date: `${get("year")}-${get("month")}-${get("day")}`, hour: Number(get("hour")) };
-}
 
 function greeting(hour: number) {
   if (hour < 12) return "Good morning";
