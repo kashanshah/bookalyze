@@ -14,6 +14,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
@@ -77,6 +78,42 @@ export const accounts = pgTable(
   ],
 );
 
+export const CONTACT_TYPES = ["customer", "vendor", "both"] as const;
+export type ContactType = (typeof CONTACT_TYPES)[number];
+
+/** Customers and vendors. Archived contacts keep their history but leave the pickers. */
+export const contacts = pgTable(
+  "contacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    type: text("type", { enum: CONTACT_TYPES }).notNull(),
+    name: text("name").notNull(),
+    email: text("email"),
+    phone: text("phone"),
+    /** Their business or tax number (e.g. GST/HST or VAT number), as it appears on invoices. */
+    taxNumber: text("tax_number"),
+    address: text("address"),
+    notes: text("notes"),
+    isArchived: boolean("is_archived").notNull().default(false),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    unique("contacts_org_id_key").on(t.organizationId, t.id),
+    uniqueIndex("contacts_org_type_name_key").on(t.organizationId, t.type, sql`lower(${t.name})`),
+    check("contacts_type_valid", sql`${t.type} in (${inList(CONTACT_TYPES)})`),
+    check("contacts_name_present", sql`length(trim(${t.name})) > 0`),
+    tenantIsolationPolicy("contacts", t.organizationId),
+  ],
+);
+
 export const journalEntries = pgTable(
   "journal_entries",
   {
@@ -100,6 +137,8 @@ export const journalEntries = pgTable(
     reversesEntryId: uuid("reverses_entry_id"),
     /** The only column the app may update, once, when the entry is reversed. */
     reversedByEntryId: uuid("reversed_by_entry_id"),
+    /** The customer or vendor this entry is with, if any. */
+    contactId: uuid("contact_id"),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -112,6 +151,12 @@ export const journalEntries = pgTable(
       columns: [t.organizationId, t.reversesEntryId],
       foreignColumns: [t.organizationId, t.id],
     }),
+    foreignKey({
+      name: "journal_entries_contact_fk",
+      columns: [t.organizationId, t.contactId],
+      foreignColumns: [contacts.organizationId, contacts.id],
+    }),
+    index("journal_entries_org_contact_idx").on(t.organizationId, t.contactId),
     foreignKey({
       name: "journal_entries_reversed_by_fk",
       columns: [t.organizationId, t.reversedByEntryId],

@@ -31,11 +31,24 @@ export async function verifyEmail(page: Page, email: string) {
   await page.goto(await latestLink(email, "verify-email"));
 }
 
+/**
+ * Signs in. Sign-in is rate limited (a few attempts per 10 seconds), and the suite signs in
+ * often, so when the app says "Too many attempts" this waits for the window to pass and retries.
+ */
 export async function signIn(page: Page, email: string, password: string) {
-  await page.goto("/sign-in");
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(password);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  const tooMany = page.getByText("Too many attempts");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.goto("/sign-in");
+    await page.locator("#email").fill(email);
+    await page.locator("#password").fill(password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    const limited = await tooMany
+      .waitFor({ timeout: 2_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!limited) return;
+    await page.waitForTimeout(11_000);
+  }
 }
 
 export async function signOut(page: Page) {

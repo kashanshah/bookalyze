@@ -343,6 +343,60 @@ test("receipts: inbox, attach to a transaction, and attach while adding one", as
   await expect(page.getByText("Your inbox is empty")).toBeVisible();
 });
 
+test("customers and vendors: add, pick on transactions, totals and filter", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Customers & vendors", exact: true }).click();
+  await expect(page.getByText("No customers or vendors yet")).toBeVisible();
+  await page.getByRole("button", { name: "Add contact" }).click();
+  await page.locator("#contact-name").fill("Northwind Traders");
+  await page.locator("#contact-email").fill("billing@northwind.example");
+  await page.getByRole("button", { name: "Add contact" }).last().click();
+  await expect(page.getByRole("heading", { name: "Northwind Traders" })).toBeVisible();
+
+  // Money in from the customer.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("button", { name: "Add income" }).click();
+  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await page.locator("#tx-memo").fill("Consulting invoice 101");
+  await page.locator("#tx-contact").selectOption({ label: "Northwind Traders" });
+  await page.getByLabel("Category 1", { exact: true }).selectOption({ label: "4000 · Sales" });
+  await page.getByLabel("Amount 1").fill("1500");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Sales · Northwind Traders")).toBeVisible();
+
+  // Money out to a vendor created on the spot.
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await page.locator("#tx-memo").fill("Toner");
+  await page.locator("#tx-contact").selectOption({ label: "+ Add a new vendor…" });
+  await page.locator("#tx-new-contact").fill("Office Depot");
+  await page.locator("#tx-new-contact").press("Enter");
+  await expect(page.getByText("Office Depot added")).toBeVisible();
+  await expect(page.locator("#tx-contact")).toHaveValue(/[0-9a-f-]{36}/);
+  await page
+    .getByLabel("Category 1", { exact: true })
+    .selectOption({ label: "6250 · Office supplies" });
+  await page.getByLabel("Amount 1").fill("30");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Office supplies · Office Depot")).toBeVisible();
+
+  // Totals on the contact page, and its transactions in the list.
+  await page.getByRole("link", { name: "Customers & vendors", exact: true }).click();
+  await page.getByRole("link", { name: /Northwind Traders/ }).click();
+  await expect(page.getByText("$1,500.00").first()).toBeVisible();
+  await page.getByRole("link", { name: "Open in Transactions" }).click();
+  await expect(page.getByText("Showing transactions with")).toBeVisible();
+  await expect(page.getByText("Consulting invoice 101")).toBeVisible();
+  await expect(page.getByText("Toner")).toHaveCount(0);
+  await page.getByRole("button", { name: "Stop filtering by Northwind Traders" }).click();
+  await expect(page.getByText("Toner")).toBeVisible();
+
+  await page.getByRole("link", { name: "Customers & vendors", exact: true }).click();
+  await page.getByRole("link", { name: "Vendors", exact: true }).click();
+  await expect(page.getByText("Office Depot", { exact: true })).toBeVisible();
+  await expect(page.getByText("Northwind Traders")).toHaveCount(0);
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

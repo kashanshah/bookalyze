@@ -1,5 +1,5 @@
 import { formatDecimal, parseDecimal } from "@bookalyze/core";
-import { formatEntryNumber, listAttachmentsFor, schema } from "@bookalyze/db";
+import { formatEntryNumber, getContact, listAttachmentsFor, schema } from "@bookalyze/db";
 import { eq, inArray } from "drizzle-orm";
 import { ArrowLeft, Lock, Plus, Undo2 } from "lucide-react";
 import type { Metadata } from "next";
@@ -64,11 +64,12 @@ export default async function JournalEntryPage({
           .where(inArray(schema.journalEntries.id, relatedIds))
       : [];
     const files = await listAttachmentsFor(tx, "journal_entry", id);
-    return { ...entry, lines, related, files };
+    const contact = entry.entry.contactId ? await getContact(tx, entry.entry.contactId) : null;
+    return { ...entry, lines, related, files, contact };
   });
   if (!data) notFound();
 
-  const { entry, author, lines, related, files } = data;
+  const { entry, author, lines, related, files, contact } = data;
   const lockedThrough = ctx.profile.booksLockedThrough;
   const closed = Boolean(lockedThrough && entry.date <= lockedThrough);
   const number = formatEntryNumber(entry.entryNumber);
@@ -99,6 +100,19 @@ export default async function JournalEntryPage({
 
       <PageHeader
         eyebrow={<span className="font-mono">{number}</span>}
+        description={
+          contact ? (
+            <>
+              With{" "}
+              <Link
+                href={`/o/${slug}/accounting/contacts/${contact.id}`}
+                className="font-medium text-primary hover:underline"
+              >
+                {contact.name}
+              </Link>
+            </>
+          ) : undefined
+        }
         title={
           <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
             {entry.memo || "Journal entry"}

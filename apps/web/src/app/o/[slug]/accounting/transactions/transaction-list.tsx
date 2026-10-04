@@ -8,6 +8,7 @@ import {
   Check,
   Paperclip,
   Search,
+  X,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useOptimistic, useState, useTransition } from "react";
@@ -22,7 +23,7 @@ import { setReviewedAction } from "./actions";
 import { type DialogState, TransactionDialog } from "./transaction-dialog";
 import type { TxFormContext, TxRow } from "./types";
 
-type Filters = { account: string; kind: string; status: string; q: string };
+type Filters = { account: string; contact: string; kind: string; status: string; q: string };
 
 function useFilterNavigation() {
   const router = useRouter();
@@ -77,6 +78,8 @@ export function TransactionList({
   });
 
   const filterAccount = filters.account || null;
+  const contactNames = new Map(ctx.contacts.map((c) => [c.id, c.name]));
+  const filterContact = filters.contact ? contactNames.get(filters.contact) : undefined;
   const name = (id?: string) => (id ? (ctx.accountNames[id] ?? "Unknown account") : "—");
 
   function toggleReviewed(row: TxRow) {
@@ -120,6 +123,23 @@ export function TransactionList({
   return (
     <div className="grid gap-5">
       {addButtons}
+
+      {filterContact ? (
+        <div className="fade-in-0 flex animate-in items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Showing transactions with</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-1 ps-3 pe-1 font-medium text-primary">
+            {filterContact}
+            <button
+              type="button"
+              onClick={() => set({ contact: "" })}
+              aria-label={`Stop filtering by ${filterContact}`}
+              className="flex size-5 items-center justify-center rounded-full hover:bg-primary/15"
+            >
+              <X className="size-3.5" />
+            </button>
+          </span>
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
         <NativeSelect
@@ -210,6 +230,7 @@ export function TransactionList({
                   : row.splits.length > 1
                     ? `Split (${row.splits.length})`
                     : name(row.splits[0]?.accountId);
+              const contactName = row.contactId ? contactNames.get(row.contactId) : undefined;
               const money = formatMoney(row.amount, row.currency, ctx.locale);
               return (
                 <li
@@ -269,7 +290,7 @@ export function TransactionList({
                       {row.kind === "transfer" ? "—" : name(row.moneyAccountIds[0])}
                     </span>
                     <span className="col-start-1 row-start-3 truncate text-muted-foreground text-xs md:col-start-auto md:row-start-auto md:text-sm">
-                      {category}
+                      {contactName ? `${category} · ${contactName}` : category}
                     </span>
                     <span
                       className={cn(

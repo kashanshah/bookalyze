@@ -88,6 +88,8 @@ export type PostEntryInput = {
   source?: JournalSource;
   sourceId?: string | null;
   reversesEntryId?: string | null;
+  /** The customer or vendor (a contact of the same organization). */
+  contactId?: string | null;
   entry: PreparedEntry;
 };
 
@@ -108,6 +110,7 @@ export async function postJournalEntry(tx: Transaction, input: PostEntryInput) {
       source: input.source ?? "manual",
       sourceId: input.sourceId ?? null,
       reversesEntryId: input.reversesEntryId ?? null,
+      contactId: input.contactId ?? null,
       createdBy: input.userId ?? null,
     })
     .returning({ id: journalEntries.id });
@@ -162,6 +165,7 @@ export async function reverseJournalEntry(
     memo: `Reversal of JE-${String(original.entryNumber).padStart(4, "0")}${original.memo ? `: ${original.memo}` : ""}`,
     source: "reversal",
     reversesEntryId: original.id,
+    contactId: original.contactId,
     entry: {
       currency: original.currency,
       fxRate: original.fxRate,

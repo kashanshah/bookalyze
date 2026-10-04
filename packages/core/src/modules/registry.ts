@@ -52,6 +52,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     nav: [
       { label: "Transactions", href: "/accounting/transactions" },
       { label: "Receipts", href: "/accounting/receipts" },
+      { label: "Customers & vendors", href: "/accounting/contacts" },
       { label: "Journal entries", href: "/accounting/journal" },
       { label: "Chart of accounts", href: "/accounting/accounts" },
       { label: "Reports", href: "/accounting/reports" },

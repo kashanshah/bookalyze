@@ -2,6 +2,13 @@ import type { AccountType, TransactionKind } from "@bookalyze/core";
 
 /** Shapes passed from the Transactions page (server) to its client components. */
 
+export type ContactOption = {
+  id: string;
+  name: string;
+  type: "customer" | "vendor" | "both";
+  isArchived?: boolean;
+};
+
 export type MoneyAccountOption = { id: string; label: string; currency: string };
 
 export type CategoryGroup = {
@@ -17,6 +24,7 @@ export type TxRow = {
   currency: string;
   fxRate: string;
   reviewed: boolean;
+  contactId: string | null;
   /** Number of receipts and files attached. */
   attachments: number;
   kind: TransactionKind;
@@ -37,4 +45,5 @@ export type TxFormContext = {
   moneyAccounts: MoneyAccountOption[];
   categories: CategoryGroup[];
   accountNames: Record<string, string>;
+  contacts: ContactOption[];
 };

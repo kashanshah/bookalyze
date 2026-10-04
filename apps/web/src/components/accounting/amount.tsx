@@ -25,8 +25,9 @@ export function Amount({
     <span
       className={cn(
         "tabular whitespace-nowrap",
-        units === 0n && muteZero && "text-muted-foreground/60",
         className,
+        // Last, so a muted zero wins over colour classes like text-success.
+        units === 0n && muteZero && "text-muted-foreground/60",
       )}
     >
       {units < 0n ? `(${formatted})` : formatted}
