@@ -1,6 +1,6 @@
 # Backoffice: Product & Development Plan
 
-> Status: **Draft v0.2.** Updated with the decisions from the first review (see [§11 Decision log](#11-decision-log)). Nothing is built yet.
+> Status: **Draft v0.3.** Updated with the decisions from the first two reviews (see [§11 Decision log](#11-decision-log)). Nothing is built yet.
 
 ## 0. Key decisions (TL;DR)
 
@@ -8,7 +8,7 @@
 |---|---|
 | Product shape | **One multi-tenant product.** Each company is an **Organization** with strictly isolated data. One login can belong to many organizations and switch between them (like Wave's business switcher). A separate login for one company (e.g. an accountant who only sees Teknoffice) is just an invite. |
 | Tenancy model | Shared Postgres database, `organization_id` on every tenant table, enforced by **Postgres Row-Level Security** and by app-level scoping. No database per tenant. |
-| Per-org setup | Country, province/state, base currency, **fiscal year end** (any month/day; default 31 Dec), and tax registrations are **organization settings**, not code. |
+| Per-org setup | **Works for any country and any state/region.** Country (ISO 3166-1), subdivision (ISO 3166-2), base currency, timezone, locale, **fiscal year end** (any month/day; default 31 Dec), tax rates and tax registrations are **organization settings backed by reference data**, not code. Tax "packs" pre-fill rates where we have them; anyone can define their own. |
 | Modules per org | Each org switches modules on or off (Accounting, Banking, Commerce, Inventory, Reviews, Analytics). This sits on top of plan entitlements. Teknoffice starts as Accounting + Banking only. |
 | Accounting core | A real **double-entry ledger** (journal entries + lines). Wave-style "Transactions" are a friendly UI over journal entries. Money is stored as `NUMERIC`, never floats. Multi-currency from day one. |
 | Attachments | **Multiple receipts per transaction** (and per bill, PO or journal entry), stored in a private AWS S3 bucket, plus a "Receipts inbox" for unmatched uploads. |
@@ -19,7 +19,7 @@
 | Hosting | **Vercel** (app, background workflows, cron, preview deploy per branch) + **Neon** Postgres (via the Vercel Marketplace: point-in-time restore, a database branch per preview) + **AWS S3**. Three vendors, no servers to manage. |
 | Secrets | System secrets in env vars. Per-organization credentials (SP-API, Wise, eBay…) stored **encrypted in the DB** (envelope encryption, AES-256-GCM), managed from Settings, never sent back to the browser after saving. |
 | Cutover | Run in **parallel with Wave** until the new P&L and Balance Sheet match Wave to the cent for at least one closed period. |
-| Name | Shortlist in [§10](#10-product-name--domain). Front-runner: **Kontor**. |
+| Name | Recommended: **Bookalyze** (`bookalyze.com`). See [§10](#10-product-name--domain). |
 
 ---
 
@@ -36,16 +36,44 @@ User ──< Membership (role) >── Organization
 
 ### Initial organizations
 
-| Org | Country | Base currency | FY end | Banks | Modules enabled |
-|---|---|---|---|---|---|
-| Kazomo Inc. | CA | CAD | 31 Dec | RBC (CSV), Wise (API) | Accounting, Banking, Commerce (Amazon via the "Kazomo – Momal Fatima" SP-API app), Inventory, Reviews, Analytics |
-| Teknoffice Technologies Inc. | CA | CAD | 31 Dec | RBC (CSV), Wise (API) | **Accounting, Banking only** (Wave replacement). Amazon.ca and eBay US income is recorded from bank deposits, as in Wave today. Commerce can be switched on later. |
-| Kazomo For Online Selling | AE | AED | 31 Dec | Wio (CSV/statement import) | Accounting, Banking first; Commerce (Amazon.ae, Noon) from phase 4 |
+| Org | Location | Base currency | Default sales tax | FY end | Banks | Modules enabled |
+|---|---|---|---|---|---|---|
+| Kazomo Inc. | Canada · Ontario | CAD | HST 13% | 31 Dec | RBC (CSV), Wise (API) | Accounting, Banking, Commerce (Amazon via the "Kazomo – Momal Fatima" SP-API app), Inventory, Reviews, Analytics |
+| Teknoffice Technologies Inc. | Canada · Ontario | CAD | HST 13% | 31 Dec | RBC (CSV), Wise (API) | **Accounting, Banking only** (Wave replacement). Amazon.ca and eBay US income is recorded from bank deposits, as in Wave today. Commerce can be switched on later. |
+| Kazomo For Online Selling | UAE (emirate to confirm) | AED | VAT 5% | 31 Dec | Wio (CSV/statement import) | Accounting, Banking first; Commerce (Amazon.ae, Noon) in phase 4b, after the Canadian companies |
+
+### Localization & jurisdictions (any country, any state)
+
+Everything location-specific is **data**, so a business anywhere in the world can be set up without code changes.
+
+**Reference data** is seeded from open standards and updated by migrations:
+- **Countries:** ISO 3166-1, about 250.
+- **Subdivisions:** ISO 3166-2, about 5,000 states, provinces, emirates and regions.
+- **Currencies:** ISO 4217, including each currency's **minor units**. Most use 2 decimals, but JPY uses 0 and KWD/BHD/OMR use 3. Amounts round to the currency's own precision.
+- **Timezones:** IANA. **Locales:** BCP 47.
+
+**Per-org localization settings:**
+
+| Setting | Notes |
+|---|---|
+| Country + subdivision | Drives the default tax pack, chart-of-accounts template and address format. Every country has a subdivision picker. |
+| Base currency | Defaults from the country; fixed once transactions exist. |
+| Timezone | Decides what "today", period ends and sync schedules mean for the org. |
+| Locale | Date, number and currency formatting via the browser's `Intl` APIs (`31/12/2026` vs `12/31/2026`, `1,234.56` vs `1.234,56`, and lakh grouping where the locale uses it). |
+| Fiscal year end, week start | See below. |
+| Language | English first. The UI is built with Tailwind **logical properties** (`ms-`/`me-`, `ps-`/`pe-`, `rtl:` variants) from day one, so Arabic/Urdu right-to-left support later costs little. |
+
+**Generic tax engine (no country logic in code):**
+- `tax_jurisdictions`: country → optional subdivision → optional locality.
+- `tax_rates`: name, rate, **effective from/to dates** (a rate change never rewrites history), and an inclusive/exclusive default. Each rate also has a recoverable flag (input tax credits), a compound flag, a reverse-charge flag, and payable/recoverable accounts.
+- `tax_groups`: combinations, e.g. *HST ON 13%*, *GST 5% + PST 7%*, *GST + QST*, *VAT 5%*.
+- **Tax packs:** optional, versioned seed data that pre-fills jurisdictions, rates and accounts. The first packs are Canada (all provinces and territories) and UAE. Others (US states, Pakistan, UK, EU…) are added as data when needed. Without a pack, an org simply defines its own rates.
+- **Tax registrations** per org: any number of them (GST/HST #, QST #, UAE TRN, NTN/STRN…) with jurisdiction and effective date.
+- Tax reports group by jurisdiction and rate for any country's filing periods.
 
 ### Organization settings (all editable in Settings → General)
 
-- **Country + province/state:** seeds tax templates. CA has GST/HST by province, plus PST/QST where applicable. AE has VAT 5%. More countries (e.g. PK) are added as templates without code changes.
-- **Base currency:** fixed once transactions exist.
+- **Location, currency, timezone, locale:** see above.
 - **Fiscal year end** is stored as month + day:
   - The default is 31 Dec (a calendar year).
   - Any other end works, e.g. 30 Jun for a Pakistan July–June year (FY 2026-27 = 1 Jul 2026 – 30 Jun 2027).
@@ -159,7 +187,7 @@ Some work can't happen inside a normal page request: it takes too long, has to w
 | Expenses | Operating Expense · Cost of Goods Sold · Payment Processing Fee · Payroll Expense · Uncategorized Expense · Loss on Foreign Exchange |
 | Equity | Owner Contribution & Drawing · Retained Earnings |
 
-Country templates seed sensible defaults (CA: GST/HST accounts; AE: VAT 5% accounts). Each account has an optional currency, which is required for bank accounts.
+A generic default CoA works in any country. Country templates add local touches (CA: GST/HST accounts; AE: VAT accounts), and tax packs create their own payable/recoverable accounts. Each account has an optional currency, which is required for bank accounts.
 
 **Transactions (Wave-style UX):**
 - One list of every money movement with date, description, account, category, amount, a "reviewed" tick, a 📎 receipt count, and filters.
@@ -182,7 +210,7 @@ Country templates seed sensible defaults (CA: GST/HST accounts; AE: VAT 5% accou
 
 **Reports v1:** Profit & Loss (with comparisons and by-channel/by-month columns), Balance Sheet, Trial Balance, General Ledger, Account Transactions, Sales Tax report, Cash Flow (phase 7). All respect the org's fiscal year. Export to CSV/PDF.
 
-**Later:** Customers/Vendors with invoices, bills, AR/AP aging, recurring transactions.
+**Later:** invoices, bills, AR/AP aging and recurring transactions. None of the current companies use Wave invoicing, so this waits for the public launch (phase 8).
 
 ### 3.2 Wave migration (full history + receipts)
 
@@ -314,12 +342,13 @@ The planner shows which SKUs to order now, how many, and by when, and it can cre
 ## 4. Data model sketch
 
 ```
+reference   countries, subdivisions, currencies, timezones, tax_packs (global, read-only)
 platform    users, organizations, organization_settings, memberships, invitations,
             audit_logs, plans, plan_features, org_entitlement_overrides, org_modules,
             secrets, connections, usage_events
 files       attachments, attachment_links
-accounting  accounts, journal_entries, journal_lines, contacts, tax_rates,
-            fx_rates, period_locks
+accounting  accounts, journal_entries, journal_lines, contacts, tax_jurisdictions,
+            tax_rates, tax_groups, tax_registrations, fx_rates, period_locks
 imports     import_runs, import_items (Wave, CSV, OFX: source row ↔ created record)
 banking     bank_accounts, bank_transactions, bank_rules, reconciliations, matches
 commerce    sales_channels, channel_account_mappings, orders, order_items,
@@ -366,18 +395,19 @@ Sizes are rough and assume focused work with Claude Code doing most of the imple
 
 | Phase | Scope | Done when | Size |
 |---|---|---|---|
-| **0. Foundations** | Monorepo, CI (lint, typecheck, tests), Next.js + Tailwind + shadcn shell, Drizzle + Neon, Better Auth + orgs + roles, RLS, org switcher, **org settings (country, currency, fiscal year end)**, **module toggles + entitlement registry**, platform admin basics, audit log, secrets vault, **S3 upload service**, Vercel Workflows + Cron wiring, preview deploys, seed the 3 orgs, `CLAUDE.md` conventions. Lovable/Figma prototypes of the key screens in parallel. | You can log in, switch between the 3 orgs, toggle modules (Teknoffice shows only Accounting + Banking), upload a file to S3, save an encrypted connection; CI green; preview URL per PR. | 1–2 wks |
-| **1. Ledger & accounting core** | CoA (Wave taxonomy + country templates), ledger engine with invariants and property-based tests, Transactions UI, **multi-receipt attachments + Receipts inbox**, journal entries, FX rates, sales taxes, period locks, fiscal-year-aware reports (P&L, BS, TB, GL, Account Transactions, Sales Tax). | You can keep your books for a month entirely in the new app, receipts included. | 3–4 wks |
+| **0. Foundations** | Monorepo, CI (lint, typecheck, tests), Next.js + Tailwind + shadcn shell (logical properties for future RTL), Drizzle + Neon, Better Auth + orgs + roles, RLS, org switcher, **reference data (countries, subdivisions, currencies, timezones) + org localization settings (location, currency, timezone, locale, fiscal year end)**, **module toggles + entitlement registry**, platform admin basics, audit log, secrets vault, **S3 upload service**, Vercel Workflows + Cron wiring, preview deploys, seed the 3 orgs, `CLAUDE.md` conventions. Lovable/Figma prototypes of the key screens in parallel. | You can log in, switch between the 3 orgs, toggle modules (Teknoffice shows only Accounting + Banking), upload a file to S3, save an encrypted connection; CI green; preview URL per PR. | 1–2 wks |
+| **1. Ledger & accounting core** | CoA (Wave taxonomy + generic and country templates), ledger engine with invariants and property-based tests, Transactions UI, **multi-receipt attachments + Receipts inbox**, journal entries, FX rates, **generic tax engine + Canada and UAE tax packs**, period locks, fiscal-year-aware reports (P&L, BS, TB, GL, Account Transactions, Sales Tax). | You can keep your books for a month entirely in the new app, receipts included. | 3–4 wks |
 | **1b. Wave migration** | Import wizard: CoA, contacts, **full transaction history**, **receipts ZIP → S3 + matching**, verification reports. | Full history imported for all 3 orgs, **P&L and Balance Sheet match Wave to the cent for every year**, and every receipt is linked or sitting in the inbox. | 1–2 wks |
 | **2. Banking** | CSV/OFX importer + mappings (RBC, Wio), Wise API sync + webhooks, dedupe, rules, transfer matching, reconciliation. | Wise syncs automatically; a monthly RBC import + review takes under 10 minutes; accounts reconcile. **Teknoffice can switch off Wave here.** | 2–3 wks |
 | **3. Commerce connections, orders & review requests** | Connections (SP-API BYO credentials), channels CRUD, order sync, **review request engine** (manual, bulk, auto rules). Kazomo Inc. first. | Bulk and automatic review requests running for Kazomo. | 2 wks |
-| **4. Settlements → accounting** | Settlement/finance import, channel account mapping, summarized settlement entries, payout ↔ bank deposit matching; Amazon.ae via the EU endpoint for the UAE org. | Settlements post automatically and reconcile to deposits; channel P&L visible. | 2–3 wks |
+| **4. Settlements → accounting** | Settlement/finance import, channel account mapping, summarized settlement entries, payout ↔ bank deposit matching. Kazomo Inc. (Amazon.ca). | Settlements post automatically and reconcile to deposits; channel P&L visible. | 2–3 wks |
+| **4b. UAE commerce** | Kazomo For Online Selling: Amazon.ae connection (EU endpoint), **Noon** (API if access is granted, otherwise report import), review requests and settlements for both, VAT on marketplace fees. | UAE settlements reconcile to Wio deposits; review requests running on Amazon.ae. | 2 wks |
 | **5. Inventory & COGS** | Products, listings mapping, bundles, suppliers, POs, landed costs, FIFO lots, FBA inventory ledger import, COGS posting. | Monthly P&L shows accurate COGS; on-hand per location matches Seller Central. **Kazomo can switch off Wave here.** | 3–4 wks |
 | **6. Analytics & planning** | SKU profitability, Amazon Ads API spend, reorder planner + draft POs, alerts (email via Resend), dashboards. | Weekly "what to reorder / what to drop" view you actually use. | 2–3 wks |
-| **7. More channels & accounting depth** | Noon, Amazon.com channel, eBay, website/Shopify, manual channels; invoices/bills, AR/AP, cash flow report, unrealized FX revaluation, receipt email-in + OCR. | Feature parity with what you used in Wave, plus the seller tooling. | ongoing |
-| **8. SaaS readiness (when you decide)** | Stripe billing → plans → entitlements, self-serve onboarding, more country templates (e.g. PK), public SP-API app + Appstore review, security hardening, terms/privacy, full data export, marketing site. | First external customer onboarded. | 3–4 wks |
+| **7. More channels & accounting depth** | Amazon.com channel, website (kazomo.com), manual channels (Facebook Marketplace); cash flow report, unrealized FX revaluation, receipt email-in + OCR. | All three companies fully off Wave, with the seller tooling in daily use. | ongoing |
+| **8. SaaS readiness (when you decide)** | Stripe billing → plans → entitlements, self-serve onboarding, invoices/bills/AR/AP, more tax packs (US states, PK, UK, EU), Arabic/Urdu RTL, eBay/Shopify connectors, public SP-API app + Appstore review, security hardening, terms/privacy, full data export, marketing site with SEO landing pages. | First external customer onboarded. | 4–6 wks |
 
-**Why this order:** the ledger is the foundation everything posts into, so it comes first and gets the most testing. The Wave import right after it doubles as the best possible test, years of real data reconciled to the cent. Teknoffice only needs Accounting + Banking, so it can leave Wave after phase 2. Review requests (phase 3) are an early standalone win. Inventory/COGS needs settlements to know what sold and where the money went.
+**Why this order:** the ledger is the foundation everything posts into, so it comes first and gets the most testing. The Wave import right after it doubles as the best possible test, years of real data reconciled to the cent. Teknoffice only needs Accounting + Banking, so it can leave Wave after phase 2. Review requests (phase 3) are an early standalone win. The UAE company follows the Canadian ones (4b), reusing the same settlement engine. Inventory/COGS needs settlements to know what sold and where the money went.
 
 ---
 
@@ -408,18 +438,30 @@ Sizes are rough and assume focused work with Claude Code doing most of the imple
 
 ## 10. Product name & domain
 
-The product should have its own brand, separate from Kazomo. Domains below showed as **available in a registry lookup on 2026-10-04**. Nothing is reserved; check again and run a trademark search (CIPO, USPTO, UAE) before buying.
+**Recommendation: Bookalyze, at `bookalyze.com`.** It combines *books* and *analyze*, which is exactly the product: bookkeeping plus seller analytics.
 
-| Name | Idea | Available domains |
+Domains below showed as **available in a registry lookup on 2026-10-04**. Nothing is reserved. Run a trademark search (CIPO, USPTO, UAE) before buying.
+
+| Option | Verdict | Domains available |
 |---|---|---|
-| **Kontor** ⭐ | Historic word for a merchant's trading office and counting house (the Hanseatic *Kontore* were cross-border trading posts). It fits a back office for multi-country sellers, is short, and works in English, Urdu and Arabic speech. | **kontorhub.com**, **kontorbooks.com**, kontorhq.app, kontoro.app, kontorly.app |
-| **Evenbooks** | "Books that balance." Friendly and accounting-first, in the spirit of Wave. | evenbooks.app |
-| **Sellbooks** | Says exactly what it is: books for sellers. Strong for the e-commerce niche, narrower for general accounting. | sellbooks.app, sellbooks.io, sellerbooks.app |
-| **Ledgerlane** | Calm, trustworthy, generic enough to grow. | ledgerlane.app |
-| **Wrenbooks** | Small, friendly bird brand (approachable like Wave). | wrenbooks.app |
-| **Ledgerloft** | Workspace-style name for a multi-entity "office". | ledgerloft.app, ledgerloft.io |
+| **Bookalyze** ⭐ | A real `.com`, short, brandable, says what it does, works for both general accounting and sellers, and is easy to say in English, Urdu and Arabic. | **bookalyze.com**, plus bookalyse.com (UK/Canadian spelling, worth owning as a redirect), bookalyze.ca, bookalyze.app, bookalyze.io |
+| TekAccounts | `.com` available, and "accounts" is a real search term (especially in UK/PK/UAE English). But "Tek" gets misspelled as "Tech" (techaccounts.com is taken), it ties the product to Teknoffice, and it reads like an IT firm or an accounting *service* rather than software. | tekaccounts.com, tekaccount.com |
+| Keyword-exact alternatives | Strong keywords, but long and limited to sellers (Teknoffice-style accounting-only customers wouldn't see themselves in them). | accountingforsellers.com, bookkeepingforsellers.com, ecomaccounts.com, sellerbookkeeper.com, booksforsellers.com |
 
-Shorter `.com` options (Ledgerline, Tallio, Balanco, Evenbooks, Sellbooks, Settlr, Numra…) were all taken. A good pattern is to brand as **Kontor** and use `kontorhub.com` (or `kontorbooks.com`) for the site, with `app.` as the product subdomain.
+**On SEO-rich domains.** A keyword in the domain still helps a little:
+- People understand the result at a glance, which raises click-through.
+- Links that use your brand name automatically contain the keyword.
+
+But since Google's 2012 "exact-match domain" update, the domain itself is a small ranking factor. What ranks a SaaS is:
+- **Landing pages that answer real searches:** "Wave alternative", "Amazon seller accounting Canada", "FIFO COGS for Amazon FBA", "multi-currency bookkeeping for Wise".
+- **Backlinks.**
+- **People searching for the brand by name.**
+
+A domain like 3dboxstudio.com works well because it is *both* a memorable brand and descriptive. Bookalyze follows the same pattern for this product. Avoid trademarks in the domain: anything containing "Amazon", "Wise" or "Wave" invites a takedown.
+
+**Suggested setup:**
+- `bookalyze.com` for the marketing site and SEO content, with `app.bookalyze.com` for the product.
+- `bookalyse.com` and `bookalyze.ca` redirecting to the `.com`.
 
 ---
 
@@ -432,10 +474,11 @@ Shorter `.com` options (Ledgerline, Tallio, Balanco, Evenbooks, Sellbooks, Settl
 | 2026-10-04 | Inventory costing: **FIFO**. |
 | 2026-10-04 | Framework: **Next.js** (with TanStack Query/Table/Form). Hosting: **Vercel + Neon + AWS S3**. Background jobs: **Vercel Workflows + Vercel Cron** (replacing the Trigger.dev proposal, to stay on fewer vendors). |
 | 2026-10-04 | Teknoffice uses **Accounting + Banking only**. Per-org module toggles are a first-class feature (free today, plan-gated later). |
+| 2026-10-04 | Kazomo Inc. and Teknoffice are in **Ontario** (HST 13%). Location, currency, timezone, locale and taxes are **configuration for any country and subdivision**, with a generic tax engine and optional tax packs. |
+| 2026-10-04 | No Wave invoicing in use, so invoices/bills/AR/AP move to phase 8 (public launch). |
+| 2026-10-04 | UAE commerce (Amazon.ae + Noon) comes after the Canadian companies, as **phase 4b**. |
 
 ### Still open
 
-1. **Provinces** for Kazomo Inc. and Teknoffice. This only seeds the default tax rates, and each org can change it in Settings.
-2. **Wave invoicing:** do any of the companies use Wave invoices, bills or customer statements? This decides whether invoices/bills move up from phase 7.
-3. **Kazomo For Online Selling:** confirm Commerce (Amazon.ae, Noon) from phase 4 or later.
-4. **Name:** pick from §10 (or propose others to check).
+1. **Name:** confirm **Bookalyze** (recommended) or TekAccounts, then buy the domain(s).
+2. **UAE emirate** for Kazomo For Online Selling (address and registration details only; VAT is federal).
