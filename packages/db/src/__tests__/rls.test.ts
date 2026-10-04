@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { assertRlsEnforced, createDb, withOrg } from "../client";
+import { createDb, withOrg } from "../client";
 import * as schema from "../schema";
 
 const ownerUrl =
@@ -77,13 +77,34 @@ afterAll(async () => {
 });
 
 describe("row-level security", () => {
-  it("runs the app as a role that cannot bypass RLS", async () => {
-    await expect(assertRlsEnforced(app.db)).resolves.toBeUndefined();
-    await expect(assertRlsEnforced(owner.db)).rejects.toThrow();
-    // withOrg refuses to run tenant queries over a connection that would bypass RLS.
-    await expect(withOrg(owner.db, { orgId: crypto.randomUUID() }, async () => 1)).rejects.toThrow(
-      /Refusing to query tenant data/,
+  it("switches to app_runtime for tenant queries, then back", async () => {
+    for (const db of [app.db, owner.db]) {
+      const inside = await withOrg(db, { orgId: orgA }, (tx) =>
+        tx.execute<{ role: string }>(sql`select current_user as role`),
+      );
+      expect(inside.rows[0]?.role).toBe("app_runtime");
+    }
+    // SET LOCAL: the next query on the same pooled connection is back to the login role.
+    const after = await owner.db.execute<{ role: string }>(sql`select current_user as role`);
+    expect(after.rows[0]?.role).not.toBe("app_runtime");
+  });
+
+  it("isolates organizations even when the app logs in as the owner", async () => {
+    // Vercel's Neon integration only provides the owner login, which bypasses RLS on its own.
+    expect((await owner.db.select().from(schema.organizationProfiles)).length).toBeGreaterThan(1);
+    const profiles = await withOrg(owner.db, { orgId: orgA }, (tx) =>
+      tx.select().from(schema.organizationProfiles),
     );
+    expect(profiles.map((p) => p.legalName)).toEqual(["Org A Inc."]);
+
+    const message = await pgErrorOf(
+      withOrg(owner.db, { orgId: orgA }, (tx) =>
+        tx
+          .insert(schema.organizationModules)
+          .values({ organizationId: orgB, moduleKey: "commerce", enabled: true }),
+      ),
+    );
+    expect(message).toMatch(/row-level security/);
   });
 
   it("returns no tenant rows without an organization context", async () => {

@@ -31,22 +31,19 @@ http://localhost:3000/dev/emails.
 
 ## Neon (production database)
 
-1. Create a Neon project (region close to your users and to Vercel's function region) and a database
-   named `bookalyze`.
-2. In the Neon SQL editor, as the owner role, run `packages/db/scripts/create-app-role.sql` with a
-   strong password. This creates the `bookalyze_app` login role the app uses.
-3. Set `DATABASE_URL_MIGRATOR` (owner, **direct** connection) and run `pnpm db:setup` from your
-   machine. This creates the `app_runtime` group, grants it to `bookalyze_app`, and loads reference
-   data.
-4. Use `bookalyze_app` with the **pooled** connection string as the app's connection in Vercel.
-   **Never let the app connect as `neondb_owner` (Neon's default connection string).** The owner
-   skips row-level security, so every company would see every other company's data. The app
-   refuses to read company data over such a connection and logs "Refusing to query tenant data".
-   - If you added Neon through Vercel's **Storage** tab, Vercel manages `DATABASE_URL` (owner role)
-     and won't let you edit it. Leave it alone and add **`APP_DATABASE_URL`** (Production and
-     Preview) with the `bookalyze_app` pooled string. The app prefers `APP_DATABASE_URL` whenever
-     it's set.
-   - Otherwise set `DATABASE_URL` itself to the `bookalyze_app` pooled string.
+1. In Vercel → your project → **Storage**, create (or connect) a Neon database. Vercel sets
+   `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct), both as the owner role
+   (`neondb_owner`). Nothing else to add for the database.
+2. Create the tables and reference data from your machine, with the owner's **direct** string
+   (`vercel env pull` gives you `DATABASE_URL_UNPOOLED`, or copy it from Neon → Connect with
+   pooling off):
+   ```bash
+   DATABASE_URL_MIGRATOR='postgresql://neondb_owner:…@ep-….neon.tech/neondb?sslmode=require' pnpm db:setup
+   ```
+   The migrations create the `app_runtime` role and let the owner switch to it.
+3. Deploy. The app logs in as the owner, and every company-data query runs inside `withOrg()`,
+   which switches the transaction to `app_runtime`. That role owns no tables and can't bypass
+   row-level security, so each company only ever sees its own rows.
 
 Neon branches copy roles, so a `preview` branch works the same way with its own host.
 
@@ -57,7 +54,7 @@ Neon branches copy roles, so a `preview` branch works the same way with its own 
 2. Add the environment variables from `.env.example` for Production (and Preview, pointing at a Neon
    preview branch). Don't set `EMAIL_DEV_LOG` in production.
 3. Run migrations before deploying a change that includes a new migration:
-   `DATABASE_URL_MIGRATOR=… pnpm db:migrate`. Automating this in CI comes later.
+   `DATABASE_URL_MIGRATOR=… pnpm db:migrate` (owner, direct string). Automating this comes later.
 4. Add the domain `app.bookalyze.com` under Project → Domains.
 
 ## Google sign-in

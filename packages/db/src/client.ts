@@ -31,22 +31,14 @@ export function createDb(connectionString: string, poolConfig: pg.PoolConfig = {
 const globalForDb = globalThis as unknown as { __bookalyzeDb?: ReturnType<typeof createDb> };
 
 /**
- * The connection string the app uses: APP_DATABASE_URL when set, else DATABASE_URL. Hosts that
- * manage DATABASE_URL themselves (Vercel's Neon integration sets it to the owner role) can point
- * the app at the runtime role through APP_DATABASE_URL instead.
- */
-export function appDatabaseUrl(): string | undefined {
-  return process.env.APP_DATABASE_URL || process.env.DATABASE_URL || undefined;
-}
-
-/**
- * The app's shared database handle, connected as the runtime role (appDatabaseUrl()), for which
- * row-level security is enforced. Cached on globalThis so dev hot reloads reuse the pool.
+ * The app's shared database handle (DATABASE_URL). It may log in as the tables' owner, as Vercel's
+ * Neon integration does: withOrg() drops to app_runtime for tenant queries, so row-level security
+ * applies either way. Cached on globalThis so dev hot reloads reuse the pool.
  */
 export function getDb(): Database {
   if (!globalForDb.__bookalyzeDb) {
-    const url = appDatabaseUrl();
-    if (!url) throw new Error("APP_DATABASE_URL or DATABASE_URL must be set");
+    const url = process.env.DATABASE_URL;
+    if (!url) throw new Error("DATABASE_URL must be set");
     globalForDb.__bookalyzeDb = createDb(url);
   }
   return globalForDb.__bookalyzeDb.db;
@@ -55,50 +47,30 @@ export function getDb(): Database {
 export type OrgContext = { orgId: string; userId?: string | null };
 
 /**
- * Runs `fn` in a transaction scoped to one organization. Every tenant table's RLS policy
- * compares its organization_id with this setting, so queries inside cannot read or write
- * another organization's rows. Callers must check membership before calling this.
+ * Runs `fn` in a transaction scoped to one organization. The transaction switches to the
+ * app_runtime role, which owns no tables and can't bypass row-level security, so every tenant
+ * table's RLS policy applies whichever role the connection logged in as: queries inside cannot
+ * read or write another organization's rows. Callers must check membership before calling this.
+ * Query tenant data only through here.
  */
 export async function withOrg<T>(
   db: Database,
   ctx: OrgContext,
   fn: (tx: Transaction) => Promise<T>,
 ): Promise<T> {
-  // Tenant isolation rests on row-level security, which a superuser, BYPASSRLS or table-owner
-  // role skips. Refuse to touch tenant data over such a connection (checked once per pool).
-  let check = rlsChecked.get(db);
-  if (!check) {
-    check = assertRlsEnforced(db);
-    rlsChecked.set(db, check);
-    check.catch(() => rlsChecked.delete(db));
-  }
-  await check;
   return db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select set_config('app.org_id', ${ctx.orgId}, true), set_config('app.user_id', ${ctx.userId ?? ""}, true)`,
-    );
+    try {
+      // set_config('role', …, true) is SET LOCAL ROLE: it ends with the transaction, so pooled
+      // connections (Neon's PgBouncer) never carry it over.
+      await tx.execute(
+        sql`select set_config('role', 'app_runtime', true), set_config('app.org_id', ${ctx.orgId}, true), set_config('app.user_id', ${ctx.userId ?? ""}, true)`,
+      );
+    } catch (error) {
+      throw new Error(
+        "Can't switch to the app_runtime role for tenant queries. Run the database migrations (pnpm db:migrate), which let the database owner use it. See docs/SETUP.md.",
+        { cause: error },
+      );
+    }
     return fn(tx);
   });
-}
-
-const rlsChecked = new WeakMap<Database, Promise<void>>();
-
-/**
- * Throws if the connection's role would bypass row-level security: a superuser, a BYPASSRLS
- * role, or the owner of the tables (or a member of the owning role, such as Neon's
- * neondb_owner). Called by withOrg() before the first query on each pool.
- */
-export async function assertRlsEnforced(db: Database): Promise<void> {
-  const result = await db.execute<{ bypass: boolean; owns: boolean }>(sql`
-    select (r.rolsuper or r.rolbypassrls) as bypass,
-           exists (select 1 from pg_tables t
-                   where t.schemaname = 'public' and t.tablename = 'organization_profiles'
-                     and pg_has_role(current_user, t.tableowner, 'USAGE')) as owns
-    from pg_roles r where r.rolname = current_user`);
-  const row = result.rows[0];
-  if (!row || row.bypass || row.owns) {
-    throw new Error(
-      "Refusing to query tenant data: the app's database connection (APP_DATABASE_URL, else DATABASE_URL) uses a role that bypasses row-level security (a superuser, BYPASSRLS or the tables' owner, e.g. neondb_owner). Set APP_DATABASE_URL to the runtime role (bookalyze_app, a member of app_runtime). See docs/SETUP.md.",
-    );
-  }
 }
