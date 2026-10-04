@@ -2,6 +2,7 @@ import {
   ArrowRight,
   BarChart3,
   BookOpen,
+  Columns3,
   FileSpreadsheet,
   Landmark,
   ReceiptText,
@@ -41,6 +42,12 @@ const REPORTS = [
     icon: BookOpen,
   },
   {
+    href: "transactions",
+    title: "Accounting transactions",
+    body: "Every transaction line in the same columns as Wave's export. The file your accountant asks for at tax time.",
+    icon: FileSpreadsheet,
+  },
+  {
     href: "sales-tax",
     title: "Sales tax",
     body: "Tax collected and paid for each filing period, and what you owe or get back.",
@@ -50,9 +57,9 @@ const REPORTS = [
 
 const COMING = [
   {
-    title: "Export to CSV and PDF",
-    body: "Share any report with your accountant.",
-    icon: FileSpreadsheet,
+    title: "Compare periods",
+    body: "Profit and loss side by side with last year or last quarter.",
+    icon: Columns3,
   },
 ] as const;
 

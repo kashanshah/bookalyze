@@ -404,8 +404,24 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
      sheet and trial balance use the financial year to date, so the opening is everything
      before it). Queries: `ledgerActivity`, `accountLedgerLines` (db `reports.ts`); shaping:
      `generalLedgerSummary`, `accountLedger` (core).
-   - [ ] CSV and PDF export.
-   - [ ] Comparison columns on profit and loss.
+   - [x] CSV and PDF export. Every report has "Download CSV" (`/api/o/[slug]/reports/[report]`,
+     same URL params as the page; builders in core `accounting/export.ts`: plain numbers rounded
+     to the currency, a header block, formula-safe text) and "Print or save PDF" (the browser's
+     print dialog; printouts drop the navigation and always use the light theme). Pages and
+     downloads share loaders in `reports/data.ts`, so they always agree. Ledger CSVs hold up to
+     50,000 lines. A server-made PDF (letterhead, page numbers) can come later if needed.
+   - [x] Accountant's export in Wave's layout. Reports → Accounting transactions (also "Export
+     for accountant" on Transactions): one row per journal line with Wave's 22 "Accounting
+     transactions" columns, built by `waveTransactionsCsv` (core `accounting/wave-export.ts`)
+     from `transactionExportLines` (db). An entry and its reversal are left out when both fall
+     in the period. Sales tax is split across the taxed lines; Wave's account group and type
+     names come from `WAVE_TYPES`. A unit test reads the file back through our own Wave importer.
+     Up to 200,000 lines per file (shorter period otherwise).
+   - [x] Comparison columns on profit and loss. "Compare with" (`?compare=previous|last-year`):
+     the period just before (whole months step back by months, otherwise by days) or the same
+     dates a year earlier (month ends kept). Each account shows this period, the earlier one and
+     the change with a percentage; accounts only active earlier still get a row. Core
+     `accounting/compare.ts`; the CSV gets the same columns.
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.

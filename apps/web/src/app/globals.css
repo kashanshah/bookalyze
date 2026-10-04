@@ -176,3 +176,13 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  @page {
+    margin: 14mm 12mm;
+  }
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

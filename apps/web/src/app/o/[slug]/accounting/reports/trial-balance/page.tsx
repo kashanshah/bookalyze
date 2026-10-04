@@ -1,11 +1,8 @@
-import { fiscalYearFor, trialBalance } from "@bookalyze/core";
-import { accountBalances } from "@bookalyze/db";
 import type { Metadata } from "next";
 import { Amount } from "@/components/accounting/amount";
-import { formatDate, nowIn } from "@/lib/dates";
-import { getAccountingContext, inOrg } from "@/server/accounting";
-import { fiscalConfigOf } from "@/server/org";
-import { resolveDate } from "../periods";
+import { formatDate } from "@/lib/dates";
+import { getAccountingContext } from "@/server/accounting";
+import { exportHref, loadTrialBalance } from "../data";
 import { DateControls } from "../report-controls";
 import { AccountCell, BalanceCheck, ledgerHref, ReportCard, ReportHeader } from "../report-parts";
 
@@ -21,11 +18,8 @@ export default async function TrialBalancePage({
   const { slug } = await params;
   const ctx = await getAccountingContext(slug);
   const { locale, baseCurrency: currency } = ctx.profile;
-  const today = nowIn(ctx.profile.timezone).date;
-  const cfg = fiscalConfigOf(ctx.profile);
-  const { date, presets } = resolveDate(await searchParams, today, cfg);
-  const ledger = { slug, from: fiscalYearFor(date, cfg).start, to: date };
-  const tb = trialBalance(await inOrg(ctx, (tx) => accountBalances(tx, { to: date })));
+  const { date, presets, fy, tb } = await loadTrialBalance(ctx, await searchParams);
+  const ledger = { slug, from: fy.start, to: date };
 
   return (
     <div className="grid gap-6">
@@ -36,7 +30,11 @@ export default async function TrialBalancePage({
         period={`As of ${formatDate(date, locale, "long")}`}
         description="Every account with a balance, in debit and credit columns. The two totals always match."
       />
-      <DateControls date={date} presets={presets} />
+      <DateControls
+        date={date}
+        presets={presets}
+        csvHref={exportHref(slug, "trial-balance", { date })}
+      />
       <ReportCard>
         <div className="grid grid-cols-[minmax(0,1fr)_7.5rem_7.5rem] gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider sm:grid-cols-[minmax(0,1fr)_10rem_10rem] sm:px-6">
           <span>Account</span>

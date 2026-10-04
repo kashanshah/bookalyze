@@ -1,8 +1,8 @@
 import { prepareJournalEntry, type TransactionInput, transactionLines } from "@bookalyze/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
-import { createDefaultChart, postJournalEntry } from "../ledger";
-import { accountLedgerLines, ledgerActivity } from "../reports";
+import { createDefaultChart, postJournalEntry, reverseJournalEntry } from "../ledger";
+import { accountLedgerLines, ledgerActivity, transactionExportLines } from "../reports";
 import * as schema from "../schema";
 
 const ownerUrl =
@@ -28,7 +28,7 @@ async function post(orgId: string, date: string, input: TransactionInput) {
   );
   if (!result.ok) throw new Error(JSON.stringify(result.errors));
   const entry = result.entry;
-  await inOrg(orgId, (tx) => postJournalEntry(tx, { orgId, date, entry }));
+  return inOrg(orgId, (tx) => postJournalEntry(tx, { orgId, date, entry }));
 }
 
 beforeAll(async () => {
@@ -124,5 +124,55 @@ describe("general ledger queries", () => {
     expect(
       await inOrg(orgB, (tx) => accountLedgerLines(tx, code["1000"] as string, range)),
     ).toBeNull();
+  });
+
+  it("exports every line for the accountant, leaving out entries reversed within the period", async () => {
+    const bank = code["1000"] as string;
+    const sales = code["4000"] as string;
+    const deposit = {
+      kind: "deposit" as const,
+      moneyAccountId: bank,
+      splits: [{ accountId: sales, amount: "55" }],
+    };
+    const undone = await post(orgA, "2026-02-01", deposit);
+    await inOrg(orgA, (tx) =>
+      reverseJournalEntry(tx, { orgId: orgA, entryId: undone.id, date: "2026-02-10" }),
+    );
+    const kept = await post(orgA, "2026-02-20", deposit);
+    const late = await post(orgA, "2026-02-27", deposit);
+    await inOrg(orgA, (tx) =>
+      reverseJournalEntry(tx, { orgId: orgA, entryId: late.id, date: "2026-03-02" }),
+    );
+
+    const feb = await inOrg(orgA, (tx) =>
+      transactionExportLines(tx, { from: "2026-02-01", to: "2026-02-28" }),
+    );
+    expect(feb.truncated).toBe(false);
+    expect([...new Set(feb.lines.map((l) => l.entryNumber))]).toEqual([
+      kept.entryNumber,
+      late.entryNumber,
+    ]);
+    expect(feb.lines.find((l) => l.accountName === "Sales")).toMatchObject({
+      amount: "-55.0000",
+      accountType: "income",
+    });
+    // The reversal in March stays in March's file, so each month adds up to the books.
+    const mar = await inOrg(orgA, (tx) =>
+      transactionExportLines(tx, { from: "2026-03-01", to: "2026-03-31" }),
+    );
+    expect(mar.lines).toHaveLength(2);
+    // Another company's lines never appear.
+    const other = await inOrg(orgB, (tx) =>
+      transactionExportLines(tx, { from: "2026-02-01", to: "2026-02-28" }),
+    );
+    expect(other.lines).toEqual([]);
+  });
+
+  it("says when the list was cut", async () => {
+    const cut = await inOrg(orgA, (tx) =>
+      transactionExportLines(tx, { from: "2024-01-01", to: "2026-12-31" }, 3),
+    );
+    expect(cut).toMatchObject({ truncated: true });
+    expect(cut.lines).toHaveLength(3);
   });
 });

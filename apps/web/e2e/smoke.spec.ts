@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { choose, latestLink, signIn, signOut, signUp, verifyEmail, withOwnerDb } from "./helpers";
 
@@ -155,6 +156,18 @@ test("bookkeeping: chart of accounts, journal entries, reversal and reports", as
   await page.getByRole("link", { name: /Trial balance/ }).click();
   await expect(page.getByText("Debits equal credits.")).toBeVisible();
   await expect(page.getByText("$3,800.00")).toBeVisible();
+  // Every report downloads as CSV, with the company, report and period on top.
+  const downloadCsv = async () => {
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("link", { name: "Download CSV" }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/\.csv$/);
+    return readFile(await download.path(), "utf8");
+  };
+  const tbCsv = await downloadCsv();
+  expect(tbCsv).toContain("Report,Trial balance");
+  expect(tbCsv).toContain(",,Total,5000.00,5000.00");
   await page.getByRole("link", { name: "All reports" }).click();
   await page.getByRole("link", { name: /Profit and loss/ }).click();
   await expect(page.getByText("Net loss")).toBeVisible();
@@ -171,6 +184,10 @@ test("bookkeeping: chart of accounts, journal entries, reversal and reports", as
   await expect(page.getByRole("link", { name: /October rent/ })).toBeVisible();
   await expect(page.getByText("Closing balance")).toBeVisible();
   await expect(page.getByText("$3,800.00").last()).toBeVisible();
+  const ledgerCsv = await downloadCsv();
+  expect(ledgerCsv).toContain("Account,1010 RBC Chequing");
+  expect(ledgerCsv).toContain(",Owner investment,,5000.00,,5000.00,,");
+  expect(ledgerCsv).toContain(",,,Closing balance,,,,3800.00,,");
   // "All accounts" shows each account's opening, debits, credits and closing.
   await choose(page.getByLabel("Account", { exact: true }), "All accounts");
   await expect(page.getByRole("link", { name: /Rent/ }).first()).toBeVisible();
@@ -192,6 +209,15 @@ test("bookkeeping: chart of accounts, journal entries, reversal and reports", as
   await page.getByRole("link", { name: "Reports", exact: true }).click();
   await page.getByRole("link", { name: /Profit and loss/ }).click();
   await expect(page.getByText("Net profit")).toBeVisible();
+  // Compared with the previous period: each account shows what it was and the change.
+  await choose(page.locator("#compare"), "Previous period");
+  await expect(page).toHaveURL(/compare=previous/);
+  await expect(page.getByText(/compared with/)).toBeVisible();
+  // The rent entry was reversed, so neither period has income or expenses left.
+  await expect(page.getByText("Nothing in either period.").first()).toBeVisible();
+  const compareCsv = await downloadCsv();
+  expect(compareCsv).toContain("Compared with,");
+  expect(compareCsv).toMatch(/Section,Code,Account,[^,]+,[^,]+,Change/);
 
   // Once there are entries the main currency is locked, and finished periods can be closed.
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
@@ -519,6 +545,24 @@ test("sales tax: Ontario setup, HST on transactions and the filing report", asyn
   await expect(page.getByText("Tax you can claim back").locator("..")).toContainText("$6.50");
   await expect(page.getByText("You owe").locator("..")).toContainText("$6.50");
   await expect(page.locator("li", { hasText: "HST 13% (Ontario)" })).toContainText("$100.00");
+
+  // The accountant's export: Wave's columns, one row per line, sales tax split out.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("link", { name: "Export for accountant" }).click();
+  await expect(page.getByRole("heading", { name: "Accounting transactions" })).toBeVisible();
+  await expect(page.getByText("The first lines of the file")).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: "Download CSV" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/accounting-transactions.*\.csv$/);
+  const csv = await readFile(await download.path(), "utf8");
+  expect(csv).toContain(
+    "Transaction ID,Transaction Date,Account Name,Transaction Description,Transaction Line Description,Amount (One column),Debit Amount (Two Column Approach),Credit Amount (Two Column Approach),Other Accounts for this Transaction",
+  );
+  const saleLine = csv.split("\r\n").find((l) => l.includes(",Sales,Website sale,"));
+  expect(saleLine).toMatch(/,-100\.00,,100\.00,/);
+  expect(saleLine).toMatch(/,100\.00,13\.00,[^,]*HST[^,]*,/);
 });
 
 test("searchable dropdowns: type to filter and pick with the keyboard", async ({ page }) => {

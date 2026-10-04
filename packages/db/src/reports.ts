@@ -1,5 +1,5 @@
-import type { AccountType, LedgerActivity } from "@bookalyze/core";
-import { and, asc, eq, gte, lt, lte, type SQL, sql } from "drizzle-orm";
+import type { AccountType, LedgerActivity, TransactionExportLine } from "@bookalyze/core";
+import { aliasedTable, and, asc, eq, gte, lt, lte, type SQL, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import {
   accounts,
@@ -8,6 +8,7 @@ import {
   journalEntries,
   journalLines,
 } from "./schema/accounting";
+import { taxRates } from "./schema/tax";
 
 /**
  * Queries behind the general ledger. Call inside `withOrg()`. Amounts are base-currency sums of
@@ -164,4 +165,63 @@ export async function accountLedgerLines(
     debits: count?.debits ?? "0.0000",
     credits: count?.credits ?? "0.0000",
   };
+}
+
+/**
+ * Every journal line dated in [from, to], in date, entry and line order, for the accountant's
+ * export. An entry and its reversal are both left out when both fall in the period (an edited
+ * or deleted transaction nets to nothing); a reversal in a later period stays, so the file
+ * always adds up to the books. Returns at most `limit` lines plus whether more were cut.
+ */
+export async function transactionExportLines(
+  tx: Transaction,
+  range: { from: string; to: string },
+  limit = 200_000,
+): Promise<{ lines: TransactionExportLine[]; truncated: boolean }> {
+  const partner = aliasedTable(journalEntries, "partner");
+  const rows = await tx
+    .select({
+      lineId: journalLines.id,
+      entryId: journalEntries.id,
+      entryNumber: journalEntries.entryNumber,
+      date: journalEntries.date,
+      memo: journalEntries.memo,
+      reference: journalEntries.reference,
+      recordedOn: sql<string>`to_char(${journalEntries.createdAt}, 'YYYY-MM-DD')`,
+      accountName: accounts.name,
+      accountCode: accounts.code,
+      accountType: accounts.type,
+      accountSubtype: accounts.subtype,
+      description: journalLines.description,
+      amount: sql<string>`${journalLines.baseAmount}::text`,
+      taxRateName: taxRates.name,
+      isTaxLine: sql<boolean>`coalesce(${journalLines.accountId} = ${taxRates.accountId}, false)`,
+      contactName: contacts.name,
+      contactType: contacts.type,
+    })
+    .from(journalLines)
+    .innerJoin(
+      journalEntries,
+      and(
+        eq(journalEntries.id, journalLines.journalEntryId),
+        gte(journalEntries.date, range.from),
+        lte(journalEntries.date, range.to),
+      ),
+    )
+    .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+    .leftJoin(taxRates, eq(taxRates.id, journalLines.taxRateId))
+    .leftJoin(contacts, eq(contacts.id, journalEntries.contactId))
+    // The other half of a reversal pair, when it's also in the period.
+    .leftJoin(
+      partner,
+      and(
+        sql`${partner.id} = coalesce(${journalEntries.reversedByEntryId}, ${journalEntries.reversesEntryId})`,
+        gte(partner.date, range.from),
+        lte(partner.date, range.to),
+      ),
+    )
+    .where(sql`${partner.id} is null`)
+    .orderBy(asc(journalEntries.date), asc(journalEntries.entryNumber), asc(journalLines.lineNo))
+    .limit(limit + 1);
+  return { lines: rows.slice(0, limit), truncated: rows.length > limit };
 }

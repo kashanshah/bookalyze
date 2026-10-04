@@ -1,10 +1,7 @@
-import { balanceSheet, fiscalYearFor } from "@bookalyze/core";
-import { accountBalances } from "@bookalyze/db";
 import type { Metadata } from "next";
-import { formatDate, nowIn } from "@/lib/dates";
-import { getAccountingContext, inOrg } from "@/server/accounting";
-import { fiscalConfigOf } from "@/server/org";
-import { resolveDate } from "../periods";
+import { formatDate } from "@/lib/dates";
+import { getAccountingContext } from "@/server/accounting";
+import { exportHref, loadBalanceSheet } from "../data";
 import { DateControls } from "../report-controls";
 import {
   BalanceCheck,
@@ -26,18 +23,9 @@ export default async function BalanceSheetPage({
   const { slug } = await params;
   const ctx = await getAccountingContext(slug);
   const { locale, baseCurrency: currency } = ctx.profile;
-  const cfg = fiscalConfigOf(ctx.profile);
-  const today = nowIn(ctx.profile.timezone).date;
-  const { date, presets } = resolveDate(await searchParams, today, cfg);
-  const fy = fiscalYearFor(date, cfg);
+  const { date, presets, fy, bs } = await loadBalanceSheet(ctx, await searchParams);
   // An account's lines this financial year, with everything before it as the opening balance.
   const ledger = { slug, from: fy.start, to: date };
-  const bs = await inOrg(ctx, async (tx) =>
-    balanceSheet(
-      await accountBalances(tx, { to: date }),
-      await accountBalances(tx, { from: fy.start, to: date }),
-    ),
-  );
 
   return (
     <div className="grid gap-6">
@@ -48,7 +36,11 @@ export default async function BalanceSheetPage({
         period={`As of ${formatDate(date, locale, "long")}`}
         description={`What the company owns and owes on this date. Profit since ${formatDate(fy.start, locale)} (the start of ${fy.label}) is shown under equity.`}
       />
-      <DateControls date={date} presets={presets} />
+      <DateControls
+        date={date}
+        presets={presets}
+        csvHref={exportHref(slug, "balance-sheet", { date })}
+      />
       <ReportCard>
         <ReportSectionRows
           section={bs.assets}

@@ -3,32 +3,22 @@ import {
   accountLedger,
   accountTypes,
   formatMoney,
-  generalLedgerSummary,
+  type GeneralLedgerSummary,
 } from "@bookalyze/core";
-import {
-  type AccountLedgerData,
-  accountLedgerLines,
-  formatEntryNumber,
-  type LedgerLineRow,
-  ledgerActivity,
-} from "@bookalyze/db";
+import { type AccountLedgerData, formatEntryNumber, type LedgerLineRow } from "@bookalyze/db";
 import { ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Amount } from "@/components/accounting/amount";
 import { Badge } from "@/components/ui/badge";
-import { formatDate, nowIn } from "@/lib/dates";
-import { getAccountingContext, inOrg, listAccounts } from "@/server/accounting";
-import { fiscalConfigOf } from "@/server/org";
-import { resolveRange } from "../periods";
+import { formatDate } from "@/lib/dates";
+import { getAccountingContext, listAccounts } from "@/server/accounting";
+import { exportHref, ledgerLineDetails, loadGeneralLedger } from "../data";
 import { RangeControls } from "../report-controls";
 import { ReportCard, ReportHeader } from "../report-parts";
 import { AccountPicker } from "./account-picker";
 
 export const metadata: Metadata = { title: "General ledger" };
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const LINE_LIMIT = 1000;
 
 type Money = { currency: string; locale: string };
 
@@ -43,20 +33,9 @@ export default async function GeneralLedgerPage({
   const query = await searchParams;
   const ctx = await getAccountingContext(slug);
   const { locale, baseCurrency: currency } = ctx.profile;
-  const today = nowIn(ctx.profile.timezone).date;
-  const { from, to, presets } = resolveRange(query, today, fiscalConfigOf(ctx.profile));
-  const accountId = query.account && UUID.test(query.account) ? query.account : null;
-
-  const [accounts, data] = await Promise.all([
+  const [accounts, { from, to, presets, accountId, data }] = await Promise.all([
     listAccounts(ctx),
-    inOrg(ctx, async (tx) =>
-      accountId
-        ? {
-            kind: "account" as const,
-            ledger: await accountLedgerLines(tx, accountId, { from, to }, LINE_LIMIT),
-          }
-        : { kind: "summary" as const, activity: await ledgerActivity(tx, { from, to }) },
-    ),
+    loadGeneralLedger(ctx, query),
   ]);
   const options = accounts.map((a) => ({
     value: a.id,
@@ -78,16 +57,19 @@ export default async function GeneralLedgerPage({
       />
       <div className="grid gap-4">
         <AccountPicker value={accountId ?? ""} options={options} />
-        <RangeControls from={from} to={to} presets={presets} />
-      </div>
-      {data.kind === "summary" ? (
-        <Summary
-          slug={slug}
+        <RangeControls
           from={from}
           to={to}
-          summary={generalLedgerSummary(data.activity)}
-          money={money}
+          presets={presets}
+          csvHref={exportHref(slug, "general-ledger", {
+            from,
+            to,
+            ...(accountId ? { account: accountId } : {}),
+          })}
         />
+      </div>
+      {data.kind === "summary" ? (
+        <Summary slug={slug} from={from} to={to} summary={data.summary} money={money} />
       ) : data.ledger ? (
         <AccountLines slug={slug} data={data.ledger} money={money} />
       ) : (
@@ -107,8 +89,9 @@ export default async function GeneralLedgerPage({
   );
 }
 
+// Printed pages are narrower than most screens: tighter amount columns, no chevron.
 const SUMMARY_GRID =
-  "sm:grid sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_8.5rem_8.5rem_1rem] sm:items-baseline sm:gap-4";
+  "sm:grid sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_8.5rem_8.5rem_1rem] sm:items-baseline sm:gap-4 print:grid-cols-[minmax(0,1fr)_6rem_6rem_6rem_6.5rem_0] print:gap-2";
 
 function Summary({
   slug,
@@ -120,7 +103,7 @@ function Summary({
   slug: string;
   from: string;
   to: string;
-  summary: ReturnType<typeof generalLedgerSummary>;
+  summary: GeneralLedgerSummary;
   money: Money;
 }) {
   return (
@@ -153,7 +136,7 @@ function Summary({
                     className={`group flex flex-col gap-1 px-5 py-2.5 text-sm transition-colors hover:bg-muted/40 sm:px-6 ${SUMMARY_GRID}`}
                   >
                     <span className="flex min-w-0 items-baseline justify-between gap-3">
-                      <span className="min-w-0 truncate">
+                      <span className="min-w-0 truncate print:whitespace-normal">
                         {row.code ? (
                           <span className="me-2 font-mono text-muted-foreground text-xs">
                             {row.code}
@@ -191,7 +174,7 @@ function Summary({
                       {...money}
                       className="hidden text-end font-medium sm:block"
                     />
-                    <ChevronRight className="hidden size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 sm:block rtl:rotate-180" />
+                    <ChevronRight className="hidden size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 sm:block rtl:rotate-180 print:hidden" />
                   </Link>
                 </li>
               ))}
@@ -218,7 +201,7 @@ function Summary({
 }
 
 const LINE_GRID =
-  "sm:grid sm:grid-cols-[6.5rem_minmax(0,1fr)_8rem_8rem_8.5rem] sm:items-baseline sm:gap-4";
+  "sm:grid sm:grid-cols-[6.5rem_minmax(0,1fr)_8rem_8rem_8.5rem] sm:items-baseline sm:gap-4 print:grid-cols-[5.5rem_minmax(0,1fr)_6rem_6rem_6.5rem] print:gap-2";
 
 function AccountLines({
   slug,
@@ -282,7 +265,9 @@ function AccountLines({
                   {formatDate(line.date, money.locale)}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate">{details(line)}</span>
+                  <span className="block truncate print:whitespace-normal">
+                    {ledgerLineDetails(line)}
+                  </span>
                   <span className="block truncate text-muted-foreground text-xs">
                     {formatEntryNumber(line.entryNumber)}
                     {line.reference ? ` · ${line.reference}` : ""}
@@ -336,11 +321,6 @@ function AccountLines({
       <BalanceRow label="Closing balance" value={ledger.closing} money={money} emphasis />
     </ReportCard>
   );
-}
-
-function details(line: LedgerLineRow): string {
-  const parts = [line.description || line.memo, line.contactName].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "Journal entry";
 }
 
 function BalanceRow({
