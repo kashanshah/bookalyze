@@ -1,11 +1,12 @@
 import { formatDecimal, parseDecimal } from "@bookalyze/core";
-import { formatEntryNumber, schema } from "@bookalyze/db";
+import { formatEntryNumber, listAttachmentsFor, schema } from "@bookalyze/db";
 import { eq, inArray } from "drizzle-orm";
 import { ArrowLeft, Lock, Plus, Undo2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Amount } from "@/components/accounting/amount";
+import { ReceiptsPanel } from "@/components/accounting/receipts-panel";
 import { PageHeader } from "@/components/shell/page-header";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -62,11 +63,12 @@ export default async function JournalEntryPage({
           .from(schema.journalEntries)
           .where(inArray(schema.journalEntries.id, relatedIds))
       : [];
-    return { ...entry, lines, related };
+    const files = await listAttachmentsFor(tx, "journal_entry", id);
+    return { ...entry, lines, related, files };
   });
   if (!data) notFound();
 
-  const { entry, author, lines, related } = data;
+  const { entry, author, lines, related, files } = data;
   const lockedThrough = ctx.profile.booksLockedThrough;
   const closed = Boolean(lockedThrough && entry.date <= lockedThrough);
   const number = formatEntryNumber(entry.entryNumber);
@@ -277,6 +279,27 @@ export default async function JournalEntryPage({
             </span>
           ) : null}
         </div>
+      </section>
+
+      <section className="grid gap-3 rounded-2xl border bg-card p-5 shadow-xs sm:p-6">
+        <div>
+          <h2 className="font-semibold">Receipts and files</h2>
+          <p className="text-muted-foreground text-sm">
+            Photos or PDFs that back up this entry. Anyone in the company can open them.
+          </p>
+        </div>
+        <ReceiptsPanel
+          slug={slug}
+          entryId={entry.id}
+          files={files.map((f) => ({
+            id: f.id,
+            fileName: f.fileName,
+            contentType: f.contentType,
+            sizeBytes: f.sizeBytes,
+            createdAt: f.createdAt.toISOString(),
+            url: `/api/o/${slug}/attachments/${f.id}`,
+          }))}
+        />
       </section>
     </div>
   );

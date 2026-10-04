@@ -113,6 +113,8 @@ export const transactionSchema = z.object({
   fromAccountId: z.string().trim().max(64).optional(),
   toAccountId: z.string().trim().max(64).optional(),
   amount: amountText.optional(),
+  /** Receipts uploaded while creating the transaction, attached once it's saved. */
+  attachmentIds: z.array(z.uuid()).max(50).optional(),
 });
 
 export type TransactionFormInput = z.input<typeof transactionSchema>;

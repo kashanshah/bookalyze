@@ -103,6 +103,7 @@ export default async function TransactionsPage({
     currency: r.currency,
     fxRate: r.fxRate,
     reviewed: r.reviewed,
+    attachments: r.attachments,
     kind: r.view.kind,
     amount: r.view.amount,
     moneyAccountIds: r.view.moneyAccountIds,

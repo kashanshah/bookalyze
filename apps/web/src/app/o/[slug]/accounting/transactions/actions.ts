@@ -11,6 +11,7 @@ import {
   booksLockedThrough,
   formatEntryNumber,
   LedgerError,
+  linkAttachments,
   postJournalEntry,
   replaceJournalEntry,
   schema,
@@ -189,6 +190,15 @@ export async function saveTransactionAction(
       const result = value.id
         ? await replaceJournalEntry(tx, { ...common, entryId: value.id })
         : await postJournalEntry(tx, common);
+      if (!value.id && value.attachmentIds?.length) {
+        await linkAttachments(tx, {
+          orgId: ctx.org.id,
+          attachmentIds: value.attachmentIds,
+          entityType: "journal_entry",
+          entityId: result.id,
+          userId: ctx.session.user.id,
+        });
+      }
       await audit(tx, {
         orgId: ctx.org.id,
         actorUserId: ctx.session.user.id,

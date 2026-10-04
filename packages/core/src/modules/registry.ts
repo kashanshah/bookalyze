@@ -51,6 +51,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     features: ["accounting.core", "accounting.reports", "accounting.wave_import"],
     nav: [
       { label: "Transactions", href: "/accounting/transactions" },
+      { label: "Receipts", href: "/accounting/receipts" },
       { label: "Journal entries", href: "/accounting/journal" },
       { label: "Chart of accounts", href: "/accounting/accounts" },
       { label: "Reports", href: "/accounting/reports" },

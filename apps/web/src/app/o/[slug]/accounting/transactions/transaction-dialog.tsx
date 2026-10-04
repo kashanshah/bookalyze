@@ -20,6 +20,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { ReceiptsPanel } from "@/components/accounting/receipts-panel";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,8 +35,10 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
+import type { AttachmentSummary } from "@/lib/attachments";
 import { formatDate, nextDay } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+import { entryAttachmentsAction } from "../receipts/actions";
 import { deleteTransactionAction, saveTransactionAction, type TransactionErrors } from "./actions";
 import type { TxFormContext, TxRow } from "./types";
 
@@ -136,6 +139,18 @@ function TransactionForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Receipts: loaded for an existing transaction; collected and attached on save for a new one.
+  const [files, setFiles] = useState<AttachmentSummary[] | null>(row ? null : []);
+  useEffect(() => {
+    if (!row) return;
+    let cancelled = false;
+    entryAttachmentsAction(ctx.slug, row.id).then((loaded) => {
+      if (!cancelled) setFiles(loaded);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [row, ctx.slug]);
 
   useEffect(() => {
     if (!confirmDelete) return;
@@ -182,6 +197,7 @@ function TransactionForm({
         date,
         memo,
         fxRate: foreign ? fxRate : undefined,
+        attachmentIds: row ? undefined : (files ?? []).map((f) => f.id),
         moneyAccountId,
         splits: splits.map(({ accountId, amount, description }) => ({
           accountId,
@@ -509,6 +525,23 @@ function TransactionForm({
 
         {formError ? <Alert variant="destructive">{formError}</Alert> : null}
       </fieldset>
+
+      <div className="grid gap-2">
+        <span className="font-medium text-sm">Receipts and files</span>
+        {files === null ? (
+          <div className="flex h-20 items-center justify-center rounded-xl border border-dashed">
+            <Spinner className="text-muted-foreground" />
+          </div>
+        ) : (
+          <ReceiptsPanel
+            slug={ctx.slug}
+            entryId={row?.id}
+            files={files}
+            onChange={setFiles}
+            compact
+          />
+        )}
+      </div>
 
       <DialogFooter className="sm:justify-between">
         <div className="flex flex-wrap gap-2">

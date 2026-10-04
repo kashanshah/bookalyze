@@ -22,7 +22,9 @@
         "SIGNUP_MODE",
         "PLATFORM_ADMIN_EMAILS",
         "APP_URL",
-        "OAUTH_PROXY_PRODUCTION_URL"
+        "OAUTH_PROXY_PRODUCTION_URL",
+        "AWS_*",
+        "STORAGE_DRIVER"
       ]
     },
     "typecheck": {
