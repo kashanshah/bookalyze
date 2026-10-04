@@ -1,4 +1,4 @@
-# Backoffice: Product & Development Plan
+# Bookalyze: Product & Development Plan
 
 > Status: **v0.4.** All initial decisions are made (see [§11 Decision log](#11-decision-log)). Phase 0 is in progress.
 
