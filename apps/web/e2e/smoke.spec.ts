@@ -203,6 +203,76 @@ test("bookkeeping: chart of accounts, journal entries, reversal and reports", as
   await expect(page.getByText("All periods are open.")).toBeVisible();
 });
 
+test("transactions: money in, split expense, review, edit and remove", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await expect(page.getByText("Owner investment")).toBeVisible();
+  // Reversed entries and their reversals are hidden.
+  await expect(page.getByText("October rent")).toHaveCount(0);
+
+  // Money in.
+  await page.getByRole("button", { name: "Add income" }).click();
+  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await page.locator("#tx-memo").fill("Client payment");
+  await page.getByLabel("Category 1", { exact: true }).selectOption({ label: "4000 · Sales" });
+  await page.getByLabel("Amount 1").fill("800");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added")).toBeVisible();
+  const payment = page.locator("li", { hasText: "Client payment" });
+  await expect(payment.getByText("+$800.00")).toBeVisible();
+
+  // Money out, split across two categories.
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await page.locator("#tx-money").selectOption({ label: "1010 · RBC Chequing" });
+  await page.locator("#tx-memo").fill("Supplies and shipping");
+  await page
+    .getByLabel("Category 1", { exact: true })
+    .selectOption({ label: "6250 · Office supplies" });
+  await page.getByLabel("Amount 1").fill("40");
+  await page.getByRole("button", { name: "Split into categories" }).click();
+  await page
+    .getByLabel("Category 2", { exact: true })
+    .selectOption({ label: "6400 · Shipping and postage" });
+  await page.getByLabel("Amount 2").fill("25.50");
+  await expect(page.getByText("$65.50")).toBeVisible();
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  const supplies = page.locator("li", { hasText: "Supplies and shipping" });
+  await expect(supplies.getByText("Split (2)")).toBeVisible();
+  await expect(supplies.getByText("−$65.50")).toBeVisible();
+
+  // Review, and filter by status.
+  await payment.getByRole("button", { name: /as reviewed/ }).click();
+  await expect(payment.getByRole("button", { name: /as not reviewed/ })).toBeVisible();
+  await page.getByLabel("Status").selectOption("unreviewed");
+  await expect(page.getByText("Supplies and shipping")).toBeVisible();
+  await expect(page.getByText("Client payment")).toHaveCount(0);
+  await page.getByLabel("Status").selectOption("reviewed");
+  await expect(page.getByText("Client payment")).toBeVisible();
+
+  // Edit keeps the review tick and replaces the amount.
+  await page.getByText("Client payment").click();
+  await expect(page.getByRole("heading", { name: "Edit transaction" })).toBeVisible();
+  await page.getByLabel("Amount 1").fill("850");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Transaction updated")).toBeVisible();
+  await expect(
+    page.locator("li", { hasText: "Client payment" }).getByText("+$850.00"),
+  ).toBeVisible();
+
+  // Remove.
+  await page.getByLabel("Status").selectOption("");
+  await page.getByText("Supplies and shipping").click();
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
+  await page.getByRole("button", { name: "Click again to remove" }).click();
+  await expect(page.getByText("Transaction removed")).toBeVisible();
+  await expect(page.getByText("Supplies and shipping")).toHaveCount(0);
+
+  // One account at a time, with its balance: 5,000 + 850.
+  await page.getByLabel("Account", { exact: true }).selectOption({ label: "1010 · RBC Chequing" });
+  await expect(page.getByText("RBC Chequing balance")).toBeVisible();
+  await expect(page.getByText("$5,850.00")).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

@@ -50,6 +50,13 @@
       "when": 1791095954282,
       "tag": "0006_period_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791096939004,
+      "tag": "0007_transaction_reviews",
+      "breakpoints": true
     }
   ]
 }

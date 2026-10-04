@@ -1,0 +1,38 @@
+import type { AccountType, TransactionKind } from "@bookalyze/core";
+
+/** Shapes passed from the Transactions page (server) to its client components. */
+
+export type MoneyAccountOption = { id: string; label: string; currency: string };
+
+export type CategoryGroup = {
+  type: AccountType;
+  options: { id: string; label: string }[];
+};
+
+export type TxRow = {
+  id: string;
+  number: string;
+  date: string;
+  memo: string | null;
+  currency: string;
+  fxRate: string;
+  reviewed: boolean;
+  kind: TransactionKind;
+  /** Positive amount moved, in the transaction currency. */
+  amount: string;
+  moneyAccountIds: string[];
+  fromAccountId?: string;
+  toAccountId?: string;
+  splits: { accountId: string; amount: string; description?: string }[];
+};
+
+export type TxFormContext = {
+  slug: string;
+  today: string;
+  baseCurrency: string;
+  locale: string;
+  lockedThrough: string | null;
+  moneyAccounts: MoneyAccountOption[];
+  categories: CategoryGroup[];
+  accountNames: Record<string, string>;
+};
