@@ -146,9 +146,11 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
    - Pre-fill the exchange rate in the journal form.
    - Needs Vercel Cron.
 6. [ ] **Tax engine with Canada (GST/HST) and UAE (VAT) packs.**
-   - Tax rates on lines, and payable or recoverable accounts.
-   - Sales tax report.
-   - Blocked on an open question: GST/HST registration status (PLAN.md "Still open").
+   - Each company's tax setup is a setting in the UI, never code or seed data: registered or
+     not, registration number, filing frequency (monthly, quarterly or yearly) and the date
+     registration started. A company that isn't registered simply records no tax.
+   - Tax rates on lines, and payable or recoverable accounts created when a company registers.
+   - Sales tax report for each filing period.
 7. [ ] **More reports:**
    - General ledger and account transactions (click an account on any report to drill in).
    - CSV and PDF export.
@@ -276,9 +278,14 @@ screenshots work well).
 
 ---
 
-## 7. Open questions for the owner
+## 7. Owner input (none of it blocks code or migrations)
 
-1. GST/HST registration and filing frequency for Kazomo Inc. and Teknoffice. This blocks the tax
-   packs.
-2. A Wave Data Export for one company, to build the importer against. Never commit it.
-3. Should an "accountant" role exist? Today every member can manage accounts and post entries.
+Every company-specific answer is entered by the owner in the UI, so the code must handle all
+cases. These answers only help pick sensible defaults and test data:
+
+1. GST/HST registration and filing frequency for Kazomo Inc. and Teknoffice. They'll be entered
+   in the tax settings (item 6 above); both registered and unregistered must work.
+2. A Wave Data Export for one company. It's only needed to confirm the importer handles Wave's
+   real file formats. Never commit it.
+3. Roles: today every member can manage accounts and post entries. A future "accountant" or
+   read-only role is a permissions change, not a data change.
