@@ -1,0 +1,19 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Real financial data (Wave exports, bank statements, receipts) — never commit
+/imports/
+
+# Dependencies & build output
+node_modules/
+.next/
+dist/
+.turbo/
+.vercel/
+coverage/
+
+# OS / editor
+.DS_Store
+*.log
