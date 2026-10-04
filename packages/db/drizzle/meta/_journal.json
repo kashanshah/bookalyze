@@ -120,6 +120,13 @@
       "when": 1791148448629,
       "tag": "0016_banking_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791154243215,
+      "tag": "0017_bank_lines",
+      "breakpoints": true
     }
   ]
 }

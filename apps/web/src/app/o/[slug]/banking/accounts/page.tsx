@@ -1,4 +1,4 @@
-import { listConnections } from "@bookalyze/db";
+import { formatEntryNumber, listConnections, listSuggestedMatches } from "@bookalyze/db";
 import { AlertTriangle, ArrowRight, CircleCheck, FileUp, Landmark, Link2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -9,8 +9,16 @@ import { getBankingContext, inOrg } from "@/server/accounting";
 import { isOrgAdmin } from "@/server/org";
 import { ConnectWiseDialog } from "./connect-wise-dialog";
 import { ConnectionActions } from "./connection-actions";
+import { PossibleMatches, type Suggestion } from "./possible-matches";
 
 export const metadata: Metadata = { title: "Bank accounts" };
+
+const ORIGINS: Record<string, string> = {
+  manual: "Entered by hand",
+  wave_import: "Imported from Wave",
+  import: "Imported",
+  bank_import: "From the bank",
+};
 
 function syncedLabel(at: Date | null, locale: string, timeZone: string): string {
   if (!at) return "Not synced yet";
@@ -25,9 +33,24 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
   const { slug } = await params;
   const ctx = await getBankingContext(slug);
   const { locale, timezone } = ctx.profile;
-  const connections = (await inOrg(ctx, (tx) => listConnections(tx))).filter(
-    (c) => c.status !== "disconnected",
+  const [allConnections, matches] = await inOrg(ctx, (tx) =>
+    Promise.all([listConnections(tx), listSuggestedMatches(tx)]),
   );
+  const connections = allConnections.filter((c) => c.status !== "disconnected");
+  const suggestions: Suggestion[] = matches.map((m) => ({
+    id: m.id,
+    date: m.date,
+    dateLabel: formatDate(m.date, locale),
+    currency: m.currency,
+    amount: m.amount,
+    description: m.description,
+    accountName: m.accountName,
+    entryId: m.entryId,
+    entryNumber: formatEntryNumber(m.entryNumber),
+    entryDateLabel: formatDate(m.entryDate, locale),
+    entryMemo: m.entryMemo,
+    entryOrigin: ORIGINS[m.entrySource] ?? "In your books",
+  }));
   const admin = isOrgAdmin(ctx);
 
   return (
@@ -38,6 +61,10 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
         description="Connect your bank so transactions arrive on their own. They land on the Transactions screen as uncategorized, ready for you to sort."
         actions={admin && connections.length ? <ConnectWiseDialog slug={slug} /> : null}
       />
+
+      {suggestions.length ? (
+        <PossibleMatches slug={slug} suggestions={suggestions} locale={locale} />
+      ) : null}
 
       {connections.length === 0 ? (
         <div className="grid gap-4 md:grid-cols-2">

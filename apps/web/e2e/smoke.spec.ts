@@ -730,10 +730,20 @@ test("reconcile: tick to the statement balance, lock, undo and cancel", async ({
   await expect(page.getByText("Start with your bank statement")).toBeVisible();
 });
 
-test("banking: connect Wise, sync without duplicates, conversions as transfers, disconnect", async ({
+test("banking: connect Wise, merge a possible match, no duplicates, transfers, disconnect", async ({
   page,
 }) => {
   await signIn(page, owner.email, owner.password);
+  // Already in the books by hand: the same card payment Wise is about to send.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+  await page.locator("#tx-memo").fill("Coffee with a client");
+  await choose(page.getByLabel("Category 1", { exact: true }), "6250 · Office supplies");
+  await page.getByLabel("Amount 1").fill("7.76");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added")).toBeVisible();
+
   await page.getByRole("link", { name: "Banking", exact: true }).click();
   await expect(page).toHaveURL(/\/banking\/accounts$/);
   await expect(page.getByRole("heading", { name: "Connect Wise" })).toBeVisible();
@@ -748,22 +758,31 @@ test("banking: connect Wise, sync without duplicates, conversions as transfers, 
   await page.getByLabel("API token").fill("e2e-wise-token-0000-1111-2222");
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: "Choose what to bring in" })).toBeVisible();
-  await choose(page.getByLabel("Account for the CAD balance"), "New account “Wise CAD”");
+  await choose(page.getByLabel("Account for the CAD balance"), "1010 · RBC Chequing");
   await choose(page.getByLabel("Account for the USD balance"), "New account “Wise USD”");
   await page.getByRole("button", { name: "Connect 2 balances" }).click();
   await expect(page.getByText("Wise connected")).toBeVisible();
-  await expect(page.getByText(/2 new transactions/)).toBeVisible();
+  await expect(page.getByText(/1 new transaction to sort/)).toBeVisible();
+  await expect(page.getByText(/1 looks like a transaction already in your books/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Wise · Example Trading Inc." })).toBeVisible();
   await expect(page.getByText(/Synced just now/)).toBeVisible();
 
-  // Syncing again finds nothing new.
+  // Nothing is merged on its own: the card payment waits beside the one entered by hand.
+  const matches = page.locator("section", { hasText: "1 possible match" });
+  await expect(matches.getByText("Card transaction at Example Cafe")).toBeVisible();
+  await expect(matches.getByText("Coffee with a client")).toBeVisible();
+  await matches.getByRole("button", { name: "Merge", exact: true }).click();
+  await expect(page.getByText("Merged", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 possible match")).toHaveCount(0);
+
+  // Syncing again finds nothing new, and doesn't suggest the merged one again.
   await page.getByRole("button", { name: "Sync now" }).click();
   await expect(page.getByText("Up to date")).toBeVisible();
 
-  // The card payment waits on the Transactions screen, uncategorized, with Wise's fee split out.
-  await page.getByRole("link", { name: /Wise CAD/ }).click();
-  const card = page.locator("li", { hasText: "Card transaction at Example Cafe" });
-  await expect(card).toContainText("−$7.76");
+  // The account has the hand-entered payment once, and no copy of the bank's.
+  await page.getByRole("link", { name: /RBC Chequing/ }).click();
+  await expect(page.locator("li", { hasText: "Coffee with a client" })).toContainText("−$7.76");
+  await expect(page.getByText("Card transaction at Example Cafe")).toHaveCount(0);
   // The conversion between the two balances is one transfer, not two loose lines.
   await expect(page.locator("li", { hasText: "Converted 136.50 CAD to 100.00 USD" })).toHaveCount(
     1,
@@ -777,7 +796,7 @@ test("banking: connect Wise, sync without duplicates, conversions as transfers, 
   await expect(page.getByText("Disconnected")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Connect Wise" })).toBeVisible();
   await page.goto(transactionsUrl);
-  await expect(page.getByText("Card transaction at Example Cafe")).toBeVisible();
+  await expect(page.getByText("Converted 136.50 CAD to 100.00 USD")).toBeVisible();
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {

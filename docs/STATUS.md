@@ -24,7 +24,7 @@ _Last updated: 2026-10-04, phase 1b (importing from other software)._
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
-| 2. Banking, plus Entity & compliance | **In progress.** Wise connection (API sync) done. Next: bank statement upload (CSV) for any other bank, then rules and transfer matching |
+| 2. Banking, plus Entity & compliance | **In progress.** Wise connection (API sync) with possible matches done. Next: bank statement upload (CSV) for any other bank, then rules and transfer matching |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -383,15 +383,31 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   decimals at the currency's precision; dates in the company's time zone), `BankTransaction`,
   `bankTransactionInput()` (bank line → Uncategorized income/expense, fee as its own split),
   `pairConversions()`.
-- **DB** (`banking.ts`): connections and feeds, and `importBankLines()`: posts new lines (each in a
-  savepoint), records a conversion between two connected balances as one cross-currency transfer
-  (source id `conversion:<ref>`), converts foreign lines at the Bank of Canada rate of the day,
-  and reports skipped lines (no rate yet, closed period) to retry next sync.
+- **Bank lines** (migration `0017_bank_lines`): every transaction a bank sends is stored once in
+  `bank_lines`, unique on `(organization_id, external_id)` (Wise: `wise:<balance>:<reference>`; a
+  statement upload will hash its rows the same way). Syncing again, overlapping windows or
+  uploading the same file twice can't add it twice. Status: `posted` (new entry made),
+  `suggested` (looks like an entry already in the books, waits for a decision), `matched`
+  (merged with that entry, nothing new posted) or `pending` (`reason`, e.g. no rate yet; retried
+  every sync). A check ties the status to `journal_entry_id` / `suggested_entry_id`.
+- **DB** (`banking.ts`): connections and feeds, and `importBankLines()`: stores the lines, then
+  `processBankLines()` handles each new or pending one: look for a match, else post it (each in
+  a savepoint). A conversion between two connected balances is one cross-currency transfer
+  (source id `conversion:<ref>`); foreign lines use the Bank of Canada rate of the day.
+- **Possible matches** (like Wise's own "review"): a bank line is suggested, not posted, when an
+  entry already has a line on the same account for the same signed amount within
+  `MATCH_WINDOW_DAYS` (5) days, and that entry isn't reversed, a reversal, from a bank sync or
+  already linked to another bank line. A conversion also needs the received amount on the other
+  account. Nothing merges on its own: `mergeBankLine()` links the line to the entry (refused if
+  the entry was reversed since); `keepBankLineSeparate()` sets `match_declined` and posts it as
+  new. Both sides of a conversion are one decision.
 - **Web:** Banking → Bank accounts. "Connect Wise" (owners and admins): paste a read-only token,
   pick the profile, map each balance to a new or existing bank account, choose the start date
   and the fee account; it syncs straight away. "Sync now" for anyone; "Disconnect" deletes the
   token and keeps the transactions. The daily cron (`/api/cron/fx-rates`) fetches rates, then
-  syncs every connection. `WISE_API_URL` points tests at `e2e/wise-mock.mjs`.
+  syncs every connection. `WISE_API_URL` points tests at `e2e/wise-mock.mjs`. Possible
+  matches sit at the top of Bank accounts: the bank's line beside the entry in the books, with
+  "Merge", "Keep both" and "Merge all"; the sync toast says how many are waiting.
 - **Not yet:** Wise asks for strong customer authentication (a signed request) for profiles
   outside the US, Canada, Australia, New Zealand, Singapore and Malaysia, e.g. the UAE company.
   The sync shows a plain message for now; signing with an uploaded key comes next.

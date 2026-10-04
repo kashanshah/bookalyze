@@ -51,7 +51,7 @@ export async function syncConnection(ctx: SyncContext, connectionId: string): Pr
     return { connection, profile, feeds: connection ? await listFeeds(tx, connectionId) : [] };
   });
   const { connection, profile, feeds } = setup;
-  const empty: ImportResult = { posted: 0, duplicates: 0, skipped: [] };
+  const empty: ImportResult = { posted: 0, duplicates: 0, suggested: 0, skipped: [] };
   if (!connection || !profile || connection.status === "disconnected" || !connection.secret) {
     return { ...empty, error: "This connection isn't active." };
   }
@@ -121,11 +121,6 @@ export async function syncConnection(ctx: SyncContext, connectionId: string): Pr
           orgId: ctx.orgId,
           userId: ctx.userId,
           baseCurrency: profile.baseCurrency,
-          feeAccountId:
-            typeof connection.settings.feeAccountId === "string"
-              ? connection.settings.feeAccountId
-              : null,
-          feeds: new Map(feeds.map((f) => [f.id, { accountId: f.accountId }])),
           lines,
         })
       : empty;
@@ -148,6 +143,7 @@ export async function syncConnection(ctx: SyncContext, connectionId: string): Pr
         after: {
           posted: imported.posted,
           duplicates: imported.duplicates,
+          suggested: imported.suggested,
           skipped: imported.skipped.length,
         },
       });
