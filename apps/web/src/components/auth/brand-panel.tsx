@@ -1,4 +1,5 @@
 import { Building2, Landmark, ShoppingBag } from "lucide-react";
+import { BrandMark } from "@/components/brand";
 
 const FEATURES = [
   {
@@ -57,6 +58,7 @@ export function BrandPanel() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_80%_10%,oklch(0.6_0.2_300/0.55),transparent),radial-gradient(50%_60%_at_10%_90%,oklch(0.55_0.18_240/0.5),transparent)]" />
       <div className="pointer-events-none absolute inset-0 bg-dots text-white opacity-[0.15]" />
       <div className="relative">
+        <BrandMark tone="white" className="mb-8 h-10 opacity-90" />
         <h2 className="max-w-md font-semibold text-3xl text-white leading-tight tracking-tight">
           Your books, your stores and every company you run. One calm place.
         </h2>

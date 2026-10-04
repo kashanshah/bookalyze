@@ -16,7 +16,7 @@ export default async function OnboardingPage() {
     <div className="min-h-dvh bg-sidebar">
       <header className="border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
-          <Brand />
+          <Brand className="h-7" />
           {orgs.length ? (
             <Link
               href="/"

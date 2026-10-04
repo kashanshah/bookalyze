@@ -41,15 +41,33 @@ The app's colours are defined once as CSS variables in `apps/web/src/app/globals
 **Geist Sans** (UI) and **Geist Mono** (numbers/code), bundled with the app. Free and open source
 (SIL OFL) from Vercel, so it can also be used in the logo wordmark.
 
-## Logo checklist
+## Logo
 
-The logo mark is a rounded square (corner radius ≈ 25% of the width) with a white "B", filled
-with the indigo gradient above. When the final logo is ready, replace it in:
+The logo is a **"BA" monogram**: the B for books, and an A shaped like a mountain with a rising
+chart arrow and bars for analysis, followed by the **Bookalyze** wordmark. Source files are in
+`docs/brand/logo/`:
 
-1. `apps/web/src/components/brand.tsx`: `BrandMark` (sidebar, auth pages) as inline SVG.
-2. `apps/web/src/app/icon.svg`: browser tab icon. Add `apple-icon.png` (180×180) next to it.
-3. `apps/web/src/emails/components/layout.tsx`: email header. Emails can't rely on SVG, so use a
-   hosted PNG at 2× size (e.g. 64×64 for a 32px mark), or keep the text-based mark.
+| File | Use |
+|---|---|
+| `bookalyze-logo-light.svg` | Full logo on light backgrounds (indigo gradient `#606CDD → #373BA7`, wordmark `#14151F`) |
+| `bookalyze-logo-dark.svg` | Full logo on dark backgrounds (gradient `#7E8EF4 → #606CDD`, wordmark `#F1F1F5`) |
+| `bookalyze-logo-white.svg` | All-white logo for indigo or photo backgrounds |
+| `bookalyze-icon-light.svg` / `-dark.svg` / `-white.svg` | The monogram on its own |
+| `favicon-light.svg` / `.ico`, `favicon-dark.svg` / `.ico` | Browser tab icons for light and dark browser themes |
 
-Deliver it as SVG (mark only, mark + wordmark, white version for dark backgrounds) plus PNGs at
-512×512 and 1024×1024.
+**In the app** (`apps/web/public`):
+- `brand/logo-*.svg` and `brand/mark-*.svg` are tightly cropped copies used by the `Brand` and
+  `BrandMark` components (`apps/web/src/components/brand.tsx`), which switch light/dark with the theme.
+- Favicons are wired up in `apps/web/src/app/layout.tsx`.
+- `apple-touch-icon.png`, `icon-192.png` and `icon-512.png` are the home-screen and app icons
+  (white monogram on the indigo gradient).
+- `brand/logo-email.png` is the email header logo. Email clients don't render SVG reliably, so it's
+  a 2× PNG, served from the app's domain.
+
+To regenerate the PNGs after a logo change, render the SVGs at the sizes above, or ask Claude Code
+to do it.
+
+**Usage**
+- Keep clear space around the logo of at least the height of the wordmark's "o".
+- Minimum size: full logo 96px wide on screen; monogram 16px.
+- Don't recolour, stretch, rotate, add effects, or put the light logo on dark backgrounds.

@@ -96,7 +96,7 @@ export default async function AcceptInvitationPage({
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-8 bg-sidebar px-4">
-      <Brand />
+      <Brand className="h-9" />
       <Card className="w-full max-w-sm">{body}</Card>
     </div>
   );

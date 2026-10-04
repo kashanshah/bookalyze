@@ -1,7 +1,7 @@
 import { modules } from "@bookalyze/core";
 import { Blocks, Home, Settings2, Users } from "lucide-react";
 import Link from "next/link";
-import { BrandMark } from "@/components/brand";
+import { Brand } from "@/components/brand";
 import type { OrgContext } from "@/server/org";
 import { MODULE_ICONS } from "./module-icons";
 import { NavLink } from "./nav-link";
@@ -89,9 +89,8 @@ export function SidebarContent({ ctx, orgs }: { ctx: OrgContext; orgs: OrgItem[]
 export function Sidebar({ ctx, orgs }: { ctx: OrgContext; orgs: OrgItem[] }) {
   return (
     <aside className="sticky top-0 hidden h-dvh w-[264px] shrink-0 flex-col gap-5 border-e bg-sidebar px-3 pt-4 pb-3 lg:flex">
-      <Link href="/" className="flex items-center gap-2 px-2 font-semibold tracking-tight">
-        <BrandMark className="size-6" />
-        Bookalyze
+      <Link href="/" className="flex items-center px-2 pt-0.5" aria-label="Bookalyze home">
+        <Brand className="h-[26px]" />
       </Link>
       <SidebarContent ctx={ctx} orgs={orgs} />
     </aside>

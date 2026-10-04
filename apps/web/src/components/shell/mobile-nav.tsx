@@ -4,7 +4,7 @@ import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BrandMark } from "@/components/brand";
+import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 
 /** Top bar with a slide-down navigation drawer on small screens. */
@@ -22,9 +22,8 @@ export function MobileNav({ children }: { children: React.ReactNode }) {
   return (
     <div className="sticky top-0 z-40 lg:hidden">
       <div className="flex h-14 items-center justify-between border-b bg-background/85 px-4 backdrop-blur-md">
-        <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-          <BrandMark className="size-6" />
-          Bookalyze
+        <Link href="/" className="flex items-center" aria-label="Bookalyze home">
+          <Brand className="h-6" />
         </Link>
         <Button
           variant="ghost"

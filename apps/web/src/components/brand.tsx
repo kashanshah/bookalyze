@@ -1,39 +1,55 @@
+// biome-ignore-all lint/performance/noImgElement: tiny static SVG logos; next/image would not optimise them
 import { cn } from "@/lib/utils";
 
-/**
- * Logo mark. The gradient is CSS (not an SVG <linearGradient>) so several marks on one page,
- * including ones inside hidden containers, never clash over gradient ids.
+/*
+ * Bookalyze logo (source files: docs/brand/logo). Rendered as <img> so each SVG keeps its own
+ * gradient definitions. The light/dark pair follows the app theme (`.dark` on <html>).
+ * Logo aspect ratio is ~4.78:1, the mark alone ~1.72:1.
  */
-export function BrandMark({ className }: { className?: string }) {
+
+/** Full logo: mark + "Bookalyze" wordmark. Size it by height, e.g. className="h-7". */
+export function Brand({
+  className,
+  tone = "auto",
+}: {
+  className?: string;
+  tone?: "auto" | "white";
+}) {
+  if (tone === "white") {
+    return (
+      <img src="/brand/logo-white.svg" alt="Bookalyze" className={cn("h-7 w-auto", className)} />
+    );
+  }
   return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "inline-flex size-7 shrink-0 items-center justify-center rounded-[25%] bg-gradient-to-br from-[#606CDD] to-[#373BA7] shadow-[inset_0_1px_0_rgb(255_255_255/0.2)]",
-        className,
-      )}
-    >
-      <svg viewBox="0 0 32 32" className="size-full" aria-hidden="true">
-        <title>Bookalyze</title>
-        <path
-          d="M10 8h7.5a4.5 4.5 0 0 1 2.9 7.94A5 5 0 0 1 18 25h-8V8Zm3 3v4h4.3a2 2 0 0 0 0-4H13Zm0 7v4h4.8a2 2 0 0 0 0-4H13Z"
-          fill="white"
-        />
-      </svg>
+    <span className={cn("inline-flex h-7 shrink-0", className)}>
+      <img src="/brand/logo-light.svg" alt="Bookalyze" className="h-full w-auto dark:hidden" />
+      <img src="/brand/logo-dark.svg" alt="Bookalyze" className="hidden h-full w-auto dark:block" />
     </span>
   );
 }
 
-export function Brand({ className }: { className?: string }) {
+/** The mark on its own (no wordmark). Size it by height, e.g. className="h-6". */
+export function BrandMark({
+  className,
+  tone = "auto",
+}: {
+  className?: string;
+  tone?: "auto" | "white";
+}) {
+  if (tone === "white") {
+    return (
+      <img
+        src="/brand/mark-white.svg"
+        alt=""
+        aria-hidden="true"
+        className={cn("h-6 w-auto", className)}
+      />
+    );
+  }
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-2 font-semibold text-lg tracking-tight",
-        className,
-      )}
-    >
-      <BrandMark />
-      Bookalyze
+    <span aria-hidden="true" className={cn("inline-flex h-6 shrink-0", className)}>
+      <img src="/brand/mark-light.svg" alt="" className="h-full w-auto dark:hidden" />
+      <img src="/brand/mark-dark.svg" alt="" className="hidden h-full w-auto dark:block" />
     </span>
   );
 }

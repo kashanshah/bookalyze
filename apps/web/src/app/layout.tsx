@@ -8,6 +8,17 @@ export const metadata: Metadata = {
   title: { default: "Bookalyze", template: "%s · Bookalyze" },
   description:
     "Bookkeeping, banking and marketplace sales for every company you run, in one calm place.",
+  applicationName: "Bookalyze",
+  // Favicons follow the browser's light/dark theme; the .ico files cover browsers without SVG icons.
+  icons: {
+    icon: [
+      { url: "/favicon-light.svg", type: "image/svg+xml", media: "(prefers-color-scheme: light)" },
+      { url: "/favicon-dark.svg", type: "image/svg+xml", media: "(prefers-color-scheme: dark)" },
+      { url: "/favicon-light.ico", sizes: "any", media: "(prefers-color-scheme: light)" },
+      { url: "/favicon-dark.ico", sizes: "any", media: "(prefers-color-scheme: dark)" },
+    ],
+    apple: { url: "/apple-touch-icon.png", sizes: "180x180" },
+  },
 };
 
 export const viewport: Viewport = {

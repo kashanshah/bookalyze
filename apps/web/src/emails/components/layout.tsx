@@ -4,6 +4,7 @@ import {
   Head,
   Hr,
   Html,
+  Img,
   Link,
   Preview,
   Section,
@@ -11,48 +12,28 @@ import {
 } from "@react-email/components";
 import { brand } from "./theme";
 
-/** Text-based logo: renders identically in every client (Gmail strips SVG, images may be blocked). */
+/**
+ * Hosted PNG logo (email clients don't render SVG reliably). Served from the app's public folder,
+ * so it loads wherever the app is deployed. Alt text keeps the brand visible if images are blocked.
+ */
+const ASSET_BASE = (process.env.BETTER_AUTH_URL ?? "https://app.bookalyze.com").replace(/\/$/, "");
+
 function Logo() {
   return (
-    <table
-      cellPadding={0}
-      cellSpacing={0}
-      role="presentation"
-      style={{ borderCollapse: "collapse" }}
-    >
-      <tbody>
-        <tr>
-          <td
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              backgroundColor: brand.primary,
-              color: "#FFFFFF",
-              fontFamily: brand.font,
-              fontSize: 18,
-              fontWeight: 700,
-              textAlign: "center",
-              lineHeight: "32px",
-            }}
-          >
-            B
-          </td>
-          <td
-            style={{
-              paddingLeft: 10,
-              fontFamily: brand.font,
-              fontSize: 18,
-              fontWeight: 650,
-              color: brand.ink,
-              letterSpacing: "-0.01em",
-            }}
-          >
-            Bookalyze
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <Img
+      src={`${ASSET_BASE}/brand/logo-email.png`}
+      width={180}
+      height={38}
+      alt="Bookalyze"
+      style={{
+        display: "block",
+        border: 0,
+        outline: "none",
+        color: brand.ink,
+        fontSize: 20,
+        fontWeight: 700,
+      }}
+    />
   );
 }
 
