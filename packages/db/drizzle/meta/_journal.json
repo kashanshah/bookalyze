@@ -36,6 +36,20 @@
       "when": 1791094374965,
       "tag": "0004_ledger_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791095952952,
+      "tag": "0005_books_locked_through",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791095954282,
+      "tag": "0006_period_locks",
+      "breakpoints": true
     }
   ]
 }

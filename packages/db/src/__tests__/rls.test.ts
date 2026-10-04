@@ -33,10 +33,14 @@ beforeAll(async () => {
     .insert(schema.currencies)
     .values({ code: "CAD", name: "Canadian Dollar", minorUnits: 2 })
     .onConflictDoNothing();
-  await db.insert(schema.countries).values({ code: "CA", name: "Canada", currencyCode: "CAD" });
+  await db
+    .insert(schema.countries)
+    .values({ code: "CA", name: "Canada", currencyCode: "CAD" })
+    .onConflictDoNothing();
   await db
     .insert(schema.subdivisions)
-    .values({ code: "CA-ON", countryCode: "CA", name: "Ontario" });
+    .values({ code: "CA-ON", countryCode: "CA", name: "Ontario" })
+    .onConflictDoNothing();
 
   const [a, b] = await db
     .insert(schema.organization)

@@ -11,15 +11,22 @@ import {
 } from "@bookalyze/db";
 import { count, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { isIsoDate } from "@/lib/dates";
+import { formatDate, isIsoDate } from "@/lib/dates";
 import {
   type AccountInput,
   accountSchema,
   type JournalEntryFormInput,
   journalEntrySchema,
 } from "@/lib/validation/accounting";
-import { getAccountingContext, inOrg, listAccounts, toLedgerMap } from "@/server/accounting";
+import {
+  type AccountingContext,
+  getAccountingContext,
+  inOrg,
+  listAccounts,
+  toLedgerMap,
+} from "@/server/accounting";
 import { audit } from "@/server/audit";
+import { isOrgAdmin } from "@/server/org";
 
 export type FieldErrors = Record<string, string>;
 export type ActionResult<T = undefined> =
@@ -35,10 +42,29 @@ function fieldErrors(issues: { path: PropertyKey[]; message: string }[]): FieldE
   return errors;
 }
 
-/** Postgres error code and constraint behind a Drizzle error, if any. */
-function pgError(error: unknown): { code?: string; constraint?: string } {
-  const cause = (error as { cause?: { code?: string; constraint?: string } })?.cause;
-  return cause ?? (error as { code?: string; constraint?: string }) ?? {};
+type PgErrorInfo = { code?: string; constraint?: string; hint?: string; message?: string };
+
+/** Postgres error details behind a Drizzle error, if any. */
+function pgError(error: unknown): PgErrorInfo {
+  const cause = (error as { cause?: PgErrorInfo })?.cause;
+  return cause ?? (error as PgErrorInfo) ?? {};
+}
+
+/**
+ * A friendly message when `error` is the ledger refusing a date in a closed period, either from
+ * the ledger helpers or from the database trigger (if the lock changed mid-request).
+ */
+function closedPeriodMessage(error: unknown, ctx: AccountingContext): string | null {
+  let lockedThrough: string | undefined;
+  if (error instanceof LedgerError && error.code === "period_locked") {
+    lockedThrough = error.lockedThrough;
+  } else {
+    const pg = pgError(error);
+    if (pg.hint !== "period_locked") return null;
+    lockedThrough = pg.message?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+  }
+  const when = lockedThrough ? formatDate(lockedThrough, ctx.profile.locale, "long") : "that date";
+  return `Your books are closed through ${when}. Choose a later date, or ask an owner to reopen the period.`;
 }
 
 function revalidateAccounting(slug: string) {
@@ -243,25 +269,37 @@ export async function postJournalEntryAction(
     };
   }
 
-  const posted = await inOrg(ctx, async (tx) => {
-    const result = await postJournalEntry(tx, {
-      orgId: ctx.org.id,
-      userId: ctx.session.user.id,
-      date: value.date,
-      reference: value.reference,
-      memo: value.memo,
-      entry: prepared.entry,
+  let posted: { id: string; entryNumber: number };
+  try {
+    posted = await inOrg(ctx, async (tx) => {
+      const result = await postJournalEntry(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        date: value.date,
+        reference: value.reference,
+        memo: value.memo,
+        entry: prepared.entry,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "journal_entry.posted",
+        entityType: "journal_entry",
+        entityId: result.id,
+        after: {
+          number: result.entryNumber,
+          date: value.date,
+          memo: value.memo,
+          ...prepared.entry,
+        },
+      });
+      return result;
     });
-    await audit(tx, {
-      orgId: ctx.org.id,
-      actorUserId: ctx.session.user.id,
-      action: "journal_entry.posted",
-      entityType: "journal_entry",
-      entityId: result.id,
-      after: { number: result.entryNumber, date: value.date, memo: value.memo, ...prepared.entry },
-    });
-    return result;
-  });
+  } catch (error) {
+    const closed = closedPeriodMessage(error, ctx);
+    if (closed) return { ok: false, errors: { date: closed } };
+    throw error;
+  }
   revalidateAccounting(slug);
   return { ok: true, data: { id: posted.id, number: formatEntryNumber(posted.entryNumber) } };
 }
@@ -294,7 +332,42 @@ export async function reverseJournalEntryAction(
     revalidateAccounting(slug);
     return { ok: true, data: { id: result.id, number: formatEntryNumber(result.entryNumber) } };
   } catch (error) {
+    const closed = closedPeriodMessage(error, ctx);
+    if (closed) return { ok: false, errors: { date: closed } };
     if (error instanceof LedgerError) return { ok: false, message: error.message };
     throw error;
   }
+}
+
+/**
+ * Closes the books through `date` (no entries on or before it), or reopens every period when
+ * `date` is null. Owners and admins only.
+ */
+export async function setBooksLockAction(
+  slug: string,
+  date: string | null,
+): Promise<ActionResult<{ lockedThrough: string | null }>> {
+  const ctx = await getAccountingContext(slug);
+  if (!isOrgAdmin(ctx)) {
+    return { ok: false, message: "Only owners and admins can close or reopen the books." };
+  }
+  if (date !== null && !isIsoDate(date)) return { ok: false, errors: { date: "Choose a date." } };
+  const before = ctx.profile.booksLockedThrough;
+  await inOrg(ctx, async (tx) => {
+    await tx
+      .update(schema.organizationProfiles)
+      .set({ booksLockedThrough: date })
+      .where(eq(schema.organizationProfiles.organizationId, ctx.org.id));
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: date ? "books.closed" : "books.reopened",
+      entityType: "organization_profile",
+      entityId: ctx.org.id,
+      before: { booksLockedThrough: before },
+      after: { booksLockedThrough: date },
+    });
+  });
+  revalidatePath(`/o/${slug}`, "layout");
+  return { ok: true, data: { lockedThrough: date } };
 }

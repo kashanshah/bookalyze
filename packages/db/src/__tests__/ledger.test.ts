@@ -86,6 +86,10 @@ beforeAll(async () => {
     .insert(schema.currencies)
     .values({ code: "CAD", name: "Canadian Dollar", minorUnits: 2 })
     .onConflictDoNothing();
+  await owner.db
+    .insert(schema.countries)
+    .values({ code: "CA", name: "Canada", currencyCode: "CAD" })
+    .onConflictDoNothing();
   const [a, b] = await owner.db
     .insert(schema.organization)
     .values([
@@ -327,5 +331,98 @@ describe("ledger helpers", () => {
     expect(july.find((b) => b.accountId === cash)?.balance).toBe("-1500.0000");
     const august = await scoped((tx) => accountBalances(tx, { from: "2026-08-01" }));
     expect(august.find((b) => b.accountId === rent)?.balance).toBe("0.0000");
+  });
+});
+
+describe("closed periods and the main currency", () => {
+  let orgD: string;
+  let entry: Awaited<ReturnType<typeof postJournalEntry>>;
+  const scoped = <T>(fn: (tx: Transaction) => Promise<T>) => withOrg(app.db, { orgId: orgD }, fn);
+
+  beforeAll(async () => {
+    const [d] = await owner.db
+      .insert(schema.organization)
+      .values({ name: "Ledger D", slug: "ledger-d", createdAt: new Date() })
+      .returning({ id: schema.organization.id });
+    if (!d) throw new Error("Failed to create test organization");
+    orgD = d.id;
+    await owner.db.insert(schema.organizationProfiles).values({
+      organizationId: orgD,
+      legalName: "Ledger D Inc.",
+      countryCode: "CA",
+      baseCurrency: "CAD",
+      timezone: "America/Toronto",
+      locale: "en-CA",
+    });
+    await scoped((tx) => createDefaultChart(tx, { orgId: orgD, baseCurrency: "CAD" }));
+  });
+
+  const prepared = async () => {
+    const all = await scoped((tx) => tx.select().from(schema.accounts));
+    const byCode = new Map(all.map((a) => [a.code, a.id]));
+    const result = prepareJournalEntry(
+      {
+        currency: "CAD",
+        baseCurrency: "CAD",
+        lines: [
+          { accountId: byCode.get("6350") as string, debit: "10" },
+          { accountId: byCode.get("1000") as string, credit: "10" },
+        ],
+      },
+      new Map(all.map((a) => [a.id, a])),
+    );
+    if (!result.ok) throw new Error("expected a valid entry");
+    return result.entry;
+  };
+
+  it("refuses entries dated in a closed period, in code and in the database", async () => {
+    const e = await prepared();
+    entry = await scoped((tx) =>
+      postJournalEntry(tx, { orgId: orgD, date: "2026-06-30", entry: e }),
+    );
+    await scoped((tx) =>
+      tx.update(schema.organizationProfiles).set({ booksLockedThrough: "2026-06-30" }),
+    );
+
+    await expect(
+      scoped((tx) => postJournalEntry(tx, { orgId: orgD, date: "2026-06-30", entry: e })),
+    ).rejects.toMatchObject({ code: "period_locked", lockedThrough: "2026-06-30" });
+
+    // Bypassing the helper still hits the trigger.
+    const message = await pgErrorOf(
+      scoped((tx) =>
+        tx.insert(schema.journalEntries).values({
+          organizationId: orgD,
+          entryNumber: 99,
+          date: "2026-01-15",
+          currency: "CAD",
+        }),
+      ),
+    );
+    expect(message).toMatch(/closed through 2026-06-30/);
+
+    const next = await scoped((tx) =>
+      postJournalEntry(tx, { orgId: orgD, date: "2026-07-01", entry: e }),
+    );
+    expect(next.entryNumber).toBe(2);
+  });
+
+  it("dates reversals in the open period only", async () => {
+    await expect(
+      scoped((tx) =>
+        reverseJournalEntry(tx, { orgId: orgD, entryId: entry.id, date: "2026-06-30" }),
+      ),
+    ).rejects.toMatchObject({ code: "period_locked" });
+    const reversal = await scoped((tx) =>
+      reverseJournalEntry(tx, { orgId: orgD, entryId: entry.id, date: "2026-07-02" }),
+    );
+    expect(reversal.entryNumber).toBe(3);
+  });
+
+  it("locks the main currency once there are entries", async () => {
+    const message = await pgErrorOf(
+      scoped((tx) => tx.update(schema.organizationProfiles).set({ baseCurrency: "USD" })),
+    );
+    expect(message).toMatch(/main currency can't change/);
   });
 });

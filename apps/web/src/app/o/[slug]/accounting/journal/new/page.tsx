@@ -2,7 +2,7 @@ import { currencies } from "@bookalyze/core/reference-data";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/shell/page-header";
-import { nowIn } from "@/lib/dates";
+import { nowIn, openDate } from "@/lib/dates";
 import { accountOptions, getAccountingContext, listAccounts } from "@/server/accounting";
 import { JournalForm } from "./journal-form";
 
@@ -34,7 +34,8 @@ export default async function NewJournalEntryPage({
       />
       <JournalForm
         slug={slug}
-        today={nowIn(ctx.profile.timezone).date}
+        today={openDate(nowIn(ctx.profile.timezone).date, ctx.profile.booksLockedThrough)}
+        lockedThrough={ctx.profile.booksLockedThrough}
         baseCurrency={base}
         locale={ctx.profile.locale}
         currencies={currencyOptions}

@@ -177,6 +177,30 @@ test("bookkeeping: chart of accounts, journal entries, reversal and reports", as
   await page.getByRole("link", { name: "Reports", exact: true }).click();
   await page.getByRole("link", { name: /Profit and loss/ }).click();
   await expect(page.getByText("Net profit")).toBeVisible();
+
+  // Once there are entries the main currency is locked, and finished periods can be closed.
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    new Date(),
+  );
+  await page.getByRole("link", { name: "Company settings", exact: true }).click();
+  await expect(page.locator("#baseCurrency")).toBeDisabled();
+  await page.locator("#booksLockedThrough").fill(today);
+  await page.getByRole("button", { name: "Close books through this date" }).click();
+  await expect(page.getByText(/^Books closed through/)).toBeVisible();
+
+  await page.getByRole("link", { name: "Journal entries", exact: true }).click();
+  await page.getByRole("link", { name: /Owner investment/ }).click();
+  await expect(page.getByText("Closed period", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "New entry" }).click();
+  await expect(page.locator("#date")).not.toHaveValue(today);
+  await page.locator("#date").fill(today);
+  await expect(page.getByText(/Books are closed through .*Choose a later date/)).toBeVisible();
+
+  await page.getByRole("link", { name: "Company settings", exact: true }).click();
+  await page.getByRole("button", { name: "Reopen all periods" }).click();
+  await page.getByRole("button", { name: "Click again to reopen" }).click();
+  await expect(page.getByText("All periods reopened")).toBeVisible();
+  await expect(page.getByText("All periods are open.")).toBeVisible();
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {

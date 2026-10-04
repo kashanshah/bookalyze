@@ -19,6 +19,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
+import { formatDate, nextDay } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import type { AccountOption } from "@/server/accounting";
 import { type FieldErrors, postJournalEntryAction } from "../../actions";
@@ -32,6 +33,8 @@ type Props = {
   locale: string;
   currencies: { code: string; name: string }[];
   accountGroups: { type: keyof typeof accountTypes; options: AccountOption[] }[];
+  /** Books are closed through this date; entries must be dated after it. */
+  lockedThrough: string | null;
 };
 
 let nextKey = 0;
@@ -55,6 +58,7 @@ export function JournalForm({
   locale,
   currencies,
   accountGroups,
+  lockedThrough,
 }: Props) {
   const router = useRouter();
   const formId = useId();
@@ -70,6 +74,7 @@ export function JournalForm({
   const [pending, startTransition] = useTransition();
 
   const foreign = currency !== baseCurrency;
+  const inClosedPeriod = Boolean(lockedThrough && date && date <= lockedThrough);
   const totals = useMemo(() => journalTotals(lines), [lines]);
   const difference = parseDecimal(totals.difference);
   const hasAmounts = parseDecimal(totals.debit) > 0n || parseDecimal(totals.credit) > 0n;
@@ -152,14 +157,32 @@ export function JournalForm({
     <form id={formId} onSubmit={submit} className="grid gap-6 pb-28">
       <fieldset disabled={pending} className="grid gap-6">
         <section className="grid gap-5 rounded-2xl border bg-card p-5 shadow-xs sm:grid-cols-2 sm:p-6 lg:grid-cols-4">
-          <Field label="Date" htmlFor="date" error={errors.date}>
+          <Field
+            label="Date"
+            htmlFor="date"
+            error={
+              errors.date ??
+              (inClosedPeriod && lockedThrough
+                ? `Books are closed through ${formatDate(lockedThrough, locale)}. Choose a later date.`
+                : undefined)
+            }
+            hint={
+              lockedThrough
+                ? `Books are closed through ${formatDate(lockedThrough, locale)}.`
+                : undefined
+            }
+          >
             <Input
               id="date"
               type="date"
               required
               value={date}
-              onChange={(e) => setDate(e.target.value)}
-              aria-invalid={Boolean(errors.date)}
+              min={lockedThrough ? nextDay(lockedThrough) : undefined}
+              onChange={(e) => {
+                setDate(e.target.value);
+                if (errors.date) setErrors(({ date: _, ...rest }) => rest);
+              }}
+              aria-invalid={Boolean(errors.date) || inClosedPeriod}
             />
           </Field>
           <Field
@@ -447,7 +470,11 @@ export function JournalForm({
             >
               Cancel
             </Button>
-            <Button type="submit" form={formId} disabled={pending || !totals.balanced}>
+            <Button
+              type="submit"
+              form={formId}
+              disabled={pending || !totals.balanced || inClosedPeriod}
+            >
               {pending ? <Spinner /> : null}
               Post entry
             </Button>

@@ -8,12 +8,41 @@ import {
 import { and, eq, gte, lte, type SQL, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { accounts, type JournalSource, journalEntries, journalLines } from "./schema/accounting";
+import { organizationProfiles } from "./schema/organization";
 
 /**
  * Ledger writes, shared by the app and future importers (Wave, bank feeds). Call these inside
  * `withOrg()` after validating input with `prepareJournalEntry()` from @bookalyze/core. The
  * database re-checks that every entry balances when the transaction commits.
  */
+
+/** A rule the ledger refuses to break, with a message fit to show the user. */
+export class LedgerError extends Error {
+  constructor(
+    message: string,
+    readonly code: "not_found" | "already_reversed" | "is_reversal" | "period_locked" = "not_found",
+    readonly lockedThrough?: string,
+  ) {
+    super(message);
+  }
+}
+
+/** The date the organization's books are closed through, or null when nothing is closed. */
+export async function booksLockedThrough(tx: Transaction): Promise<string | null> {
+  const [row] = await tx
+    .select({ date: organizationProfiles.booksLockedThrough })
+    .from(organizationProfiles)
+    .limit(1);
+  return row?.date ?? null;
+}
+
+/** Throws a LedgerError if `date` falls in a closed period. */
+export async function assertPeriodOpen(tx: Transaction, date: string): Promise<void> {
+  const locked = await booksLockedThrough(tx);
+  if (locked && date <= locked) {
+    throw new LedgerError(`Your books are closed through ${locked}.`, "period_locked", locked);
+  }
+}
 
 /** Creates the standard chart of accounts. Does nothing if the organization has accounts. */
 export async function createDefaultChart(
@@ -64,6 +93,7 @@ export type PostEntryInput = {
 
 /** Writes a validated entry and its lines. Returns the new entry's id and number. */
 export async function postJournalEntry(tx: Transaction, input: PostEntryInput) {
+  await assertPeriodOpen(tx, input.date);
   const entryNumber = await nextEntryNumber(tx, input.orgId);
   const [row] = await tx
     .insert(journalEntries)
@@ -96,8 +126,6 @@ export async function postJournalEntry(tx: Transaction, input: PostEntryInput) {
   return { id: row.id, entryNumber };
 }
 
-export class LedgerError extends Error {}
-
 /**
  * Posts an entry that undoes `entryId` on `date` and links the two. Fails if the entry doesn't
  * exist, is itself a reversal, or was already reversed.
@@ -112,9 +140,13 @@ export async function reverseJournalEntry(
     .where(eq(journalEntries.id, input.entryId))
     .for("update");
   if (!original) throw new LedgerError("This entry no longer exists.");
-  if (original.reversedByEntryId) throw new LedgerError("This entry has already been reversed.");
+  if (original.reversedByEntryId)
+    throw new LedgerError("This entry has already been reversed.", "already_reversed");
   if (original.reversesEntryId) {
-    throw new LedgerError("This entry is itself a reversal. Post a new entry instead.");
+    throw new LedgerError(
+      "This entry is itself a reversal. Post a new entry instead.",
+      "is_reversal",
+    );
   }
   const lines = await tx
     .select()
