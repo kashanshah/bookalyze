@@ -533,7 +533,9 @@ test("searchable dropdowns: type to filter and pick with the keyboard", async ({
   await expect(page.getByRole("heading", { name: "Add a transaction" })).toBeVisible();
 });
 
-test("import: a Wave export, matched accounts, a safe re-run and undo", async ({ page }) => {
+test("import: a Wave export with contacts and receipts, a safe re-run and undo", async ({
+  page,
+}) => {
   // Synthetic data in Wave's export layout: a sale with HST and a card purchase.
   const csv = [
     "Transaction ID,Transaction Date,Account Name,Transaction Description,Transaction Line Description,Amount (One column),Debit Amount (Two Column Approach),Credit Amount (Two Column Approach),Customer,Vendor,Account Group,Account Type",
@@ -568,8 +570,40 @@ test("import: a Wave export, matched accounts, a safe re-run and undo", async ({
   await page.getByRole("button", { name: "Next: review" }).click();
 
   await expect(page.getByText("Ready to import")).toBeVisible();
+  // A customer list in Wave's layout adds their details (synthetic).
+  await page.getByLabel("Customer or vendor lists").setInputFiles({
+    name: "customers.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      "customer_name,email,phone,account_number,city,province/state,country\nLakeside Studio,hi@lakeside.example,416-555-0100,XX99,Toronto,Ontario,Canada\n",
+    ),
+  });
+  await expect(page.getByText("customers.csv")).toBeVisible();
   await page.getByRole("button", { name: "Import 2 transactions" }).click();
   await expect(page.getByRole("heading", { name: "2 transactions imported" })).toBeVisible();
+
+  // The customer came in with the details from the list.
+  await page.getByRole("link", { name: "Customers & vendors", exact: true }).click();
+  await page.getByRole("link", { name: /Lakeside Studio/ }).click();
+  await expect(page.getByText("hi@lakeside.example")).toBeVisible();
+
+  // Receipt files named by date and merchant: one matches a transaction, one goes to the inbox.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    "base64",
+  );
+  await page.getByRole("link", { name: "Import", exact: true }).click();
+  await page.getByLabel("Receipt files to import").setInputFiles([
+    { name: "2026-08-04-Paper_Co.png", mimeType: "image/png", buffer: png },
+    { name: "2026-08-20-Nowhere_Cafe.png", mimeType: "image/png", buffer: png },
+  ]);
+  await expect(page.getByText("2026-08-04-Paper_Co.png")).toBeVisible();
+  await page.getByRole("button", { name: "Upload 2 receipts" }).click();
+  await expect(page.getByText("1 attached, 1 in your inbox.")).toBeVisible();
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await expect(
+    page.locator("li", { hasText: "Paper and toner" }).getByText("1 file attached"),
+  ).toBeAttached();
 
   // The imported sale shows on Transactions with its customer.
   await page.getByRole("link", { name: "Transactions", exact: true }).click();

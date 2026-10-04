@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/dates";
 import { getAccountingContext, inOrg } from "@/server/accounting";
 import { isOrgAdmin } from "@/server/org";
+import { ReceiptImport } from "./receipt-import";
 import { UndoImportButton } from "./undo-button";
 
 export const metadata: Metadata = { title: "Import" };
@@ -97,6 +98,9 @@ export default async function ImportsPage({ params }: { params: Promise<{ slug: 
           ))}
         </ul>
       )}
+      {admin && batches.some((b) => b.status === "completed") ? (
+        <ReceiptImport slug={slug} />
+      ) : null}
     </div>
   );
 }

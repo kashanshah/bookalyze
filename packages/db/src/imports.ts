@@ -85,9 +85,23 @@ export async function createImportAccounts(
   return Object.fromEntries(input.accounts.map((a, i) => [a.key, created[i]?.id as string]));
 }
 
+export type ImportContactInput = {
+  key: string;
+  name: string;
+  role: ContactType;
+  email?: string | null;
+  phone?: string | null;
+  taxNumber?: string | null;
+  address?: string | null;
+  notes?: string | null;
+};
+
+const DETAIL_FIELDS = ["email", "phone", "taxNumber", "address", "notes"] as const;
+
 /**
  * Finds or creates the customers and vendors an import names: an existing contact with the same
- * name (and a matching role) is reused. Returns their IDs by import key.
+ * name (and a matching role) is reused, and details it's missing (email, phone…) are filled in
+ * from the import without overwriting anything. Returns their IDs by import key.
  */
 export async function createImportContacts(
   tx: Transaction,
@@ -95,15 +109,14 @@ export async function createImportContacts(
     orgId: string;
     userId?: string | null;
     batchId: string;
-    contacts: { key: string; name: string; role: ContactType }[];
+    contacts: ImportContactInput[];
   },
-): Promise<{ ids: Record<string, string>; created: number }> {
-  if (!input.contacts.length) return { ids: {}, created: 0 };
-  const existing = await tx
-    .select({ id: contacts.id, name: contacts.name, type: contacts.type })
-    .from(contacts);
+): Promise<{ ids: Record<string, string>; created: number; updated: number }> {
+  if (!input.contacts.length) return { ids: {}, created: 0, updated: 0 };
+  const existing = await tx.select().from(contacts);
   const ids: Record<string, string> = {};
   const toCreate: typeof input.contacts = [];
+  let updated = 0;
   for (const c of input.contacts) {
     const name = c.name.trim().toLowerCase();
     const match =
@@ -111,8 +124,16 @@ export async function createImportContacts(
       existing.find(
         (e) => e.name.toLowerCase() === name && (e.type === "both" || c.role === "both"),
       );
-    if (match) ids[c.key] = match.id;
-    else toCreate.push(c);
+    if (match) {
+      ids[c.key] = match.id;
+      const fill = Object.fromEntries(
+        DETAIL_FIELDS.filter((f) => c[f] && !match[f]).map((f) => [f, c[f] as string]),
+      );
+      if (Object.keys(fill).length) {
+        await tx.update(contacts).set(fill).where(eq(contacts.id, match.id));
+        updated++;
+      }
+    } else toCreate.push(c);
   }
   if (toCreate.length) {
     const created = await tx
@@ -122,6 +143,11 @@ export async function createImportContacts(
           organizationId: input.orgId,
           type: c.role,
           name: c.name.trim(),
+          email: c.email ?? null,
+          phone: c.phone ?? null,
+          taxNumber: c.taxNumber ?? null,
+          address: c.address ?? null,
+          notes: c.notes ?? null,
           importBatchId: input.batchId,
           createdBy: input.userId ?? null,
         })),
@@ -131,7 +157,7 @@ export async function createImportContacts(
       ids[c.key] = created[i]?.id as string;
     });
   }
-  return { ids, created: toCreate.length };
+  return { ids, created: toCreate.length, updated };
 }
 
 export type ImportedEntry = {
@@ -278,4 +304,36 @@ export async function undoImportBatch(tx: Transaction, batchId: string): Promise
   const result = await tx.execute(sql`select undo_import_batch(${batchId}::uuid) as removed`);
   const row = (result as unknown as { rows: { removed: number }[] }).rows[0];
   return Number(row?.removed ?? 0);
+}
+
+/**
+ * Current transactions dated within [from, to], with the text a receipt's name is matched
+ * against: the description, the customer or vendor, and line descriptions.
+ */
+export async function receiptCandidates(
+  tx: Transaction,
+  range: { from: string; to: string },
+): Promise<{ id: string; date: string; text: string }[]> {
+  const rows = await tx
+    .select({
+      id: journalEntries.id,
+      date: journalEntries.date,
+      memo: journalEntries.memo,
+      contact: contacts.name,
+      lines: sql<string>`(select string_agg(coalesce(l.description, ''), ' ') from ${journalLines} l where l.journal_entry_id = ${journalEntries.id})`,
+    })
+    .from(journalEntries)
+    .leftJoin(contacts, eq(contacts.id, journalEntries.contactId))
+    .where(
+      and(
+        sql`${journalEntries.date} between ${range.from} and ${range.to}`,
+        sql`${journalEntries.reversedByEntryId} is null`,
+        sql`${journalEntries.reversesEntryId} is null`,
+      ),
+    );
+  return rows.map((r) => ({
+    id: r.id,
+    date: r.date,
+    text: [r.memo, r.contact, r.lines].filter(Boolean).join(" "),
+  }));
 }
