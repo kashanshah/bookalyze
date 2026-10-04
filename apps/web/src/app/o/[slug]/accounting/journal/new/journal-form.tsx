@@ -16,9 +16,9 @@ import { toast } from "sonner";
 import { RateField } from "@/components/accounting/rate-field";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDate, nextDay } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -154,6 +154,19 @@ export function JournalForm({
     });
   }
 
+  // Accounts that hold one currency can't be used on an entry in another.
+  const accountOptions: ComboboxOption[] = accountGroups.flatMap((group) =>
+    group.options.map((o) => {
+      const other = Boolean(o.currency && o.currency !== currency);
+      return {
+        value: o.id,
+        label: other ? `${o.label} (${o.currency} only)` : o.label,
+        group: accountTypes[group.type].label,
+        disabled: other,
+      };
+    }),
+  );
+
   return (
     <form id={formId} onSubmit={submit} className="grid gap-6 pb-28">
       <fieldset disabled={pending} className="grid gap-6">
@@ -205,17 +218,13 @@ export function JournalForm({
             error={errors.currency}
             hint={foreign ? undefined : "The currency the amounts below are in."}
           >
-            <NativeSelect
+            <Combobox
               id="currency"
               value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-            >
-              {currencies.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.code} · {c.name}
-                </option>
-              ))}
-            </NativeSelect>
+              onChange={setCurrency}
+              options={currencies.map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` }))}
+              searchPlaceholder="Search currencies"
+            />
           </Field>
           {foreign ? (
             <RateField
@@ -281,29 +290,15 @@ export function JournalForm({
                     <label htmlFor={`account-${line.key}`} className="sr-only">
                       Account for line {index + 1}
                     </label>
-                    <NativeSelect
+                    <Combobox
                       id={`account-${line.key}`}
                       value={line.accountId}
-                      onChange={(e) => update(line.key, { accountId: e.target.value })}
-                      aria-invalid={Boolean(error)}
-                      className={cn(!line.accountId && "text-muted-foreground")}
-                    >
-                      <option value="">Choose an account…</option>
-                      {accountGroups.map((group) => (
-                        <optgroup key={group.type} label={accountTypes[group.type].label}>
-                          {group.options.map((o) => (
-                            <option
-                              key={o.id}
-                              value={o.id}
-                              disabled={Boolean(o.currency && o.currency !== currency)}
-                            >
-                              {o.label}
-                              {o.currency && o.currency !== currency ? ` (${o.currency} only)` : ""}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </NativeSelect>
+                      onChange={(v) => update(line.key, { accountId: v })}
+                      invalid={Boolean(error)}
+                      placeholder="Choose an account…"
+                      searchPlaceholder="Search accounts or codes"
+                      options={accountOptions}
+                    />
                     {error ? (
                       <p className="fade-in-0 animate-in text-destructive text-xs">{error}</p>
                     ) : null}

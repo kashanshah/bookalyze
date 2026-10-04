@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +18,6 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { saveTaxRateAction } from "./actions";
@@ -152,21 +152,19 @@ function RateForm({
           error={errors.accountId}
           hint="A liability account for tax collected, less tax you can claim back. Rates you file together share one."
         >
-          <NativeSelect
+          <Combobox
             id="rate-account"
             value={accountId}
             disabled={fixed}
-            onChange={(e) => setAccountId(e.target.value)}
-          >
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.label}
-              </option>
-            ))}
-            <option value="new">
-              New account: {name.trim() ? `${name.trim()} payable` : "named after this rate"}
-            </option>
-          </NativeSelect>
+            onChange={setAccountId}
+            options={[
+              ...accounts.map((a) => ({ value: a.id, label: a.label })),
+              {
+                value: "new",
+                label: `New account: ${name.trim() ? `${name.trim()} payable` : "named after this rate"}`,
+              },
+            ]}
+          />
         </Field>
         <div className="flex items-start justify-between gap-4 rounded-xl border p-4">
           <div className="grid gap-1">

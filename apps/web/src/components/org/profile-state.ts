@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export type CountryOption = {
   code: string;
@@ -53,6 +53,15 @@ export function useProfileState(defaults: ProfileDefaults, countries: CountryOpt
     defaults.firstFiscalYearStart ?? "",
   );
   const [subdivisions, setSubdivisions] = useState<{ code: string; name: string }[]>([]);
+  // Changed through a picker (searchable dropdowns don't fire a form's native change event).
+  const [touched, setTouched] = useState(false);
+  const clearTouched = useCallback(() => setTouched(false), []);
+  const touching =
+    <T>(set: (value: T) => void) =>
+    (value: T) => {
+      setTouched(true);
+      set(value);
+    };
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +77,7 @@ export function useProfileState(defaults: ProfileDefaults, countries: CountryOpt
   }, [countryCode]);
 
   function changeCountry(code: string, { lockCurrency = false } = {}) {
+    setTouched(true);
     setCountryCode(code);
     setSubdivisionCode("");
     const info = countries.find((c) => c.code === code);
@@ -82,25 +92,27 @@ export function useProfileState(defaults: ProfileDefaults, countries: CountryOpt
     setLegalName,
     tradeName,
     setTradeName,
+    touched,
+    clearTouched,
     entityType,
-    setEntityType,
+    setEntityType: touching(setEntityType),
     incorporationDate,
     setIncorporationDate,
     countryCode,
     changeCountry,
     subdivisionCode,
-    setSubdivisionCode,
+    setSubdivisionCode: touching(setSubdivisionCode),
     subdivisions,
     baseCurrency,
-    setBaseCurrency,
+    setBaseCurrency: touching(setBaseCurrency),
     timezone,
-    setTimezone,
+    setTimezone: touching(setTimezone),
     locale,
-    setLocale,
+    setLocale: touching(setLocale),
     fiscalYearEndMonth,
-    setFiscalYearEndMonth,
+    setFiscalYearEndMonth: touching(setFiscalYearEndMonth),
     fiscalYearEndDay,
-    setFiscalYearEndDay,
+    setFiscalYearEndDay: touching(setFiscalYearEndDay),
     firstFiscalYearStart,
     setFirstFiscalYearStart,
   };

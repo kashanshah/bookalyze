@@ -52,18 +52,21 @@ function SettingsForm({
     {},
   );
   const fields = useProfileState(profile, countries);
-  const [dirty, setDirty] = useState(false);
+  const [changed, setDirty] = useState(false);
+  const dirty = changed || fields.touched;
+  const { clearTouched } = fields;
 
   useEffect(() => {
     if (state.saved) {
       toast.success("Company settings saved");
       setDirty(false);
+      clearTouched();
     } else if (state.message) {
       toast.error(state.message);
     } else if (state.errors && Object.keys(state.errors).length) {
       toast.error("Please fix the highlighted fields");
     }
-  }, [state]);
+  }, [state, clearTouched]);
 
   return (
     <form action={action} onChange={() => setDirty(true)}>

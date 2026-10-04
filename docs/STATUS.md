@@ -114,7 +114,7 @@ Real company details are entered in the app and never committed.
 - **Tests:**
   - Core: 36 at slice 1, 43 after slice 3, 51 after slice 6, 58 after slice 7.
   - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5, 37 after slice 6, 42 after slice 7.
-  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors), 11 after slice 6 (exchange rates), 12 after slice 7 (sales tax).
+  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors), 11 after slice 6 (exchange rates), 12 after slice 7 (sales tax), 13 after the searchable dropdowns.
 
 ### Phase 1, slice 2: closed periods
 - **Closing the books:**
@@ -308,9 +308,9 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
    - Recording the filed return and the payment or refund (a "mark as filed" that posts the
      settlement and locks the period).
    - Tax-exclusive entry (type the amount before tax) for invoices, with phase-2 invoicing.
-7. [ ] **Searchable pickers everywhere.** Replace long native selects (categories, accounts,
-   contacts, tax rates) with a type-to-search combobox grouped by account type, keyboard and
-   mobile friendly. Requested by the owner.
+7. [x] **Searchable dropdowns everywhere.** Done: every dropdown is a `Combobox` (see §5,
+   "Dropdowns"). Still to come: recently used categories at the top, and remembering a vendor's
+   usual category.
 8. [ ] **More reports:**
    - General ledger and account transactions (click an account on any report to drill in).
    - CSV and PDF export.
@@ -394,6 +394,14 @@ For UI changes, also look at the screens at **390px width and in dark mode** (Pl
 screenshots work well).
 
 ### Recipes
+
+**Dropdowns:** use `Combobox` from `src/components/ui/combobox.tsx` for every choice list.
+- Options are `{ value, label, group?, description?, keywords?, disabled? }`.
+- `group` lists options under headings (account types, "All time zones").
+- `keywords` are searched but not shown (codes, currency names).
+- A search box appears for lists longer than 7. Typing on the closed trigger starts a search.
+- `footer` pins an action under the list, e.g. "Add a new vendor".
+- Label it with `<Field htmlFor={id}>` or `aria-label`.
 - **New tenant table:**
   1. Add it to `packages/db/src/schema/*.ts` with `organizationId` and
      `tenantIsolationPolicy(...)`. Add composite `(organization_id, id)` foreign keys when it
@@ -455,8 +463,8 @@ screenshots work well).
   CI won't catch this. Apply new migrations to a dev database that has entries before pushing.
 - **This sandbox can't reach bankofcanada.ca** (egress policy). Rate tests use a sample of
   Valet's format, and the e2e test stores today's rate itself. Live fetching happens on Vercel.
-- **Mobile inputs must be at least 16px** or iOS zooms in on focus. `Input` and `NativeSelect` use
-  `text-base sm:text-sm`. Keep that when adding new controls.
+- **Mobile inputs must be at least 16px** or iOS zooms in on focus. `Input` and `Combobox` (its
+  trigger, search box and options) use `text-base sm:text-sm`. Keep that when adding new controls.
 - **Uploads never go through server actions or route bodies on Vercel** (4.5 MB limit). The
   browser uploads to S3 with a presigned URL.
 - **`next start` logs "The destination stream closed early"** during e2e navigation. It's harmless
@@ -464,8 +472,12 @@ screenshots work well).
 - **Server pages can't use values from `"use client"` files.** A constant or helper exported
   from a client file becomes a client reference on the server (calling it throws, and objects
   read as `undefined`). Put shared helpers and labels in `@bookalyze/core` or `src/lib`.
-- **`NativeSelect` wraps the `<select>` in a div.** Grid placement (`col-span-…`) goes in
-  `wrapperClassName`, not `className`.
+- **Dropdowns are `Combobox`, not `<select>`.** There is no native `<select>` in the app.
+  - Grid placement (`col-span-…`) goes in `wrapperClassName`; `className` styles the trigger.
+  - Picking an option fires no native `change` event, so a form's `onChange` doesn't see it.
+    Track it in state (see `touched` in `components/org/profile-state.ts`).
+  - Pass `name` to post the value with a form (it renders a hidden input).
+  - In e2e, use `choose(trigger, "Option label")` from `e2e/helpers.ts`, not `selectOption`.
 - **Root `.env` loading:** `apps/web/next.config.ts` loads the root `.env` with dotenv.
   `packages/db/scripts/load-env.ts` does the same for scripts.
 

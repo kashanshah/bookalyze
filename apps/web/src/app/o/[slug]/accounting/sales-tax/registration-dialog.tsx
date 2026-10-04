@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +18,6 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { deleteTaxRegistrationAction, saveTaxRegistrationAction } from "./actions";
@@ -144,17 +144,15 @@ function RegistrationForm({
         </Field>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="How often you file" htmlFor="reg-frequency" error={errors.filingFrequency}>
-            <NativeSelect
+            <Combobox
               id="reg-frequency"
               value={frequency}
-              onChange={(e) => setFrequency(e.target.value as FilingFrequency)}
-            >
-              {Object.entries(FILING_FREQUENCY_LABELS).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </NativeSelect>
+              onChange={(v) => setFrequency(v as FilingFrequency)}
+              options={Object.entries(FILING_FREQUENCY_LABELS).map(([key, label]) => ({
+                value: key,
+                label,
+              }))}
+            />
           </Field>
           <Field
             label="Registered since (optional)"
