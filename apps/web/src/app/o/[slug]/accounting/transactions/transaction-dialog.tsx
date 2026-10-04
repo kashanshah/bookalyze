@@ -2,6 +2,7 @@
 
 import {
   accountTypes,
+  divideDecimals,
   formatDecimal,
   formatMoney,
   parseDecimal,
@@ -20,6 +21,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { RateField } from "@/components/accounting/rate-field";
 import { ReceiptsPanel } from "@/components/accounting/receipts-panel";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -127,6 +129,7 @@ function TransactionForm({
     row?.toAccountId ?? ctx.moneyAccounts.find((a) => a.id !== firstMoney)?.id ?? "",
   );
   const [amount, setAmount] = useState(row && row.kind === "transfer" ? toInput(row.amount) : "");
+  const [received, setReceived] = useState(row?.receivedAmount ? toInput(row.receivedAmount) : "");
   const [splits, setSplits] = useState<Split[]>(() =>
     row && row.kind !== "transfer" && row.splits.length
       ? row.splits.map((s) => ({
@@ -169,6 +172,23 @@ function TransactionForm({
   const currency =
     kind === "transfer" ? moneyCurrency(fromAccountId) : moneyCurrency(moneyAccountId);
   const foreign = currency !== ctx.baseCurrency;
+  const toCurrency = moneyCurrency(toAccountId);
+  const crossCurrency = kind === "transfer" && Boolean(toAccountId) && currency !== toCurrency;
+  // A rate is needed unless one side of a cross-currency transfer is already the main currency.
+  const needsRate = crossCurrency
+    ? currency !== ctx.baseCurrency && toCurrency !== ctx.baseCurrency
+    : foreign;
+  const impliedRate = useMemo(() => {
+    if (!crossCurrency) return null;
+    try {
+      const sent = amount.replace(/,/g, "");
+      const got = received.replace(/,/g, "");
+      if (!sent || !got || parseDecimal(sent) <= 0n) return null;
+      return divideDecimals(got, sent, 4).replace(/0+$/, "").replace(/\.$/, "");
+    } catch {
+      return null;
+    }
+  }, [crossCurrency, amount, received]);
   const split = splits.length > 1;
 
   const total = useMemo(() => {
@@ -199,7 +219,8 @@ function TransactionForm({
         kind,
         date,
         memo,
-        fxRate: foreign ? fxRate : undefined,
+        fxRate: needsRate ? fxRate : undefined,
+        received: crossCurrency ? received : undefined,
         attachmentIds: row ? undefined : (files ?? []).map((f) => f.id),
         contactId: kind === "transfer" ? "" : contactId,
         moneyAccountId,
@@ -361,7 +382,11 @@ function TransactionForm({
                   {moneyOptions(fromAccountId)}
                 </NativeSelect>
               </Field>
-              <Field label={`Amount (${currency})`} htmlFor="tx-amount" error={errors.amount}>
+              <Field
+                label={crossCurrency ? `Amount sent (${currency})` : `Amount (${currency})`}
+                htmlFor="tx-amount"
+                error={errors.amount}
+              >
                 <Input
                   id="tx-amount"
                   inputMode="decimal"
@@ -374,6 +399,31 @@ function TransactionForm({
                   }}
                 />
               </Field>
+              {crossCurrency ? (
+                <Field
+                  label={`Amount received (${toCurrency})`}
+                  htmlFor="tx-received"
+                  error={errors.received}
+                  hint={
+                    impliedRate
+                      ? `Your bank's rate: 1 ${currency} = ${impliedRate} ${toCurrency}.`
+                      : "Exactly what arrived, after the bank's conversion and fees."
+                  }
+                  className="fade-in-0 slide-in-from-top-1 animate-in duration-200"
+                >
+                  <Input
+                    id="tx-received"
+                    inputMode="decimal"
+                    value={received}
+                    placeholder="0.00"
+                    className="tabular text-end"
+                    onChange={(e) => {
+                      setReceived(e.target.value);
+                      clearError("received");
+                    }}
+                  />
+                </Field>
+              ) : null}
             </>
           ) : null}
           <Field
@@ -515,34 +565,22 @@ function TransactionForm({
           </div>
         )}
 
-        {foreign ? (
-          <Field
-            label="Exchange rate"
-            htmlFor="tx-rate"
+        {needsRate ? (
+          <RateField
+            slug={ctx.slug}
+            id="tx-rate"
+            currency={currency}
+            baseCurrency={ctx.baseCurrency}
+            date={date}
+            value={fxRate}
+            onChange={(v) => {
+              setFxRate(v);
+              clearError("fxRate");
+            }}
             error={errors.fxRate}
-            hint={`How many ${ctx.baseCurrency} one ${currency} was worth on this date.`}
+            locale={ctx.locale}
             className="fade-in-0 slide-in-from-top-1 max-w-xs animate-in duration-200"
-          >
-            <div className="relative">
-              <span className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                1 {currency} =
-              </span>
-              <Input
-                id="tx-rate"
-                inputMode="decimal"
-                value={fxRate}
-                placeholder="1.3650"
-                className="tabular ps-20 pe-14 text-end"
-                onChange={(e) => {
-                  setFxRate(e.target.value);
-                  clearError("fxRate");
-                }}
-              />
-              <span className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                {ctx.baseCurrency}
-              </span>
-            </div>
-          </Field>
+          />
         ) : null}
 
         {formError ? <Alert variant="destructive">{formError}</Alert> : null}

@@ -134,13 +134,15 @@ describe("row-level security", () => {
   });
 
   it("keeps reference data read-only", async () => {
+    const count = () =>
+      app.db
+        .execute<{ n: number }>(sql`select count(*)::int as n from currencies`)
+        .then((r) => r.rows[0]?.n);
+    const before = await count();
     const message = await pgErrorOf(
       app.db.insert(schema.currencies).values({ code: "ZZZ", name: "Test", minorUnits: 2 }),
     );
     expect(message).toMatch(/permission denied/);
-    const [row] = await app.db
-      .execute<{ n: number }>(sql`select count(*)::int as n from currencies`)
-      .then((r) => r.rows);
-    expect(row?.n).toBe(1);
+    expect(await count()).toBe(before);
   });
 });

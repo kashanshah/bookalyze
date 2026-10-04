@@ -4,6 +4,7 @@ import {
   isMoneyAccountSubtype,
   parseDecimal,
   prepareJournalEntry,
+  prepareTransfer,
   type TransactionInput,
   transactionLines,
 } from "@bookalyze/core";
@@ -90,6 +91,7 @@ export async function saveTransactionAction(
   let txInput: TransactionInput;
   let currency: string;
   let splitIndex: number[] = [];
+  let crossCurrency = false;
   if (value.kind === "transfer") {
     const from = byId.get(value.fromAccountId ?? "");
     const to = byId.get(value.toAccountId ?? "");
@@ -99,15 +101,7 @@ export async function saveTransactionAction(
     if (from && to && from.id === to.id) errors.toAccountId = "Choose two different accounts.";
     if (Object.keys(errors).length) return { ok: false, errors };
     const fromCurrency = from?.currency ?? base;
-    const toCurrency = to?.currency ?? base;
-    if (fromCurrency !== toCurrency) {
-      return {
-        ok: false,
-        errors: {
-          toAccountId: `Transfers between ${fromCurrency} and ${toCurrency} accounts are coming soon. For now, record it as a journal entry.`,
-        },
-      };
-    }
+    crossCurrency = fromCurrency !== (to?.currency ?? base);
     currency = fromCurrency;
     txInput = {
       kind: "transfer",
@@ -153,21 +147,40 @@ export async function saveTransactionAction(
     txInput = { kind: value.kind, moneyAccountId: money?.id ?? "", splits };
   }
 
-  const prepared = prepareJournalEntry(
-    {
-      currency,
-      baseCurrency: base,
-      fxRate: value.fxRate,
-      lines: transactionLines(txInput, value.memo),
-    },
-    toLedgerMap(accounts),
-  );
+  const prepared =
+    txInput.kind === "transfer"
+      ? prepareTransfer(
+          {
+            fromAccountId: txInput.fromAccountId,
+            toAccountId: txInput.toAccountId,
+            sent: txInput.amount,
+            received: value.received,
+            baseCurrency: base,
+            fxRate: value.fxRate,
+            memo: value.memo,
+          },
+          toLedgerMap(accounts),
+        )
+      : prepareJournalEntry(
+          {
+            currency,
+            baseCurrency: base,
+            fxRate: value.fxRate,
+            lines: transactionLines(txInput, value.memo),
+          },
+          toLedgerMap(accounts),
+        );
   if (!prepared.ok) {
     const errors: TransactionErrors = {};
     if (prepared.errors.fxRate) errors.fxRate = prepared.errors.fxRate;
     for (const [index, message] of Object.entries(prepared.errors.lines ?? {})) {
       const i = Number(index);
-      if (txInput.kind === "transfer") errors[i === 0 ? "toAccountId" : "fromAccountId"] = message;
+      // Transfers: line 0 is the receiving side, line 1 the sending side. Between currencies the
+      // messages are about the amounts; otherwise about the accounts.
+      if (txInput.kind === "transfer" && crossCurrency)
+        errors[i === 0 ? "received" : "amount"] = message;
+      else if (txInput.kind === "transfer")
+        errors[i === 0 ? "toAccountId" : "fromAccountId"] = message;
       else if (i === 0) errors.moneyAccountId = message;
       else errors[`splits.${splitIndex[i - 1] ?? i - 1}`] = message;
     }

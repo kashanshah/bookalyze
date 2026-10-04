@@ -130,3 +130,19 @@ and opened the same way. Nothing in the bucket is public. Locally you can skip S
 
 Optional: use a separate bucket (e.g. `bookalyze-files-preview`) for Preview deployments so test
 uploads never mix with real receipts.
+
+## Daily exchange rates (Vercel Cron)
+
+`apps/web/vercel.json` schedules `/api/cron/fx-rates` on weekdays at 22:15 UTC. That's after the
+Bank of Canada publishes its daily rates at about 16:30 Eastern. The job stores the last ten days
+of rates, so missed runs fill themselves in.
+
+1. Generate a secret: `openssl rand -base64 32`.
+2. In Vercel → Settings → Environment Variables, add `CRON_SECRET` with that value for
+   **Production**. Vercel sends it automatically as `Authorization: Bearer …` when it calls the
+   job.
+3. Redeploy. Under Settings → Cron Jobs you can see the job and run it once by hand, to load
+   recent rates straight away.
+
+Rates for older dates (back-dated entries) are fetched on demand the first time someone needs
+them. If the Bank of Canada can't be reached, the form simply asks for the rate.

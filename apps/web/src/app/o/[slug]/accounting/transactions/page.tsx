@@ -115,6 +115,8 @@ export default async function TransactionsPage({
     moneyAccountIds: r.view.moneyAccountIds,
     fromAccountId: r.view.fromAccountId,
     toAccountId: r.view.toAccountId,
+    receivedAmount: r.view.receivedAmount,
+    receivedCurrency: r.view.receivedCurrency,
     splits: r.view.splits,
   }));
 

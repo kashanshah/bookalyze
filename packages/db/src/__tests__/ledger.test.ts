@@ -50,7 +50,7 @@ async function addAccount(orgId: string, key: string, type: "asset" | "income", 
 /** Inserts an entry and its lines in one transaction, as the server does. */
 function post(
   orgId: string,
-  lines: { accountId: string; amount: string; baseAmount?: string }[],
+  lines: { accountId: string; amount: string; baseAmount?: string; currency?: string }[],
   extra: (tx: Transaction, entryId: string) => Promise<unknown> = async () => {},
 ) {
   return withOrg(app.db, { orgId }, async (tx) => {
@@ -71,6 +71,7 @@ function post(
           journalEntryId: entry.id,
           lineNo: i + 1,
           accountId: l.accountId,
+          currency: l.currency ?? "CAD",
           amount: l.amount,
           baseAmount: l.baseAmount ?? l.amount,
         })),

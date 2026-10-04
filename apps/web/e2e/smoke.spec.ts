@@ -397,6 +397,63 @@ test("customers and vendors: add, pick on transactions, totals and filter", asyn
   await expect(page.getByText("Northwind Traders")).toHaveCount(0);
 });
 
+test("exchange rates: suggested rate, USD income and a USD → CAD transfer", async ({ page }) => {
+  // Store today's Bank of Canada rate, as the daily job would (no network needed).
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    new Date(),
+  );
+  await withOwnerDb((db) =>
+    db.query(
+      `insert into fx_rates (date, base, quote, rate, source) values ($1, 'CAD', 'USD', 1.3650, 'Bank of Canada')
+       on conflict (date, base, quote) do update set rate = excluded.rate`,
+      [today],
+    ),
+  );
+  await signIn(page, owner.email, owner.password);
+
+  // A USD bank account.
+  await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
+  await page.getByRole("button", { name: "Add account" }).click();
+  await page.getByLabel("Name").fill("Wise USD");
+  await page.getByLabel("Code (optional)").fill("1020");
+  await page.locator("#currency").selectOption("USD");
+  await page.getByRole("button", { name: "Add account" }).last().click();
+  await expect(page.getByText("Account added")).toBeVisible();
+
+  // Money in to the USD account: the rate is suggested.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("button", { name: "Add income" }).click();
+  await page.locator("#tx-money").selectOption({ label: "1020 · Wise USD (USD)" });
+  await expect(page.locator("#tx-rate")).toHaveValue("1.365");
+  await expect(page.getByText(/Bank of Canada rate for/)).toBeVisible();
+  await page.locator("#tx-memo").fill("US client payment");
+  await page.getByLabel("Category 1", { exact: true }).selectOption({ label: "4000 · Sales" });
+  await page.getByLabel("Amount 1").fill("1000");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(
+    page.locator("li", { hasText: "US client payment" }).getByText("+US$1,000.00"),
+  ).toBeVisible();
+
+  // Move USD into the CAD account: what left and what arrived.
+  await page.getByRole("button", { name: "Transfer" }).click();
+  await page.locator("#tx-from").selectOption({ label: "1020 · Wise USD (USD)" });
+  await page.locator("#tx-to").selectOption({ label: "1010 · RBC Chequing" });
+  await page.locator("#tx-memo").fill("Convert to CAD");
+  await page.locator("#tx-amount").fill("500");
+  await page.locator("#tx-received").fill("680");
+  await expect(page.getByText("Your bank's rate: 1 USD = 1.36 CAD.")).toBeVisible();
+  await expect(page.locator("#tx-rate")).toHaveCount(0);
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  const conversion = page.locator("li", { hasText: "Convert to CAD" });
+  await expect(conversion).toContainText("US$500.00");
+  await expect(conversion.getByText("→ $680.00")).toBeVisible();
+
+  await page.getByLabel("Account", { exact: true }).selectOption({ label: "1010 · RBC Chequing" });
+  await expect(
+    page.locator("li", { hasText: "Convert to CAD" }).getByText("+$680.00"),
+  ).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

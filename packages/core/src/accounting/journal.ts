@@ -47,6 +47,8 @@ export type PreparedLine = {
   index: number;
   accountId: string;
   description: string | null;
+  /** The line's currency (the entry currency, unless the entry mixes currencies). */
+  currency: string;
   amount: string;
   baseAmount: string;
 };
@@ -75,7 +77,7 @@ function blank(value: string | undefined): boolean {
 }
 
 /** Parses a positive amount with at most `decimals` places, or returns an error message. */
-function parsePositive(value: string, decimals: number, currency: string): bigint | string {
+export function parsePositive(value: string, decimals: number, currency: string): bigint | string {
   const v = value.trim().replace(/,/g, "");
   if (!isDecimal(v)) return "Enter an amount like 125.50.";
   // Trailing zeros don't add precision: "12.5000" is a valid USD amount.
@@ -239,6 +241,7 @@ export function prepareJournalEntry(
         index: l.index,
         accountId: l.accountId,
         description: l.description,
+        currency: input.currency,
         amount: formatDecimal(l.units),
         baseAmount: formatDecimal(base[i] as bigint),
       })),

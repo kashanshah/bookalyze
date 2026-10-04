@@ -26,6 +26,7 @@ import {
   toLedgerMap,
 } from "@/server/accounting";
 import { audit } from "@/server/audit";
+import { suggestRate } from "@/server/fx";
 import { isOrgAdmin } from "@/server/org";
 
 export type FieldErrors = Record<string, string>;
@@ -370,4 +371,18 @@ export async function setBooksLockAction(
   });
   revalidatePath(`/o/${slug}`, "layout");
   return { ok: true, data: { lockedThrough: date } };
+}
+
+/**
+ * The exchange rate to suggest for `currency` on `date`, in this company's main currency, or null
+ * if none is published for that date.
+ */
+export async function suggestRateAction(
+  slug: string,
+  currency: string,
+  date: string,
+): Promise<{ rate: string; asOf: string | null; source: string } | null> {
+  const ctx = await getAccountingContext(slug);
+  if (!isIsoDate(date) || !/^[A-Z]{3}$/.test(currency)) return null;
+  return suggestRate(ctx.profile.baseCurrency, currency, date);
 }

@@ -33,6 +33,9 @@ export type TxRow = {
   moneyAccountIds: string[];
   fromAccountId?: string;
   toAccountId?: string;
+  /** Transfers between currencies: what arrived, in the receiving account's currency. */
+  receivedAmount?: string;
+  receivedCurrency?: string;
   splits: { accountId: string; amount: string; description?: string }[];
 };
 
