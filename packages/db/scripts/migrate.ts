@@ -2,11 +2,12 @@ import "./load-env";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
+import { withVerifiedSsl } from "../src/client";
 
 const url = process.env.DATABASE_URL_MIGRATOR;
 if (!url) throw new Error("DATABASE_URL_MIGRATOR is not set");
 
-const pool = new pg.Pool({ connectionString: url, max: 1 });
+const pool = new pg.Pool({ connectionString: withVerifiedSsl(url), max: 1 });
 await migrate(drizzle(pool), { migrationsFolder: new URL("../drizzle", import.meta.url).pathname });
 
 // Make sure the runtime login role (from DATABASE_URL) belongs to app_runtime. The migrator

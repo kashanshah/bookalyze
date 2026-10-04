@@ -6,8 +6,24 @@ import * as schema from "./schema";
 export type Database = NodePgDatabase<typeof schema>;
 export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
+/**
+ * Asks for full certificate verification explicitly. Hosted URLs (Neon) use sslmode=require,
+ * which node-postgres already treats as verify-full but warns will weaken to libpq's meaning in
+ * its next major version. Spelling out verify-full keeps today's protection and the logs quiet.
+ */
+export function withVerifiedSsl(connectionString: string): string {
+  return connectionString.replace(
+    /([?&]sslmode=)(prefer|require|verify-ca)(?=&|$)/,
+    (_, prefix: string) => `${prefix}verify-full`,
+  );
+}
+
 export function createDb(connectionString: string, poolConfig: pg.PoolConfig = {}) {
-  const pool = new pg.Pool({ connectionString, max: 10, ...poolConfig });
+  const pool = new pg.Pool({
+    connectionString: withVerifiedSsl(connectionString),
+    max: 10,
+    ...poolConfig,
+  });
   const db = drizzle(pool, { schema, casing: "snake_case" });
   return { db, pool };
 }
