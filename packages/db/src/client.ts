@@ -55,6 +55,15 @@ export async function withOrg<T>(
   ctx: OrgContext,
   fn: (tx: Transaction) => Promise<T>,
 ): Promise<T> {
+  // Tenant isolation rests on row-level security, which a superuser, BYPASSRLS or table-owner
+  // role skips. Refuse to touch tenant data over such a connection (checked once per pool).
+  let check = rlsChecked.get(db);
+  if (!check) {
+    check = assertRlsEnforced(db);
+    rlsChecked.set(db, check);
+    check.catch(() => rlsChecked.delete(db));
+  }
+  await check;
   return db.transaction(async (tx) => {
     await tx.execute(
       sql`select set_config('app.org_id', ${ctx.orgId}, true), set_config('app.user_id', ${ctx.userId ?? ""}, true)`,
@@ -63,18 +72,24 @@ export async function withOrg<T>(
   });
 }
 
-/** Throws if the connection's role would bypass row-level security. */
+const rlsChecked = new WeakMap<Database, Promise<void>>();
+
+/**
+ * Throws if the connection's role would bypass row-level security: a superuser, a BYPASSRLS
+ * role, or the owner of the tables (or a member of the owning role, such as Neon's
+ * neondb_owner). Called by withOrg() before the first query on each pool.
+ */
 export async function assertRlsEnforced(db: Database): Promise<void> {
   const result = await db.execute<{ bypass: boolean; owns: boolean }>(sql`
     select (r.rolsuper or r.rolbypassrls) as bypass,
            exists (select 1 from pg_tables t
                    where t.schemaname = 'public' and t.tablename = 'organization_profiles'
-                     and t.tableowner = current_user) as owns
+                     and pg_has_role(current_user, t.tableowner, 'USAGE')) as owns
     from pg_roles r where r.rolname = current_user`);
   const row = result.rows[0];
   if (!row || row.bypass || row.owns) {
     throw new Error(
-      "DATABASE_URL must use the runtime role (member of app_runtime), not a superuser, BYPASSRLS or table-owner role",
+      "Refusing to query tenant data: DATABASE_URL connects as a role that bypasses row-level security (a superuser, BYPASSRLS or the tables' owner, e.g. neondb_owner). Use the runtime role (bookalyze_app, a member of app_runtime). See docs/SETUP.md.",
     );
   }
 }

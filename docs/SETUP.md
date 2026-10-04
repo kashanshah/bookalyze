@@ -39,6 +39,9 @@ http://localhost:3000/dev/emails.
    machine. This creates the `app_runtime` group, grants it to `bookalyze_app`, and loads reference
    data.
 4. Use `bookalyze_app` with the **pooled** connection string as `DATABASE_URL` in Vercel.
+   **Never use `neondb_owner` (Neon's default connection string) for `DATABASE_URL`.** The owner
+   skips row-level security, so every company would see every other company's data. The app
+   refuses to read company data over such a connection and logs "Refusing to query tenant data".
 
 Neon branches copy roles, so a `preview` branch works the same way with its own host.
 
@@ -102,8 +105,10 @@ and opened the same way. Nothing in the bucket is public. Locally you can skip S
    ```
    Drop `http://localhost:3000` if you only use S3 in production. If your previews use a custom
    domain, add it instead of `https://*.vercel.app`.
-3. **Create an IAM user for the app** (IAM → Users → Create user, no console access). Attach an
-   inline policy that only reaches this bucket:
+3. **Create an IAM user for the app** (IAM → Users → Create user, no console access). A new user
+   has no permissions, so uploads fail with **403** until you add this. Users → the user →
+   Permissions → Add permissions → **Create inline policy** → JSON. Replace `bookalyze-files-prod`
+   with **your** bucket name:
    ```json
    {
      "Version": "2012-10-17",
@@ -117,6 +122,14 @@ and opened the same way. Nothing in the bucket is public. Locally you can skip S
    }
    ```
    Then Security credentials → Create access key → "Application running outside AWS".
+
+   **If uploads fail with 403**, open the failed PUT in the browser's network tab → Response. S3's
+   `<Code>` says why:
+   - `AccessDenied`: the policy is missing or names another bucket.
+   - `SignatureDoesNotMatch`: the secret in Vercel doesn't belong to that access key.
+   - `InvalidAccessKeyId`: the key was deleted or mistyped.
+
+   A CORS error instead of a 403 means step 2 is missing.
 4. **Add the settings** to Vercel (Production and Preview) and, if you want S3 locally, to your
    root `.env.local`:
    ```bash

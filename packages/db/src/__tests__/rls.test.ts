@@ -80,6 +80,10 @@ describe("row-level security", () => {
   it("runs the app as a role that cannot bypass RLS", async () => {
     await expect(assertRlsEnforced(app.db)).resolves.toBeUndefined();
     await expect(assertRlsEnforced(owner.db)).rejects.toThrow();
+    // withOrg refuses to run tenant queries over a connection that would bypass RLS.
+    await expect(withOrg(owner.db, { orgId: crypto.randomUUID() }, async () => 1)).rejects.toThrow(
+      /Refusing to query tenant data/,
+    );
   });
 
   it("returns no tenant rows without an organization context", async () => {
