@@ -882,3 +882,15 @@ summary:focus-visible,
     transition: none;
   }
 }
+
+/* Honeypot field for spam bots (hidden from people and screen readers) */
+.waitlist .hp {
+  position: absolute;
+  left: -10000px;
+  flex: none;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+}
