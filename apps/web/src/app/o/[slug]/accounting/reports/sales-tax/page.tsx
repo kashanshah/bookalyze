@@ -1,15 +1,13 @@
-import { formatTaxRate, parseDecimal, salesTaxSummary } from "@bookalyze/core";
-import { listTaxRates, listTaxRegistrations, salesTaxRows } from "@bookalyze/db";
+import { formatTaxRate, parseDecimal } from "@bookalyze/core";
 import { Settings2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Amount } from "@/components/accounting/amount";
 import { Button } from "@/components/ui/button";
-import { formatDate, nowIn } from "@/lib/dates";
+import { formatDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-import { getAccountingContext, inOrg } from "@/server/accounting";
-import { fiscalConfigOf } from "@/server/org";
-import { filingPeriods, resolveFilingRange } from "../periods";
+import { getAccountingContext } from "@/server/accounting";
+import { exportHref, loadSalesTax } from "../data";
 import { RangeControls } from "../report-controls";
 import { ReportCard, ReportHeader } from "../report-parts";
 
@@ -33,16 +31,10 @@ export default async function SalesTaxReportPage({
   const { slug } = await params;
   const ctx = await getAccountingContext(slug);
   const { locale, baseCurrency: currency } = ctx.profile;
-  const today = nowIn(ctx.profile.timezone).date;
-  const { rates, registrations } = await inOrg(ctx, async (tx) => ({
-    rates: await listTaxRates(tx, { includeArchived: true }),
-    registrations: await listTaxRegistrations(tx),
-  }));
-  const registration = registrations.find((r) => r.isActive) ?? registrations[0];
-  const frequency = registration?.filingFrequency ?? "quarterly";
-  const presets = filingPeriods(today, fiscalConfigOf(ctx.profile), frequency, locale);
-  const { from, to } = resolveFilingRange(await searchParams, presets);
-  const summary = salesTaxSummary(await inOrg(ctx, (tx) => salesTaxRows(tx, { from, to })));
+  const { from, to, presets, rates, registration, summary } = await loadSalesTax(
+    ctx,
+    await searchParams,
+  );
   const owing = parseDecimal(summary.netOwing);
 
   return (
@@ -59,7 +51,12 @@ export default async function SalesTaxReportPage({
         }
       />
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <RangeControls from={from} to={to} presets={presets} />
+        <RangeControls
+          from={from}
+          to={to}
+          presets={presets}
+          csvHref={rates.length ? exportHref(slug, "sales-tax", { from, to }) : undefined}
+        />
         <Button asChild variant="ghost" className="print:hidden">
           <Link href={`/o/${slug}/accounting/sales-tax`}>
             <Settings2 />

@@ -1,6 +1,6 @@
 "use client";
 
-import { Printer } from "lucide-react";
+import { Download, Printer } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { Button } from "@/components/ui/button";
@@ -29,12 +29,29 @@ export function useNavigate() {
   };
 }
 
-function PrintButton() {
+/** Download as CSV (when the report has one) and print, which also saves as PDF. */
+function ExportButtons({ csvHref }: { csvHref?: string | undefined }) {
   return (
-    <Button type="button" variant="outline" onClick={() => window.print()} className="print:hidden">
-      <Printer />
-      Print
-    </Button>
+    <div className="flex flex-wrap gap-2 print:hidden">
+      {csvHref ? (
+        <Button asChild variant="outline">
+          {/* A plain link: the route answers with a file, so the page stays put. */}
+          <a href={csvHref} download>
+            <Download />
+            Download CSV
+          </a>
+        </Button>
+      ) : null}
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => window.print()}
+        title="Print, or choose “Save as PDF” in the print dialog"
+      >
+        <Printer />
+        Print or save PDF
+      </Button>
+    </div>
   );
 }
 
@@ -43,10 +60,12 @@ export function RangeControls({
   from,
   to,
   presets,
+  csvHref,
 }: {
   from: string;
   to: string;
   presets: RangePreset[];
+  csvHref?: string | undefined;
 }) {
   const { pending, go } = useNavigate();
   const current = presets.find((p) => p.from === from && p.to === to)?.key ?? "custom";
@@ -93,14 +112,22 @@ export function RangeControls({
         {pending ? <Spinner className="text-muted-foreground" /> : null}
       </div>
       <div className="ms-auto">
-        <PrintButton />
+        <ExportButtons csvHref={csvHref} />
       </div>
     </div>
   );
 }
 
 /** Date picker for point-in-time reports (balance sheet, trial balance). */
-export function DateControls({ date, presets }: { date: string; presets: DatePreset[] }) {
+export function DateControls({
+  date,
+  presets,
+  csvHref,
+}: {
+  date: string;
+  presets: DatePreset[];
+  csvHref?: string | undefined;
+}) {
   const { pending, go } = useNavigate();
   const current = presets.find((p) => p.date === date)?.key ?? "custom";
   return (
@@ -136,7 +163,7 @@ export function DateControls({ date, presets }: { date: string; presets: DatePre
         {pending ? <Spinner className="text-muted-foreground" /> : null}
       </div>
       <div className="ms-auto">
-        <PrintButton />
+        <ExportButtons csvHref={csvHref} />
       </div>
     </div>
   );

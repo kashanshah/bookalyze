@@ -1,10 +1,7 @@
-import { profitAndLoss } from "@bookalyze/core";
-import { accountBalances } from "@bookalyze/db";
 import type { Metadata } from "next";
-import { formatDate, nowIn } from "@/lib/dates";
-import { getAccountingContext, inOrg } from "@/server/accounting";
-import { fiscalConfigOf } from "@/server/org";
-import { resolveRange } from "../periods";
+import { formatDate } from "@/lib/dates";
+import { getAccountingContext } from "@/server/accounting";
+import { exportHref, loadProfitAndLoss } from "../data";
 import { RangeControls } from "../report-controls";
 import { ReportCard, ReportHeader, ReportSectionRows, TotalRow } from "../report-parts";
 
@@ -20,14 +17,8 @@ export default async function ProfitAndLossPage({
   const { slug } = await params;
   const ctx = await getAccountingContext(slug);
   const { locale, baseCurrency: currency } = ctx.profile;
-  const today = nowIn(ctx.profile.timezone).date;
-  const { from, to, presets } = resolveRange(
-    await searchParams,
-    today,
-    fiscalConfigOf(ctx.profile),
-  );
+  const { from, to, presets, pnl } = await loadProfitAndLoss(ctx, await searchParams);
   const ledger = { slug, from, to };
-  const pnl = profitAndLoss(await inOrg(ctx, (tx) => accountBalances(tx, { from, to })));
 
   return (
     <div className="grid gap-6">
@@ -38,7 +29,12 @@ export default async function ProfitAndLossPage({
         period={`${formatDate(from, locale)} – ${formatDate(to, locale)}`}
         description="What the company earned and spent in this period. Also called an income statement."
       />
-      <RangeControls from={from} to={to} presets={presets} />
+      <RangeControls
+        from={from}
+        to={to}
+        presets={presets}
+        csvHref={exportHref(slug, "profit-and-loss", { from, to })}
+      />
       <ReportCard>
         <ReportSectionRows
           section={pnl.income}

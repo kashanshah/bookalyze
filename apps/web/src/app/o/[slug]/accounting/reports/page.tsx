@@ -2,7 +2,7 @@ import {
   ArrowRight,
   BarChart3,
   BookOpen,
-  FileSpreadsheet,
+  Columns3,
   Landmark,
   ReceiptText,
   Scale,
@@ -50,9 +50,9 @@ const REPORTS = [
 
 const COMING = [
   {
-    title: "Export to CSV and PDF",
-    body: "Share any report with your accountant.",
-    icon: FileSpreadsheet,
+    title: "Compare periods",
+    body: "Profit and loss side by side with last year or last quarter.",
+    icon: Columns3,
   },
 ] as const;
 

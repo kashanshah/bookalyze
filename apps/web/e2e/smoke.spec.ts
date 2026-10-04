@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { choose, latestLink, signIn, signOut, signUp, verifyEmail, withOwnerDb } from "./helpers";
 
@@ -155,6 +156,18 @@ test("bookkeeping: chart of accounts, journal entries, reversal and reports", as
   await page.getByRole("link", { name: /Trial balance/ }).click();
   await expect(page.getByText("Debits equal credits.")).toBeVisible();
   await expect(page.getByText("$3,800.00")).toBeVisible();
+  // Every report downloads as CSV, with the company, report and period on top.
+  const downloadCsv = async () => {
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("link", { name: "Download CSV" }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/\.csv$/);
+    return readFile(await download.path(), "utf8");
+  };
+  const tbCsv = await downloadCsv();
+  expect(tbCsv).toContain("Report,Trial balance");
+  expect(tbCsv).toContain(",,Total,5000.00,5000.00");
   await page.getByRole("link", { name: "All reports" }).click();
   await page.getByRole("link", { name: /Profit and loss/ }).click();
   await expect(page.getByText("Net loss")).toBeVisible();
@@ -171,6 +184,10 @@ test("bookkeeping: chart of accounts, journal entries, reversal and reports", as
   await expect(page.getByRole("link", { name: /October rent/ })).toBeVisible();
   await expect(page.getByText("Closing balance")).toBeVisible();
   await expect(page.getByText("$3,800.00").last()).toBeVisible();
+  const ledgerCsv = await downloadCsv();
+  expect(ledgerCsv).toContain("Account,1010 RBC Chequing");
+  expect(ledgerCsv).toContain(",Owner investment,,5000.00,,5000.00,,");
+  expect(ledgerCsv).toContain(",,,Closing balance,,,,3800.00,,");
   // "All accounts" shows each account's opening, debits, credits and closing.
   await choose(page.getByLabel("Account", { exact: true }), "All accounts");
   await expect(page.getByRole("link", { name: /Rent/ }).first()).toBeVisible();

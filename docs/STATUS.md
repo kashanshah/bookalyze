@@ -404,7 +404,12 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
      sheet and trial balance use the financial year to date, so the opening is everything
      before it). Queries: `ledgerActivity`, `accountLedgerLines` (db `reports.ts`); shaping:
      `generalLedgerSummary`, `accountLedger` (core).
-   - [ ] CSV and PDF export.
+   - [x] CSV and PDF export. Every report has "Download CSV" (`/api/o/[slug]/reports/[report]`,
+     same URL params as the page; builders in core `accounting/export.ts`: plain numbers rounded
+     to the currency, a header block, formula-safe text) and "Print or save PDF" (the browser's
+     print dialog; printouts drop the navigation and always use the light theme). Pages and
+     downloads share loaders in `reports/data.ts`, so they always agree. Ledger CSVs hold up to
+     50,000 lines. A server-made PDF (letterhead, page numbers) can come later if needed.
    - [ ] Comparison columns on profit and loss.
 
 ### Phase 0 leftovers
