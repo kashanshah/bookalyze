@@ -39,6 +39,9 @@ http://localhost:3000/dev/emails.
    machine. This creates the `app_runtime` group, grants it to `bookalyze_app`, and loads reference
    data.
 4. Use `bookalyze_app` with the **pooled** connection string as `DATABASE_URL` in Vercel.
+   **Never use `neondb_owner` (Neon's default connection string) for `DATABASE_URL`.** The owner
+   skips row-level security, so every company would see every other company's data. The app
+   refuses to read company data over such a connection and logs "Refusing to query tenant data".
 
 Neon branches copy roles, so a `preview` branch works the same way with its own host.
 
