@@ -1,4 +1,10 @@
-import { getAccountSubtype, isAccountSubtype, isAccountType } from "@bookalyze/core";
+import {
+  FILING_FREQUENCIES,
+  getAccountSubtype,
+  isAccountSubtype,
+  isAccountType,
+  isValidTaxRate,
+} from "@bookalyze/core";
 import { getCurrency } from "@bookalyze/core/reference-data";
 import { z } from "zod";
 import { isIsoDate } from "@/lib/dates";
@@ -106,6 +112,8 @@ export const transactionSchema = z.object({
         accountId: z.string().trim().max(64),
         amount: amountText,
         description: z.string().trim().max(200).optional(),
+        /** Sales tax included in the amount. Empty for none. */
+        taxRateId: z.string().trim().max(64).optional(),
       }),
     )
     .max(50, "A transaction can have at most 50 categories.")
@@ -151,3 +159,48 @@ export const contactSchema = z.object({
 });
 
 export type ContactInput = z.input<typeof contactSchema>;
+
+export const taxRateSchema = z.object({
+  id: z
+    .uuid()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Give the rate a name, like “HST 13%”.")
+    .max(80, "Keep the name under 80 characters."),
+  rate: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/%$/, "").trim())
+    .refine(isValidTaxRate, "Enter a percentage between 0 and 100, like 13 or 9.975."),
+  /** An existing sales tax account, or "new" to create one named after the rate. */
+  accountId: z.union([z.uuid("Choose where the tax is kept."), z.literal("new")]),
+  isRecoverable: z.boolean(),
+});
+
+export type TaxRateInput = z.input<typeof taxRateSchema>;
+
+export const taxRegistrationSchema = z.object({
+  id: z
+    .uuid()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  authority: z
+    .string()
+    .trim()
+    .min(1, "Enter who you file with, like “Canada Revenue Agency (GST/HST)”.")
+    .max(120, "Keep this under 120 characters."),
+  registrationNumber: optionalText(40, "Keep the number under 40 characters."),
+  filingFrequency: z.enum(FILING_FREQUENCIES, "Choose how often you file."),
+  effectiveFrom: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => v || null)
+    .refine((v) => v === null || isIsoDate(v), "Choose a date."),
+  isActive: z.boolean(),
+});
+
+export type TaxRegistrationInput = z.input<typeof taxRegistrationSchema>;

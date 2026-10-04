@@ -24,6 +24,11 @@ export type JournalLineInput = {
   /** Decimal strings; a line has a debit or a credit, not both. Blank means none. */
   debit?: string | undefined;
   credit?: string | undefined;
+  /**
+   * Sales tax: set on a taxed category line (its amount is what the tax was charged on) and on
+   * the tax line itself (the line on the rate's tax account).
+   */
+  taxRateId?: string | undefined;
 };
 
 export type JournalEntryInput = {
@@ -51,6 +56,8 @@ export type PreparedLine = {
   currency: string;
   amount: string;
   baseAmount: string;
+  /** Sales tax rate, on taxed lines and their tax lines (see JournalLineInput). */
+  taxRateId?: string | null;
 };
 
 export type PreparedEntry = {
@@ -149,8 +156,13 @@ export function prepareJournalEntry(
     }
   }
 
-  const parsed: { index: number; accountId: string; description: string | null; units: bigint }[] =
-    [];
+  const parsed: {
+    index: number;
+    accountId: string;
+    description: string | null;
+    units: bigint;
+    taxRateId?: string;
+  }[] = [];
   input.lines.forEach((line, index) => {
     const hasDebit = !blank(line.debit);
     const hasCredit = !blank(line.credit);
@@ -196,6 +208,7 @@ export function prepareJournalEntry(
       accountId,
       description: line.description?.trim() || null,
       units: hasDebit ? units : -units,
+      ...(line.taxRateId ? { taxRateId: line.taxRateId } : {}),
     });
   });
 
@@ -244,6 +257,7 @@ export function prepareJournalEntry(
         currency: input.currency,
         amount: formatDecimal(l.units),
         baseAmount: formatDecimal(base[i] as bigint),
+        ...(l.taxRateId ? { taxRateId: l.taxRateId } : {}),
       })),
     },
   };

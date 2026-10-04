@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-04, phase 1, slice 6 (exchange rates and cross-currency transfers)._
+_Last updated: 2026-10-04, phase 1, slice 7 (sales tax)._
 
 ---
 
@@ -22,7 +22,7 @@ _Last updated: 2026-10-04, phase 1, slice 6 (exchange rates and cross-currency t
 | Phase | State |
 |---|---|
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
-| 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors) and 6 (exchange rates) are done |
+| 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Wave migration | Not started. Needs a real Wave export from the owner (kept outside the repo) |
 | 2. Banking, plus Entity & compliance | Not started |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
@@ -112,9 +112,9 @@ Real company details are entered in the app and never committed.
   - Reports: profit and loss with period presets from the financial year; balance sheet and trial
     balance as of any date; print.
 - **Tests:**
-  - Core: 36 at slice 1, 43 after slice 3, 51 after slice 6.
-  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5, 37 after slice 6.
-  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors), 11 after slice 6 (exchange rates).
+  - Core: 36 at slice 1, 43 after slice 3, 51 after slice 6, 58 after slice 7.
+  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5, 37 after slice 6, 42 after slice 7.
+  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors), 11 after slice 6 (exchange rates), 12 after slice 7 (sales tax).
 
 ### Phase 1, slice 2: closed periods
 - **Closing the books:**
@@ -248,6 +248,40 @@ Real company details are entered in the app and never committed.
   - Lists show both sides of a transfer between currencies. Journal pages show mixed entries line
     by line, with totals in the main currency.
 
+### Phase 1, slice 7: sales tax
+- **Schema** (migration `0012_sales_tax`):
+  - `tax_rates`: name, rate (percent), the liability account that holds the tax, whether tax
+    paid can be claimed back, archived. A trigger keeps the percentage, account and claim-back
+    setting fixed once any line uses the rate (rename or archive instead).
+  - `tax_registrations`: authority, registration number, filing frequency, registered since,
+    active.
+  - `journal_lines.tax_rate_id` (composite FK, so a line can't use another company's rate).
+- **Amounts include tax**, as on a receipt or bank statement. Core `transactionLines(input,
+  memo, { rates, decimals })` splits each taxed category into a net line and a tax line on the
+  rate's account; both carry `tax_rate_id`. `splitTaxIncluded()` rounds the tax once and never
+  loses a cent. Tax collected is always split out; tax paid is split out only for claimable
+  rates (otherwise it stays in the cost). `describeTransaction()` merges the tax line back, so
+  the form shows the tax-included amount.
+- **Packs** (`packages/core/src/accounting/tax.ts`): `ca-gst-hst` (HST 13/14/15%, GST 5%,
+  zero-rated, QST, BC PST) with defaults per province, and `ae-vat` (VAT 5%, zero-rated).
+  `applyTaxPack()` creates the tax account (subtype `sales_tax`, code 2200 when free) and the
+  chosen rates, skipping existing names, and starts a quarterly registration if none exists.
+  Packs are starting points: rates are stored per company.
+- **Report:** `salesTaxRows()` totals per rate for a date range. A taxed line on the rate's
+  account is tax, any other taxed line is the amount it was charged on; credits are sales or
+  tax collected, debits purchases or tax paid. Reversals are classified with the sign of the
+  entry they undo, so edits and removals net out. `salesTaxSummary()` (core) nets collected
+  against claimable.
+- **Web:**
+  - Accounting → Sales tax (`/accounting/sales-tax`): one-click starter for the company's
+    country and province, rates (add, edit, archive), registrations.
+  - Transactions: a tax picker per category (shown once rates exist) with a live "Includes $13.00
+    HST you collected" hint. "Add category" copies the previous category's tax.
+  - Reports → Sales tax (`/accounting/reports/sales-tax`): filing periods follow the active
+    registration (months, financial-year quarters or years), defaulting to the last finished
+    period. Shows collected, claimable and owing (or refund), per rate.
+  - A company that isn't registered sets nothing up and sees no tax picker.
+
 ---
 
 ## 3. Next up (in order)
@@ -269,13 +303,15 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 5. [x] **Exchange rates and transfers between currencies.** Done in slice 6. Still to come:
    - Unrealized gain or loss on foreign-currency balances at period end (phase 7).
    - Splitting a bank conversion fee from the exchange rate, when the bank shows it separately.
-6. [ ] **Tax engine with Canada (GST/HST) and UAE (VAT) packs.**
-   - Each company's tax setup is a setting in the UI, never code or seed data: registered or
-     not, registration number, filing frequency (monthly, quarterly or yearly) and the date
-     registration started. A company that isn't registered simply records no tax.
-   - Tax rates on lines, and payable or recoverable accounts created when a company registers.
-   - Sales tax report for each filing period.
-7. [ ] **More reports:**
+6. [x] **Sales tax with Canada (GST/HST) and UAE (VAT) packs.** Done in slice 7. Still to come:
+   - Tax on manual journal entry lines (today only transactions pick a rate).
+   - Recording the filed return and the payment or refund (a "mark as filed" that posts the
+     settlement and locks the period).
+   - Tax-exclusive entry (type the amount before tax) for invoices, with phase-2 invoicing.
+7. [ ] **Searchable pickers everywhere.** Replace long native selects (categories, accounts,
+   contacts, tax rates) with a type-to-search combobox grouped by account type, keyboard and
+   mobile friendly. Requested by the owner.
+8. [ ] **More reports:**
    - General ledger and account transactions (click an account on any report to drill in).
    - CSV and PDF export.
    - Comparison columns on profit and loss.
@@ -425,6 +461,11 @@ screenshots work well).
   browser uploads to S3 with a presigned URL.
 - **`next start` logs "The destination stream closed early"** during e2e navigation. It's harmless
   noise from aborted RSC streams.
+- **Server pages can't use values from `"use client"` files.** A constant or helper exported
+  from a client file becomes a client reference on the server (calling it throws, and objects
+  read as `undefined`). Put shared helpers and labels in `@bookalyze/core` or `src/lib`.
+- **`NativeSelect` wraps the `<select>` in a div.** Grid placement (`col-span-…`) goes in
+  `wrapperClassName`, not `className`.
 - **Root `.env` loading:** `apps/web/next.config.ts` loads the root `.env` with dotenv.
   `packages/db/scripts/load-env.ts` does the same for scripts.
 
@@ -435,8 +476,8 @@ screenshots work well).
 Every company-specific answer is entered by the owner in the UI, so the code must handle all
 cases. These answers only help pick sensible defaults and test data:
 
-1. GST/HST registration and filing frequency for Kazomo Inc. and Teknoffice. They'll be entered
-   in the tax settings (item 6 above); both registered and unregistered must work.
+1. GST/HST registration and filing frequency for Kazomo Inc. and Teknoffice: entered in
+   Accounting → Sales tax. Registered and unregistered both work.
 2. A Wave Data Export for one company. It's only needed to confirm the importer handles Wave's
    real file formats. Never commit it.
 3. Roles: today every member can manage accounts and post entries. A future "accountant" or

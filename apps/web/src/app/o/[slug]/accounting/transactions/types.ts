@@ -36,7 +36,16 @@ export type TxRow = {
   /** Transfers between currencies: what arrived, in the receiving account's currency. */
   receivedAmount?: string;
   receivedCurrency?: string;
-  splits: { accountId: string; amount: string; description?: string }[];
+  splits: { accountId: string; amount: string; description?: string; taxRateId?: string }[];
+};
+
+export type TaxRateOption = {
+  id: string;
+  name: string;
+  /** Percent, e.g. "13.0000". */
+  rate: string;
+  isRecoverable: boolean;
+  isArchived: boolean;
 };
 
 export type TxFormContext = {
@@ -49,4 +58,6 @@ export type TxFormContext = {
   categories: CategoryGroup[];
   accountNames: Record<string, string>;
   contacts: ContactOption[];
+  /** Sales tax rates, archived ones included so older transactions still show theirs. */
+  taxRates: TaxRateOption[];
 };

@@ -125,6 +125,7 @@ export async function postJournalEntry(tx: Transaction, input: PostEntryInput) {
       currency: line.currency,
       amount: line.amount,
       baseAmount: line.baseAmount,
+      taxRateId: line.taxRateId ?? null,
     })),
   );
   return { id: row.id, entryNumber };
@@ -178,6 +179,7 @@ export async function reverseJournalEntry(
         currency: l.currency,
         amount: l.amount,
         baseAmount: l.baseAmount,
+        taxRateId: l.taxRateId,
       })),
     },
   });

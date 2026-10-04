@@ -5,7 +5,9 @@ import {
   divideDecimals,
   formatDecimal,
   formatMoney,
+  minorUnits,
   parseDecimal,
+  splitTaxIncluded,
   type TransactionKind,
 } from "@bookalyze/core";
 import {
@@ -57,13 +59,20 @@ const PLACEHOLDERS: Record<TransactionKind, string> = {
   transfer: "e.g. Pay off credit card",
 };
 
-type Split = { key: number; accountId: string; amount: string; description: string };
+type Split = {
+  key: number;
+  accountId: string;
+  amount: string;
+  description: string;
+  taxRateId: string;
+};
 let nextKey = 0;
-const newSplit = (accountId = "", amount = ""): Split => ({
+const newSplit = (accountId = "", amount = "", taxRateId = ""): Split => ({
   key: nextKey++,
   accountId,
   amount,
   description: "",
+  taxRateId,
 });
 
 /** Trims "125.5000" to "125.50"-style input values. */
@@ -133,7 +142,7 @@ function TransactionForm({
   const [splits, setSplits] = useState<Split[]>(() =>
     row && row.kind !== "transfer" && row.splits.length
       ? row.splits.map((s) => ({
-          ...newSplit(s.accountId, toInput(s.amount)),
+          ...newSplit(s.accountId, toInput(s.amount), s.taxRateId ?? ""),
           description: s.description ?? "",
         }))
       : [newSplit()],
@@ -190,6 +199,20 @@ function TransactionForm({
     }
   }, [crossCurrency, amount, received]);
   const split = splits.length > 1;
+  // Sales tax: shown once the company has rates (or this transaction already uses one).
+  const showTax =
+    ctx.taxRates.some((r) => !r.isArchived) || splits.some((s) => Boolean(s.taxRateId));
+  const decimals = minorUnits(currency);
+  const taxOf = (s: Split) => {
+    const rate = ctx.taxRates.find((r) => r.id === s.taxRateId);
+    if (!rate) return null;
+    try {
+      const units = parseDecimal(s.amount.trim().replace(/,/g, "") || "0");
+      return { rate, tax: splitTaxIncluded(units, rate.rate, decimals).tax };
+    } catch {
+      return { rate, tax: null };
+    }
+  };
 
   const total = useMemo(() => {
     let units = 0n;
@@ -224,10 +247,11 @@ function TransactionForm({
         attachmentIds: row ? undefined : (files ?? []).map((f) => f.id),
         contactId: kind === "transfer" ? "" : contactId,
         moneyAccountId,
-        splits: splits.map(({ accountId, amount, description }) => ({
+        splits: splits.map(({ accountId, amount, description, taxRateId }) => ({
           accountId,
           amount,
           description,
+          taxRateId: kind === "transfer" ? "" : taxRateId,
         })),
         fromAccountId,
         toAccountId,
@@ -475,12 +499,18 @@ function TransactionForm({
             <ul className="grid gap-3">
               {splits.map((s, index) => {
                 const error = errors[`splits.${index}`];
+                const taxed = showTax ? taxOf(s) : null;
                 return (
                   <li
                     key={s.key}
                     className="fade-in-0 slide-in-from-top-1 grid animate-in gap-1 duration-200"
                   >
-                    <div className="grid grid-cols-[minmax(0,1fr)_8.5rem_auto] gap-2">
+                    <div
+                      className={cn(
+                        "grid grid-cols-[minmax(0,1fr)_8.5rem_auto] gap-2",
+                        showTax && "sm:grid-cols-[minmax(0,1fr)_10rem_8.5rem_auto]",
+                      )}
+                    >
                       <label htmlFor={`split-account-${s.key}`} className="sr-only">
                         Category {index + 1}
                       </label>
@@ -489,6 +519,7 @@ function TransactionForm({
                         value={s.accountId}
                         aria-invalid={Boolean(error)}
                         className={cn(!s.accountId && "text-muted-foreground")}
+                        wrapperClassName={cn(showTax && "col-span-3 sm:col-span-1")}
                         onChange={(e) => {
                           updateSplit(s.key, { accountId: e.target.value });
                           clearError(`splits.${index}`);
@@ -505,6 +536,31 @@ function TransactionForm({
                           </optgroup>
                         ))}
                       </NativeSelect>
+                      {showTax ? (
+                        <>
+                          <label htmlFor={`split-tax-${s.key}`} className="sr-only">
+                            Sales tax {index + 1}
+                          </label>
+                          <NativeSelect
+                            id={`split-tax-${s.key}`}
+                            value={s.taxRateId}
+                            className={cn(!s.taxRateId && "text-muted-foreground")}
+                            onChange={(e) => {
+                              updateSplit(s.key, { taxRateId: e.target.value });
+                              clearError(`splits.${index}`);
+                            }}
+                          >
+                            <option value="">No tax</option>
+                            {ctx.taxRates
+                              .filter((r) => !r.isArchived || r.id === s.taxRateId)
+                              .map((r) => (
+                                <option key={r.id} value={r.id}>
+                                  {r.name}
+                                </option>
+                              ))}
+                          </NativeSelect>
+                        </>
+                      ) : null}
                       <label htmlFor={`split-amount-${s.key}`} className="sr-only">
                         Amount {index + 1}
                       </label>
@@ -538,6 +594,16 @@ function TransactionForm({
                     </div>
                     {error ? (
                       <p className="fade-in-0 animate-in text-destructive text-xs">{error}</p>
+                    ) : taxed ? (
+                      <TaxHint
+                        name={taxed.rate.name}
+                        tax={taxed.tax}
+                        zero={parseDecimal(taxed.rate.rate) === 0n}
+                        collected={kind === "deposit"}
+                        recoverable={taxed.rate.isRecoverable}
+                        currency={currency}
+                        locale={ctx.locale}
+                      />
                     ) : null}
                   </li>
                 );
@@ -548,7 +614,10 @@ function TransactionForm({
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setSplits((c) => [...c, newSplit()])}
+                onClick={() =>
+                  // A new category starts with the previous one's tax, the usual case on a receipt.
+                  setSplits((c) => [...c, newSplit("", "", c[c.length - 1]?.taxRateId ?? "")])
+                }
               >
                 <Plus />
                 {split ? "Add category" : "Split into categories"}
@@ -639,4 +708,36 @@ function TransactionForm({
       </DialogFooter>
     </form>
   );
+}
+
+/** "Includes $13.00 HST 13% (Ontario) you collected", under a taxed category. */
+function TaxHint({
+  name,
+  tax,
+  zero,
+  collected,
+  recoverable,
+  currency,
+  locale,
+}: {
+  name: string;
+  tax: bigint | null;
+  zero: boolean;
+  collected: boolean;
+  recoverable: boolean;
+  currency: string;
+  locale: string;
+}) {
+  let text: string;
+  if (zero) text = `${name}: no tax charged, still reported on your return.`;
+  else if (tax === null || tax === 0n) text = `Enter the amount including ${name}.`;
+  else {
+    const money = formatMoney(formatDecimal(tax < 0n ? -tax : tax), currency, locale);
+    text = collected
+      ? `Includes ${money} ${name} you collected.`
+      : recoverable
+        ? `Includes ${money} ${name} you can claim back.`
+        : `Includes ${money} ${name}, kept in the cost because it can't be claimed back.`;
+  }
+  return <p className="fade-in-0 animate-in text-muted-foreground text-xs">{text}</p>;
 }

@@ -19,6 +19,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
 import { currencies } from "./reference";
+import { taxRates } from "./tax";
 import { tenantIsolationPolicy } from "./tenancy";
 
 /**
@@ -190,6 +191,11 @@ export const journalLines = pgTable(
     amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
     /** Signed, in the organization's base currency. */
     baseAmount: numeric("base_amount", { precision: 20, scale: 4 }).notNull(),
+    /**
+     * Sales tax rate: set on a taxed line (the amount the tax was charged on) and on the tax line
+     * itself, which is the line on the rate's account.
+     */
+    taxRateId: uuid("tax_rate_id"),
   },
   (t) => [
     foreignKey({
@@ -202,6 +208,12 @@ export const journalLines = pgTable(
       columns: [t.organizationId, t.accountId],
       foreignColumns: [accounts.organizationId, accounts.id],
     }),
+    foreignKey({
+      name: "journal_lines_tax_rate_fk",
+      columns: [t.organizationId, t.taxRateId],
+      foreignColumns: [taxRates.organizationId, taxRates.id],
+    }),
+    index("journal_lines_org_tax_rate_idx").on(t.organizationId, t.taxRateId),
     unique("journal_lines_entry_line_key").on(t.journalEntryId, t.lineNo),
     index("journal_lines_org_account_idx").on(t.organizationId, t.accountId),
     check("journal_lines_amount_nonzero", sql`${t.amount} <> 0`),

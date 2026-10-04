@@ -5,7 +5,13 @@ import {
   TRANSACTION_KINDS,
   type TransactionKind,
 } from "@bookalyze/core";
-import { contactOptions, formatEntryNumber, listTransactions, schema } from "@bookalyze/db";
+import {
+  contactOptions,
+  formatEntryNumber,
+  listTaxRates,
+  listTransactions,
+  schema,
+} from "@bookalyze/db";
 import { eq, sql } from "drizzle-orm";
 import { ArrowLeft, ArrowRight, Landmark } from "lucide-react";
 import type { Metadata } from "next";
@@ -56,8 +62,9 @@ export default async function TransactionsPage({
   const q = (sp.q ?? "").slice(0, 100);
   const contact = sp.contact && UUID.test(sp.contact) ? sp.contact : "";
 
-  const { result, hasAny, balance, contacts } = await inOrg(ctx, async (tx) => {
+  const { result, hasAny, balance, contacts, taxRates } = await inOrg(ctx, async (tx) => {
     const contacts = await contactOptions(tx, { includeArchived: true });
+    const taxRates = await listTaxRates(tx, { includeArchived: true });
     const result = await listTransactions(tx, {
       accountId: account || null,
       contactId: contact || null,
@@ -77,7 +84,7 @@ export default async function TransactionsPage({
             .where(eq(schema.journalLines.accountId, account))
         )[0]?.total ?? "0")
       : null;
-    return { result, hasAny, balance, contacts };
+    return { result, hasAny, balance, contacts, taxRates };
   });
 
   const categoryAccounts = accounts.filter((a) => !isMoneyAccountSubtype(a.subtype));
@@ -98,6 +105,13 @@ export default async function TransactionsPage({
     })),
     accountNames: Object.fromEntries(accounts.map((a) => [a.id, a.name])),
     contacts,
+    taxRates: taxRates.map((r) => ({
+      id: r.id,
+      name: r.name,
+      rate: r.rate,
+      isRecoverable: r.isRecoverable,
+      isArchived: r.isArchived,
+    })),
   };
 
   const rows: TxRow[] = result.rows.map((r) => ({
@@ -117,7 +131,12 @@ export default async function TransactionsPage({
     toAccountId: r.view.toAccountId,
     receivedAmount: r.view.receivedAmount,
     receivedCurrency: r.view.receivedCurrency,
-    splits: r.view.splits,
+    splits: r.view.splits.map((s) => ({
+      accountId: s.accountId,
+      amount: s.amount,
+      ...(s.description ? { description: s.description } : {}),
+      ...(s.taxRateId ? { taxRateId: s.taxRateId } : {}),
+    })),
   }));
 
   const selected = moneyAccounts.find((a) => a.id === account);
