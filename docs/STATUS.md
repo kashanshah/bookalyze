@@ -526,6 +526,13 @@ screenshots work well).
   trigger, search box and options) use `text-base sm:text-sm`. Keep that when adding new controls.
 - **Uploads never go through server actions or route bodies on Vercel** (4.5 MB limit). The
   browser uploads to S3 with a presigned URL.
+- **Presigned S3 uploads need `requestChecksumCalculation: "WHEN_REQUIRED"`** on the S3 client
+  (`server/storage.ts`). Without it, AWS SDK v3.729+ signs a CRC32 of an empty body into the
+  URL and S3 answers the browser's PUT with 403. e2e uses local storage, so only a real bucket
+  shows this.
+- **Database URLs:** `createDb()` rewrites `sslmode=require` to `verify-full`
+  (`withVerifiedSsl`). This is node-postgres's current behaviour, made explicit, which silences
+  its SSL warning.
 - **`next start` logs "The destination stream closed early"** during e2e navigation. It's harmless
   noise from aborted RSC streams.
 - **Server pages can't use values from `"use client"` files.** A constant or helper exported
