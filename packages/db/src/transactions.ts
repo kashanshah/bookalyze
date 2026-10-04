@@ -33,6 +33,8 @@ const touchesCategory = hasLine(sql`a.subtype not in (${moneySubtypes})`);
 export type TransactionFilters = {
   /** Only transactions touching this account. */
   accountId?: string | null;
+  /** Only transactions with this customer or vendor. */
+  contactId?: string | null;
   kind?: TransactionKind | null;
   reviewed?: boolean | null;
   search?: string | null;
@@ -49,6 +51,7 @@ export type TransactionRow = {
   currency: string;
   fxRate: string;
   source: string;
+  contactId: string | null;
   reviewed: boolean;
   /** Number of receipts and files attached. */
   attachments: number;
@@ -70,6 +73,7 @@ export async function listTransactions(
       sql`exists (select 1 from ${journalLines} l where l.journal_entry_id = ${journalEntries.id} and l.account_id = ${filters.accountId})`,
     );
   }
+  if (filters.contactId) conditions.push(eq(journalEntries.contactId, filters.contactId));
   if (filters.kind === "transfer") conditions.push(sql`not ${touchesCategory}`);
   if (filters.kind === "deposit" || filters.kind === "withdrawal") {
     conditions.push(touchesCategory);
@@ -102,6 +106,7 @@ export async function listTransactions(
       currency: journalEntries.currency,
       fxRate: journalEntries.fxRate,
       source: journalEntries.source,
+      contactId: journalEntries.contactId,
       reviewed: sql<boolean>`${reviewedSql}`,
     })
     .from(journalEntries)
@@ -195,6 +200,7 @@ export async function replaceJournalEntry(
     date: string;
     reference?: string | null;
     memo?: string | null;
+    contactId?: string | null;
     entry: PreparedEntry;
   },
 ) {
@@ -219,6 +225,7 @@ export async function replaceJournalEntry(
     date: input.date,
     reference: input.reference,
     memo: input.memo,
+    contactId: input.contactId,
     entry: input.entry,
   });
   // Receipts stay with the transaction (the original keeps its links too, for history).

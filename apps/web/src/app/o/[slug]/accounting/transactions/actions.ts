@@ -10,6 +10,7 @@ import {
 import {
   booksLockedThrough,
   formatEntryNumber,
+  getContact,
   LedgerError,
   linkAttachments,
   postJournalEntry,
@@ -173,6 +174,13 @@ export async function saveTransactionAction(
     return { ok: false, message: prepared.errors.form, errors };
   }
 
+  // The customer or vendor, if any (transfers have none).
+  const contactId = value.kind === "transfer" ? null : value.contactId || null;
+  if (contactId) {
+    const contact = await inOrg(ctx, (tx) => getContact(tx, contactId));
+    if (!contact) return { ok: false, errors: { contactId: "This contact no longer exists." } };
+  }
+
   if (value.id) {
     const editable = await loadEditable(ctx, value.id);
     if ("error" in editable) return { ok: false, message: editable.error };
@@ -185,6 +193,7 @@ export async function saveTransactionAction(
         userId: ctx.session.user.id,
         date: value.date,
         memo: value.memo,
+        contactId,
         entry: prepared.entry,
       };
       const result = value.id

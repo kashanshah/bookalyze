@@ -115,6 +115,37 @@ export const transactionSchema = z.object({
   amount: amountText.optional(),
   /** Receipts uploaded while creating the transaction, attached once it's saved. */
   attachmentIds: z.array(z.uuid()).max(50).optional(),
+  /** The customer (money in) or vendor (money out). Empty for none. */
+  contactId: z
+    .uuid()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
 });
 
 export type TransactionFormInput = z.input<typeof transactionSchema>;
+
+export const contactSchema = z.object({
+  id: z
+    .uuid()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  type: z.enum(["customer", "vendor", "both"], "Choose whether they're a customer or a vendor."),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Enter their name.")
+    .max(200, "Keep the name under 200 characters."),
+  email: z
+    .string()
+    .trim()
+    .max(254)
+    .optional()
+    .transform((v) => v || null)
+    .refine((v) => v === null || z.email().safeParse(v).success, "Enter a valid email address."),
+  phone: optionalText(50, "Keep the phone number under 50 characters."),
+  taxNumber: optionalText(50, "Keep the tax number under 50 characters."),
+  address: optionalText(500, "Keep the address under 500 characters."),
+  notes: optionalText(2000, "Keep notes under 2,000 characters."),
+});
+
+export type ContactInput = z.input<typeof contactSchema>;

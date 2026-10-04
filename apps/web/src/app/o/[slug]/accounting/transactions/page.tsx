@@ -5,7 +5,7 @@ import {
   TRANSACTION_KINDS,
   type TransactionKind,
 } from "@bookalyze/core";
-import { formatEntryNumber, listTransactions, schema } from "@bookalyze/db";
+import { contactOptions, formatEntryNumber, listTransactions, schema } from "@bookalyze/db";
 import { eq, sql } from "drizzle-orm";
 import { ArrowLeft, ArrowRight, Landmark } from "lucide-react";
 import type { Metadata } from "next";
@@ -30,6 +30,7 @@ export default async function TransactionsPage({
   params: Promise<{ slug: string }>;
   searchParams: Promise<{
     account?: string;
+    contact?: string;
     kind?: string;
     status?: string;
     q?: string;
@@ -53,10 +54,13 @@ export default async function TransactionsPage({
     : null;
   const status = sp.status === "reviewed" || sp.status === "unreviewed" ? sp.status : "";
   const q = (sp.q ?? "").slice(0, 100);
+  const contact = sp.contact && UUID.test(sp.contact) ? sp.contact : "";
 
-  const { result, hasAny, balance } = await inOrg(ctx, async (tx) => {
+  const { result, hasAny, balance, contacts } = await inOrg(ctx, async (tx) => {
+    const contacts = await contactOptions(tx, { includeArchived: true });
     const result = await listTransactions(tx, {
       accountId: account || null,
+      contactId: contact || null,
       kind,
       reviewed: status === "reviewed" ? true : status === "unreviewed" ? false : null,
       search: q || null,
@@ -73,7 +77,7 @@ export default async function TransactionsPage({
             .where(eq(schema.journalLines.accountId, account))
         )[0]?.total ?? "0")
       : null;
-    return { result, hasAny, balance };
+    return { result, hasAny, balance, contacts };
   });
 
   const categoryAccounts = accounts.filter((a) => !isMoneyAccountSubtype(a.subtype));
@@ -93,6 +97,7 @@ export default async function TransactionsPage({
       options: g.options.map((o) => ({ id: o.id, label: o.label })),
     })),
     accountNames: Object.fromEntries(accounts.map((a) => [a.id, a.name])),
+    contacts,
   };
 
   const rows: TxRow[] = result.rows.map((r) => ({
@@ -103,6 +108,7 @@ export default async function TransactionsPage({
     currency: r.currency,
     fxRate: r.fxRate,
     reviewed: r.reviewed,
+    contactId: r.contactId,
     attachments: r.attachments,
     kind: r.view.kind,
     amount: r.view.amount,
@@ -169,7 +175,7 @@ export default async function TransactionsPage({
       ) : (
         <TransactionList
           rows={rows}
-          filters={{ account, kind: kind ?? "", status, q }}
+          filters={{ account, contact, kind: kind ?? "", status, q }}
           ctx={ctxForForms}
           hasAny={hasAny}
         />

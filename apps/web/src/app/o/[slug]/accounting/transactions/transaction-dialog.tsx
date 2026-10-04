@@ -40,6 +40,7 @@ import { formatDate, nextDay } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { entryAttachmentsAction } from "../receipts/actions";
 import { deleteTransactionAction, saveTransactionAction, type TransactionErrors } from "./actions";
+import { ContactPicker } from "./contact-picker";
 import type { TxFormContext, TxRow } from "./types";
 
 const KINDS: { key: TransactionKind; label: string; icon: typeof ArrowDownLeft }[] = [
@@ -114,6 +115,8 @@ function TransactionForm({
   );
   const [date, setDate] = useState(row?.date ?? ctx.today);
   const [memo, setMemo] = useState(row?.memo ?? "");
+  const [contactId, setContactId] = useState(row?.contactId ?? "");
+  const [contacts, setContacts] = useState(ctx.contacts);
   const [moneyAccountId, setMoneyAccountId] = useState(
     row?.moneyAccountIds[0] ??
       (state.mode === "create" ? state.moneyAccountId : undefined) ??
@@ -198,6 +201,7 @@ function TransactionForm({
         memo,
         fxRate: foreign ? fxRate : undefined,
         attachmentIds: row ? undefined : (files ?? []).map((f) => f.id),
+        contactId: kind === "transfer" ? "" : contactId,
         moneyAccountId,
         splits: splits.map(({ accountId, amount, description }) => ({
           accountId,
@@ -386,6 +390,24 @@ function TransactionForm({
               onChange={(e) => setMemo(e.target.value)}
             />
           </Field>
+          {kind === "transfer" ? null : (
+            <div className="sm:col-span-2">
+              <ContactPicker
+                slug={ctx.slug}
+                kind={kind}
+                value={contactId}
+                onChange={(id) => {
+                  setContactId(id);
+                  clearError("contactId");
+                }}
+                contacts={contacts}
+                onCreated={(c) =>
+                  setContacts((list) => [...list, c].sort((a, b) => a.name.localeCompare(b.name)))
+                }
+                error={errors.contactId}
+              />
+            </div>
+          )}
         </div>
 
         {kind === "transfer" ? null : (

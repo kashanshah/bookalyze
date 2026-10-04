@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-04, phase 1, slice 4 (receipts)._
+_Last updated: 2026-10-04, phase 1, slice 5 (customers and vendors)._
 
 ---
 
@@ -22,7 +22,7 @@ _Last updated: 2026-10-04, phase 1, slice 4 (receipts)._
 | Phase | State |
 |---|---|
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
-| 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions) and 4 (receipts) are done |
+| 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts) and 5 (customers and vendors) are done |
 | 1b. Wave migration | Not started. Needs a real Wave export from the owner (kept outside the repo) |
 | 2. Banking, plus Entity & compliance | Not started |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
@@ -113,8 +113,8 @@ Real company details are entered in the app and never committed.
     balance as of any date; print.
 - **Tests:**
   - Core: 36 at slice 1, 43 after slice 3.
-  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4.
-  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow).
+  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5.
+  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors).
 
 ### Phase 1, slice 2: closed periods
 - **Closing the books:**
@@ -190,6 +190,30 @@ Real company details are entered in the app and never committed.
   - A paperclip and count appear on transaction rows.
 - **Mobile:** inputs and selects are 16px on phones, so iOS no longer zooms in on focus.
 
+### Phase 1, slice 5: customers and vendors
+- **Database** (migration `0009`):
+  - `contacts` table: type `customer`, `vendor` or `both`, name, email, phone, tax number,
+    address, notes and an archived flag. Names are unique per type, ignoring case.
+  - `journal_entries.contact_id` has a composite foreign key, so an entry can only point at its
+    own company's contacts. Reversals carry the contact over.
+- **Helpers** (`packages/db/src/contacts.ts`):
+  - `listContacts()` returns contacts with received and paid totals: base-currency money-account
+    lines on current entries only.
+  - `contactTotals()` takes an optional date range. `contactOptions()` feeds the pickers.
+  - `listTransactions()` accepts a `contactId` filter.
+- **Screens:**
+  - `/accounting/contacts`: tabs for Everyone, Customers, Vendors and Archived; search; received
+    and paid per contact.
+  - `/accounting/contacts/[id]`: details, totals for this financial year and all time, recent
+    transactions, a link to the filtered Transactions list, edit and archive.
+- **Transaction form:**
+  - An optional Customer (money in) or Vendor (money out) field.
+  - "+ Add a new customer/vendor…" creates one inline.
+  - Rows show "Category · Contact". `?contact=` filters, with a chip to clear it.
+- **Journal entry page:** shows "With {contact}".
+- **E2E:** the `signIn` helper retries after Better Auth's sign-in rate limit, because the suite
+  signs in often.
+
 ---
 
 ## 3. Next up (in order)
@@ -206,8 +230,8 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 3. [x] **Transactions screen.** Done in slice 3. Still to come: a receipt count once
    attachments exist, bulk review and bulk categorize, and transfers between different
    currencies.
-4. [ ] **Contacts** (customers and vendors), a tenant table. Optional on journal lines. Needed by
-   the Wave import.
+4. [x] **Contacts (customers and vendors).** Done in slice 5. Still to come: contacts on
+   individual journal lines (for multi-party entries), and merging duplicate contacts.
 5. [ ] **FX rates:**
    - `fx_rates` table and a daily Bank of Canada Valet job for CAD organizations.
    - AED is pegged at 3.6725 to USD.
