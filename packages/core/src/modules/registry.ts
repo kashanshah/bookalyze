@@ -48,7 +48,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     basePath: "/accounting",
     phase: "1",
     requires: [],
-    features: ["accounting.core", "accounting.reports", "accounting.wave_import"],
+    features: ["accounting.core", "accounting.reports", "accounting.import"],
     nav: [
       { label: "Transactions", href: "/accounting/transactions" },
       { label: "Receipts", href: "/accounting/receipts" },
@@ -57,6 +57,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
       { label: "Chart of accounts", href: "/accounting/accounts" },
       { label: "Sales tax", href: "/accounting/sales-tax" },
       { label: "Reports", href: "/accounting/reports" },
+      { label: "Import", href: "/accounting/import" },
     ],
     status: "available",
   },

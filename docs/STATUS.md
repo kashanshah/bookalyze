@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-04, phase 1, slice 7 (sales tax)._
+_Last updated: 2026-10-04, phase 1b (importing from other software)._
 
 ---
 
@@ -23,7 +23,7 @@ _Last updated: 2026-10-04, phase 1, slice 7 (sales tax)._
 |---|---|
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
-| 1b. Wave migration | Not started. Needs a real Wave export from the owner (kept outside the repo) |
+| 1b. Migration from other software | **Importer done** (generic CSV, Wave first). Still to come: receipts ZIP, contact files, a run against a real Wave export |
 | 2. Banking, plus Entity & compliance | Not started |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
@@ -112,9 +112,9 @@ Real company details are entered in the app and never committed.
   - Reports: profit and loss with period presets from the financial year; balance sheet and trial
     balance as of any date; print.
 - **Tests:**
-  - Core: 36 at slice 1, 43 after slice 3, 51 after slice 6, 58 after slice 7.
-  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5, 37 after slice 6, 42 after slice 7.
-  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors), 11 after slice 6 (exchange rates), 12 after slice 7 (sales tax), 13 after the searchable dropdowns.
+  - Core: 36 at slice 1, 43 after slice 3, 51 after slice 6, 58 after slice 7, 70 after the importer.
+  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5, 37 after slice 6, 42 after slice 7, 46 after the importer.
+  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors), 11 after slice 6 (exchange rates), 12 after slice 7 (sales tax), 13 after the searchable dropdowns, 14 after the importer.
 
 ### Phase 1, slice 2: closed periods
 - **Closing the books:**
@@ -282,6 +282,52 @@ Real company details are entered in the app and never committed.
     period. Shows collected, claimable and owing (or refund), per rate.
   - A company that isn't registered sets nothing up and sees no tax picker.
 
+### Phase 1b: importing from other software
+One importer for every program: Wave, QuickBooks, Xero, Zoho Books, Sage and "other". Each
+reads a CSV of journal lines (one row per line of a transaction). A source only adds export
+steps and its column names; adding software is a data change in `IMPORT_SOURCES`, not new code.
+- **Core** (`packages/core/src/import/`):
+  - `csv.ts`: a forgiving CSV reader (quotes, BOM, `,` `;` tab delimiters). It skips a
+    report's title block to find the header row and keeps file line numbers for messages.
+  - `values.ts`: dates in any common format, with day/month order detected from the column.
+    Amounts with symbols, thousands separators, `(45.00)`, trailing minus and decimal commas.
+  - `sources.ts`:
+    - `IMPORT_FIELDS` (date, transaction ID, account, code, type, debit/credit or one amount
+      column, descriptions, reference, customer/vendor).
+    - `IMPORT_SOURCES` (export steps and column names per program).
+    - `guessColumns()`.
+    - `guessSubtype()`: maps Wave, QuickBooks and Xero account types, then account names, to
+      our subtypes.
+  - `plan.ts` `planImport()`:
+    - Fills down blank dates and IDs (QuickBooks prints them once per entry).
+    - Groups rows by transaction ID, or by running total for files without unique IDs.
+    - Rejects entries that don't balance or have bad dates, listing them with line numbers.
+    - Collects accounts and contacts. Contacts are customers or vendors by column, or by what
+      their entries touch.
+    - Gives every entry a stable `externalId`: `source:ID`, or a fingerprint of date and lines.
+- **Database** (migration `0013_imports`):
+  - The `import_batches` table.
+  - `import_batch_id` on journal entries, accounts and contacts.
+  - Source `import`, with a unique `(organization_id, source_id)` for imported entries, so a
+    file imported twice only adds what's new.
+  - `undo_import_batch()` (security definer) deletes an import's entries, plus its accounts and
+    contacts if nothing else uses them. It refuses when an imported entry was since edited or
+    removed, or falls in a closed period. This is the one sanctioned way posted entries are
+    deleted.
+  - Helpers in `packages/db/src/imports.ts`, posting entries in bulk.
+- **Web** (Accounting → Import, owners and admins only):
+  - A wizard: source and export steps, file, columns (prefilled, with a live preview), accounts
+    (matched to yours by code, name or single-instance subtype, otherwise created by type), and
+    a review. The review lists left-out rows, blocks closed periods and warns when the books
+    already have entries in those dates.
+  - The file is parsed in the browser and posted in chunks of 200, so there's no upload limit or
+    timeout. The original file isn't stored.
+  - The import list shows each batch, with Undo.
+- **Limits:**
+  - Amounts are taken as the main currency: Wave exports in the business currency, and
+    foreign-currency accounts come in converted.
+  - Receipts and invoices aren't imported yet.
+
 ---
 
 ## 3. Next up (in order)
@@ -325,10 +371,13 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 - [ ] Vercel Workflows and Cron wiring.
 - [ ] Run migrations automatically on deploy. Today they're manual; see §5.
 
-### Phase 1b: Wave migration
-Needs the owner's Wave **Data Export** (accounting transactions, contacts, receipts ZIP) for one
-company, kept in the git-ignored `imports/` folder. Build the importer against the real file
-formats with synthetic fixtures in tests. Plan: PLAN.md §3.2.
+### Phase 1b: migration, remaining
+- [ ] Run the importer on the owner's real Wave export. The column names came from Wave's
+  export format and were tested with synthetic files. Fix any differences in `IMPORT_SOURCES`.
+- [ ] Receipts ZIP from Wave: upload, then match files to imported transactions (or send them
+  to the inbox).
+- [ ] Optional customer and vendor CSVs (emails, phones, tax numbers).
+- [ ] Foreign-currency lines: a currency column plus a main-currency amount column.
 
 ---
 
@@ -490,7 +539,8 @@ cases. These answers only help pick sensible defaults and test data:
 
 1. GST/HST registration and filing frequency for Kazomo Inc. and Teknoffice: entered in
    Accounting → Sales tax. Registered and unregistered both work.
-2. A Wave Data Export for one company. It's only needed to confirm the importer handles Wave's
-   real file formats. Never commit it.
+2. Try Accounting → Import with a real Wave export (Settings → Data export → Accounting
+   transactions, CSV). It runs in your browser, can be undone, and the file is never stored or
+   committed. Report any column or account it gets wrong.
 3. Roles: today every member can manage accounts and post entries. A future "accountant" or
    read-only role is a permissions change, not a data change.

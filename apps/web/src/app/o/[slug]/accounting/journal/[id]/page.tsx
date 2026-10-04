@@ -24,6 +24,7 @@ const SOURCE_LABELS: Record<string, string> = {
   reversal: "Reversal",
   bank_import: "Bank import",
   wave_import: "Imported from Wave",
+  import: "Imported",
 };
 
 export default async function JournalEntryPage({

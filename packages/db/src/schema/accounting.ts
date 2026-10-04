@@ -18,6 +18,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
+import { importBatches } from "./imports";
 import { currencies } from "./reference";
 import { taxRates } from "./tax";
 import { tenantIsolationPolicy } from "./tenancy";
@@ -34,7 +35,14 @@ import { tenantIsolationPolicy } from "./tenancy";
 const inList = (values: readonly string[]) =>
   sql.raw(values.map((v) => `'${v.replace(/'/g, "''")}'`).join(", "));
 
-export const JOURNAL_SOURCES = ["manual", "reversal", "bank_import", "wave_import"] as const;
+/** "import": brought in from other accounting software (see import_batches). */
+export const JOURNAL_SOURCES = [
+  "manual",
+  "reversal",
+  "bank_import",
+  "wave_import",
+  "import",
+] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
 export const accounts = pgTable(
@@ -54,6 +62,8 @@ export const accounts = pgTable(
     /** Accounts the system posts to (uncategorized, retained earnings, FX); can't be archived. */
     systemKey: text("system_key"),
     isArchived: boolean("is_archived").notNull().default(false),
+    /** The import that created it, if any (removed again if that import is undone). */
+    importBatchId: uuid("import_batch_id"),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -65,6 +75,11 @@ export const accounts = pgTable(
     unique("accounts_org_id_key").on(t.organizationId, t.id),
     unique("accounts_org_code_key").on(t.organizationId, t.code),
     unique("accounts_org_system_key_key").on(t.organizationId, t.systemKey),
+    foreignKey({
+      name: "accounts_import_batch_fk",
+      columns: [t.organizationId, t.importBatchId],
+      foreignColumns: [importBatches.organizationId, importBatches.id],
+    }),
     check("accounts_type_valid", sql`${t.type} in (${inList(ACCOUNT_TYPES)})`),
     check(
       "accounts_subtype_valid",
@@ -99,6 +114,8 @@ export const contacts = pgTable(
     address: text("address"),
     notes: text("notes"),
     isArchived: boolean("is_archived").notNull().default(false),
+    /** The import that created it, if any (removed again if that import is undone). */
+    importBatchId: uuid("import_batch_id"),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -109,6 +126,11 @@ export const contacts = pgTable(
   (t) => [
     unique("contacts_org_id_key").on(t.organizationId, t.id),
     uniqueIndex("contacts_org_type_name_key").on(t.organizationId, t.type, sql`lower(${t.name})`),
+    foreignKey({
+      name: "contacts_import_batch_fk",
+      columns: [t.organizationId, t.importBatchId],
+      foreignColumns: [importBatches.organizationId, importBatches.id],
+    }),
     check("contacts_type_valid", sql`${t.type} in (${inList(CONTACT_TYPES)})`),
     check("contacts_name_present", sql`length(trim(${t.name})) > 0`),
     tenantIsolationPolicy("contacts", t.organizationId),
@@ -140,6 +162,8 @@ export const journalEntries = pgTable(
     reversedByEntryId: uuid("reversed_by_entry_id"),
     /** The customer or vendor this entry is with, if any. */
     contactId: uuid("contact_id"),
+    /** The import it came from; `source_id` then holds its ID in the other program. */
+    importBatchId: uuid("import_batch_id"),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -158,6 +182,16 @@ export const journalEntries = pgTable(
       foreignColumns: [contacts.organizationId, contacts.id],
     }),
     index("journal_entries_org_contact_idx").on(t.organizationId, t.contactId),
+    foreignKey({
+      name: "journal_entries_import_batch_fk",
+      columns: [t.organizationId, t.importBatchId],
+      foreignColumns: [importBatches.organizationId, importBatches.id],
+    }),
+    index("journal_entries_import_batch_idx").on(t.importBatchId),
+    // An entry from another program is imported once, however many times its file is.
+    uniqueIndex("journal_entries_org_import_source_key")
+      .on(t.organizationId, t.sourceId)
+      .where(sql`${t.source} = 'import'`),
     foreignKey({
       name: "journal_entries_reversed_by_fk",
       columns: [t.organizationId, t.reversedByEntryId],

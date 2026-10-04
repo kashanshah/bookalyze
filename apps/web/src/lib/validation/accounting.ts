@@ -204,3 +204,55 @@ export const taxRegistrationSchema = z.object({
 });
 
 export type TaxRegistrationInput = z.input<typeof taxRegistrationSchema>;
+
+const importKey = z.string().trim().min(1).max(400);
+
+export const startImportSchema = z.object({
+  source: z.string().trim().min(1).max(40),
+  fileName: z.string().trim().min(1).max(255),
+  accounts: z
+    .array(
+      z.object({
+        key: importKey,
+        name: z.string().trim().min(1).max(120),
+        code: z.string().trim().max(20).optional(),
+        subtype: z.string().refine(isAccountSubtype, "Choose where this account goes."),
+      }),
+    )
+    .max(2000),
+  contacts: z
+    .array(
+      z.object({
+        key: importKey,
+        name: z.string().trim().min(1).max(200),
+        role: z.enum(["customer", "vendor", "both"]),
+      }),
+    )
+    .max(20000),
+});
+
+export type StartImportInput = z.input<typeof startImportSchema>;
+
+export const importChunkSchema = z
+  .array(
+    z.object({
+      externalId: importKey,
+      date: z.string().refine(isIsoDate, "Invalid date."),
+      memo: z.string().max(1000).optional(),
+      reference: z.string().max(120).optional(),
+      contactId: z.uuid().optional(),
+      lines: z
+        .array(
+          z.object({
+            accountId: z.uuid(),
+            amount: z.string().trim().max(30),
+            description: z.string().max(500).optional(),
+          }),
+        )
+        .min(2)
+        .max(500),
+    }),
+  )
+  .max(300);
+
+export type ImportChunkInput = z.input<typeof importChunkSchema>;
