@@ -8,11 +8,12 @@ import {
   prepareTransfer,
   transactionLines,
 } from "@bookalyze/core";
-import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Transaction } from "./client";
+import { findDuplicateOf, suggestDuplicate } from "./duplicates";
 import { fxRateOn } from "./fx";
 import { LedgerError, postJournalEntry } from "./ledger";
-import { accounts, journalEntries } from "./schema/accounting";
+import { accounts } from "./schema/accounting";
 import { bankFeeds, bankLines, type ConnectionProvider, connections } from "./schema/banking";
 
 /**
@@ -151,29 +152,6 @@ export async function disconnectConnection(tx: Transaction, connectionId: string
     .where(eq(bankFeeds.connectionId, connectionId));
 }
 
-/** Bank transaction IDs already in the books (posted, edited or deleted since). */
-export async function existingBankSourceIds(
-  tx: Transaction,
-  ids: readonly string[],
-): Promise<Set<string>> {
-  const found = new Set<string>();
-  for (let i = 0; i < ids.length; i += 500) {
-    const chunk = ids.slice(i, i + 500);
-    const rows = await tx
-      .select({ id: journalEntries.sourceId })
-      .from(journalEntries)
-      .where(
-        and(
-          eq(journalEntries.source, "bank_import"),
-          isNotNull(journalEntries.sourceId),
-          inArray(journalEntries.sourceId, chunk),
-        ),
-      );
-    for (const r of rows) if (r.id) found.add(r.id);
-  }
-  return found;
-}
-
 export type FeedLine = BankTransaction & { feedId: string };
 
 export type ImportResult = {
@@ -181,26 +159,22 @@ export type ImportResult = {
   posted: number;
   /** Seen before (an earlier sync or the same file again): left alone. */
   duplicates: number;
-  /** Look like transactions already in the books; waiting for someone to merge or keep both. */
-  suggested: number;
+  /** Of those posted, how many look like a transaction already in the books (flagged to check). */
+  flagged: number;
   /** Couldn't be posted yet, with the reason; they're tried again next time. */
   skipped: { externalId: string; date: string; reason: string }[];
 };
 
 const conversionId = (pairKey: string) => `conversion:${pairKey}`;
-/** How far apart the bank's date and the books' date may be for a suggested match. */
-export const MATCH_WINDOW_DAYS = 5;
 
 type BankLineRow = typeof bankLines.$inferSelect;
 
 /**
  * Brings bank lines into the books. Each line is stored once in `bank_lines` (its external ID is
- * unique), so a re-sync or the same file uploaded again adds nothing. Then each new line either:
- * - waits as a suggested match, when a transaction already in the books looks like it (same
- *   bank account, same amount, within a few days, not itself from the bank), so nothing is
- *   counted twice without someone saying so; or
- * - is posted as a new entry: to Uncategorized (fee split out), or, for a conversion between two
- *   connected balances, as one transfer.
+ * unique), so a re-sync or the same file uploaded again adds nothing. Each new line is posted:
+ * to Uncategorized (fee split out) or, for a conversion between two connected balances, as one
+ * transfer. One that looks like a transaction already in the books is flagged as a possible
+ * duplicate for someone to merge or keep (see duplicates.ts); nothing is merged on its own.
  * Lines that can't be posted yet (no exchange rate, closed period) stay pending and are retried.
  */
 export async function importBankLines(
@@ -212,15 +186,8 @@ export async function importBankLines(
     lines: readonly FeedLine[];
   },
 ): Promise<ImportResult> {
-  const result: ImportResult = { posted: 0, duplicates: 0, suggested: 0, skipped: [] };
+  const result: ImportResult = { posted: 0, duplicates: 0, flagged: 0, skipped: [] };
   if (!input.lines.length) return result;
-
-  // Lines posted by the first version of the sync, before bank_lines existed.
-  const ids = input.lines.flatMap((l) => [
-    l.externalId,
-    ...(l.pairKey ? [conversionId(l.pairKey)] : []),
-  ]);
-  const posted = await existingBankSourceIds(tx, ids);
 
   const inserted: BankLineRow[] = [];
   for (let i = 0; i < input.lines.length; i += 200) {
@@ -250,53 +217,19 @@ export async function importBankLines(
   }
   const insertedIds = new Set(inserted.map((r) => r.externalId));
   // Already known lines still pending (no rate yet, closed period) get another try.
-  const retry = await tx
-    .select()
-    .from(bankLines)
-    .where(
-      and(
-        eq(bankLines.status, "pending"),
-        inArray(
-          bankLines.externalId,
-          input.lines.map((l) => l.externalId).filter((id) => !insertedIds.has(id)),
-        ),
-      ),
-    );
+  const known = input.lines.map((l) => l.externalId).filter((id) => !insertedIds.has(id));
+  const retry = known.length
+    ? await tx
+        .select()
+        .from(bankLines)
+        .where(and(eq(bankLines.status, "pending"), inArray(bankLines.externalId, known)))
+    : [];
   result.duplicates = input.lines.length - inserted.length - retry.length;
 
-  const work: BankLineRow[] = [];
-  for (const row of [...inserted, ...retry]) {
-    const already =
-      posted.has(row.externalId) || (row.pairKey && posted.has(conversionId(row.pairKey)));
-    if (already) {
-      const [entry] = await tx
-        .select({ id: journalEntries.id })
-        .from(journalEntries)
-        .where(
-          and(
-            eq(journalEntries.source, "bank_import"),
-            inArray(journalEntries.sourceId, [
-              row.externalId,
-              ...(row.pairKey ? [conversionId(row.pairKey)] : []),
-            ]),
-          ),
-        )
-        .limit(1);
-      if (entry) {
-        await tx
-          .update(bankLines)
-          .set({ status: "posted", journalEntryId: entry.id })
-          .where(eq(bankLines.id, row.id));
-        result.duplicates++;
-        continue;
-      }
-    }
-    work.push(row);
-  }
-  const done = await processBankLines(tx, { ...input, rows: work });
-  result.posted += done.posted;
-  result.suggested += done.suggested;
-  result.skipped.push(...done.skipped);
+  const done = await postBankLines(tx, { ...input, rows: [...inserted, ...retry] });
+  result.posted = done.posted;
+  result.flagged = done.flagged;
+  result.skipped = done.skipped;
   return result;
 }
 
@@ -315,39 +248,8 @@ const toLine = (row: BankLineRow): FeedLine => ({
   ...(row.conversion ? { conversion: row.conversion } : {}),
 });
 
-/** A transaction already in the books that looks like this bank movement, if any. */
-async function findMatch(
-  tx: Transaction,
-  input: {
-    accountId: string;
-    amount: string;
-    date: string;
-    other?: { accountId: string; amount: string };
-  },
-): Promise<string | null> {
-  const window = sql`${journalEntries.date} between (${input.date}::date - ${MATCH_WINDOW_DAYS}::int) and (${input.date}::date + ${MATCH_WINDOW_DAYS}::int)`;
-  const otherSide = input.other
-    ? sql`and exists (select 1 from journal_lines o where o.journal_entry_id = ${journalEntries.id}
-        and o.account_id = ${input.other.accountId} and o.amount = ${input.other.amount}::numeric)`
-    : sql``;
-  const rows = await tx.execute<{ id: string }>(sql`
-    select ${journalEntries.id} as id from ${journalEntries}
-    where ${window}
-      and ${journalEntries.reversedByEntryId} is null
-      and ${journalEntries.reversesEntryId} is null
-      and ${journalEntries.source} <> 'bank_import'
-      and exists (select 1 from journal_lines l where l.journal_entry_id = ${journalEntries.id}
-        and l.account_id = ${input.accountId} and l.amount = ${input.amount}::numeric)
-      ${otherSide}
-      and not exists (select 1 from bank_lines b
-        where b.journal_entry_id = ${journalEntries.id} or b.suggested_entry_id = ${journalEntries.id})
-    order by abs(${journalEntries.date} - ${input.date}::date), ${journalEntries.entryNumber}
-    limit 1`);
-  return rows.rows[0]?.id ?? null;
-}
-
-/** Suggests a match for, or posts, each row; `rows` are bank lines not yet posted or matched. */
-async function processBankLines(
+/** Posts each row (bank lines not yet in the books) and flags possible duplicates. */
+async function postBankLines(
   tx: Transaction,
   input: {
     orgId: string;
@@ -356,7 +258,7 @@ async function processBankLines(
     rows: readonly BankLineRow[];
   },
 ): Promise<Omit<ImportResult, "duplicates">> {
-  const result = { posted: 0, suggested: 0, skipped: [] as ImportResult["skipped"] };
+  const result = { posted: 0, flagged: 0, skipped: [] as ImportResult["skipped"] };
   if (!input.rows.length) return result;
   const all = await tx.select().from(accounts);
   const ledger = new Map<string, LedgerAccount>(
@@ -403,17 +305,11 @@ async function processBankLines(
         ),
       );
 
-  const suggest = async (rows: BankLineRow[], entryId: string | null) => {
-    if (!entryId || rows.some((r) => r.matchDeclined)) return false;
-    await mark(rows, { status: "suggested", suggestedEntryId: entryId, reason: null });
-    result.suggested += rows.length;
-    return true;
-  };
-
   const post = async (
     rows: BankLineRow[],
     sourceId: string,
     build: () => Promise<ReturnType<typeof prepareJournalEntry>>,
+    match: Omit<Parameters<typeof findDuplicateOf>[1], "entryId">,
   ) => {
     const line = rows[0] as BankLineRow;
     try {
@@ -435,13 +331,19 @@ async function processBankLines(
           entry: prepared.entry,
         }),
       );
-      await mark(rows, {
-        status: "posted",
-        journalEntryId: entry.id,
-        suggestedEntryId: null,
-        reason: null,
-      });
+      await mark(rows, { status: "posted", journalEntryId: entry.id, reason: null });
       result.posted++;
+      const duplicateOf = await findDuplicateOf(tx, { ...match, entryId: entry.id });
+      if (
+        duplicateOf &&
+        (await suggestDuplicate(tx, {
+          orgId: input.orgId,
+          entryId: entry.id,
+          duplicateOfEntryId: duplicateOf,
+        }))
+      ) {
+        result.flagged++;
+      }
     } catch (error) {
       const reason =
         error instanceof SkipLine || error instanceof LedgerError
@@ -461,29 +363,32 @@ async function processBankLines(
       singles.push(from, to);
       continue;
     }
-    const match = await findMatch(tx, {
-      accountId: fromFeed.accountId,
-      amount: from.amount,
-      date: from.date,
-      other: { accountId: toFeed.accountId, amount: to.amount },
-    });
-    if (await suggest(rows, match)) continue;
-    await post(rows, conversionId(from.pairKey), async () =>
-      prepareTransfer(
-        {
-          fromAccountId: fromFeed.accountId,
-          toAccountId: toFeed.accountId,
-          sent: from.amount.replace("-", ""),
-          received: to.amount,
-          baseCurrency: input.baseCurrency,
-          fxRate:
-            from.currency !== input.baseCurrency && to.currency !== input.baseCurrency
-              ? await rateFor(from.currency, from.date)
-              : undefined,
-          memo: bankMemo(to),
-        },
-        ledger,
-      ),
+    await post(
+      rows,
+      conversionId(from.pairKey),
+      async () =>
+        prepareTransfer(
+          {
+            fromAccountId: fromFeed.accountId,
+            toAccountId: toFeed.accountId,
+            sent: from.amount.replace("-", ""),
+            received: to.amount,
+            baseCurrency: input.baseCurrency,
+            fxRate:
+              from.currency !== input.baseCurrency && to.currency !== input.baseCurrency
+                ? await rateFor(from.currency, from.date)
+                : undefined,
+            memo: bankMemo(to),
+          },
+          ledger,
+        ),
+      {
+        feedId: from.feedId,
+        accountId: fromFeed.accountId,
+        amount: from.amount,
+        date: from.date,
+        other: { accountId: toFeed.accountId, amount: to.amount },
+      },
     );
   }
 
@@ -491,159 +396,31 @@ async function processBankLines(
     const feed = feeds.get(line.feedId);
     const row = byExternal.get(line.externalId);
     if (!feed || !row) continue;
-    const match = await findMatch(tx, {
-      accountId: feed.accountId,
-      amount: line.amount,
-      date: line.date,
-    });
-    if (await suggest([row], match)) continue;
-    await post([row], line.externalId, async () =>
-      prepareJournalEntry(
-        {
-          currency: line.currency,
-          baseCurrency: input.baseCurrency,
-          fxRate: await rateFor(line.currency, line.date),
-          lines: transactionLines(
-            bankTransactionInput(line, {
-              moneyAccountId: feed.accountId,
-              uncategorizedIncomeId: income.id,
-              uncategorizedExpenseId: expense.id,
-              feeAccountId: feed.feeAccountId,
-            }),
-            null,
-          ),
-        },
-        ledger,
-      ),
+    await post(
+      [row],
+      line.externalId,
+      async () =>
+        prepareJournalEntry(
+          {
+            currency: line.currency,
+            baseCurrency: input.baseCurrency,
+            fxRate: await rateFor(line.currency, line.date),
+            lines: transactionLines(
+              bankTransactionInput(line, {
+                moneyAccountId: feed.accountId,
+                uncategorizedIncomeId: income.id,
+                uncategorizedExpenseId: expense.id,
+                feeAccountId: feed.feeAccountId,
+              }),
+              null,
+            ),
+          },
+          ledger,
+        ),
+      { feedId: line.feedId, accountId: feed.accountId, amount: line.amount, date: line.date },
     );
   }
   return result;
 }
 
 class SkipLine extends Error {}
-
-export class BankLineError extends Error {}
-
-/** Bank lines waiting for a decision, each with the transaction already in the books it resembles. */
-export async function listSuggestedMatches(tx: Transaction) {
-  const rows = await tx
-    .select({
-      id: bankLines.id,
-      pairKey: bankLines.pairKey,
-      date: bankLines.date,
-      currency: bankLines.currency,
-      amount: bankLines.amount,
-      description: bankLines.description,
-      feedName: bankFeeds.name,
-      accountId: bankFeeds.accountId,
-      accountName: accounts.name,
-      entryId: journalEntries.id,
-      entryNumber: journalEntries.entryNumber,
-      entryDate: journalEntries.date,
-      entryMemo: journalEntries.memo,
-      entrySource: journalEntries.source,
-    })
-    .from(bankLines)
-    .innerJoin(bankFeeds, eq(bankFeeds.id, bankLines.feedId))
-    .innerJoin(accounts, eq(accounts.id, bankFeeds.accountId))
-    .innerJoin(journalEntries, eq(journalEntries.id, bankLines.suggestedEntryId))
-    .where(eq(bankLines.status, "suggested"))
-    .orderBy(asc(bankLines.date), asc(bankLines.externalId));
-  // Both sides of a conversion are one decision: show the side the money left from.
-  const seen = new Set<string>();
-  return rows.filter((r) => {
-    if (!r.pairKey) return true;
-    const key = `${r.pairKey}:${r.entryId}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-async function suggestionGroup(tx: Transaction, bankLineId: string): Promise<BankLineRow[]> {
-  const [row] = await tx.select().from(bankLines).where(eq(bankLines.id, bankLineId));
-  if (row?.status !== "suggested" || !row.suggestedEntryId) {
-    throw new BankLineError("This suggestion has already been dealt with.");
-  }
-  if (!row.pairKey) return [row];
-  return tx
-    .select()
-    .from(bankLines)
-    .where(
-      and(
-        eq(bankLines.pairKey, row.pairKey),
-        eq(bankLines.status, "suggested"),
-        eq(bankLines.suggestedEntryId, row.suggestedEntryId),
-      ),
-    );
-}
-
-/**
- * They're the same: the bank line is linked to the existing transaction and nothing new is
- * posted. Refused if that transaction was changed or removed since the suggestion.
- */
-export async function mergeBankLine(
-  tx: Transaction,
-  input: { bankLineId: string; userId?: string | null },
-): Promise<{ entryId: string }> {
-  const rows = await suggestionGroup(tx, input.bankLineId);
-  const entryId = rows[0]?.suggestedEntryId as string;
-  const [entry] = await tx
-    .select({ reversedBy: journalEntries.reversedByEntryId })
-    .from(journalEntries)
-    .where(eq(journalEntries.id, entryId));
-  if (!entry || entry.reversedBy) {
-    throw new BankLineError(
-      "That transaction was changed or removed since. Keep both, or sync again.",
-    );
-  }
-  await tx
-    .update(bankLines)
-    .set({
-      status: "matched",
-      journalEntryId: entryId,
-      suggestedEntryId: null,
-      decidedBy: input.userId ?? null,
-      decidedAt: new Date(),
-    })
-    .where(
-      inArray(
-        bankLines.id,
-        rows.map((r) => r.id),
-      ),
-    );
-  return { entryId };
-}
-
-/** They're different: post the bank line as a new transaction, without looking for a match again. */
-export async function keepBankLineSeparate(
-  tx: Transaction,
-  input: { orgId: string; userId?: string | null; baseCurrency: string; bankLineId: string },
-): Promise<Omit<ImportResult, "duplicates">> {
-  const rows = await suggestionGroup(tx, input.bankLineId);
-  await tx
-    .update(bankLines)
-    .set({
-      status: "pending",
-      suggestedEntryId: null,
-      matchDeclined: true,
-      decidedBy: input.userId ?? null,
-      decidedAt: new Date(),
-    })
-    .where(
-      inArray(
-        bankLines.id,
-        rows.map((r) => r.id),
-      ),
-    );
-  const fresh = await tx
-    .select()
-    .from(bankLines)
-    .where(
-      inArray(
-        bankLines.id,
-        rows.map((r) => r.id),
-      ),
-    );
-  return processBankLines(tx, { ...input, rows: fresh });
-}

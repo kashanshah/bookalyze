@@ -12,11 +12,11 @@ export function summaryMessage(summary: SyncSummary): {
       `${summary.posted} new transaction${summary.posted === 1 ? "" : "s"} to sort on the Transactions screen.`,
     );
   }
-  if (summary.suggested) {
+  if (summary.flagged) {
     parts.push(
-      summary.suggested === 1
-        ? "1 looks like a transaction already in your books: check the possible match below."
-        : `${summary.suggested} look like transactions already in your books: check the possible matches below.`,
+      summary.flagged === 1
+        ? "1 might be a duplicate of one already in your books: it's highlighted on the Transactions screen."
+        : `${summary.flagged} might be duplicates of ones already in your books: they're highlighted on the Transactions screen.`,
     );
   }
   if (summary.skipped.length) {
@@ -25,7 +25,7 @@ export function summaryMessage(summary: SyncSummary): {
   }
   if (summary.error)
     return { title: "The sync didn't finish", description: summary.error, tone: "error" };
-  if (!summary.posted && !summary.suggested && !summary.skipped.length) {
+  if (!summary.posted && !summary.skipped.length) {
     return {
       title: "Up to date",
       description: "No new transactions since the last sync.",

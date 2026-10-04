@@ -7,16 +7,20 @@ import {
   disconnectConnection,
   type FeedLine,
   importBankLines,
-  keepBankLineSeparate,
   listConnections,
-  listSuggestedMatches,
-  mergeBankLine,
   setConnectionSecret,
 } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
+import {
+  acceptDuplicate,
+  dismissDuplicate,
+  listDuplicateSuggestions,
+  mergeSelected,
+} from "../duplicates";
 import { upsertFxRates } from "../fx";
 import { createDefaultChart, postJournalEntry } from "../ledger";
 import * as schema from "../schema";
+import { replaceJournalEntry } from "../transactions";
 
 const ownerUrl =
   process.env.TEST_DATABASE_URL_MIGRATOR ??
@@ -158,9 +162,10 @@ const entriesOf = (orgId: string) =>
         id: schema.journalEntries.id,
         sourceId: schema.journalEntries.sourceId,
         memo: schema.journalEntries.memo,
+        source: schema.journalEntries.source,
+        reversedByEntryId: schema.journalEntries.reversedByEntryId,
       })
-      .from(schema.journalEntries)
-      .where(eq(schema.journalEntries.source, "bank_import")),
+      .from(schema.journalEntries),
   );
 const linesOf = (entryId: string) =>
   inOrg(orgA, (tx) =>
@@ -184,8 +189,8 @@ describe("bank connections", () => {
       kind: "card",
       description: "Card at Example Cafe",
     });
-    expect(await sync([card])).toEqual({ posted: 1, duplicates: 0, suggested: 0, skipped: [] });
-    expect(await sync([card])).toEqual({ posted: 0, duplicates: 1, suggested: 0, skipped: [] });
+    expect(await sync([card])).toEqual({ posted: 1, duplicates: 0, flagged: 0, skipped: [] });
+    expect(await sync([card])).toEqual({ posted: 0, duplicates: 1, flagged: 0, skipped: [] });
     const [entry] = (await entriesOf(orgA)).filter((e) => e.sourceId === "wise:10:CARD-1");
     expect(entry?.memo).toBe("Card at Example Cafe");
     const lines = await linesOf(entry?.id as string);
@@ -226,7 +231,7 @@ describe("bank connections", () => {
     expect(await sync([out, into])).toEqual({
       posted: 1,
       duplicates: 0,
-      suggested: 0,
+      flagged: 0,
       skipped: [],
     });
     const [entry] = (await entriesOf(orgA)).filter((e) => e.sourceId === "conversion:CONVERSION-3");
@@ -241,7 +246,7 @@ describe("bank connections", () => {
       base: "13.5000",
     });
     // Seen again (from either balance), it's a duplicate.
-    expect(await sync([into])).toEqual({ posted: 0, duplicates: 1, suggested: 0, skipped: [] });
+    expect(await sync([into])).toEqual({ posted: 0, duplicates: 1, flagged: 0, skipped: [] });
   });
 
   it("leaves a line for later when there's no exchange rate yet", async () => {
@@ -302,7 +307,17 @@ describe("bank connections", () => {
     return inOrg(orgA, (tx) => postJournalEntry(tx, { orgId: orgA, date, memo, entry }));
   }
 
-  it("suggests merging with a transaction already in the books instead of adding it again", async () => {
+  const suggestions = () => inOrg(orgA, (tx) => listDuplicateSuggestions(tx));
+  const bankLineOf = async (externalId: string) =>
+    (
+      await inOrg(orgA, (tx) =>
+        tx.select().from(schema.bankLines).where(eq(schema.bankLines.externalId, externalId)),
+      )
+    )[0];
+  const current = async (id: string) =>
+    (await entriesOf(orgA)).some((e) => e.id === id && !e.reversedByEntryId);
+
+  it("brings in a possible duplicate and flags it; merging keeps the one already in the books", async () => {
     const rent = await existingExpense("2027-01-30", "1200", "Rent entered by hand");
     const fromBank = line({
       feedId: cadFeed,
@@ -312,20 +327,25 @@ describe("bank connections", () => {
       kind: "transfer",
       description: "Sent to Example Landlord",
     });
-    expect(await sync([fromBank])).toEqual({ posted: 0, duplicates: 0, suggested: 1, skipped: [] });
-    const [suggestion] = await inOrg(orgA, (tx) => listSuggestedMatches(tx));
-    expect(suggestion).toMatchObject({
-      description: "Sent to Example Landlord",
-      entryId: rent.id,
-      entryMemo: "Rent entered by hand",
+    expect(await sync([fromBank])).toEqual({ posted: 1, duplicates: 0, flagged: 1, skipped: [] });
+    const imported = (await bankLineOf("wise:10:TRANSFER-RENT"))?.journalEntryId as string;
+    const [flag] = await suggestions();
+    expect(flag).toMatchObject({
+      entryId: imported,
+      duplicateOf: { id: rent.id, memo: "Rent entered by hand", source: "manual" },
     });
-    // Syncing again doesn't suggest it twice or post it.
-    expect(await sync([fromBank])).toMatchObject({ posted: 0, duplicates: 1, suggested: 0 });
+    // Syncing again doesn't bring it in or flag it twice.
+    expect(await sync([fromBank])).toMatchObject({ posted: 0, duplicates: 1, flagged: 0 });
 
-    await inOrg(orgA, (tx) => mergeBankLine(tx, { bankLineId: suggestion?.id as string }));
-    expect(await inOrg(orgA, (tx) => listSuggestedMatches(tx))).toEqual([]);
-    expect((await entriesOf(orgA)).some((e) => e.sourceId === "wise:10:TRANSFER-RENT")).toBe(false);
-    // A merged transaction isn't offered for another bank line.
+    await inOrg(orgA, (tx) =>
+      acceptDuplicate(tx, { orgId: orgA, suggestionId: flag?.id as string }),
+    );
+    expect(await suggestions()).toEqual([]);
+    expect(await current(imported)).toBe(false);
+    expect(await current(rent.id)).toBe(true);
+    // The bank's transaction is now the one entered by hand.
+    expect((await bankLineOf("wise:10:TRANSFER-RENT"))?.journalEntryId).toBe(rent.id);
+    // Another payment of the same amount from the same bank is a different one: not flagged.
     const again = line({
       feedId: cadFeed,
       externalId: "wise:10:TRANSFER-RENT-2",
@@ -333,11 +353,11 @@ describe("bank connections", () => {
       amount: "-1200.0000",
       kind: "transfer",
     });
-    expect(await sync([again])).toMatchObject({ posted: 1, suggested: 0 });
+    expect(await sync([again])).toMatchObject({ posted: 1, flagged: 0 });
   });
 
-  it("posts the bank line as its own transaction when they're kept apart", async () => {
-    await existingExpense("2027-04-10", "42", "Office lunch");
+  it("keeps both when they're different, and doesn't ask again", async () => {
+    const lunch = await existingExpense("2027-04-10", "42", "Office lunch");
     const fromBank = line({
       feedId: cadFeed,
       externalId: "wise:10:CARD-LUNCH",
@@ -346,23 +366,20 @@ describe("bank connections", () => {
       kind: "card",
       description: "Card at Example Bistro",
     });
-    expect(await sync([fromBank])).toMatchObject({ suggested: 1 });
-    const [suggestion] = await inOrg(orgA, (tx) => listSuggestedMatches(tx));
-    const kept = await inOrg(orgA, (tx) =>
-      keepBankLineSeparate(tx, {
-        orgId: orgA,
-        baseCurrency: "CAD",
-        bankLineId: suggestion?.id as string,
-      }),
+    expect(await sync([fromBank])).toMatchObject({ posted: 1, flagged: 1 });
+    const [flag] = await suggestions();
+    await inOrg(orgA, (tx) => dismissDuplicate(tx, { suggestionId: flag?.id as string }));
+    expect(await suggestions()).toEqual([]);
+    expect(await current(lunch.id)).toBe(true);
+    expect(await current((await bankLineOf("wise:10:CARD-LUNCH"))?.journalEntryId as string)).toBe(
+      true,
     );
-    expect(kept).toMatchObject({ posted: 1, suggested: 0 });
-    expect((await entriesOf(orgA)).some((e) => e.sourceId === "wise:10:CARD-LUNCH")).toBe(true);
     await expect(
-      inOrg(orgA, (tx) => mergeBankLine(tx, { bankLineId: suggestion?.id as string })),
+      inOrg(orgA, (tx) => acceptDuplicate(tx, { orgId: orgA, suggestionId: flag?.id as string })),
     ).rejects.toThrow(/already been dealt with/);
   });
 
-  it("matches a conversion with a transfer already in the books, as one decision", async () => {
+  it("flags a conversion that matches a transfer already in the books", async () => {
     const all = await inOrg(orgA, (tx) => tx.select().from(schema.accounts));
     const { prepareTransfer } = await import("@bookalyze/core");
     const prepared = prepareTransfer(
@@ -397,13 +414,80 @@ describe("bank connections", () => {
       amount: "100.0000",
       kind: "conversion",
     });
-    expect(await sync([out, into])).toMatchObject({ posted: 0, suggested: 2 });
-    const suggestions = (await inOrg(orgA, (tx) => listSuggestedMatches(tx))).filter(
-      (x) => x.entryId === transfer.id,
+    expect(await sync([out, into])).toMatchObject({ posted: 1, flagged: 1 });
+    const [flag] = await suggestions();
+    expect(flag?.duplicateOf.id).toBe(transfer.id);
+    await inOrg(orgA, (tx) =>
+      acceptDuplicate(tx, { orgId: orgA, suggestionId: flag?.id as string }),
     );
-    expect(suggestions).toHaveLength(1);
-    await inOrg(orgA, (tx) => mergeBankLine(tx, { bankLineId: suggestions[0]?.id as string }));
-    expect(await inOrg(orgA, (tx) => listSuggestedMatches(tx))).toEqual([]);
+    expect((await bankLineOf("wise:20:CONVERSION-9"))?.journalEntryId).toBe(transfer.id);
+  });
+
+  it("keeps the bank link and the flag when a flagged transaction is categorized", async () => {
+    await existingExpense("2027-06-01", "18", "Parking");
+    const fromBank = line({
+      feedId: cadFeed,
+      externalId: "wise:10:CARD-PARK",
+      date: "2027-06-01",
+      amount: "-18.0000",
+      kind: "card",
+    });
+    expect(await sync([fromBank])).toMatchObject({ flagged: 1 });
+    const imported = (await bankLineOf("wise:10:CARD-PARK"))?.journalEntryId as string;
+    const all = await inOrg(orgA, (tx) => tx.select().from(schema.accounts));
+    const prepared = prepareJournalEntry(
+      {
+        currency: "CAD",
+        baseCurrency: "CAD",
+        lines: transactionLines({
+          kind: "withdrawal",
+          moneyAccountId: cadBank,
+          splits: [{ accountId: all.find((a) => a.code === "6350")?.id as string, amount: "18" }],
+        }),
+      },
+      new Map(all.map((a) => [a.id, a])),
+    );
+    if (!prepared.ok) throw new Error("bad entry");
+    const entry = prepared.entry;
+    const edited = await inOrg(orgA, (tx) =>
+      replaceJournalEntry(tx, { orgId: orgA, entryId: imported, date: "2027-06-01", entry }),
+    );
+    expect((await bankLineOf("wise:10:CARD-PARK"))?.journalEntryId).toBe(edited.id);
+    const [flag] = await suggestions();
+    expect(flag?.entryId).toBe(edited.id);
+    expect((await entriesOf(orgA)).find((e) => e.id === edited.id)?.source).toBe("bank_import");
+    await inOrg(orgA, (tx) => dismissDuplicate(tx, { suggestionId: flag?.id as string }));
+  });
+
+  it("merges two transactions picked by hand only when amount, account and category match", async () => {
+    const first = await existingExpense("2027-07-01", "55", "Courier");
+    const second = await existingExpense("2027-07-02", "55", "Courier again");
+    const all = await inOrg(orgA, (tx) => tx.select().from(schema.accounts));
+    const other = prepareJournalEntry(
+      {
+        currency: "CAD",
+        baseCurrency: "CAD",
+        lines: transactionLines({
+          kind: "withdrawal",
+          moneyAccountId: cadBank,
+          splits: [{ accountId: fees, amount: "55" }],
+        }),
+      },
+      new Map(all.map((a) => [a.id, a])),
+    );
+    if (!other.ok) throw new Error("bad entry");
+    const entry = other.entry;
+    const third = await inOrg(orgA, (tx) =>
+      postJournalEntry(tx, { orgId: orgA, date: "2027-07-02", memo: "Bank fee", entry }),
+    );
+    await expect(
+      inOrg(orgA, (tx) => mergeSelected(tx, { orgId: orgA, entryIds: [first.id, third.id] })),
+    ).rejects.toThrow(/same category/);
+    const merged = await inOrg(orgA, (tx) =>
+      mergeSelected(tx, { orgId: orgA, entryIds: [second.id, first.id] }),
+    );
+    expect(merged).toEqual({ keptId: first.id, removedId: second.id });
+    expect(await current(second.id)).toBe(false);
   });
 
   it("keeps connections to their company and lists syncable ones for the daily job", async () => {

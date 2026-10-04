@@ -11,13 +11,17 @@ import {
   transactionLines,
 } from "@bookalyze/core";
 import {
+  acceptDuplicate,
   booksLockedThrough,
+  DuplicateError,
+  dismissDuplicate,
   entryReconciledThrough,
   formatEntryNumber,
   getContact,
   LedgerError,
   linkAttachments,
   listTaxRates,
+  mergeSelected,
   postJournalEntry,
   replaceJournalEntry,
   schema,
@@ -26,6 +30,7 @@ import {
 } from "@bookalyze/db";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { formatDate } from "@/lib/dates";
 import { type TransactionFormInput, transactionSchema } from "@/lib/validation/accounting";
 import {
@@ -350,6 +355,105 @@ export async function deleteTransactionAction(
   } catch (error) {
     if (error instanceof LedgerError) return { ok: false, message: error.message };
     throw error;
+  }
+  revalidate(slug);
+  return { ok: true };
+}
+
+function duplicateFailure(error: unknown): SimpleResult {
+  if (error instanceof DuplicateError || error instanceof LedgerError) {
+    return { ok: false, message: error.message };
+  }
+  throw error;
+}
+
+const idSchema = z.string().uuid();
+
+/** A flagged transaction is a copy: the one already in the books stays, the copy is removed. */
+export async function acceptDuplicateAction(
+  slug: string,
+  suggestionId: string,
+): Promise<SimpleResult> {
+  const ctx = await getAccountingContext(slug);
+  if (!idSchema.safeParse(suggestionId).success) return { ok: false, message: "Unknown item." };
+  try {
+    await inOrg(ctx, async (tx) => {
+      const merged = await acceptDuplicate(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        suggestionId,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "transaction.merged",
+        entityType: "journal_entry",
+        entityId: merged.keptId,
+        after: { removedId: merged.removedId, suggestionId },
+      });
+    });
+  } catch (error) {
+    return duplicateFailure(error);
+  }
+  revalidate(slug);
+  return { ok: true };
+}
+
+/** A flagged transaction isn't a copy: both stay, and the pair isn't flagged again. */
+export async function dismissDuplicateAction(
+  slug: string,
+  suggestionId: string,
+): Promise<SimpleResult> {
+  const ctx = await getAccountingContext(slug);
+  if (!idSchema.safeParse(suggestionId).success) return { ok: false, message: "Unknown item." };
+  try {
+    await inOrg(ctx, async (tx) => {
+      await dismissDuplicate(tx, { userId: ctx.session.user.id, suggestionId });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "transaction.duplicate_dismissed",
+        entityType: "duplicate_suggestion",
+        entityId: suggestionId,
+      });
+    });
+  } catch (error) {
+    return duplicateFailure(error);
+  }
+  revalidate(slug);
+  return { ok: true };
+}
+
+/** Merges two transactions picked on the list (same amount, bank account and category). */
+export async function mergeTransactionsAction(
+  slug: string,
+  entryIds: string[],
+): Promise<SimpleResult> {
+  const ctx = await getAccountingContext(slug);
+  const parsed = z.array(idSchema).length(2).safeParse(entryIds);
+  if (!parsed.success) return { ok: false, message: "Pick exactly two transactions to merge." };
+  for (const id of parsed.data) {
+    const editable = await loadEditable(ctx, id);
+    if ("error" in editable) return { ok: false, message: editable.error ?? "Can't merge these." };
+  }
+  try {
+    await inOrg(ctx, async (tx) => {
+      const merged = await mergeSelected(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        entryIds: parsed.data,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "transaction.merged",
+        entityType: "journal_entry",
+        entityId: merged.keptId,
+        after: { removedId: merged.removedId, manual: true },
+      });
+    });
+  } catch (error) {
+    return duplicateFailure(error);
   }
   revalidate(slug);
   return { ok: true };

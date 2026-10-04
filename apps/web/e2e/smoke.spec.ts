@@ -730,7 +730,7 @@ test("reconcile: tick to the statement balance, lock, undo and cancel", async ({
   await expect(page.getByText("Start with your bank statement")).toBeVisible();
 });
 
-test("banking: connect Wise, merge a possible match, no duplicates, transfers, disconnect", async ({
+test("banking: connect Wise, flag and merge duplicates, merge by hand, transfers, disconnect", async ({
   page,
 }) => {
   await signIn(page, owner.email, owner.password);
@@ -762,31 +762,62 @@ test("banking: connect Wise, merge a possible match, no duplicates, transfers, d
   await choose(page.getByLabel("Account for the USD balance"), "New account “Wise USD”");
   await page.getByRole("button", { name: "Connect 2 balances" }).click();
   await expect(page.getByText("Wise connected")).toBeVisible();
-  await expect(page.getByText(/1 new transaction to sort/)).toBeVisible();
-  await expect(page.getByText(/1 looks like a transaction already in your books/)).toBeVisible();
+  await expect(page.getByText(/2 new transactions to sort/)).toBeVisible();
+  await expect(page.getByText(/1 might be a duplicate of one already in your books/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Wise · Example Trading Inc." })).toBeVisible();
   await expect(page.getByText(/Synced just now/)).toBeVisible();
 
-  // Nothing is merged on its own: the card payment waits beside the one entered by hand.
-  const matches = page.locator("section", { hasText: "1 possible match" });
-  await expect(matches.getByText("Card transaction at Example Cafe")).toBeVisible();
-  await expect(matches.getByText("Coffee with a client")).toBeVisible();
-  await matches.getByRole("button", { name: "Merge", exact: true }).click();
+  // Everything came in; the card payment is flagged beside the one entered by hand.
+  await page.getByRole("link", { name: /1 possible duplicate/ }).click();
+  await expect(page).toHaveURL(/status=duplicates/);
+  const flagged = page.locator("li", { hasText: "Card transaction at Example Cafe" });
+  const flag = flagged.getByRole("button", { name: /Possible duplicate/ });
+  await expect(flag).toContainText("Coffee with a client");
+  await flag.click();
+  const review = page.getByRole("dialog");
+  await expect(review.getByText("Already in your books", { exact: true })).toBeVisible();
+  await review.getByRole("button", { name: "Merge", exact: true }).click();
   await expect(page.getByText("Merged", { exact: true })).toBeVisible();
-  await expect(page.getByText("1 possible match")).toHaveCount(0);
+  await expect(page.getByText("Card transaction at Example Cafe")).toHaveCount(0);
 
-  // Syncing again finds nothing new, and doesn't suggest the merged one again.
+  // Syncing again brings in nothing new.
+  await page.getByRole("link", { name: "Banking", exact: true }).click();
+  await expect(page.getByText(/possible duplicate/)).toHaveCount(0);
   await page.getByRole("button", { name: "Sync now" }).click();
   await expect(page.getByText("Up to date")).toBeVisible();
 
-  // The account has the hand-entered payment once, and no copy of the bank's.
+  // The account has the hand-entered payment once, and the conversion as one transfer.
   await page.getByRole("link", { name: /RBC Chequing/ }).click();
   await expect(page.locator("li", { hasText: "Coffee with a client" })).toContainText("−$7.76");
   await expect(page.getByText("Card transaction at Example Cafe")).toHaveCount(0);
-  // The conversion between the two balances is one transfer, not two loose lines.
   await expect(page.locator("li", { hasText: "Converted 136.50 CAD to 100.00 USD" })).toHaveCount(
     1,
   );
+
+  // Merging by hand: two with the same amount, account and category.
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+  await page.locator("#tx-memo").fill("Coffee entered twice");
+  await choose(page.getByLabel("Category 1", { exact: true }), "6250 · Office supplies");
+  await page.getByLabel("Amount 1").fill("7.76");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added")).toBeVisible();
+  const coffee = page.locator("li", { hasText: "Coffee with a client" });
+  const twice = page.locator("li", { hasText: "Coffee entered twice" });
+  const transfer = page.locator("li", { hasText: "Converted 136.50 CAD" });
+  await coffee.getByRole("checkbox").check({ force: true });
+  await transfer.getByRole("checkbox").check({ force: true });
+  await expect(
+    page.getByText("They need to be the same amount, in the same direction."),
+  ).toBeVisible();
+  await transfer.getByRole("checkbox").uncheck({ force: true });
+  await twice.getByRole("checkbox").check({ force: true });
+  await expect(page.getByText(/these can be merged/)).toBeVisible();
+  await page.getByRole("button", { name: "Merge", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Merge", exact: true }).click();
+  await expect(page.getByText("Merged", { exact: true })).toBeVisible();
+  await expect(page.getByText("Coffee entered twice")).toHaveCount(0);
+  await expect(coffee).toHaveCount(1);
 
   // Disconnecting deletes the token and keeps what was brought in.
   const transactionsUrl = page.url();

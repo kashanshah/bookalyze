@@ -6,6 +6,7 @@ import {
   ArrowRightLeft,
   ArrowUpRight,
   Check,
+  Copy,
   FileCheck2,
   FileX2,
   Lock,
@@ -16,12 +17,14 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { setReviewedAction } from "./actions";
+import { DuplicateReviewDialog, MergeBar } from "./duplicate-dialogs";
 import { type DialogState, TransactionDialog } from "./transaction-dialog";
 import type { TxFormContext, TxRow } from "./types";
 
@@ -50,12 +53,24 @@ export function TransactionList({
   filters,
   ctx,
   hasAny,
+  duplicateCount,
 }: {
   rows: TxRow[];
   filters: Filters;
   ctx: TxFormContext;
   hasAny: boolean;
+  /** Possible duplicates waiting for a decision, across all pages. */
+  duplicateCount: number;
 }) {
+  const [reviewing, setReviewing] = useState<TxRow | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const togglePicked = (id: string) =>
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [dialog, setDialogState] = useState<DialogState>(null);
   // A fresh dialog per opening, so one can open while the previous one is still animating out.
   const [dialogKey, setDialogKey] = useState(0);
@@ -177,6 +192,7 @@ export function TransactionList({
             { value: "", label: "Reviewed or not" },
             { value: "unreviewed", label: "Needs review" },
             { value: "reviewed", label: "Reviewed" },
+            { value: "duplicates", label: "Possible duplicates" },
           ]}
         />
         <div className="relative">
@@ -194,6 +210,26 @@ export function TransactionList({
         </div>
       </div>
 
+      {duplicateCount > 0 && filters.status !== "duplicates" ? (
+        <div className="fade-in-0 flex animate-in flex-wrap items-center gap-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 sm:px-5">
+          <Copy className="size-4 shrink-0 text-warning" />
+          <p className="min-w-0 flex-1 text-sm">
+            <span className="font-medium">
+              {duplicateCount === 1
+                ? "1 possible duplicate"
+                : `${duplicateCount} possible duplicates`}
+            </span>
+            <span className="text-muted-foreground">
+              {" "}
+              from your bank. They're highlighted below: open one to merge it or keep both.
+            </span>
+          </p>
+          <Button size="sm" variant="outline" onClick={() => set({ status: "duplicates" })}>
+            Show only these
+          </Button>
+        </div>
+      ) : null}
+
       {optimisticRows.length === 0 ? (
         <div className="rounded-2xl border border-dashed p-10 text-center">
           <p className="font-medium">
@@ -207,7 +243,8 @@ export function TransactionList({
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
-          <div className="hidden grid-cols-[6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem_5.75rem] gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider md:grid">
+          <div className="hidden grid-cols-[1.25rem_6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem_5.75rem] gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider md:grid">
+            <span />
             <span>Date</span>
             <span>Description</span>
             <span>Account</span>
@@ -247,9 +284,18 @@ export function TransactionList({
               return (
                 <li
                   key={row.id}
-                  className="fade-in-0 flex animate-in items-center gap-3 fill-mode-both px-4 py-3 transition-colors hover:bg-muted/40 sm:px-5 md:grid md:grid-cols-[6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem_5.75rem] md:gap-4"
+                  className={cn(
+                    "fade-in-0 flex animate-in flex-wrap items-center gap-3 fill-mode-both px-4 py-3 transition-colors hover:bg-muted/40 sm:px-5 md:grid md:grid-cols-[1.25rem_6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem_5.75rem] md:gap-4",
+                    row.duplicate && "bg-warning/[0.06] hover:bg-warning/10",
+                    picked.has(row.id) && "bg-primary/5 hover:bg-primary/[0.07]",
+                  )}
                   style={{ animationDelay: `${Math.min(i, 12) * 20}ms` }}
                 >
+                  <Checkbox
+                    checked={picked.has(row.id)}
+                    onChange={() => togglePicked(row.id)}
+                    label={`Select ${row.number}`}
+                  />
                   <button
                     type="button"
                     onClick={() => setDialog({ mode: "edit", row })}
@@ -360,12 +406,37 @@ export function TransactionList({
                       />
                     </button>
                   </div>
+                  {row.duplicate ? (
+                    <button
+                      type="button"
+                      onClick={() => setReviewing(row)}
+                      className="flex w-full min-w-0 basis-full items-center gap-2 rounded-lg bg-warning/15 px-3 py-2 text-start text-sm transition-colors hover:bg-warning/25 md:col-span-full md:col-start-2"
+                    >
+                      <Copy className="size-4 shrink-0 text-warning" />
+                      <span className="min-w-0 flex-1 truncate">
+                        <span className="font-medium">Possible duplicate</span>
+                        <span className="text-muted-foreground">
+                          {" "}
+                          of {row.duplicate.of.number}
+                          {row.duplicate.of.memo ? ` · ${row.duplicate.of.memo}` : ""}
+                        </span>
+                      </span>
+                      <span className="shrink-0 font-medium text-primary">Review</span>
+                    </button>
+                  ) : null}
                 </li>
               );
             })}
           </ul>
         </div>
       )}
+
+      <DuplicateReviewDialog row={reviewing} ctx={ctx} onClose={() => setReviewing(null)} />
+      <MergeBar
+        selected={optimisticRows.filter((r) => picked.has(r.id))}
+        ctx={ctx}
+        onClear={() => setPicked(new Set())}
+      />
 
       <TransactionDialog key={dialogKey} state={dialog} onClose={() => setDialog(null)} ctx={ctx} />
     </div>

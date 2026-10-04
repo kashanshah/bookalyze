@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox } from "@/components/ui/combobox";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -195,7 +196,7 @@ export function ReconcileScreen({
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
         <div className="flex items-center gap-3 border-b bg-muted/30 px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider sm:px-5 md:grid md:grid-cols-[2rem_6.5rem_minmax(0,1fr)_8.5rem_8.5rem] md:gap-4">
-          <TickBox
+          <Checkbox
             checked={allShownTicked}
             label={allShownTicked ? "Untick all shown" : "Tick all shown"}
             onChange={() =>
@@ -231,7 +232,7 @@ export function ReconcileScreen({
                     ticked && "bg-success/[0.04]",
                   )}
                 >
-                  <TickBox
+                  <Checkbox
                     checked={ticked}
                     label={`${ticked ? "Untick" : "Tick"} ${text}, ${amount}`}
                     onChange={() => setTicks([l.lineId], !ticked)}
@@ -324,36 +325,6 @@ export function ReconcileScreen({
         </div>
       </div>
     </div>
-  );
-}
-
-function TickBox({
-  checked,
-  label,
-  onChange,
-}: {
-  checked: boolean;
-  label: string;
-  onChange: () => void;
-}) {
-  return (
-    <label
-      className={cn(
-        "flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors duration-150 has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/30",
-        checked
-          ? "border-primary bg-primary text-primary-foreground"
-          : "bg-background hover:border-primary/60",
-      )}
-    >
-      <input
-        type="checkbox"
-        className="sr-only"
-        checked={checked}
-        onChange={onChange}
-        aria-label={label}
-      />
-      {checked ? <Check className="zoom-in-50 size-3.5 animate-in" strokeWidth={3} /> : null}
-    </label>
   );
 }
 

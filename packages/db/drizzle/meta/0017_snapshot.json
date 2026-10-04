@@ -1,5 +1,5 @@
 {
-  "id": "f73dd023-5274-4c0a-8a83-43af2a611973",
+  "id": "ce9a21a9-2179-4fa6-b9e8-d9f26ee7fc0d",
   "prevId": "394dd1bf-a696-4275-acfc-b65905954ae8",
   "version": "7",
   "dialect": "postgresql",
@@ -409,6 +409,209 @@
         "contacts_name_present": {
           "name": "contacts_name_present",
           "value": "length(trim(\"contacts\".\"name\")) > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.duplicate_suggestions": {
+      "name": "duplicate_suggestions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entry_id": {
+          "name": "entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duplicate_of_entry_id": {
+          "name": "duplicate_of_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "duplicate_suggestions_org_status_idx": {
+          "name": "duplicate_suggestions_org_status_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "duplicate_suggestions_entry_idx": {
+          "name": "duplicate_suggestions_entry_idx",
+          "columns": [
+            {
+              "expression": "entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "duplicate_suggestions_duplicate_of_idx": {
+          "name": "duplicate_suggestions_duplicate_of_idx",
+          "columns": [
+            {
+              "expression": "duplicate_of_entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "duplicate_suggestions_organization_id_organization_id_fk": {
+          "name": "duplicate_suggestions_organization_id_organization_id_fk",
+          "tableFrom": "duplicate_suggestions",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "duplicate_suggestions_decided_by_user_id_fk": {
+          "name": "duplicate_suggestions_decided_by_user_id_fk",
+          "tableFrom": "duplicate_suggestions",
+          "tableTo": "user",
+          "columnsFrom": [
+            "decided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "duplicate_suggestions_entry_fk": {
+          "name": "duplicate_suggestions_entry_fk",
+          "tableFrom": "duplicate_suggestions",
+          "tableTo": "journal_entries",
+          "columnsFrom": [
+            "organization_id",
+            "entry_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "duplicate_suggestions_duplicate_of_fk": {
+          "name": "duplicate_suggestions_duplicate_of_fk",
+          "tableFrom": "duplicate_suggestions",
+          "tableTo": "journal_entries",
+          "columnsFrom": [
+            "organization_id",
+            "duplicate_of_entry_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "duplicate_suggestions_pair_key": {
+          "name": "duplicate_suggestions_pair_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "entry_id",
+            "duplicate_of_entry_id"
+          ]
+        }
+      },
+      "policies": {
+        "duplicate_suggestions_tenant_isolation": {
+          "name": "duplicate_suggestions_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "\"duplicate_suggestions\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid",
+          "withCheck": "\"duplicate_suggestions\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "duplicate_suggestions_status_valid": {
+          "name": "duplicate_suggestions_status_valid",
+          "value": "\"duplicate_suggestions\".\"status\" in ('open', 'merged', 'dismissed')"
+        },
+        "duplicate_suggestions_distinct": {
+          "name": "duplicate_suggestions_distinct",
+          "value": "\"duplicate_suggestions\".\"entry_id\" <> \"duplicate_suggestions\".\"duplicate_of_entry_id\""
         }
       },
       "isRLSEnabled": false
@@ -2093,34 +2296,9 @@
           "primaryKey": false,
           "notNull": false
         },
-        "suggested_entry_id": {
-          "name": "suggested_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "match_declined": {
-          "name": "match_declined",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "reason": {
           "name": "reason",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_by": {
-          "name": "decided_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -2168,21 +2346,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "bank_lines_suggested_entry_idx": {
-          "name": "bank_lines_suggested_entry_idx",
-          "columns": [
-            {
-              "expression": "suggested_entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -2197,19 +2360,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "bank_lines_decided_by_user_id_fk": {
-          "name": "bank_lines_decided_by_user_id_fk",
-          "tableFrom": "bank_lines",
-          "tableTo": "user",
-          "columnsFrom": [
-            "decided_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "bank_lines_feed_fk": {
@@ -2234,21 +2384,6 @@
           "columnsFrom": [
             "organization_id",
             "journal_entry_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "bank_lines_suggested_entry_fk": {
-          "name": "bank_lines_suggested_entry_fk",
-          "tableFrom": "bank_lines",
-          "tableTo": "journal_entries",
-          "columnsFrom": [
-            "organization_id",
-            "suggested_entry_id"
           ],
           "columnsTo": [
             "organization_id",
@@ -2292,11 +2427,11 @@
       "checkConstraints": {
         "bank_lines_status_valid": {
           "name": "bank_lines_status_valid",
-          "value": "\"bank_lines\".\"status\" in ('pending', 'posted', 'matched', 'suggested')"
+          "value": "\"bank_lines\".\"status\" in ('pending', 'posted')"
         },
         "bank_lines_status_links": {
           "name": "bank_lines_status_links",
-          "value": "(\"bank_lines\".\"status\" in ('posted', 'matched')) = (\"bank_lines\".\"journal_entry_id\" is not null)\n        and (\"bank_lines\".\"status\" = 'suggested') = (\"bank_lines\".\"suggested_entry_id\" is not null)"
+          "value": "(\"bank_lines\".\"status\" = 'posted') = (\"bank_lines\".\"journal_entry_id\" is not null)"
         }
       },
       "isRLSEnabled": false

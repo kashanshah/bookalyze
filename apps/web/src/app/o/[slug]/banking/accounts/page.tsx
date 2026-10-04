@@ -1,5 +1,13 @@
-import { formatEntryNumber, listConnections, listSuggestedMatches } from "@bookalyze/db";
-import { AlertTriangle, ArrowRight, CircleCheck, FileUp, Landmark, Link2 } from "lucide-react";
+import { countOpenDuplicates, listConnections } from "@bookalyze/db";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CircleCheck,
+  Copy,
+  FileUp,
+  Landmark,
+  Link2,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/shell/page-header";
@@ -9,16 +17,8 @@ import { getBankingContext, inOrg } from "@/server/accounting";
 import { isOrgAdmin } from "@/server/org";
 import { ConnectWiseDialog } from "./connect-wise-dialog";
 import { ConnectionActions } from "./connection-actions";
-import { PossibleMatches, type Suggestion } from "./possible-matches";
 
 export const metadata: Metadata = { title: "Bank accounts" };
-
-const ORIGINS: Record<string, string> = {
-  manual: "Entered by hand",
-  wave_import: "Imported from Wave",
-  import: "Imported",
-  bank_import: "From the bank",
-};
 
 function syncedLabel(at: Date | null, locale: string, timeZone: string): string {
   if (!at) return "Not synced yet";
@@ -33,24 +33,10 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
   const { slug } = await params;
   const ctx = await getBankingContext(slug);
   const { locale, timezone } = ctx.profile;
-  const [allConnections, matches] = await inOrg(ctx, (tx) =>
-    Promise.all([listConnections(tx), listSuggestedMatches(tx)]),
+  const [allConnections, duplicates] = await inOrg(ctx, (tx) =>
+    Promise.all([listConnections(tx), countOpenDuplicates(tx)]),
   );
   const connections = allConnections.filter((c) => c.status !== "disconnected");
-  const suggestions: Suggestion[] = matches.map((m) => ({
-    id: m.id,
-    date: m.date,
-    dateLabel: formatDate(m.date, locale),
-    currency: m.currency,
-    amount: m.amount,
-    description: m.description,
-    accountName: m.accountName,
-    entryId: m.entryId,
-    entryNumber: formatEntryNumber(m.entryNumber),
-    entryDateLabel: formatDate(m.entryDate, locale),
-    entryMemo: m.entryMemo,
-    entryOrigin: ORIGINS[m.entrySource] ?? "In your books",
-  }));
   const admin = isOrgAdmin(ctx);
 
   return (
@@ -62,8 +48,27 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
         actions={admin && connections.length ? <ConnectWiseDialog slug={slug} /> : null}
       />
 
-      {suggestions.length ? (
-        <PossibleMatches slug={slug} suggestions={suggestions} locale={locale} />
+      {duplicates ? (
+        <Link
+          href={`/o/${slug}/accounting/transactions?status=duplicates`}
+          className="group fade-in-0 flex animate-in items-center gap-3 rounded-2xl border border-warning/40 bg-warning/10 px-5 py-4 transition-colors hover:bg-warning/15 sm:px-6"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-warning/20 text-warning">
+            <Copy className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">
+              {duplicates === 1 ? "1 possible duplicate" : `${duplicates} possible duplicates`}
+            </span>
+            <span className="block text-muted-foreground text-sm">
+              Your bank sent{" "}
+              {duplicates === 1 ? "a transaction that looks" : "transactions that look"} like{" "}
+              {duplicates === 1 ? "one" : "ones"} already in your books. Check and merge them on the
+              Transactions screen.
+            </span>
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
+        </Link>
       ) : null}
 
       {connections.length === 0 ? (

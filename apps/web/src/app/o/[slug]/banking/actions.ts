@@ -3,13 +3,9 @@
 import { fiscalYearFor } from "@bookalyze/core";
 import {
   addBankFeed,
-  BankLineError,
   createConnection,
   disconnectConnection,
   getConnection,
-  keepBankLineSeparate,
-  listSuggestedMatches,
-  mergeBankLine,
   schema,
   setConnectionSecret,
   VaultError,
@@ -312,102 +308,3 @@ export async function disconnectAction(
 }
 
 class ConnectError extends Error {}
-
-const idSchema = z.string().uuid();
-
-/** A bank line and an existing transaction are the same: link them, add nothing. */
-export async function mergeMatchAction(
-  slug: string,
-  bankLineId: string,
-): Promise<{ ok: true } | Failure> {
-  const ctx = await getBankingContext(slug);
-  if (!idSchema.safeParse(bankLineId).success) return { ok: false, message: "Unknown suggestion." };
-  try {
-    await inOrg(ctx, async (tx) => {
-      const { entryId } = await mergeBankLine(tx, { bankLineId, userId: ctx.session.user.id });
-      await audit(tx, {
-        orgId: ctx.org.id,
-        actorUserId: ctx.session.user.id,
-        action: "bank_line.merge",
-        entityType: "bank_line",
-        entityId: bankLineId,
-        after: { journalEntryId: entryId },
-      });
-    });
-  } catch (error) {
-    if (error instanceof BankLineError) return { ok: false, message: error.message };
-    throw error;
-  }
-  revalidatePath(`/o/${slug}`, "layout");
-  return { ok: true };
-}
-
-/** They're different: post the bank line as its own transaction. */
-export async function keepBothAction(
-  slug: string,
-  bankLineId: string,
-): Promise<{ ok: true; posted: boolean; reason?: string } | Failure> {
-  const ctx = await getBankingContext(slug);
-  if (!idSchema.safeParse(bankLineId).success) return { ok: false, message: "Unknown suggestion." };
-  try {
-    const result = await inOrg(ctx, async (tx) => {
-      const done = await keepBankLineSeparate(tx, {
-        orgId: ctx.org.id,
-        userId: ctx.session.user.id,
-        baseCurrency: ctx.profile.baseCurrency,
-        bankLineId,
-      });
-      await audit(tx, {
-        orgId: ctx.org.id,
-        actorUserId: ctx.session.user.id,
-        action: "bank_line.keep_separate",
-        entityType: "bank_line",
-        entityId: bankLineId,
-      });
-      return done;
-    });
-    revalidatePath(`/o/${slug}`, "layout");
-    return result.posted
-      ? { ok: true, posted: true }
-      : {
-          ok: true,
-          posted: false,
-          reason: result.skipped[0]?.reason ?? "It will be tried again on the next sync.",
-        };
-  } catch (error) {
-    if (error instanceof BankLineError) return { ok: false, message: error.message };
-    throw error;
-  }
-}
-
-/** Merges every suggestion on the page at once (after the person has looked them over). */
-export async function mergeAllMatchesAction(
-  slug: string,
-): Promise<{ ok: true; merged: number } | Failure> {
-  const ctx = await getBankingContext(slug);
-  const merged = await inOrg(ctx, async (tx) => {
-    let count = 0;
-    for (const s of await listSuggestedMatches(tx)) {
-      try {
-        await tx.transaction((sp) =>
-          mergeBankLine(sp, { bankLineId: s.id, userId: ctx.session.user.id }),
-        );
-        count++;
-      } catch (error) {
-        if (!(error instanceof BankLineError)) throw error;
-      }
-    }
-    if (count) {
-      await audit(tx, {
-        orgId: ctx.org.id,
-        actorUserId: ctx.session.user.id,
-        action: "bank_line.merge_all",
-        entityType: "bank_line",
-        after: { merged: count },
-      });
-    }
-    return count;
-  });
-  revalidatePath(`/o/${slug}`, "layout");
-  return { ok: true, merged };
-}

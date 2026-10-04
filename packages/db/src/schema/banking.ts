@@ -108,17 +108,15 @@ export const bankFeeds = pgTable(
   ],
 );
 
-export const BANK_LINE_STATUSES = ["pending", "posted", "matched", "suggested"] as const;
+export const BANK_LINE_STATUSES = ["pending", "posted"] as const;
 export type BankLineStatus = (typeof BANK_LINE_STATUSES)[number];
 
 /**
  * Every transaction a bank has sent (a connection's sync, later a statement file), stored once:
  * `external_id` is unique per organization, so syncing again or uploading the same file again
  * never adds it twice. Its status says what became of it:
- * - posted: a new journal entry was made for it (`journal_entry_id`);
- * - suggested: it looks like a transaction already in the books (`suggested_entry_id`), and
- *   waits for someone to merge it or keep both;
- * - matched: merged with that existing entry (now `journal_entry_id`), nothing new was posted;
+ * - posted: it's in the books as `journal_entry_id`. Editing the transaction or merging it with
+ *   a duplicate moves the link to the entry that stands for it now;
  * - pending: it couldn't be posted yet (`reason`, e.g. no exchange rate) and is tried again.
  */
 export const bankLines = pgTable(
@@ -141,17 +139,12 @@ export const bankLines = pgTable(
     counterparty: text("counterparty"),
     reference: text("reference"),
     kind: text("kind").notNull(),
-    /** For a conversion: the other side, e.g. {"currency":"USD","amount":"100.0000"}. */
+    /** For a conversion: the other side, e.g. {"otherCurrency":"USD","otherAmount":"100.0000"}. */
     conversion: jsonb("conversion").$type<{ otherCurrency: string; otherAmount: string } | null>(),
     status: text("status", { enum: BANK_LINE_STATUSES }).notNull().default("pending"),
     journalEntryId: uuid("journal_entry_id"),
-    suggestedEntryId: uuid("suggested_entry_id"),
-    /** Someone said it isn't the suggested transaction: post it without looking for a match. */
-    matchDeclined: boolean("match_declined").notNull().default(false),
     /** Why it's still pending, in words fit to show. */
     reason: text("reason"),
-    decidedBy: uuid("decided_by").references(() => user.id, { onDelete: "set null" }),
-    decidedAt: timestamp("decided_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -159,7 +152,6 @@ export const bankLines = pgTable(
     unique("bank_lines_org_external_key").on(t.organizationId, t.externalId),
     index("bank_lines_org_status_idx").on(t.organizationId, t.status),
     index("bank_lines_journal_entry_idx").on(t.journalEntryId),
-    index("bank_lines_suggested_entry_idx").on(t.suggestedEntryId),
     foreignKey({
       name: "bank_lines_feed_fk",
       columns: [t.organizationId, t.feedId],
@@ -170,19 +162,13 @@ export const bankLines = pgTable(
       columns: [t.organizationId, t.journalEntryId],
       foreignColumns: [journalEntries.organizationId, journalEntries.id],
     }),
-    foreignKey({
-      name: "bank_lines_suggested_entry_fk",
-      columns: [t.organizationId, t.suggestedEntryId],
-      foreignColumns: [journalEntries.organizationId, journalEntries.id],
-    }),
     check(
       "bank_lines_status_valid",
       sql`${t.status} in (${sql.raw(BANK_LINE_STATUSES.map((s) => `'${s}'`).join(", "))})`,
     ),
     check(
       "bank_lines_status_links",
-      sql`(${t.status} in ('posted', 'matched')) = (${t.journalEntryId} is not null)
-        and (${t.status} = 'suggested') = (${t.suggestedEntryId} is not null)`,
+      sql`(${t.status} = 'posted') = (${t.journalEntryId} is not null)`,
     ),
     tenantIsolationPolicy("bank_lines", t.organizationId),
   ],
