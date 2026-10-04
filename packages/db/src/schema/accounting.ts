@@ -156,3 +156,27 @@ export const journalLines = pgTable(
     tenantIsolationPolicy("journal_lines", t.organizationId),
   ],
 );
+
+/**
+ * Transactions someone has checked ("reviewed" on the Transactions screen). Kept apart from
+ * journal_entries because posted entries are immutable while review status changes freely.
+ */
+export const transactionReviews = pgTable(
+  "transaction_reviews",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    journalEntryId: uuid("journal_entry_id").primaryKey(),
+    reviewedBy: uuid("reviewed_by").references(() => user.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "transaction_reviews_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("transaction_reviews", t.organizationId),
+  ],
+);

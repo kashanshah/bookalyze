@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-04, phase 1, slice 2 (closed periods)._
+_Last updated: 2026-10-04, phase 1, slice 3 (transactions)._
 
 ---
 
@@ -22,7 +22,7 @@ _Last updated: 2026-10-04, phase 1, slice 2 (closed periods)._
 | Phase | State |
 |---|---|
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
-| 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports) and 2 (closed periods) are done |
+| 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods) and 3 (transactions) are done |
 | 1b. Wave migration | Not started. Needs a real Wave export from the owner (kept outside the repo) |
 | 2. Banking, plus Entity & compliance | Not started |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
@@ -112,9 +112,9 @@ Real company details are entered in the app and never committed.
   - Reports: profit and loss with period presets from the financial year; balance sheet and trial
     balance as of any date; print.
 - **Tests:**
-  - Core: 36.
-  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2.
-  - E2E: 7, including the full bookkeeping flow.
+  - Core: 36 at slice 1, 43 after slice 3.
+  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3.
+  - E2E: 7 at slice 1, 8 after slice 3 (adds the transactions flow).
 
 ### Phase 1, slice 2: closed periods
 - **Closing the books:**
@@ -135,6 +135,31 @@ Real company details are entered in the app and never committed.
 - **Env files:** the database scripts and `next.config.ts` now read the repo-root `.env.local`
   before `.env`.
 
+### Phase 1, slice 3: transactions
+- **Screen** (`/accounting/transactions`, the Accounting home):
+  - Every current entry that touches a money account: cash and bank, credit card, money in transit
+    (`MONEY_ACCOUNT_SUBTYPES` in core).
+  - Filters for account, type (money in, money out, transfers), reviewed status and search.
+  - Choosing one account shows its balance.
+- **Forms:** add income, add expense or transfer.
+  - Income and expenses can be split across categories. A negative split goes the other way, for
+    example fees taken out of a payout.
+  - Foreign-currency accounts ask for an exchange rate.
+  - Transfers between different currencies aren't supported yet and point to a journal entry
+    instead.
+- **Edit and remove:**
+  - Editing reverses the original entry on its own date and posts the corrected one
+    (`replaceJournalEntry`). Removing reverses it (`voidJournalEntry`).
+  - Reversed entries and reversals are hidden from the list but stay in the journal.
+  - Transactions in a closed period are read-only.
+- **Reviewed tick:** stored in `transaction_reviews` (migration `0007`), apart from the immutable
+  ledger. It carries over when a transaction is edited.
+- **Code:**
+  - Core: `transactionLines()` turns the form into journal lines, `describeTransaction()` turns
+    lines back into a transaction.
+  - Database: `listTransactions()`, `setTransactionReviewed()`, `replaceJournalEntry()`,
+    `voidJournalEntry()` in `packages/db/src/transactions.ts`.
+
 ---
 
 ## 3. Next up (in order)
@@ -148,11 +173,9 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
      bucket keyed `org/{orgId}/…`.
    - Attach one or many receipts to a journal entry, with inline preview.
    - Then the **Receipts inbox**: upload first, match later.
-3. [ ] **Transactions screen (Wave-style)**, at `/accounting/transactions`.
-   - Money in and out on cash and bank accounts, with a category picker.
-   - Each transaction is a two-line journal entry (`source: 'manual'`) built from a simple form.
-   - A "reviewed" tick (new column or table) and a receipt count.
-   - Add the nav item back in `registry.ts`.
+3. [x] **Transactions screen.** Done in slice 3. Still to come: a receipt count once
+   attachments exist, bulk review and bulk categorize, and transfers between different
+   currencies.
 4. [ ] **Contacts** (customers and vendors), a tenant table. Optional on journal lines. Needed by
    the Wave import.
 5. [ ] **FX rates:**
@@ -187,6 +210,14 @@ formats with synthetic fixtures in tests. Plan: PLAN.md §3.2.
 ---
 
 ## 4. Ledger rules (read before touching accounting code)
+
+- **Journal entries vs transactions:**
+  - A journal entry is the underlying record: balanced debit and credit lines, able to describe
+    anything.
+  - A transaction is the everyday view of an entry that moves money in or out of a money account
+    (bank, card, cash).
+  - Every transaction is a journal entry. Entries that don't touch a money account (depreciation,
+    accruals) appear only under Journal entries. Both feed the same reports.
 
 - **Signed amounts:**
   - Debits are positive and credits negative.
@@ -291,6 +322,10 @@ screenshots work well).
   `import type` from them.
 - **Client bundle size:** `@bookalyze/core` re-exports reference data, so client components that
   import it ship those lists. Acceptable for now. Split core entry points if bundle size matters.
+- **Visually hidden (`sr-only`) grid headings** are absolutely positioned, so they take no grid
+  cell and shift every later heading. Wrap them in a plain `<span>`.
+- **A Radix dialog that is closing** swallows clicks for about 300ms. Key the dialog per opening
+  (see `transaction-list.tsx`) when it can reopen straight away.
 - **`next start` logs "The destination stream closed early"** during e2e navigation. It's harmless
   noise from aborted RSC streams.
 - **Root `.env` loading:** `apps/web/next.config.ts` loads the root `.env` with dotenv.

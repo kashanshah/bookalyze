@@ -87,3 +87,32 @@ export const journalEntrySchema = z.object({
 });
 
 export type JournalEntryFormInput = z.input<typeof journalEntrySchema>;
+
+const amountText = z.string().trim().max(24);
+
+export const transactionSchema = z.object({
+  id: z
+    .uuid()
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  kind: z.enum(["deposit", "withdrawal", "transfer"]),
+  date: z.string().refine(isIsoDate, "Choose a date."),
+  memo: optionalText(500, "Keep the description under 500 characters."),
+  fxRate: z.string().trim().max(30).optional(),
+  moneyAccountId: z.string().trim().max(64).optional(),
+  splits: z
+    .array(
+      z.object({
+        accountId: z.string().trim().max(64),
+        amount: amountText,
+        description: z.string().trim().max(200).optional(),
+      }),
+    )
+    .max(50, "A transaction can have at most 50 categories.")
+    .optional(),
+  fromAccountId: z.string().trim().max(64).optional(),
+  toAccountId: z.string().trim().max(64).optional(),
+  amount: amountText.optional(),
+});
+
+export type TransactionFormInput = z.input<typeof transactionSchema>;
