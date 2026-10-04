@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Lint, typecheck, test, build, e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://bookalyze_app:bookalyze_app@localhost:5432/bookalyze
+      DATABASE_URL_MIGRATOR: postgres://bookalyze_owner:bookalyze_owner@localhost:5432/bookalyze
+      TEST_DATABASE_URL: postgres://bookalyze_app:bookalyze_app@localhost:5432/bookalyze_test
+      TEST_DATABASE_URL_MIGRATOR: postgres://bookalyze_owner:bookalyze_owner@localhost:5432/bookalyze_test
+      BETTER_AUTH_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
+      BETTER_AUTH_URL: http://localhost:3000
+      EMAIL_DEV_LOG: "true"
+      SIGNUP_MODE: invite_only
+      PLATFORM_ADMIN_EMAILS: owner@example.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Create database roles
+        run: psql postgres://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -f packages/db/scripts/dev-db-init.sql
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - name: Migrate and seed
+        run: pnpm db:setup
+      - name: Unit and database tests
+        run: pnpm test
+      - name: Build
+        run: pnpm --filter @bookalyze/web build
+
+      - name: Install Playwright browser
+        run: pnpm --filter @bookalyze/web exec playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: pnpm e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: apps/web/test-results
+          retention-days: 7

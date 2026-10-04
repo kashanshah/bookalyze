@@ -17,3 +17,7 @@ coverage/
 # OS / editor
 .DS_Store
 *.log
+test-results/
+playwright-report/
+next-env.d.ts
+*.tsbuildinfo

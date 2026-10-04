@@ -1,0 +1,40 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["NODE_ENV"],
+  "globalPassThroughEnv": [
+    "DATABASE_URL",
+    "DATABASE_URL_MIGRATOR",
+    "TEST_DATABASE_URL",
+    "TEST_DATABASE_URL_MIGRATOR",
+    "CI",
+    "PW_CHROMIUM_PATH"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "passThroughEnv": [
+        "BETTER_AUTH_*",
+        "GOOGLE_*",
+        "RESEND_*",
+        "EMAIL_DEV_LOG",
+        "EMAIL_FROM",
+        "SIGNUP_MODE",
+        "PLATFORM_ADMIN_EMAILS",
+        "APP_URL",
+        "OAUTH_PROXY_PRODUCTION_URL"
+      ]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}
