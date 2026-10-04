@@ -699,14 +699,14 @@ function PlanPreview({
     >
       <div className="grid gap-3 lg:grid-cols-3">
         {sample.map((e) => (
-          <div key={e.externalId} className="grid gap-2 rounded-xl border p-3 text-sm">
+          <div key={e.externalId} className="grid min-w-0 grid-cols-1 gap-2 rounded-xl border p-3 text-sm">
             <div className="flex items-baseline justify-between gap-2">
               <span className="truncate font-medium">{e.memo || "No description"}</span>
               <span className="tabular shrink-0 text-muted-foreground text-xs">
                 {formatDate(e.date, locale)}
               </span>
             </div>
-            <ul className="grid gap-1">
+            <ul className="grid grid-cols-1 gap-1">
               {e.lines.map((l, i) => {
                 const account = plan.accounts.find((a) => a.key === l.accountKey);
                 const debit = !l.amount.startsWith("-");
