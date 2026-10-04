@@ -9,6 +9,7 @@ import {
   createImportContacts,
   listImportBatches,
   postImportedEntries,
+  receiptCandidates,
   undoImportBatch,
 } from "../imports";
 import { createDefaultChart, reverseJournalEntry } from "../ledger";
@@ -253,5 +254,48 @@ describe("imports", () => {
       .update(schema.organizationProfiles)
       .set({ booksLockedThrough: null })
       .where(eq(schema.organizationProfiles.organizationId, orgA));
+  });
+
+  it("fills in contact details from lists without overwriting what's there", async () => {
+    const batch = await inA((tx) =>
+      createImportBatch(tx, { orgId: orgA, source: "wave", fileName: "customers.csv" }),
+    );
+    const [existing] = await inA((tx) =>
+      tx
+        .insert(schema.contacts)
+        .values({ organizationId: orgA, type: "vendor", name: "Detail Test Co", phone: "111" })
+        .returning(),
+    );
+    const result = await inA((tx) =>
+      createImportContacts(tx, {
+        orgId: orgA,
+        batchId: batch.id,
+        contacts: [
+          {
+            key: "detail test co",
+            name: "Detail Test Co",
+            role: "vendor",
+            phone: "222",
+            email: "a@b.example",
+          },
+          { key: "listed only", name: "Listed Only", role: "customer", address: "1 Example St." },
+        ],
+      }),
+    );
+    expect(result).toMatchObject({ created: 1, updated: 1 });
+    const [after] = await inA((tx) =>
+      tx
+        .select()
+        .from(schema.contacts)
+        .where(eq(schema.contacts.id, existing?.id as string)),
+    );
+    expect(after).toMatchObject({ phone: "111", email: "a@b.example" });
+  });
+
+  it("lists current transactions near a date for matching receipts", async () => {
+    const found = await inA((tx) =>
+      receiptCandidates(tx, { from: "2023-02-28", to: "2023-03-02" }),
+    );
+    expect(found.some((c) => c.date === "2023-03-01" && c.text.includes("Sale 1"))).toBe(true);
   });
 });

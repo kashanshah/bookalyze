@@ -6,6 +6,7 @@ import {
   accountTypes,
   type ColumnMapping,
   type CsvTable,
+  contactListRole,
   type DateOrder,
   detectDateOrder,
   formatMoney,
@@ -14,10 +15,13 @@ import {
   IMPORT_FIELDS,
   IMPORT_SOURCES,
   type ImportAccountDraft,
+  type ImportContactDetails,
   type ImportOptions,
   type ImportPlan,
   importSource,
+  mergeContacts,
   planImport,
+  readContactList,
   readCsvTable,
 } from "@bookalyze/core";
 import {
@@ -28,6 +32,8 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   Upload,
+  Users,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
@@ -111,6 +117,9 @@ export function ImportWizard({ slug, baseCurrency, locale, lockedThrough, accoun
   const [groupBy, setGroupBy] = useState<ImportOptions["groupBy"]>("id");
   const [decisions, setDecisions] = useState<Record<string, string>>({});
   const [overlap, setOverlap] = useState<number | null>(null);
+  const [contactLists, setContactLists] = useState<
+    { fileName: string; contacts: ImportContactDetails[] }[]
+  >([]);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState<{
     entries: number;
@@ -133,6 +142,33 @@ export function ImportWizard({ slug, baseCurrency, locale, lockedThrough, accoun
       groupBy: mapping.entryRef !== undefined ? groupBy : "balance",
     });
   }, [file, source, mapping, dateOrder, amountSign, groupBy, columnsReady]);
+
+  // Contacts named in transactions, with details from any customer and vendor lists added.
+  const contacts = useMemo(
+    () =>
+      mergeContacts(
+        plan?.contacts ?? [],
+        contactLists.flatMap((l) => l.contacts),
+      ),
+    [plan, contactLists],
+  );
+
+  async function addContactLists(files: FileList | null) {
+    const added: { fileName: string; contacts: ImportContactDetails[] }[] = [];
+    for (const f of Array.from(files ?? [])) {
+      const table = readCsvTable(await f.text());
+      const listed = readContactList(table, contactListRole(f.name, table.headers));
+      if (!listed.length) {
+        toast.error(`${f.name} doesn't look like a customer or vendor list.`);
+        continue;
+      }
+      added.push({ fileName: f.name, contacts: listed });
+    }
+    setContactLists((current) => [
+      ...current.filter((c) => !added.some((a) => a.fileName === c.fileName)),
+      ...added,
+    ]);
+  }
 
   function loadTable(name: string, table: CsvTable) {
     const guessed = guessColumns(table.headers, source);
@@ -184,7 +220,7 @@ export function ImportWizard({ slug, baseCurrency, locale, lockedThrough, accoun
       source: source.key,
       fileName: file.name,
       accounts: newAccounts,
-      contacts: plan.contacts.map((c) => ({ key: c.key, name: c.name, role: c.role })),
+      contacts,
     });
     if (!started.ok) {
       toast.error(started.message);
@@ -377,6 +413,12 @@ export function ImportWizard({ slug, baseCurrency, locale, lockedThrough, accoun
       {step === "review" && plan && file ? (
         <ReviewStep
           plan={plan}
+          contactCount={contacts.length}
+          contactLists={contactLists}
+          onAddContactLists={addContactLists}
+          onRemoveContactList={(fileName) =>
+            setContactLists((current) => current.filter((c) => c.fileName !== fileName))
+          }
           decisions={decisions}
           fileName={file.name}
           sourceLabel={source.label}
@@ -699,14 +741,17 @@ function PlanPreview({
     >
       <div className="grid gap-3 lg:grid-cols-3">
         {sample.map((e) => (
-          <div key={e.externalId} className="grid gap-2 rounded-xl border p-3 text-sm">
+          <div
+            key={e.externalId}
+            className="grid min-w-0 grid-cols-1 gap-2 rounded-xl border p-3 text-sm"
+          >
             <div className="flex items-baseline justify-between gap-2">
               <span className="truncate font-medium">{e.memo || "No description"}</span>
               <span className="tabular shrink-0 text-muted-foreground text-xs">
                 {formatDate(e.date, locale)}
               </span>
             </div>
-            <ul className="grid gap-1">
+            <ul className="grid grid-cols-1 gap-1">
               {e.lines.map((l, i) => {
                 const account = plan.accounts.find((a) => a.key === l.accountKey);
                 const debit = !l.amount.startsWith("-");
@@ -833,6 +878,10 @@ function AccountsStep({
 
 function ReviewStep({
   plan,
+  contactCount,
+  contactLists,
+  onAddContactLists,
+  onRemoveContactList,
   decisions,
   fileName,
   sourceLabel,
@@ -844,6 +893,10 @@ function ReviewStep({
   onImport,
 }: {
   plan: ImportPlan;
+  contactCount: number;
+  contactLists: { fileName: string; contacts: ImportContactDetails[] }[];
+  onAddContactLists: (files: FileList | null) => void;
+  onRemoveContactList: (fileName: string) => void;
   decisions: Record<string, string>;
   fileName: string;
   sourceLabel: string;
@@ -855,6 +908,7 @@ function ReviewStep({
   onImport: () => void;
 }) {
   const [starting, setStarting] = useState(false);
+  const listInput = useRef<HTMLInputElement>(null);
   const closed = lockedThrough ? plan.entries.filter((e) => e.date <= lockedThrough).length : 0;
   const newAccounts = plan.accounts.filter((a) => decisions[a.key]?.startsWith("new:")).length;
   const stats: [string, string][] = [
@@ -866,7 +920,7 @@ function ReviewStep({
         : "—",
     ],
     ["New accounts", newAccounts.toLocaleString(locale)],
-    ["Customers and vendors", plan.contacts.length.toLocaleString(locale)],
+    ["Customers and vendors", contactCount.toLocaleString(locale)],
   ];
   return (
     <section className="fade-in-0 grid animate-in gap-6">
@@ -888,6 +942,63 @@ function ReviewStep({
             </div>
           ))}
         </dl>
+      </Card>
+
+      <Card
+        title="Customer and vendor lists (optional)"
+        description="Add the customer and vendor files from your old software to bring their emails, phones and addresses too. Bank account numbers in them are left out."
+      >
+        {contactLists.length ? (
+          <ul className="grid gap-2">
+            {contactLists.map((l) => (
+              <li
+                key={l.fileName}
+                className="fade-in-0 flex animate-in items-center gap-3 rounded-xl border px-3 py-2 text-sm"
+              >
+                <Users className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="font-medium">{l.fileName}</span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · {l.contacts.length.toLocaleString(locale)}{" "}
+                    {l.contacts[0]?.role === "customer"
+                      ? "customers"
+                      : l.contacts[0]?.role === "vendor"
+                        ? "vendors"
+                        : "contacts"}
+                  </span>
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remove ${l.fileName}`}
+                  onClick={() => onRemoveContactList(l.fileName)}
+                >
+                  <X />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div>
+          <Button type="button" variant="outline" onClick={() => listInput.current?.click()}>
+            <Upload />
+            Add customer or vendor lists
+          </Button>
+          <input
+            ref={listInput}
+            type="file"
+            multiple
+            accept=".csv,.txt,text/csv"
+            className="hidden"
+            aria-label="Customer or vendor lists"
+            onChange={(e) => {
+              onAddContactLists(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </div>
       </Card>
 
       {closed ? (

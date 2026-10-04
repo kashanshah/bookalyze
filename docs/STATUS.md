@@ -23,7 +23,7 @@ _Last updated: 2026-10-04, phase 1b (importing from other software)._
 |---|---|
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
-| 1b. Migration from other software | **Importer done** (generic CSV, Wave first). Still to come: receipts ZIP, contact files, a run against a real Wave export |
+| 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | Not started |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
@@ -112,8 +112,8 @@ Real company details are entered in the app and never committed.
   - Reports: profit and loss with period presets from the financial year; balance sheet and trial
     balance as of any date; print.
 - **Tests:**
-  - Core: 36 at slice 1, 43 after slice 3, 51 after slice 6, 58 after slice 7, 70 after the importer.
-  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5, 37 after slice 6, 42 after slice 7, 46 after the importer.
+  - Core: 36 at slice 1, 43 after slice 3, 51 after slice 6, 58 after slice 7, 70 after the importer, 76 with contacts and receipts.
+  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5, 37 after slice 6, 42 after slice 7, 46 after the importer, 48 with contacts and receipts.
   - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors), 11 after slice 6 (exchange rates), 12 after slice 7 (sales tax), 13 after the searchable dropdowns, 14 after the importer.
 
 ### Phase 1, slice 2: closed periods
@@ -323,10 +323,23 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   - The file is parsed in the browser and posted in chunks of 200, so there's no upload limit or
     timeout. The original file isn't stored.
   - The import list shows each batch, with Undo.
+- **Customer and vendor lists** (`import/contacts.ts`):
+  - Added on the review step. Columns are recognised by name (Wave's `customer_name`,
+    `province/state`… and common ones elsewhere).
+  - Emails, phones, a combined address and notes (contact person, website, currency) fill in the
+    contacts. Existing contacts only get details they're missing.
+  - `account_number` (vendors' bank accounts in Wave) is deliberately never read.
+- **Receipt files** (`import/receipts.ts`, Import page):
+  - Files named `YYYY-MM-DD-Merchant_Name.ext` (Wave's export) are matched to the transaction
+    within 3 days that shares the most words with the name. Ties and no-matches go to the
+    Receipts inbox, so nothing is attached to the wrong transaction.
+  - Re-running skips files already uploaded under the same name.
+  - Uploads go straight to storage, three at a time.
 - **Limits:**
   - Amounts are taken as the main currency: Wave exports in the business currency, and
     foreign-currency accounts come in converted.
-  - Receipts and invoices aren't imported yet.
+  - Wave's `bill_items.csv` isn't read. Bills already reach the books through the transactions
+    file; it matters once Bookalyze has bills.
 
 ---
 
@@ -374,9 +387,6 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 ### Phase 1b: migration, remaining
 - [ ] Run the importer on the owner's real Wave export. The column names came from Wave's
   export format and were tested with synthetic files. Fix any differences in `IMPORT_SOURCES`.
-- [ ] Receipts ZIP from Wave: upload, then match files to imported transactions (or send them
-  to the inbox).
-- [ ] Optional customer and vendor CSVs (emails, phones, tax numbers).
 - [ ] Foreign-currency lines: a currency column plus a main-currency amount column.
 
 ---

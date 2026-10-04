@@ -1,6 +1,12 @@
 "use server";
 
-import { can, type PreparedEntry, prepareJournalEntry } from "@bookalyze/core";
+import {
+  can,
+  matchReceipt,
+  type PreparedEntry,
+  parseReceiptFileName,
+  prepareJournalEntry,
+} from "@bookalyze/core";
 import {
   completeImportBatch,
   createImportAccounts,
@@ -10,11 +16,13 @@ import {
   type ImportedEntry,
   LedgerError,
   postImportedEntries,
+  receiptCandidates,
   schema,
   undoImportBatch,
 } from "@bookalyze/db";
-import { and, count, gte, lte } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lte } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { formatDate } from "@/lib/dates";
 import {
   type ImportChunkInput,
@@ -271,4 +279,76 @@ export async function undoImportAction(
     }
     throw error;
   }
+}
+
+export type ReceiptMatch = {
+  fileName: string;
+  entryId: string | null;
+  /** "Sizzler Kabab · Feb 1, 2025", for showing the match. */
+  entryLabel: string | null;
+  /** A file with this name is already attached there (or waiting in the inbox): skip it. */
+  alreadyThere: boolean;
+};
+
+/**
+ * Finds the transaction each receipt file belongs to, from the date and name in its file name
+ * (see matchReceipt in core). Nothing is uploaded or changed here.
+ */
+export async function matchReceiptsAction(
+  slug: string,
+  fileNames: string[],
+): Promise<{ ok: true; matches: ReceiptMatch[] } | Failure> {
+  const ctx = await importContext(slug);
+  if ("ok" in ctx) return ctx;
+  const names = z.array(z.string().trim().min(1).max(255)).max(5000).safeParse(fileNames);
+  if (!names.success) return { ok: false, message: "Choose up to 5,000 files at a time." };
+  const parsed = names.data.map((fileName) => ({ fileName, info: parseReceiptFileName(fileName) }));
+  const dates = parsed
+    .map((p) => p.info.date)
+    .filter((d): d is string => Boolean(d))
+    .sort();
+  const shift = (date: string, days: number) => {
+    const d = new Date(`${date}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  const { candidates, existing } = await inOrg(ctx, async (tx) => {
+    const candidates =
+      dates.length > 0
+        ? await receiptCandidates(tx, {
+            from: shift(dates[0] as string, -3),
+            to: shift(dates.at(-1) as string, 3),
+          })
+        : [];
+    // Files already uploaded under the same name, linked or not, so a re-run doesn't duplicate.
+    const existing = await tx
+      .select({
+        fileName: schema.attachments.fileName,
+        entityId: schema.attachmentLinks.entityId,
+      })
+      .from(schema.attachments)
+      .leftJoin(
+        schema.attachmentLinks,
+        eq(schema.attachmentLinks.attachmentId, schema.attachments.id),
+      )
+      .where(inArray(schema.attachments.fileName, names.data.slice(0, 5000)));
+    return { candidates, existing };
+  });
+  const byId = new Map(candidates.map((c) => [c.id, c]));
+  const matches = parsed.map(({ fileName, info }) => {
+    const entryId = matchReceipt(info, candidates);
+    const entry = entryId ? byId.get(entryId) : undefined;
+    const alreadyThere = existing.some(
+      (e) => e.fileName === fileName && (entryId ? e.entityId === entryId : e.entityId === null),
+    );
+    return {
+      fileName,
+      entryId,
+      entryLabel: entry
+        ? `${entry.text.split(" ").slice(0, 8).join(" ")} · ${formatDate(entry.date, ctx.profile.locale)}`
+        : null,
+      alreadyThere,
+    };
+  });
+  return { ok: true, matches };
 }

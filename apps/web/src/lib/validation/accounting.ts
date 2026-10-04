@@ -226,6 +226,16 @@ export const startImportSchema = z.object({
         key: importKey,
         name: z.string().trim().min(1).max(200),
         role: z.enum(["customer", "vendor", "both"]),
+        email: z
+          .string()
+          .trim()
+          .max(254)
+          .optional()
+          .transform((v) => (v && z.email().safeParse(v).success ? v : undefined)),
+        phone: z.string().trim().max(50).optional(),
+        taxNumber: z.string().trim().max(50).optional(),
+        address: z.string().trim().max(500).optional(),
+        notes: z.string().trim().max(2000).optional(),
       }),
     )
     .max(20000),
