@@ -192,6 +192,10 @@ export const journalEntries = pgTable(
     uniqueIndex("journal_entries_org_import_source_key")
       .on(t.organizationId, t.sourceId)
       .where(sql`${t.source} = 'import'`),
+    // A bank transaction (from a connection or a statement file) is posted once.
+    uniqueIndex("journal_entries_org_bank_source_key")
+      .on(t.organizationId, t.sourceId)
+      .where(sql`${t.source} = 'bank_import'`),
     foreignKey({
       name: "journal_entries_reversed_by_fk",
       columns: [t.organizationId, t.reversedByEntryId],

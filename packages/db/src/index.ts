@@ -1,4 +1,5 @@
 export * from "./attachments";
+export * from "./banking";
 export * from "./client";
 export * from "./contacts";
 export * from "./fx";
@@ -9,3 +10,4 @@ export * from "./reports";
 export * as schema from "./schema";
 export * from "./tax";
 export * from "./transactions";
+export * from "./vault";

@@ -1,5 +1,6 @@
 export * from "./accounting";
 export * from "./auth";
+export * from "./banking";
 export * from "./files";
 export * from "./imports";
 export * from "./organization";

@@ -1,10 +1,12 @@
+import { syncAllConnections } from "@/server/banking";
 import { env } from "@/server/env";
 import { syncBankOfCanada } from "@/server/fx";
 
 /**
- * Daily exchange rates (scheduled in vercel.json). Vercel Cron calls this with
- * "Authorization: Bearer $CRON_SECRET"; anything else is refused. Re-fetches the last ten days so
- * late corrections and missed runs are picked up.
+ * The daily job (scheduled in vercel.json). Vercel Cron calls this with
+ * "Authorization: Bearer $CRON_SECRET"; anything else is refused. It re-fetches the last ten
+ * days of exchange rates (late corrections, missed runs), then syncs every bank connection, so
+ * foreign-currency bank lines find their rate.
  */
 export async function GET(request: Request) {
   const secret = env().CRON_SECRET;
@@ -14,6 +16,7 @@ export async function GET(request: Request) {
   const end = new Date().toISOString().slice(0, 10);
   const startDate = new Date();
   startDate.setUTCDate(startDate.getUTCDate() - 10);
-  const stored = await syncBankOfCanada(startDate.toISOString().slice(0, 10), end);
-  return Response.json({ stored });
+  const stored = await syncBankOfCanada(startDate.toISOString().slice(0, 10), end).catch(() => 0);
+  const banking = await syncAllConnections();
+  return Response.json({ stored, banking });
 }

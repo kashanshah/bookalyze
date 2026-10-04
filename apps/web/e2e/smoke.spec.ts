@@ -730,6 +730,56 @@ test("reconcile: tick to the statement balance, lock, undo and cancel", async ({
   await expect(page.getByText("Start with your bank statement")).toBeVisible();
 });
 
+test("banking: connect Wise, sync without duplicates, conversions as transfers, disconnect", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Banking", exact: true }).click();
+  await expect(page).toHaveURL(/\/banking\/accounts$/);
+  await expect(page.getByRole("heading", { name: "Connect Wise" })).toBeVisible();
+  await page.getByRole("button", { name: "Connect Wise" }).click();
+
+  // A wrong token is refused with a plain explanation.
+  await page.getByLabel("API token").fill("e2e-wrong-token-0000-1111-2222");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText(/Wise didn't accept this API token/)).toBeVisible();
+
+  // The right one goes straight to the only profile's balances.
+  await page.getByLabel("API token").fill("e2e-wise-token-0000-1111-2222");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "Choose what to bring in" })).toBeVisible();
+  await choose(page.getByLabel("Account for the CAD balance"), "New account “Wise CAD”");
+  await choose(page.getByLabel("Account for the USD balance"), "New account “Wise USD”");
+  await page.getByRole("button", { name: "Connect 2 balances" }).click();
+  await expect(page.getByText("Wise connected")).toBeVisible();
+  await expect(page.getByText(/2 new transactions/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Wise · Example Trading Inc." })).toBeVisible();
+  await expect(page.getByText(/Synced just now/)).toBeVisible();
+
+  // Syncing again finds nothing new.
+  await page.getByRole("button", { name: "Sync now" }).click();
+  await expect(page.getByText("Up to date")).toBeVisible();
+
+  // The card payment waits on the Transactions screen, uncategorized, with Wise's fee split out.
+  await page.getByRole("link", { name: /Wise CAD/ }).click();
+  const card = page.locator("li", { hasText: "Card transaction at Example Cafe" });
+  await expect(card).toContainText("−$7.76");
+  // The conversion between the two balances is one transfer, not two loose lines.
+  await expect(page.locator("li", { hasText: "Converted 136.50 CAD to 100.00 USD" })).toHaveCount(
+    1,
+  );
+
+  // Disconnecting deletes the token and keeps what was brought in.
+  const transactionsUrl = page.url();
+  await page.getByRole("link", { name: "Banking", exact: true }).click();
+  await page.getByRole("button", { name: "Disconnect" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Disconnect" }).click();
+  await expect(page.getByText("Disconnected")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connect Wise" })).toBeVisible();
+  await page.goto(transactionsUrl);
+  await expect(page.getByText("Card transaction at Example Cafe")).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

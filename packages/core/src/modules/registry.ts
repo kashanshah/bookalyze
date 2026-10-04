@@ -65,13 +65,14 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
   banking: {
     key: "banking",
     label: "Banking",
-    description: "Bank accounts, CSV/OFX imports, Wise sync, rules, matching and reconciliation.",
+    description:
+      "Connect bank accounts (Wise first) so transactions arrive on their own, then sort them on the Transactions screen.",
     basePath: "/banking",
     phase: "2",
     requires: ["accounting"],
     features: ["banking.imports", "banking.wise", "banking.rules", "banking.reconciliation"],
     nav: [{ label: "Bank accounts", href: "/banking/accounts" }],
-    status: "coming_soon",
+    status: "available",
   },
   commerce: {
     key: "commerce",

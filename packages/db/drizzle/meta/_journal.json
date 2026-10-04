@@ -113,6 +113,13 @@
       "when": 1791140892680,
       "tag": "0015_owner_can_set_runtime_role",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791148448629,
+      "tag": "0016_banking_connections",
+      "breakpoints": true
     }
   ]
 }

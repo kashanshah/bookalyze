@@ -24,7 +24,7 @@ _Last updated: 2026-10-04, phase 1b (importing from other software)._
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
-| 2. Banking, plus Entity & compliance | Not started |
+| 2. Banking, plus Entity & compliance | **In progress.** Wise connection (API sync) done. Next: bank statement upload (CSV) for any other bank, then rules and transfer matching |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -367,6 +367,35 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   files are attached (faint when none), and a lock marks reconciled transactions (tooltip: the
   statement date). Reconciled transactions open read-only; the server refuses changes too.
 
+### Phase 2, slice 1: Wise connection
+- **Credential vault** (`packages/db/src/vault.ts`): AES-256-GCM with `APP_ENCRYPTION_KEY`
+  (32 bytes, base64). Each secret is bound to its organization and connection (associated data),
+  so a value copied to another row won't decrypt. Format `v1.<iv>.<tag>.<ciphertext>`.
+- **Schema** (migration `0016_banking_connections`):
+  - `connections` (provider `wise`, sealed `secret`, `settings` such as the Wise profile and fee
+    account, last sync and last error) and `bank_feeds` (one per Wise balance → one `cash_bank`
+    account, `sync_from`, `synced_through`). Both under RLS.
+  - Unique `(organization_id, source_id)` where `source = 'bank_import'`: a bank line is posted
+    once, ever. Edits and deletes keep the original (reversed) row, so it stays recognised.
+  - `syncable_connections()` (SECURITY DEFINER) gives the daily job organization and connection
+    IDs only; each sync then runs inside `withOrg()`.
+- **Core** (`banking/`): `parseWiseProfiles/Balances/Statement` (JSON numbers become exact
+  decimals at the currency's precision; dates in the company's time zone), `BankTransaction`,
+  `bankTransactionInput()` (bank line → Uncategorized income/expense, fee as its own split),
+  `pairConversions()`.
+- **DB** (`banking.ts`): connections and feeds, and `importBankLines()`: posts new lines (each in a
+  savepoint), records a conversion between two connected balances as one cross-currency transfer
+  (source id `conversion:<ref>`), converts foreign lines at the Bank of Canada rate of the day,
+  and reports skipped lines (no rate yet, closed period) to retry next sync.
+- **Web:** Banking → Bank accounts. "Connect Wise" (owners and admins): paste a read-only token,
+  pick the profile, map each balance to a new or existing bank account, choose the start date
+  and the fee account; it syncs straight away. "Sync now" for anyone; "Disconnect" deletes the
+  token and keeps the transactions. The daily cron (`/api/cron/fx-rates`) fetches rates, then
+  syncs every connection. `WISE_API_URL` points tests at `e2e/wise-mock.mjs`.
+- **Not yet:** Wise asks for strong customer authentication (a signed request) for profiles
+  outside the US, Canada, Australia, New Zealand, Singapore and Malaysia, e.g. the UAE company.
+  The sync shows a plain message for now; signing with an uploaded key comes next.
+
 ---
 
 ## 3. Next up (in order)
@@ -425,8 +454,7 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.
-- [ ] Encrypted credential vault (AES-GCM) and a `connections` table, for SP-API, Wise and
-  others. `APP_ENCRYPTION_KEY` is already set in Vercel; the code that uses it isn't built yet.
+- [x] Encrypted credential vault (AES-GCM) and a `connections` table. Done in phase 2, slice 1.
 - [ ] Platform admin console: list organizations, set plans, overrides.
 - [ ] Two-step sign-in UI. The Better Auth twoFactor plugin is already enabled.
 - [ ] Vercel Workflows and Cron wiring.
