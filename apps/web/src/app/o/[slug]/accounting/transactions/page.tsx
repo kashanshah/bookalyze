@@ -122,6 +122,7 @@ export default async function TransactionsPage({
     currency: r.currency,
     fxRate: r.fxRate,
     reviewed: r.reviewed,
+    reconciledThrough: r.reconciledThrough,
     contactId: r.contactId,
     attachments: r.attachments,
     kind: r.view.kind,

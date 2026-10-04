@@ -175,6 +175,9 @@ function TransactionForm({
 
   const locked = ctx.lockedThrough;
   const rowInClosedPeriod = Boolean(row && locked && row.date <= locked);
+  const reconciledThrough = row?.reconciledThrough ?? null;
+  // Closed periods and reconciled transactions are shown but can't be changed.
+  const readOnly = rowInClosedPeriod || Boolean(reconciledThrough);
   const dateInClosedPeriod = Boolean(locked && date && date <= locked);
   const moneyCurrency = (id: string) =>
     ctx.moneyAccounts.find((a) => a.id === id)?.currency ?? ctx.baseCurrency;
@@ -331,6 +334,14 @@ function TransactionForm({
         </DialogDescription>
       </DialogHeader>
 
+      {reconciledThrough && !rowInClosedPeriod ? (
+        <Alert>
+          <Lock className="me-1.5 inline size-4 align-[-3px]" />
+          This transaction is reconciled to your statement of{" "}
+          {formatDate(reconciledThrough, ctx.locale, "long")}, so it can't be changed. Undo that
+          reconciliation first if it needs correcting.
+        </Alert>
+      ) : null}
       {rowInClosedPeriod && locked ? (
         <Alert>
           <Lock className="me-1.5 inline size-4 align-[-3px]" />
@@ -339,7 +350,7 @@ function TransactionForm({
         </Alert>
       ) : null}
 
-      <fieldset disabled={pending || rowInClosedPeriod} className="grid gap-5">
+      <fieldset disabled={pending || readOnly} className="grid gap-5">
         <div className="grid grid-cols-3 gap-1.5 rounded-xl bg-muted/60 p-1">
           {KINDS.map((k) => (
             <button
@@ -685,7 +696,7 @@ function TransactionForm({
 
       <DialogFooter className="sm:justify-between">
         <div className="flex flex-wrap gap-2">
-          {row && !rowInClosedPeriod ? (
+          {row && !readOnly ? (
             <Button
               type="button"
               variant={confirmDelete ? "destructive" : "ghost"}
@@ -707,9 +718,9 @@ function TransactionForm({
         </div>
         <div className="flex flex-col-reverse gap-2 sm:flex-row">
           <Button type="button" variant="outline" onClick={onDone} disabled={pending}>
-            {rowInClosedPeriod ? "Close" : "Cancel"}
+            {readOnly ? "Close" : "Cancel"}
           </Button>
-          {rowInClosedPeriod ? null : (
+          {readOnly ? null : (
             <Button type="submit" disabled={pending || (dateInClosedPeriod && !row)}>
               {pending ? <Spinner /> : null}
               {row ? "Save changes" : "Add transaction"}

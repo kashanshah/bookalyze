@@ -249,6 +249,7 @@ export const journalLines = pgTable(
     }),
     index("journal_lines_org_tax_rate_idx").on(t.organizationId, t.taxRateId),
     unique("journal_lines_entry_line_key").on(t.journalEntryId, t.lineNo),
+    unique("journal_lines_org_id_key").on(t.organizationId, t.id),
     index("journal_lines_org_account_idx").on(t.organizationId, t.accountId),
     check("journal_lines_amount_nonzero", sql`${t.amount} <> 0`),
     tenantIsolationPolicy("journal_lines", t.organizationId),

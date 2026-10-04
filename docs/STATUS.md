@@ -112,9 +112,9 @@ Real company details are entered in the app and never committed.
   - Reports: profit and loss with period presets from the financial year; balance sheet and trial
     balance as of any date; print.
 - **Tests:**
-  - Core: 36 at slice 1, 43 after slice 3, 51 after slice 6, 58 after slice 7, 70 after the importer, 76 with contacts and receipts.
-  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5, 37 after slice 6, 42 after slice 7, 46 after the importer, 48 with contacts and receipts.
-  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors), 11 after slice 6 (exchange rates), 12 after slice 7 (sales tax), 13 after the searchable dropdowns, 14 after the importer.
+  - Core: 36 at slice 1, 43 after slice 3, 51 after slice 6, 58 after slice 7, 70 after the importer, 76 with contacts and receipts, 78 with reconciliation.
+  - Database: 18 at slice 1 (ledger invariants, RLS, helpers), 21 after slice 2, 24 after slice 3, 28 after slice 4, 32 after slice 5, 37 after slice 6, 42 after slice 7, 46 after the importer, 48 with contacts and receipts, 52 with reconciliation.
+  - E2E: 7 at slice 1, 8 after slice 3 (transactions flow), 9 after slice 4 (receipts flow), 10 after slice 5 (customers and vendors), 11 after slice 6 (exchange rates), 12 after slice 7 (sales tax), 13 after the searchable dropdowns, 14 after the importer, 15 with reconciliation.
 
 ### Phase 1, slice 2: closed periods
 - **Closing the books:**
@@ -341,6 +341,32 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   - Wave's `bill_items.csv` isn't read. Bills already reach the books through the transactions
     file; it matters once Bookalyze has bills.
 
+### Phase 1: reconciliation
+- **Schema** (migration `0014_reconciliation`):
+  - `reconciliations` (account, statement date and ending balance, `in_progress`/`completed`;
+    one in progress per account).
+  - `reconciliation_lines` (journal lines ticked, each clearable once). It references
+    `journal_lines` by `(organization_id, id)`.
+  - Triggers: a completed reconciliation's ticks can't change, and its transactions can't be
+    reversed (edited or removed; hint `reconciled`) until it's undone. `undo_import_batch()` also
+    refuses imports with reconciled entries.
+- **Core** (`accounting/reconcile.ts`): `naturalAmount()` reads balances as statements do (a
+  bank's money in, a card's amount owed). `reconciliationTotals()` works out the opening,
+  cleared and difference.
+- **Database helpers** (`packages/db/src/reconciliation.ts`):
+  - Start, tick and untick, edit the statement (unticks lines after a new earlier date),
+    complete (difference must be zero), cancel, and undo (latest only, while none is in progress).
+  - `reconciliationState()` lists the lines up to the statement date not cleared earlier.
+    Reversed transactions drop out.
+- **Web:**
+  - Accounting → Reconcile lists bank, card and cash accounts with "reconciled through" dates.
+  - Each account's page has the start form, the reconcile screen and its history.
+  - The reconcile screen has ticks, tick all shown, filter and search, and a sticky bar with
+    statement, cleared and difference. Finish is enabled at zero.
+- **Transactions list:** the review tick is at the end of the row. A receipt icon shows whether
+  files are attached (faint when none), and a lock marks reconciled transactions (tooltip: the
+  statement date). Reconciled transactions open read-only; the server refuses changes too.
+
 ---
 
 ## 3. Next up (in order)
@@ -544,6 +570,13 @@ screenshots work well).
     Track it in state (see `touched` in `components/org/profile-state.ts`).
   - Pass `name` to post the value with a form (it renders a hidden input).
   - In e2e, use `choose(trigger, "Option label")` from `e2e/helpers.ts`, not `selectOption`.
+- **Tenant isolation fails closed.** `withOrg()` checks once per pool that the connection's role
+  doesn't bypass RLS (superuser, BYPASSRLS, or owner/member of the tables' owner such as Neon's
+  `neondb_owner`), and refuses tenant queries otherwise. Production `DATABASE_URL` must be
+  `bookalyze_app` on the pooled host.
+- **Drizzle leaves the column unqualified** (`"id"`) when a query selects from one table. Inside a
+  hand-written subquery, qualify outer columns yourself (`"journal_entries"."id"`) or Postgres
+  reports `column reference "id" is ambiguous`.
 - **Root `.env` loading:** `apps/web/next.config.ts` loads the root `.env` with dotenv.
   `packages/db/scripts/load-env.ts` does the same for scripts.
 
