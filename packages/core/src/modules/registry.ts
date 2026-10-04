@@ -44,7 +44,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     key: "accounting",
     label: "Accounting",
     description:
-      "Chart of accounts, transactions, receipts, sales tax, journal entries and financial reports.",
+      "Chart of accounts, transactions, receipts, reconciliation, sales tax, journal entries and financial reports.",
     basePath: "/accounting",
     phase: "1",
     requires: [],
@@ -52,6 +52,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     nav: [
       { label: "Transactions", href: "/accounting/transactions" },
       { label: "Receipts", href: "/accounting/receipts" },
+      { label: "Reconcile", href: "/accounting/reconcile" },
       { label: "Customers & vendors", href: "/accounting/contacts" },
       { label: "Journal entries", href: "/accounting/journal" },
       { label: "Chart of accounts", href: "/accounting/accounts" },

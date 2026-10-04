@@ -24,6 +24,8 @@ export type TxRow = {
   currency: string;
   fxRate: string;
   reviewed: boolean;
+  /** Statement date it was reconciled to; reconciled transactions can't be changed. */
+  reconciledThrough: string | null;
   contactId: string | null;
   /** Number of receipts and files attached. */
   attachments: number;

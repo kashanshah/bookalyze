@@ -12,6 +12,7 @@ import {
 } from "@bookalyze/core";
 import {
   booksLockedThrough,
+  entryReconciledThrough,
   formatEntryNumber,
   getContact,
   LedgerError,
@@ -66,6 +67,12 @@ async function loadEditable(ctx: AccountingContext, id: string) {
     if (locked && entry.date <= locked) {
       return {
         error: `${closedMessage(ctx, locked)} Transactions dated in a closed period can't be changed.`,
+      };
+    }
+    const reconciled = await entryReconciledThrough(tx, entry.id);
+    if (reconciled) {
+      return {
+        error: `This transaction is reconciled to your statement of ${formatDate(reconciled, ctx.profile.locale, "long")}. Undo that reconciliation to change it.`,
       };
     }
     return { entry };

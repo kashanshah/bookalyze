@@ -10,6 +10,7 @@ import { copyAttachmentLinks, countAttachments } from "./attachments";
 import type { Transaction } from "./client";
 import { LedgerError, postJournalEntry, reverseJournalEntry } from "./ledger";
 import { accounts, journalEntries, journalLines, transactionReviews } from "./schema/accounting";
+import { reconciliationLines, reconciliations } from "./schema/reconciliation";
 
 /**
  * The Transactions screen's queries and writes. A transaction is any current journal entry
@@ -53,6 +54,8 @@ export type TransactionRow = {
   source: string;
   contactId: string | null;
   reviewed: boolean;
+  /** The statement date it was reconciled to, if it's in a completed reconciliation. */
+  reconciledThrough: string | null;
   /** Number of receipts and files attached. */
   attachments: number;
   lines: {
@@ -114,6 +117,11 @@ export async function listTransactions(
       source: journalEntries.source,
       contactId: journalEntries.contactId,
       reviewed: sql<boolean>`${reviewedSql}`,
+      reconciledThrough: sql<string | null>`(select max(rc.statement_date)::text
+        from ${journalLines} l
+        join ${reconciliationLines} rl on rl.journal_line_id = l.id
+        join ${reconciliations} rc on rc.id = rl.reconciliation_id
+        where l.journal_entry_id = "journal_entries"."id" and rc.status = 'completed')`,
     })
     .from(journalEntries)
     .where(where)

@@ -6,7 +6,9 @@ import {
   ArrowRightLeft,
   ArrowUpRight,
   Check,
-  Paperclip,
+  FileCheck2,
+  FileX2,
+  Lock,
   Search,
   X,
 } from "lucide-react";
@@ -205,15 +207,13 @@ export function TransactionList({
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
-          <div className="hidden grid-cols-[2.25rem_6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem] gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider md:grid">
-            <span>
-              <span className="sr-only">Reviewed</span>
-            </span>
+          <div className="hidden grid-cols-[6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem_5.75rem] gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider md:grid">
             <span>Date</span>
             <span>Description</span>
             <span>Account</span>
             <span>Category</span>
             <span className="text-end">Amount</span>
+            <span className="text-end">Status</span>
           </div>
           <ul className="divide-y">
             {optimisticRows.map((row, i) => {
@@ -247,34 +247,9 @@ export function TransactionList({
               return (
                 <li
                   key={row.id}
-                  className="fade-in-0 flex animate-in items-center gap-3 fill-mode-both px-4 py-3 transition-colors hover:bg-muted/40 sm:px-5 md:grid md:grid-cols-[2.25rem_6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem] md:gap-4"
+                  className="fade-in-0 flex animate-in items-center gap-3 fill-mode-both px-4 py-3 transition-colors hover:bg-muted/40 sm:px-5 md:grid md:grid-cols-[6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem_5.75rem] md:gap-4"
                   style={{ animationDelay: `${Math.min(i, 12) * 20}ms` }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => toggleReviewed(row)}
-                    aria-pressed={row.reviewed}
-                    aria-label={
-                      row.reviewed
-                        ? `Mark ${row.number} as not reviewed`
-                        : `Mark ${row.number} as reviewed`
-                    }
-                    title={row.reviewed ? "Reviewed" : "Mark as reviewed"}
-                    className={cn(
-                      "flex size-7 shrink-0 items-center justify-center rounded-full border transition-all duration-200",
-                      row.reviewed
-                        ? "border-success bg-success text-white"
-                        : "text-transparent hover:border-success/60 hover:text-success/60",
-                    )}
-                  >
-                    <Check
-                      className={cn(
-                        "size-4 transition-transform",
-                        row.reviewed && "zoom-in-50 animate-in",
-                      )}
-                      strokeWidth={2.5}
-                    />
-                  </button>
                   <button
                     type="button"
                     onClick={() => setDialog({ mode: "edit", row })}
@@ -283,20 +258,8 @@ export function TransactionList({
                     <span className="tabular col-start-1 row-start-2 text-muted-foreground text-xs md:row-start-auto md:text-foreground md:text-sm">
                       {formatDate(row.date, ctx.locale)}
                     </span>
-                    <span className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5 md:col-start-auto md:row-start-auto">
-                      <span className="truncate font-medium text-sm">{row.memo || category}</span>
-                      {row.attachments ? (
-                        <span
-                          className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground text-xs"
-                          title={`${row.attachments} ${row.attachments === 1 ? "file" : "files"} attached`}
-                        >
-                          <Paperclip className="size-3.5" />
-                          {row.attachments > 1 ? row.attachments : null}
-                          <span className="sr-only">
-                            {row.attachments} {row.attachments === 1 ? "file" : "files"} attached
-                          </span>
-                        </span>
-                      ) : null}
+                    <span className="col-start-1 row-start-1 min-w-0 truncate font-medium text-sm md:col-start-auto md:row-start-auto">
+                      {row.memo || category}
                     </span>
                     <span className="hidden truncate text-muted-foreground text-sm md:block">
                       {row.kind === "transfer" ? "—" : name(row.moneyAccountIds[0])}
@@ -320,6 +283,83 @@ export function TransactionList({
                       ) : null}
                     </span>
                   </button>
+                  <div className="flex shrink-0 items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setDialog({ mode: "edit", row })}
+                      title={
+                        row.attachments
+                          ? `${row.attachments} ${row.attachments === 1 ? "receipt or file" : "receipts or files"} attached`
+                          : "No receipt yet"
+                      }
+                      className={cn(
+                        "relative flex size-7 items-center justify-center rounded-md transition-colors hover:bg-muted",
+                        row.attachments ? "text-primary" : "text-muted-foreground/35",
+                      )}
+                    >
+                      {row.attachments ? (
+                        <FileCheck2 className="size-4" />
+                      ) : (
+                        <FileX2 className="size-4" />
+                      )}
+                      {row.attachments > 1 ? (
+                        <span className="tabular absolute -end-0.5 -top-0.5 rounded-full bg-primary px-1 font-semibold text-[9px] text-primary-foreground leading-3.5">
+                          {row.attachments}
+                        </span>
+                      ) : null}
+                      <span className="sr-only">
+                        {row.attachments
+                          ? `${row.attachments} ${row.attachments === 1 ? "file" : "files"} attached`
+                          : "No receipt"}
+                      </span>
+                    </button>
+                    <span
+                      className={cn(
+                        "flex size-5 items-center justify-center",
+                        row.reconciledThrough ? "text-primary" : "invisible",
+                      )}
+                      title={
+                        row.reconciledThrough
+                          ? `Reconciled to the statement of ${formatDate(row.reconciledThrough, ctx.locale)}`
+                          : undefined
+                      }
+                    >
+                      {row.reconciledThrough ? (
+                        <>
+                          <Lock className="size-3.5" />
+                          <span className="sr-only">
+                            Reconciled to the statement of{" "}
+                            {formatDate(row.reconciledThrough, ctx.locale)}
+                          </span>
+                        </>
+                      ) : null}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => toggleReviewed(row)}
+                      aria-pressed={row.reviewed}
+                      aria-label={
+                        row.reviewed
+                          ? `Mark ${row.number} as not reviewed`
+                          : `Mark ${row.number} as reviewed`
+                      }
+                      title={row.reviewed ? "Reviewed" : "Mark as reviewed"}
+                      className={cn(
+                        "flex size-7 shrink-0 items-center justify-center rounded-full border transition-all duration-200",
+                        row.reviewed
+                          ? "border-success bg-success text-white"
+                          : "text-transparent hover:border-success/60 hover:text-success/60",
+                      )}
+                    >
+                      <Check
+                        className={cn(
+                          "size-4 transition-transform",
+                          row.reviewed && "zoom-in-50 animate-in",
+                        )}
+                        strokeWidth={2.5}
+                      />
+                    </button>
+                  </div>
                 </li>
               );
             })}

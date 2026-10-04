@@ -489,7 +489,7 @@ test("sales tax: Ontario setup, HST on transactions and the filing report", asyn
   await expect(ink).toContainText("−$56.50");
 
   // Reopening shows the amount with tax included and the rate picked.
-  await page.locator("li", { hasText: "Website sale" }).getByRole("button").last().click();
+  await page.locator("li", { hasText: "Website sale" }).getByRole("button").first().click();
   await expect(page.getByLabel("Amount 1")).toHaveValue("113");
   await expect(page.getByLabel("Sales tax 1")).toHaveText("HST 13% (Ontario)");
   await page.getByRole("button", { name: "Cancel" }).click();
@@ -629,6 +629,46 @@ test("import: a Wave export with contacts and receipts, a safe re-run and undo",
   await expect(first.getByText("Undone")).toBeVisible();
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByText("Website order 1001")).toHaveCount(0);
+});
+
+test("reconcile: tick to the statement balance, lock, undo and cancel", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Reconcile", exact: true }).click();
+  await page.getByRole("link", { name: /1010 · RBC Chequing/ }).click();
+  await expect(page.getByText("Start with your bank statement")).toBeVisible();
+  await page.locator("#statementBalance").fill("0");
+  await page.getByRole("button", { name: "Start reconciling" }).click();
+
+  // Tick everything, then set the statement balance to what's cleared.
+  await page.getByLabel("Tick all shown").check({ force: true });
+  const cleared = page.locator("dt", { hasText: "Cleared" }).locator("..").locator("dd");
+  await expect(cleared).not.toHaveText("$0.00");
+  const balance = (await cleared.innerText()).replace(/[^0-9.\-−]/g, "").replace("−", "-");
+  await page.getByRole("button", { name: "Edit statement" }).click();
+  await page.locator("#edit-balance").fill(balance);
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Difference $0.00")).toBeVisible();
+  await page.getByRole("button", { name: "Finish reconciling" }).click();
+  await expect(page.getByText("Reconciled", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Past reconciliations/)).toBeVisible();
+
+  // Reconciled transactions show a lock and can't be changed.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await expect(page.getByText(/Reconciled to the statement of/).first()).toBeAttached();
+  await page.locator("li", { hasText: "Website sale" }).getByRole("button").first().click();
+  await expect(page.getByText(/This transaction is reconciled to your statement/)).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Undo reopens it; cancelling discards it.
+  await page.getByRole("link", { name: "Reconcile", exact: true }).click();
+  await page.getByRole("link", { name: /1010 · RBC Chequing/ }).click();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await page.getByRole("button", { name: "Click again to reopen it" }).click();
+  await expect(page.getByText("Reconciliation reopened")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Click again to discard" }).click();
+  await expect(page.getByText("Reconciliation cancelled")).toBeVisible();
+  await expect(page.getByText("Start with your bank statement")).toBeVisible();
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {
