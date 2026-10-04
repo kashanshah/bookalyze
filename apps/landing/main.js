@@ -1,11 +1,10 @@
 // Bookalyze landing page behaviour: scroll reveal, sticky-nav border and the waitlist form.
 
 /*
- * WAITLIST: paste a form endpoint here to collect sign-ups, e.g. a free Formspree form
- * ("https://formspree.io/f/xxxxxxx"), Tally, Getform or your own API. Until it's set,
- * the form opens the visitor's email app addressed to WAITLIST_EMAIL instead.
+ * WAITLIST: sign-ups go to subscribe.php, which adds them to Resend Contacts (see README.md).
+ * Set this to "" to fall back to opening the visitor's email app addressed to WAITLIST_EMAIL.
  */
-const WAITLIST_ENDPOINT = "";
+const WAITLIST_ENDPOINT = "/subscribe.php";
 const WAITLIST_EMAIL = "hello@bookalyze.com";
 
 document.documentElement.classList.add("js");
@@ -47,7 +46,8 @@ for (const form of document.querySelectorAll("[data-form]")) {
     event.preventDefault();
     const status = form.querySelector("[data-status]");
     const button = form.querySelector("button");
-    const email = new FormData(form).get("email")?.toString().trim() ?? "";
+    const data = new FormData(form);
+    const email = data.get("email")?.toString().trim() ?? "";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       status.textContent = "Please enter a valid email address.";
       status.className = "form-note err";
@@ -69,16 +69,25 @@ for (const form of document.querySelectorAll("[data-form]")) {
       const res = await fetch(WAITLIST_ENDPOINT, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ email, source: form.id || "landing" }),
+        body: JSON.stringify({
+          email,
+          website: data.get("website")?.toString() ?? "",
+          source: form.dataset.source || "landing",
+        }),
       });
-      if (!res.ok) throw new Error(String(res.status));
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result.ok) throw new Error(result.error || "");
       form.classList.add("done");
-      status.textContent = "You're on the list. We'll email you when your spot opens.";
+      status.textContent = result.existing
+        ? "You're already on the list. We'll email you when your spot opens."
+        : "You're on the list. We'll email you when your spot opens.";
       status.className = "form-note ok";
-    } catch {
+    } catch (error) {
       button.disabled = false;
       button.textContent = "Join the waitlist";
-      status.textContent = "Something went wrong. Please try again in a moment.";
+      status.textContent =
+        (error instanceof Error && error.message) ||
+        "Something went wrong. Please try again in a moment.";
       status.className = "form-note err";
     }
   });
