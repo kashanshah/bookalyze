@@ -13,7 +13,7 @@ import {
   schema,
 } from "@bookalyze/db";
 import { eq, sql } from "drizzle-orm";
-import { ArrowLeft, ArrowRight, Landmark } from "lucide-react";
+import { ArrowLeft, ArrowRight, Download, Landmark } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Amount } from "@/components/accounting/amount";
@@ -155,21 +155,29 @@ export default async function TransactionsPage({
         title="Transactions"
         description="Money in and out of your bank, card and cash accounts. Tick each one once you've checked it."
         actions={
-          selected && balance !== null ? (
-            <div className="rounded-xl border bg-card px-4 py-2.5 text-end shadow-xs">
-              <p className="text-muted-foreground text-xs">{selected.name} balance</p>
-              <Amount
-                value={formatDecimal(
-                  selected.subtype === "credit_card"
-                    ? -parseDecimal(balance)
-                    : parseDecimal(balance),
-                )}
-                currency={selected.currency ?? profile.baseCurrency}
-                locale={profile.locale}
-                className="font-semibold text-lg"
-              />
-            </div>
-          ) : null
+          <div className="flex flex-wrap items-center gap-3">
+            <Button asChild variant="outline">
+              <Link href={`/o/${slug}/accounting/reports/transactions`}>
+                <Download />
+                Export for accountant
+              </Link>
+            </Button>
+            {selected && balance !== null ? (
+              <div className="rounded-xl border bg-card px-4 py-2.5 text-end shadow-xs">
+                <p className="text-muted-foreground text-xs">{selected.name} balance</p>
+                <Amount
+                  value={formatDecimal(
+                    selected.subtype === "credit_card"
+                      ? -parseDecimal(balance)
+                      : parseDecimal(balance),
+                  )}
+                  currency={selected.currency ?? profile.baseCurrency}
+                  locale={profile.locale}
+                  className="font-semibold text-lg"
+                />
+              </div>
+            ) : null}
+          </div>
         }
       />
 

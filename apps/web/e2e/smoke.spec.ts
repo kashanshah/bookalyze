@@ -536,6 +536,24 @@ test("sales tax: Ontario setup, HST on transactions and the filing report", asyn
   await expect(page.getByText("Tax you can claim back").locator("..")).toContainText("$6.50");
   await expect(page.getByText("You owe").locator("..")).toContainText("$6.50");
   await expect(page.locator("li", { hasText: "HST 13% (Ontario)" })).toContainText("$100.00");
+
+  // The accountant's export: Wave's columns, one row per line, sales tax split out.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("link", { name: "Export for accountant" }).click();
+  await expect(page.getByRole("heading", { name: "Accounting transactions" })).toBeVisible();
+  await expect(page.getByText("The first lines of the file")).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("link", { name: "Download CSV" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/accounting-transactions.*\.csv$/);
+  const csv = await readFile(await download.path(), "utf8");
+  expect(csv).toContain(
+    "Transaction ID,Transaction Date,Account Name,Transaction Description,Transaction Line Description,Amount (One column),Debit Amount (Two Column Approach),Credit Amount (Two Column Approach),Other Accounts for this Transaction",
+  );
+  const saleLine = csv.split("\r\n").find((l) => l.includes(",Sales,Website sale,"));
+  expect(saleLine).toMatch(/,-100\.00,,100\.00,/);
+  expect(saleLine).toMatch(/,100\.00,13\.00,[^,]*HST[^,]*,/);
 });
 
 test("searchable dropdowns: type to filter and pick with the keyboard", async ({ page }) => {

@@ -14,6 +14,7 @@ import {
   listTaxRates,
   listTaxRegistrations,
   salesTaxRows,
+  transactionExportLines,
 } from "@bookalyze/db";
 import { nowIn } from "@/lib/dates";
 import { type AccountingContext, inOrg } from "@/server/accounting";
@@ -100,10 +101,31 @@ export async function loadSalesTax(ctx: AccountingContext, query: ReportQuery) {
   return { from, to, presets, rates, registration, summary };
 }
 
+/** The accountant's export: every transaction line in the period, in Wave's layout. */
+export const TRANSACTIONS_EXPORT_LIMIT = 200_000;
+export async function loadTransactionsExport(
+  ctx: AccountingContext,
+  query: ReportQuery,
+  limit = TRANSACTIONS_EXPORT_LIMIT,
+) {
+  const { today, cfg } = setup(ctx);
+  const { from, to, presets } = resolveRange(query, today, cfg);
+  const { lines, truncated } = await inOrg(ctx, (tx) =>
+    transactionExportLines(tx, { from, to }, limit),
+  );
+  return { from, to, presets, lines, truncated };
+}
+
 /** Where a report's CSV download is, for the same parameters as the page. */
 export function exportHref(
   slug: string,
-  report: "profit-and-loss" | "balance-sheet" | "trial-balance" | "general-ledger" | "sales-tax",
+  report:
+    | "profit-and-loss"
+    | "balance-sheet"
+    | "trial-balance"
+    | "general-ledger"
+    | "sales-tax"
+    | "transactions",
   params: Record<string, string>,
 ): string {
   return `/api/o/${slug}/reports/${report}?${new URLSearchParams(params)}`;

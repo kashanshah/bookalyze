@@ -7,3 +7,4 @@ export * from "./reconcile";
 export * from "./reports";
 export * from "./tax";
 export * from "./transactions";
+export * from "./wave-export";

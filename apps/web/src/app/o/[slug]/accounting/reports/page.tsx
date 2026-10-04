@@ -3,6 +3,7 @@ import {
   BarChart3,
   BookOpen,
   Columns3,
+  FileSpreadsheet,
   Landmark,
   ReceiptText,
   Scale,
@@ -39,6 +40,12 @@ const REPORTS = [
     title: "General ledger",
     body: "Every line posted to each account, with opening and closing balances. Click any account to see its lines.",
     icon: BookOpen,
+  },
+  {
+    href: "transactions",
+    title: "Accounting transactions",
+    body: "Every transaction line in the same columns as Wave's export. The file your accountant asks for at tax time.",
+    icon: FileSpreadsheet,
   },
   {
     href: "sales-tax",

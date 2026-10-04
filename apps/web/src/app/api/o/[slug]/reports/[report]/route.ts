@@ -9,6 +9,7 @@ import {
   type ReportMeta,
   salesTaxCsv,
   trialBalanceCsv,
+  waveTransactionsCsv,
 } from "@bookalyze/core";
 import { formatEntryNumber } from "@bookalyze/db";
 import {
@@ -18,6 +19,7 @@ import {
   loadGeneralLedger,
   loadProfitAndLoss,
   loadSalesTax,
+  loadTransactionsExport,
   loadTrialBalance,
   type ReportQuery,
 } from "@/app/o/[slug]/accounting/reports/data";
@@ -139,6 +141,16 @@ export async function GET(
         "to",
         to,
       );
+    }
+    case "transactions": {
+      const { from, to, lines, truncated } = await loadTransactionsExport(ctx, query);
+      if (truncated) {
+        return new Response(
+          "This period has too many transaction lines for one file. Choose a shorter period and download each part.",
+          { status: 422, headers: { "Content-Type": "text/plain; charset=utf-8" } },
+        );
+      }
+      return file(waveTransactionsCsv(lines, currency), "accounting transactions", from, "to", to);
     }
     default:
       return new Response("Not found", { status: 404 });

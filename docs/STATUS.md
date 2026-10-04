@@ -410,6 +410,13 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
      print dialog; printouts drop the navigation and always use the light theme). Pages and
      downloads share loaders in `reports/data.ts`, so they always agree. Ledger CSVs hold up to
      50,000 lines. A server-made PDF (letterhead, page numbers) can come later if needed.
+   - [x] Accountant's export in Wave's layout. Reports → Accounting transactions (also "Export
+     for accountant" on Transactions): one row per journal line with Wave's 22 "Accounting
+     transactions" columns, built by `waveTransactionsCsv` (core `accounting/wave-export.ts`)
+     from `transactionExportLines` (db). An entry and its reversal are left out when both fall
+     in the period. Sales tax is split across the taxed lines; Wave's account group and type
+     names come from `WAVE_TYPES`. A unit test reads the file back through our own Wave importer.
+     Up to 200,000 lines per file (shorter period otherwise).
    - [ ] Comparison columns on profit and loss.
 
 ### Phase 0 leftovers
