@@ -363,9 +363,9 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
    - Comparison columns on profit and loss.
 
 ### Phase 0 leftovers
-- [ ] `CRON_SECRET` must be set in Vercel (Production) for the daily rates job. See SETUP.md.
-- [ ] Encrypted credential vault (`APP_ENCRYPTION_KEY`, AES-GCM) and a `connections` table, for
-  SP-API, Wise and others.
+- [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.
+- [ ] Encrypted credential vault (AES-GCM) and a `connections` table, for SP-API, Wise and
+  others. `APP_ENCRYPTION_KEY` is already set in Vercel; the code that uses it isn't built yet.
 - [ ] Platform admin console: list organizations, set plans, overrides.
 - [ ] Two-step sign-in UI. The Better Auth twoFactor plugin is already enabled.
 - [ ] Vercel Workflows and Cron wiring.
