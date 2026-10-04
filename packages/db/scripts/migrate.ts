@@ -2,7 +2,7 @@ import "./load-env";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
-import { withVerifiedSsl } from "../src/client";
+import { appDatabaseUrl, withVerifiedSsl } from "../src/client";
 
 const url = process.env.DATABASE_URL_MIGRATOR;
 if (!url) throw new Error("DATABASE_URL_MIGRATOR is not set");
@@ -10,9 +10,11 @@ if (!url) throw new Error("DATABASE_URL_MIGRATOR is not set");
 const pool = new pg.Pool({ connectionString: withVerifiedSsl(url), max: 1 });
 await migrate(drizzle(pool), { migrationsFolder: new URL("../drizzle", import.meta.url).pathname });
 
-// Make sure the runtime login role (from DATABASE_URL) belongs to app_runtime. The migrator
-// created app_runtime, so it may grant membership. Skipped when the role doesn't exist yet.
-const appUser = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).username : "";
+// Make sure the runtime login role (APP_DATABASE_URL, else DATABASE_URL) belongs to app_runtime.
+// The migrator created app_runtime, so it may grant membership. Skipped when the role doesn't
+// exist yet.
+const runtimeUrl = appDatabaseUrl();
+const appUser = runtimeUrl ? new URL(runtimeUrl).username : "";
 if (appUser && appUser !== new URL(url).username) {
   const { rows } = await pool.query("select 1 from pg_roles where rolname = $1", [appUser]);
   if (rows.length) {

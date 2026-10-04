@@ -38,10 +38,15 @@ http://localhost:3000/dev/emails.
 3. Set `DATABASE_URL_MIGRATOR` (owner, **direct** connection) and run `pnpm db:setup` from your
    machine. This creates the `app_runtime` group, grants it to `bookalyze_app`, and loads reference
    data.
-4. Use `bookalyze_app` with the **pooled** connection string as `DATABASE_URL` in Vercel.
-   **Never use `neondb_owner` (Neon's default connection string) for `DATABASE_URL`.** The owner
+4. Use `bookalyze_app` with the **pooled** connection string as the app's connection in Vercel.
+   **Never let the app connect as `neondb_owner` (Neon's default connection string).** The owner
    skips row-level security, so every company would see every other company's data. The app
    refuses to read company data over such a connection and logs "Refusing to query tenant data".
+   - If you added Neon through Vercel's **Storage** tab, Vercel manages `DATABASE_URL` (owner role)
+     and won't let you edit it. Leave it alone and add **`APP_DATABASE_URL`** (Production and
+     Preview) with the `bookalyze_app` pooled string. The app prefers `APP_DATABASE_URL` whenever
+     it's set.
+   - Otherwise set `DATABASE_URL` itself to the `bookalyze_app` pooled string.
 
 Neon branches copy roles, so a `preview` branch works the same way with its own host.
 
