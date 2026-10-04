@@ -31,7 +31,8 @@ beforeAll(async () => {
   const db = owner.db;
   await db
     .insert(schema.currencies)
-    .values({ code: "CAD", name: "Canadian Dollar", minorUnits: 2 });
+    .values({ code: "CAD", name: "Canadian Dollar", minorUnits: 2 })
+    .onConflictDoNothing();
   await db.insert(schema.countries).values({ code: "CA", name: "Canada", currencyCode: "CAD" });
   await db
     .insert(schema.subdivisions)

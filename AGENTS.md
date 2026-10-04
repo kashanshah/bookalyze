@@ -1,3 +1,15 @@
+# Agent guide
+
+Before doing anything, read:
+
+1. **`docs/STATUS.md`**: what's done, what's next, ledger rules, recipes and gotchas.
+2. **`CLAUDE.md`**: stack, commands and project rules (tenancy, money, design). These apply to
+   every agent, not only Claude.
+3. `docs/PLAN.md` when you need product context or the roadmap.
+
+Run `pnpm lint && pnpm typecheck && pnpm test` before pushing. Update `docs/STATUS.md` in the same
+PR when you finish or start something.
+
 <!-- BEGIN:turborepo-agent-rules -->
 
 # This is NOT the Turborepo you know

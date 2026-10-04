@@ -1,8 +1,11 @@
 # Bookalyze
 
 Multi-company accounting and e-commerce back office (a Wave replacement plus Amazon/marketplace
-tooling). Product plan, roadmap and decisions: `docs/PLAN.md`. Brand and colours: `docs/BRAND.md`.
-Environment setup: `docs/SETUP.md`.
+tooling).
+
+**Start with `docs/STATUS.md`**: what's done, what's next, ledger rules, recipes and gotchas.
+Update it in every PR that changes what's done or next. Product plan, roadmap and decisions:
+`docs/PLAN.md`. Brand and colours: `docs/BRAND.md`. Environment setup: `docs/SETUP.md`.
 
 ## Stack
 
@@ -15,10 +18,14 @@ apps/web/            Next.js app
   src/app/           routes: (auth), onboarding, o/[slug]/… (org-scoped), account, api, dev/emails
   src/components/    ui/ (design system), shell/ (sidebar, headers), org/ (profile fields), auth/
   src/emails/        React Email templates (+ preview at /dev/emails in development)
-  src/server/        server-only code: auth, env, email, org context, audit
+  src/server/        server-only code: auth, env, email, org context, accounting context, audit
+  src/lib/           shared helpers: dates, formatting, zod schemas (validation/)
   e2e/               Playwright end-to-end tests
-packages/core/       pure TS: module registry + entitlements, fiscal-year maths, currency, reference data
-packages/db/         Drizzle schema, migrations (drizzle/), RLS, client + withOrg(), seed
+packages/core/       pure TS: module registry + entitlements, fiscal-year maths, money (exact decimals),
+                     currency, accounting (taxonomy, chart template, journal rules, report shaping),
+                     reference data
+packages/db/         Drizzle schema, migrations (drizzle/), RLS, client + withOrg(), ledger writes
+                     (ledger.ts), seed
 ```
 
 ## Commands
@@ -51,6 +58,12 @@ Run `pnpm lint && pnpm typecheck && pnpm test` before pushing.
 - Money is `NUMERIC` in the database and strings in TypeScript. Never use floats for money.
 - Round to the currency's ISO minor units (`minorUnits()` in core).
 - Accounting dates are ISO `YYYY-MM-DD` strings; fiscal periods come from `fiscalYearFor()`.
+- Do money maths with `parseDecimal`/`formatDecimal`/`convertUnits` from core (BigInt), never `Number`.
+
+**Ledger** (details in `docs/STATUS.md` §4)
+- Validate entries with `prepareJournalEntry()` (core), write them with `postJournalEntry()` (db).
+- Posted entries are immutable: correct them with `reverseJournalEntry()`. The database enforces it.
+- Find system accounts by `system_key`, never by name or code.
 
 **Modules**
 - Features belong to a module in `packages/core/src/modules/registry.ts` (manifest: label, basePath,
