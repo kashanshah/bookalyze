@@ -25,7 +25,8 @@ _Last updated: 2026-10-04, phase 1b (importing from other software)._
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
-| 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
+| 3. Commerce connections, orders & review requests | **In progress.** Slice 1 (connect Amazon Seller Central, channels) done. Next: order sync and the Orders screen, then review requests |
+| 4+. Settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -588,6 +589,29 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Home:** a "Coming up" card (next 60 days, overdue first) and the getting-started steps now
   link to the Wave import and bank accounts.
 - Migration `0024_entity_compliance` (also allows `entity_document` in `attachment_links`).
+
+
+### Phase 3, slice 1: connect Amazon Seller Central
+
+- **Commerce module is live** (Features → Commerce). Sidebar: Commerce → `/commerce/channels`
+  (`/commerce` redirects there until Orders exists).
+- **Bring your own app:** an admin enters the region (North America / Europe, Middle East and
+  India / Far East), the app's LWA client ID and secret, and the seller's refresh token. They're
+  checked with Amazon (LWA token exchange, then `GET /sellers/v1/marketplaceParticipations`),
+  then sealed as one JSON value in `connections.secret` (`provider = 'amazon_sp'`,
+  `settings.region`, `settings.storeName`). One connection per region: connecting again replaces
+  its credentials. No AWS signing is needed (SP-API dropped SigV4).
+- **Channels** (`sales_channels`, migration `0025_sales_channels`): one per marketplace the account
+  is registered in; new ones start switched on where the seller participates. Switching a channel
+  off means nothing is synced from it. Disconnecting deletes the credentials and switches channels
+  off (history stays).
+- Code: core `commerce/amazon.ts` (regions, marketplace IDs, parser); web `server/amazon.ts`
+  (LWA + SP-API calls with plain-language errors, access tokens cached in memory),
+  `server/commerce.ts` (context, sealing), `app/o/[slug]/commerce/`.
+- Amazon connections are left out of Banking (`listConnections`), and the daily bank sync only
+  covers Wise (`syncable_connections()` replaced in 0025).
+- Tests: `AMAZON_LWA_URL` / `AMAZON_SPAPI_URL` point at `e2e/amazon-mock.mjs` in e2e. Leave them
+  unset in production.
 
 ---
 
