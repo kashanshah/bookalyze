@@ -1,10 +1,10 @@
 import { isMoneyAccountSubtype } from "@bookalyze/core";
-import { contactOptions, listRules } from "@bookalyze/db";
+import { contactOptions, listRules, suggestedRules } from "@bookalyze/db";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/shell/page-header";
 import { accountOptions, getBankingContext, inOrg, listAccounts } from "@/server/accounting";
 import { RulesList } from "./rules-list";
-import type { RuleFormContext, RuleView } from "./types";
+import type { RuleFormContext, RuleSuggestionView, RuleView } from "./types";
 
 export const metadata: Metadata = { title: "Rules" };
 
@@ -21,9 +21,10 @@ export default async function RulesPage({
   const sp = await searchParams;
   const ctx = await getBankingContext(slug);
   const accounts = await listAccounts(ctx);
-  const { rules, contacts } = await inOrg(ctx, async (tx) => ({
+  const { rules, contacts, suggestions } = await inOrg(ctx, async (tx) => ({
     rules: await listRules(tx),
     contacts: await contactOptions(tx),
+    suggestions: await suggestedRules(tx),
   }));
 
   const name = (id: string | null) => {
@@ -57,6 +58,10 @@ export default async function RulesPage({
     isActive: r.isActive,
     applied: r.applied,
   }));
+  const suggestionViews: RuleSuggestionView[] = suggestions.map((s) => ({
+    ...s,
+    categoryName: name(s.categoryAccountId) || "A removed account",
+  }));
   // "Make a rule" from a transaction opens the form filled in.
   const prefill =
     sp.text || sp.category
@@ -74,7 +79,7 @@ export default async function RulesPage({
         title="Rules"
         description="Categorize bank transactions as they arrive. Each one still waits for your review tick on the Transactions screen, so nothing is filed without you seeing it."
       />
-      <RulesList rules={views} ctx={form} prefill={prefill} />
+      <RulesList rules={views} suggestions={suggestionViews} ctx={form} prefill={prefill} />
     </div>
   );
 }

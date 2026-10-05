@@ -1,17 +1,20 @@
 import {
   type BankRule,
+  type CategorizedTransaction,
   formatDecimal,
   MONEY_ACCOUNT_SUBTYPES,
   type PreparedEntry,
   parseDecimal,
   type RuleDirection,
+  type RuleSuggestion,
   ruleMatches,
+  suggestRules,
 } from "@bookalyze/core";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { LedgerError } from "./ledger";
 import { accounts, journalEntries, journalLines } from "./schema/accounting";
-import { bankRules, ruleApplications } from "./schema/banking";
+import { bankRules, ruleApplications, ruleSuggestionDismissals } from "./schema/banking";
 import { replaceJournalEntry } from "./transactions";
 
 /**
@@ -293,4 +296,88 @@ export async function applyRuleToExisting(
 /** A database rule (closed period, reconciled transaction) refused the change. */
 function isRefusedByDatabase(error: unknown): boolean {
   return (error as { cause?: { code?: string } }).cause?.code === "23514";
+}
+
+/**
+ * Bank transactions from the last year that someone categorized by hand (not by a rule): one
+ * bank, card or cash account and one category that isn't Uncategorized. What rule suggestions
+ * learn from. Newest first, at most `limit`.
+ */
+async function handCategorized(tx: Transaction, limit = 5000): Promise<CategorizedTransaction[]> {
+  const money = sql.raw(MONEY_ACCOUNT_SUBTYPES.map((s) => `'${s}'`).join(", "));
+  const rows = await tx.execute<{
+    text: string;
+    amount: string;
+    account_id: string;
+    category_id: string;
+  }>(sql`
+    select concat_ws(' ', e.memo, string_agg(coalesce(l.description, ''), ' ')) as text,
+      max(case when a.subtype in (${money}) then l.amount end)::text as amount,
+      max(case when a.subtype in (${money}) then l.account_id::text end) as account_id,
+      max(case when a.subtype not in (${money}) then l.account_id::text end) as category_id
+    from journal_entries e
+    join journal_lines l on l.journal_entry_id = e.id
+    join accounts a on a.id = l.account_id
+    where e.reversed_by_entry_id is null and e.reverses_entry_id is null
+      and e.date >= current_date - 365
+      and not exists (select 1 from rule_applications r where r.journal_entry_id = e.id)
+    group by e.id
+    having count(*) filter (where a.subtype in (${money})) = 1
+      and count(*) filter (where a.subtype not in (${money})) = 1
+      and bool_and(a.subtype not in ('uncategorized_income', 'uncategorized_expense'))
+    order by max(e.date) desc
+    limit ${limit}`);
+  return rows.rows.map((r) => ({
+    text: r.text,
+    amount: r.amount,
+    accountId: r.account_id,
+    categoryAccountId: r.category_id,
+  }));
+}
+
+/**
+ * Rules worth making: payees categorized the same way several times by hand, not covered by a
+ * rule and not turned down. `waiting` is how many uncategorized transactions each would
+ * categorize now.
+ */
+export async function suggestedRules(
+  tx: Transaction,
+): Promise<(RuleSuggestion & { waiting: number })[]> {
+  const [history, rules, dismissed] = await Promise.all([
+    handCategorized(tx),
+    activeRules(tx),
+    tx.select({ matchText: ruleSuggestionDismissals.matchText }).from(ruleSuggestionDismissals),
+  ]);
+  const suggestions = suggestRules(history, rules, new Set(dismissed.map((d) => d.matchText)));
+  if (!suggestions.length) return [];
+  const waiting = await uncategorizedTransactions(tx);
+  return suggestions.map((s) => {
+    const rule = {
+      id: "suggestion",
+      matchText: s.matchText,
+      direction: s.direction,
+      amountMin: null,
+      amountMax: null,
+      accountId: null,
+      categoryAccountId: s.categoryAccountId,
+      contactId: null,
+      isActive: true,
+    };
+    return { ...s, waiting: waiting.filter((c) => ruleMatches(rule, c)).length };
+  });
+}
+
+/** "Not this one": the suggestion isn't offered again. */
+export async function dismissRuleSuggestion(
+  tx: Transaction,
+  input: { orgId: string; userId?: string | null; matchText: string },
+) {
+  await tx
+    .insert(ruleSuggestionDismissals)
+    .values({
+      organizationId: input.orgId,
+      matchText: input.matchText,
+      dismissedBy: input.userId ?? null,
+    })
+    .onConflictDoNothing();
 }

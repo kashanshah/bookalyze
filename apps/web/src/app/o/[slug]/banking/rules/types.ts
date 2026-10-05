@@ -27,3 +27,15 @@ export type RuleFormContext = {
   categories: { type: AccountType; options: { id: string; label: string }[] }[];
   contacts: { id: string; name: string }[];
 };
+
+/** A rule worth making, from how transactions were categorized by hand. */
+export type RuleSuggestionView = {
+  matchText: string;
+  direction: "in" | "out";
+  categoryAccountId: string;
+  categoryName: string;
+  /** Transactions categorized that way by hand. */
+  count: number;
+  /** Uncategorized transactions it would categorize now. */
+  waiting: number;
+};

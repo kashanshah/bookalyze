@@ -544,6 +544,20 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   `followTransferEdit`, which reposts the side the new entry no longer touches (with its bank
   line), so nothing the bank sent goes missing. Removing a matched transfer removes both.
 
+
+### Phase 2, slice 5: rule suggestions
+
+- A payee categorized the same way by hand at least 3 times in the last year (80%+ to one
+  category, same direction) is suggested as a rule, unless a rule already covers it or someone
+  turned it down. Payee = up to three words in a row from the bank text, minus reference numbers
+  and filler ("POS PURCHASE BELL CANADA 0423" → "bell canada"), so it's always found as-is by
+  `ruleMatches`. Core `banking/rule-suggestions.ts` (`payeeKey`, `suggestRules`); db
+  `suggestedRules` (learns from entries with one money line and one non-Uncategorized category,
+  not categorized by a rule; counts what's waiting uncategorized) and `dismissRuleSuggestion`
+  (`rule_suggestion_dismissals`, migration `0023_rule_suggestions`).
+- Rules page: "Suggested for you" cards ("Make this rule" opens the rule form filled in; X turns
+  it down). Transactions shows a "n rules suggested" banner linking there.
+
 ---
 
 ## 3. Next up (in order)

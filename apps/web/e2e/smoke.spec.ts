@@ -1077,6 +1077,42 @@ test("transfers: match a suggested pair, unmatch it, match two by hand", async (
   );
 });
 
+test("rule suggestions: a payee categorized three times by hand becomes a rule", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  for (const amount of ["15.99", "15.99", "17.99"]) {
+    await page.getByRole("button", { name: "Add expense" }).click();
+    await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+    await page.locator("#tx-memo").fill("NETFLIX.COM 866-579");
+    await choose(
+      page.getByLabel("Category 1", { exact: true }),
+      "6100 · Software and subscriptions",
+    );
+    await page.getByLabel("Amount 1").fill(amount);
+    await page.getByRole("button", { name: "Add transaction" }).click();
+    await expect(page.getByText("Transaction added").first()).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+  await page.reload();
+  await expect(page.getByText(/rules? suggested/)).toBeVisible();
+  await page.getByRole("link", { name: "See suggestions" }).click();
+
+  const card = page.getByRole("listitem").filter({ hasText: "“netflix.com”" });
+  await expect(card).toContainText("Software and subscriptions");
+  await expect(card).toContainText("You categorized 3 like this");
+  await card.getByRole("button", { name: "Make this rule" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("When the description contains")).toHaveValue("netflix.com");
+  await dialog.getByRole("button", { name: "Add rule" }).click();
+  await expect(page.getByText("Rule added")).toBeVisible();
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "Make this rule" }).filter({ hasText: "netflix" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("“netflix.com”")).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

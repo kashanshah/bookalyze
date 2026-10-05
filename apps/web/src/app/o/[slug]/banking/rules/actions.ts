@@ -6,6 +6,7 @@ import {
   countRuleMatches,
   createRule,
   deleteRule,
+  dismissRuleSuggestion,
   moveRule,
   RuleError,
   updateRule,
@@ -177,6 +178,32 @@ export async function deleteRuleAction(slug: string, ruleId: string): Promise<Ru
       action: "rule.deleted",
       entityType: "bank_rule",
       entityId: ruleId,
+    });
+  });
+  revalidate(slug);
+  return { ok: true };
+}
+
+/** A suggested rule isn't wanted: it isn't suggested again. */
+export async function dismissRuleSuggestionAction(
+  slug: string,
+  matchText: string,
+): Promise<RuleResult> {
+  const ctx = await getBankingContext(slug);
+  const parsed = z.string().trim().min(2).max(200).safeParse(matchText);
+  if (!parsed.success) return { ok: false, message: "Unknown suggestion." };
+  await inOrg(ctx, async (tx) => {
+    await dismissRuleSuggestion(tx, {
+      orgId: ctx.org.id,
+      userId: ctx.session.user.id,
+      matchText: parsed.data,
+    });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "rule.suggestion_dismissed",
+      entityType: "bank_rule",
+      after: { matchText: parsed.data },
     });
   });
   revalidate(slug);

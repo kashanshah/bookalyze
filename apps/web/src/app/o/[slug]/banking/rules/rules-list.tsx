@@ -1,7 +1,7 @@
 "use client";
 
 import { formatMoney } from "@bookalyze/core";
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2, Wand2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Lightbulb, Pencil, Plus, Trash2, Wand2, X } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -16,9 +16,14 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { applyRuleAction, deleteRuleAction, moveRuleAction } from "./actions";
+import {
+  applyRuleAction,
+  deleteRuleAction,
+  dismissRuleSuggestionAction,
+  moveRuleAction,
+} from "./actions";
 import { draftOf, emptyDraft, RuleDialog, type RuleDraft } from "./rule-dialog";
-import type { RuleFormContext, RuleView } from "./types";
+import type { RuleFormContext, RuleSuggestionView, RuleView } from "./types";
 
 /** "money out · $50.00 to $100.00 · on RBC Chequing" */
 function conditions(rule: RuleView, ctx: RuleFormContext): string {
@@ -35,10 +40,12 @@ function conditions(rule: RuleView, ctx: RuleFormContext): string {
 
 export function RulesList({
   rules,
+  suggestions,
   ctx,
   prefill,
 }: {
   rules: RuleView[];
+  suggestions: RuleSuggestionView[];
   ctx: RuleFormContext;
   prefill: { matchText: string; categoryAccountId: string; accountId: string } | null;
 }) {
@@ -82,6 +89,86 @@ export function RulesList({
       const result = await moveRuleAction(ctx.slug, rule.id, direction);
       if (!result.ok) toast.error(result.message);
     });
+  const fromSuggestion = (s: RuleSuggestionView) => {
+    setKey((k) => k + 1);
+    setEditing({
+      initial: {
+        ...emptyDraft,
+        matchText: s.matchText,
+        direction: s.direction,
+        categoryAccountId: s.categoryAccountId,
+      },
+    });
+  };
+  const dismiss = (s: RuleSuggestionView) =>
+    run(`dismiss:${s.matchText}`, async () => {
+      const result = await dismissRuleSuggestionAction(ctx.slug, s.matchText);
+      if (!result.ok) return void toast.error(result.message);
+      toast.message("Won't suggest that again");
+    });
+
+  const suggested = suggestions.length ? (
+    <section className="grid gap-3" aria-label="Suggested rules">
+      <div>
+        <h2 className="flex items-center gap-2 font-semibold">
+          <Lightbulb className="size-4 text-primary" />
+          Suggested for you
+        </h2>
+        <p className="mt-0.5 text-muted-foreground text-sm">
+          You keep putting these in the same category by hand. Make a rule and new ones arrive
+          already sorted.
+        </p>
+      </div>
+      <ul className="grid gap-3 sm:grid-cols-2">
+        {suggestions.map((s, i) => (
+          <li
+            key={`${s.direction}:${s.matchText}`}
+            className="fade-in-0 flex animate-in flex-col gap-3 rounded-2xl border border-primary/25 bg-primary/5 fill-mode-both p-4"
+            style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
+          >
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 text-sm">
+                <span className="text-muted-foreground">
+                  {s.direction === "out" ? "Money out" : "Money in"} containing{" "}
+                </span>
+                <span className="font-medium">“{s.matchText}”</span>
+                <span className="text-muted-foreground"> → </span>
+                <span className="font-medium">{s.categoryName}</span>
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="-me-1.5 -mt-1.5 size-7 shrink-0"
+                onClick={() => dismiss(s)}
+                disabled={pending}
+                aria-label={`Don't suggest “${s.matchText}” again`}
+              >
+                {busy === `dismiss:${s.matchText}` ? <Spinner /> : <X className="size-4" />}
+              </Button>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              You categorized {s.count} like this
+              {s.waiting
+                ? ` · ${s.waiting} uncategorized ${s.waiting === 1 ? "one is" : "ones are"} waiting`
+                : ""}
+              .
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              className="self-start"
+              onClick={() => fromSuggestion(s)}
+            >
+              <Wand2 />
+              Make this rule
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ) : null;
+
   const remove = () =>
     deleting &&
     run(`delete:${deleting.id}`, async () => {
@@ -95,6 +182,7 @@ export function RulesList({
 
   return (
     <div className="grid gap-5">
+      {suggested}
       {rules.length === 0 ? (
         <div className="relative overflow-hidden rounded-2xl border bg-card px-6 py-14 text-center shadow-xs">
           <div className="pointer-events-none absolute inset-0 bg-dots text-primary opacity-[0.06]" />

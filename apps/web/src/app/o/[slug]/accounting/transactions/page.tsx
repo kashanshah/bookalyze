@@ -17,6 +17,7 @@ import {
   matchedTransferIds,
   ruleNamesFor,
   schema,
+  suggestedRules,
   suggestTransfers,
 } from "@bookalyze/db";
 import { eq, sql } from "drizzle-orm";
@@ -93,6 +94,7 @@ export default async function TransactionsPage({
     transferPairs,
     partners,
     matched,
+    ruleSuggestionCount,
   } = await inOrg(ctx, async (tx) => {
     const contacts = await contactOptions(tx, { includeArchived: true });
     const taxRates = await listTaxRates(tx, { includeArchived: true });
@@ -136,6 +138,9 @@ export default async function TransactionsPage({
           .rows
       : [];
     const matched = await matchedTransferIds(tx, [...onPage]);
+    const ruleSuggestionCount = can(ctx.plan, ctx.enabledModules, "banking.rules")
+      ? (await suggestedRules(tx)).length
+      : 0;
     return {
       result,
       hasAny,
@@ -149,6 +154,7 @@ export default async function TransactionsPage({
       transferPairs,
       partners,
       matched,
+      ruleSuggestionCount,
     };
   });
   const flagOf = new Map(flags.map((f) => [f.entryId, f]));
@@ -324,6 +330,7 @@ export default async function TransactionsPage({
           duplicateCount={duplicateCount}
           needsAccountCount={needsAccountCount}
           transferCount={transferPairs.length}
+          ruleSuggestionCount={ruleSuggestionCount}
           footer={
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-muted-foreground">

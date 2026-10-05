@@ -10,11 +10,13 @@ import {
   FileCheck2,
   FileX2,
   Landmark,
+  Lightbulb,
   Lock,
   Search,
   Wand2,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -68,6 +70,7 @@ export function TransactionList({
   duplicateCount,
   needsAccountCount,
   transferCount,
+  ruleSuggestionCount,
   footer,
 }: {
   rows: TxRow[];
@@ -80,6 +83,8 @@ export function TransactionList({
   needsAccountCount: number;
   /** Suggested transfers waiting for a decision, across all pages. */
   transferCount: number;
+  /** Rules worth making, from how transactions were categorized by hand. */
+  ruleSuggestionCount: number;
   /** Page count and paging buttons, shown beside the per-page choice. */
   footer?: React.ReactNode;
 }) {
@@ -259,6 +264,26 @@ export function TransactionList({
           </p>
           <Button size="sm" variant="outline" onClick={() => set({ status: "duplicates" })}>
             Show only these
+          </Button>
+        </div>
+      ) : null}
+
+      {ruleSuggestionCount > 0 ? (
+        <div className="fade-in-0 flex animate-in flex-wrap items-center gap-3 rounded-2xl border bg-card px-4 py-3 shadow-xs sm:px-5">
+          <Lightbulb className="size-4 shrink-0 text-primary" />
+          <p className="min-w-0 flex-1 text-sm">
+            <span className="font-medium">
+              {ruleSuggestionCount === 1
+                ? "1 rule suggested"
+                : `${ruleSuggestionCount} rules suggested`}
+            </span>
+            <span className="text-muted-foreground">
+              {" "}
+              for payees you keep categorizing the same way.
+            </span>
+          </p>
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/o/${ctx.slug}/banking/rules`}>See suggestions</Link>
           </Button>
         </div>
       ) : null}
