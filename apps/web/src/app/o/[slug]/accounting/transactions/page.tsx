@@ -51,6 +51,7 @@ export default async function TransactionsPage({
   params: Promise<{ slug: string }>;
   searchParams: Promise<{
     account?: string;
+    category?: string;
     contact?: string;
     kind?: string;
     status?: string;
@@ -71,6 +72,12 @@ export default async function TransactionsPage({
   const account =
     sp.account && UUID.test(sp.account) && moneyAccounts.some((a) => a.id === sp.account)
       ? sp.account
+      : "";
+  const category =
+    sp.category &&
+    UUID.test(sp.category) &&
+    accounts.some((a) => a.id === sp.category && !isMoneyAccountSubtype(a.subtype))
+      ? sp.category
       : "";
   const kind = (TRANSACTION_KINDS as readonly string[]).includes(sp.kind ?? "")
     ? (sp.kind as TransactionKind)
@@ -101,6 +108,7 @@ export default async function TransactionsPage({
     const transferPairs = await suggestTransfers(tx);
     const result = await listTransactions(tx, {
       accountId: account || null,
+      categoryId: category || null,
       contactId: contact || null,
       kind,
       reviewed: status === "reviewed" ? true : status === "unreviewed" ? false : null,
@@ -324,7 +332,7 @@ export default async function TransactionsPage({
       ) : (
         <TransactionList
           rows={rows}
-          filters={{ account, contact, kind: kind ?? "", status, q, per: sp.per ?? "" }}
+          filters={{ account, category, contact, kind: kind ?? "", status, q, per: sp.per ?? "" }}
           ctx={ctxForForms}
           hasAny={hasAny}
           duplicateCount={duplicateCount}

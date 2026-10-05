@@ -59,6 +59,8 @@ export async function countNeedsAccount(tx: Transaction): Promise<number> {
 export type TransactionFilters = {
   /** Only transactions touching this account. */
   accountId?: string | null;
+  /** Only transactions with a line in this category (any split counts). */
+  categoryId?: string | null;
   /** Only transactions with this customer or vendor. */
   contactId?: string | null;
   kind?: TransactionKind | null;
@@ -109,9 +111,10 @@ export async function listTransactions(
     isNull(journalEntries.reversesEntryId),
     filters.needsAccount ? needsAccountSql : sql`(${touchesMoney} or ${needsAccountSql})`,
   ];
-  if (filters.accountId) {
+  for (const accountId of [filters.accountId, filters.categoryId]) {
+    if (!accountId) continue;
     conditions.push(
-      sql`exists (select 1 from ${journalLines} l where l.journal_entry_id = ${journalEntries.id} and l.account_id = ${filters.accountId})`,
+      sql`exists (select 1 from ${journalLines} l where l.journal_entry_id = ${journalEntries.id} and l.account_id = ${accountId})`,
     );
   }
   if (filters.contactId) conditions.push(eq(journalEntries.contactId, filters.contactId));

@@ -31,7 +31,7 @@ import {
 import { formatDate, nextDay } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { saveTransactionAction } from "./actions";
-import { InlineInput, inlineTrigger, StaticCell } from "./inline-cell";
+import { InlineInput, inlineTrigger, isWide, StaticCell } from "./inline-cell";
 import { type RowPatch, rowInput, toInput } from "./row-input";
 import type { TxFormContext, TxRow } from "./types";
 
@@ -131,10 +131,36 @@ export function TransactionRow({
   const money = got && direction === "in" ? got : sent;
   const arrived = got && direction === "move" ? got : null;
   const sign = direction === "in" ? "+" : direction === "out" ? "−" : "";
-  const amountTone = cn(
-    "tabular whitespace-nowrap font-medium",
-    direction === "in" && "text-success",
-    direction === "move" && "text-muted-foreground",
+  const amountText = (
+    <span
+      className={cn(
+        "tabular whitespace-nowrap font-medium",
+        direction === "in" && "text-success",
+        direction === "move" && "text-muted-foreground",
+      )}
+    >
+      {sign}
+      {money}
+    </span>
+  );
+  const dateText = <span className="tabular">{formatDate(date, ctx.locale)}</span>;
+  const dateTone = "text-muted-foreground text-xs lg:text-foreground lg:text-sm";
+  const mutedCell = "text-muted-foreground text-xs lg:text-sm";
+  // Phones show the category when there's no description; wide screens invite one.
+  const description = (
+    <>
+      {memo ? (
+        <span className="font-medium">{memo}</span>
+      ) : (
+        <>
+          <span className="font-medium lg:hidden">{category}</span>
+          <span className="hidden text-muted-foreground lg:inline">
+            {editable ? "Add a description" : "No description"}
+          </span>
+        </>
+      )}
+      {contactName ? <span className="text-muted-foreground"> · {contactName}</span> : null}
+    </>
   );
   const ruleMark = row.rule ? (
     <Wand2
@@ -177,174 +203,142 @@ export function TransactionRow({
     >
       <Checkbox checked={picked} onChange={onTogglePicked} label={`Select ${row.number}`} />
 
-      {/* Phones and tablets: the whole row opens the transaction. */}
-      <button
-        type="button"
-        onClick={open}
-        className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 text-start lg:hidden"
-      >
-        <span className="tabular col-start-1 row-start-2 text-muted-foreground text-xs">
-          {formatDate(date, ctx.locale)}
-        </span>
-        <span className="col-start-1 row-start-1 min-w-0 truncate font-medium text-sm">
-          {memo || category}
-        </span>
-        {row.needsAccount ? (
-          <span className="col-start-1 row-start-4 truncate font-medium text-warning text-xs">
-            Choose account
-          </span>
-        ) : null}
-        <span className="col-start-1 row-start-3 truncate text-muted-foreground text-xs">
-          {ruleMark}
-          {contactName ? `${category} · ${contactName}` : category}
-        </span>
-        <span
-          className={cn(
-            amountTone,
-            "col-start-2 row-span-3 row-start-1 self-center text-end text-sm",
-          )}
-        >
-          {sign}
-          {money}
-          {arrived ? (
-            <span className="block font-normal text-muted-foreground text-xs">→ {arrived}</span>
-          ) : null}
-        </span>
-      </button>
-
-      {/* Wide screens: each value changes in place. */}
-      <div className={cn("-mx-2 hidden min-w-0 lg:block", saving && "opacity-60")}>
-        {editable ? (
-          <InlineInput
-            type="date"
-            label="Date"
-            value={date}
-            min={locked ? nextDay(locked) : undefined}
-            display={<span className="tabular">{formatDate(date, ctx.locale)}</span>}
-            onCommit={(next) => {
-              if (next) save({ date: next });
-            }}
-          />
-        ) : (
-          <StaticCell onClick={open} label={openLabel}>
-            <span className="tabular">{formatDate(date, ctx.locale)}</span>
-          </StaticCell>
-        )}
-      </div>
-      <div className={cn("-mx-2 hidden min-w-0 lg:block", saving && "opacity-60")}>
-        {editable ? (
-          <InlineInput
-            label="Description"
-            value={memo}
-            maxLength={500}
-            placeholder="What was it for?"
-            display={
-              <>
-                {memo ? (
-                  <span className="font-medium">{memo}</span>
-                ) : (
-                  <span className="text-muted-foreground">Add a description</span>
-                )}
-                {contactName ? (
-                  <span className="text-muted-foreground"> · {contactName}</span>
-                ) : null}
-              </>
-            }
-            onCommit={(next) => save({ memo: next })}
-          />
-        ) : (
-          <StaticCell onClick={open} label={openLabel}>
-            <span className="font-medium">{memo || category}</span>
-            {contactName ? <span className="text-muted-foreground"> · {contactName}</span> : null}
-          </StaticCell>
-        )}
-      </div>
-      <div className={cn("-mx-2 hidden min-w-0 lg:block", saving && "opacity-60")}>
-        {row.kind === "transfer" ? (
-          <StaticCell onClick={open} label={openLabel} className="text-muted-foreground">
-            —
-          </StaticCell>
-        ) : readOnly || saving ? (
-          <StaticCell onClick={open} label={openLabel} className="text-muted-foreground">
-            {name(moneyAccountId)}
-          </StaticCell>
-        ) : (
-          <Combobox
-            aria-label="Bank, card or cash account"
-            value={moneyAccountId}
-            onChange={chooseAccount}
-            placeholder="Choose account"
-            searchPlaceholder="Search accounts"
-            options={ctx.moneyAccounts.map((a) => ({
-              value: a.id,
-              label: a.currency !== ctx.baseCurrency ? `${a.label} (${a.currency})` : a.label,
-              keywords: a.currency,
-            }))}
-            className={cn(
-              inlineTrigger,
-              "text-muted-foreground hover:text-foreground",
-              row.needsAccount &&
-                "border-warning/50 font-medium text-warning hover:text-warning [&>svg]:opacity-100",
-            )}
-          />
-        )}
-      </div>
+      {/*
+        One set of values for every width: a card on phones, columns from `lg` up. Wide screens
+        change each value in place; narrower ones open the transaction from any of them.
+      */}
       <div
         className={cn(
-          "-mx-2 hidden min-w-0 items-center lg:flex",
+          "grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 lg:col-span-5 lg:grid-cols-subgrid lg:gap-4",
           saving && "opacity-60",
-          ruleMark && "ps-2",
         )}
+        onClickCapture={(e) => {
+          if (isWide()) return;
+          e.preventDefault();
+          e.stopPropagation();
+          open();
+        }}
       >
-        {ruleMark}
-        {editable && single ? (
-          <CategoryPicker
-            slug={ctx.slug}
-            groups={ctx.categories}
-            value={categoryId}
-            direction={row.kind === "deposit" ? "in" : "out"}
-            aria-label="Category"
-            onChange={(id) => {
-              if (id !== categoryId) save({ categoryId: id });
-            }}
-            onCreated={onCategoryCreated}
-            wrapperClassName="min-w-0 flex-1"
-            className={cn(inlineTrigger, "text-muted-foreground hover:text-foreground")}
-          />
-        ) : (
-          <StaticCell onClick={open} label={openLabel} className="text-muted-foreground">
-            {category}
-          </StaticCell>
-        )}
-      </div>
-      <div className={cn("-mx-2 hidden min-w-0 lg:block", saving && "opacity-60")}>
-        {editable && (single || (row.kind === "transfer" && !crossCurrency)) ? (
-          <InlineInput
-            label="Amount"
-            inputMode="decimal"
-            align="end"
-            value={toInput(amount)}
-            display={
-              <span className={amountTone}>
-                {sign}
-                {money}
-              </span>
-            }
-            onCommit={(next) => {
-              if (next) save({ amount: next.replace(/,/g, "") });
-            }}
-          />
-        ) : (
-          <StaticCell onClick={open} label={openLabel} align="end">
-            <span className={amountTone}>
-              {sign}
-              {money}
-            </span>
-            {arrived ? (
-              <span className="block font-normal text-muted-foreground text-xs">→ {arrived}</span>
-            ) : null}
-          </StaticCell>
-        )}
+        <div className="col-start-1 row-start-2 min-w-0 lg:col-start-auto lg:row-start-auto lg:-mx-2">
+          {editable ? (
+            <InlineInput
+              type="date"
+              label="Date"
+              value={date}
+              min={locked ? nextDay(locked) : undefined}
+              display={dateText}
+              className={dateTone}
+              onCommit={(next) => {
+                if (next) save({ date: next });
+              }}
+            />
+          ) : (
+            <StaticCell onClick={open} label={openLabel} className={dateTone}>
+              {dateText}
+            </StaticCell>
+          )}
+        </div>
+        <div className="col-start-1 row-start-1 min-w-0 lg:col-start-auto lg:row-start-auto lg:-mx-2">
+          {editable ? (
+            <InlineInput
+              label="Description"
+              value={memo}
+              maxLength={500}
+              placeholder="What was it for?"
+              display={description}
+              className="text-sm"
+              onCommit={(next) => save({ memo: next })}
+            />
+          ) : (
+            <StaticCell onClick={open} label={openLabel} className="text-sm">
+              {description}
+            </StaticCell>
+          )}
+        </div>
+        <div
+          className={cn(
+            "min-w-0 lg:col-start-auto lg:row-start-auto lg:-mx-2 lg:block",
+            row.needsAccount ? "col-start-1 row-start-4" : "hidden",
+          )}
+        >
+          {row.kind === "transfer" ? (
+            <StaticCell onClick={open} label={openLabel} className={mutedCell}>
+              —
+            </StaticCell>
+          ) : readOnly || saving ? (
+            <StaticCell onClick={open} label={openLabel} className={mutedCell}>
+              {name(moneyAccountId)}
+            </StaticCell>
+          ) : (
+            <Combobox
+              aria-label="Bank, card or cash account"
+              value={moneyAccountId}
+              onChange={chooseAccount}
+              placeholder="Choose account"
+              searchPlaceholder="Search accounts"
+              options={ctx.moneyAccounts.map((a) => ({
+                value: a.id,
+                label: a.currency !== ctx.baseCurrency ? `${a.label} (${a.currency})` : a.label,
+                keywords: a.currency,
+              }))}
+              className={cn(
+                inlineTrigger,
+                "text-muted-foreground hover:text-foreground",
+                row.needsAccount &&
+                  "font-medium text-warning hover:text-warning lg:border-warning/50 lg:[&>svg]:opacity-100",
+              )}
+            />
+          )}
+        </div>
+        <div
+          className={cn(
+            "col-start-1 row-start-3 flex min-w-0 items-center lg:col-start-auto lg:row-start-auto lg:-mx-2",
+            ruleMark && "lg:ps-2",
+          )}
+        >
+          {ruleMark}
+          {editable && single ? (
+            <CategoryPicker
+              slug={ctx.slug}
+              groups={ctx.categories}
+              value={categoryId}
+              direction={row.kind === "deposit" ? "in" : "out"}
+              aria-label="Category"
+              onChange={(id) => {
+                if (id !== categoryId) save({ categoryId: id });
+              }}
+              onCreated={onCategoryCreated}
+              wrapperClassName="min-w-0 flex-1"
+              className={cn(inlineTrigger, "text-muted-foreground hover:text-foreground")}
+            />
+          ) : (
+            <StaticCell onClick={open} label={openLabel} className={mutedCell}>
+              {category}
+            </StaticCell>
+          )}
+        </div>
+        <div className="col-start-2 row-span-3 row-start-1 min-w-0 self-center lg:col-start-auto lg:row-span-1 lg:row-start-auto lg:-mx-2">
+          {editable && (single || (row.kind === "transfer" && !crossCurrency)) ? (
+            <InlineInput
+              label="Amount"
+              inputMode="decimal"
+              align="end"
+              value={toInput(amount)}
+              display={amountText}
+              className="text-sm"
+              onCommit={(next) => {
+                if (next) save({ amount: next.replace(/,/g, "") });
+              }}
+            />
+          ) : (
+            <StaticCell onClick={open} label={openLabel} align="end" className="text-sm">
+              {amountText}
+              {arrived ? (
+                <span className="block font-normal text-muted-foreground text-xs">→ {arrived}</span>
+              ) : null}
+            </StaticCell>
+          )}
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center justify-end gap-1.5">

@@ -75,6 +75,18 @@ export async function withOwnerDb<T>(fn: (client: pg.Client) => Promise<T>): Pro
 }
 
 /**
+ * Opens a transaction from the list through its row menu. On wide screens clicking a value on
+ * the row changes that value instead of opening the transaction.
+ */
+export async function openTransaction(page: Page, text: string) {
+  await page
+    .locator("li", { hasText: text })
+    .getByRole("button", { name: /^More for / })
+    .click();
+  await page.getByRole("menuitem", { name: /^(Edit|View) details$/ }).click();
+}
+
+/**
  * Picks an option in a searchable dropdown (`Combobox`): opens it, types to filter when it has a
  * search box, and clicks the option with this exact label.
  */

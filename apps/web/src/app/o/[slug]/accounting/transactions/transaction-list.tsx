@@ -1,6 +1,6 @@
 "use client";
 
-import { formatMoney } from "@bookalyze/core";
+import { accountTypes, formatMoney } from "@bookalyze/core";
 import {
   ArrowDownLeft,
   ArrowRightLeft,
@@ -41,6 +41,7 @@ import type { TxFormContext, TxRow } from "./types";
 
 type Filters = {
   account: string;
+  category: string;
   contact: string;
   kind: string;
   status: string;
@@ -212,7 +213,7 @@ export function TransactionList({
         </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
         <Combobox
           aria-label="Account"
           value={filters.account}
@@ -226,6 +227,22 @@ export function TransactionList({
             })),
           ]}
           searchPlaceholder="Search accounts"
+        />
+        <Combobox
+          aria-label="Category"
+          value={filters.category}
+          onChange={(v) => set({ category: v })}
+          options={[
+            { value: "", label: "All categories" },
+            ...ctx.categories.flatMap((g) =>
+              g.options.map((o) => ({
+                value: o.id,
+                label: o.label,
+                group: accountTypes[g.type].label,
+              })),
+            ),
+          ]}
+          searchPlaceholder="Search categories"
         />
         <Combobox
           aria-label="Type"
@@ -251,7 +268,7 @@ export function TransactionList({
             { value: "transfers", label: "Possible transfers" },
           ]}
         />
-        <div className="relative">
+        <div className="relative sm:col-span-2 lg:col-span-1">
           <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             aria-label="Search descriptions"
