@@ -661,6 +661,11 @@ test("import: a Wave export with contacts and receipts, a safe re-run and undo",
   ).toBeVisible();
   await expect(page.getByLabel("Where Old Visa goes")).toHaveText("New account: Credit card");
   await expect(page.getByLabel("Where Sales goes")).toHaveText("4000 · Sales");
+  // Each account can show its transactions from the file, to help decide where it goes.
+  const visa = page.locator("li", { hasText: "Old Visa" }).first();
+  await visa.getByRole("button", { name: "Show transactions" }).click();
+  await expect(visa.getByText("Paper and toner")).toBeVisible();
+  await expect(visa.getByText("To Office Supplies")).toBeVisible();
   await page.getByRole("button", { name: "Next: review" }).click();
 
   await expect(page.getByText("Ready to import")).toBeVisible();

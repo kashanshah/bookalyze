@@ -234,7 +234,11 @@ export async function replaceJournalEntry(
   },
 ) {
   const [original] = await tx
-    .select({ date: journalEntries.date, source: journalEntries.source })
+    .select({
+      date: journalEntries.date,
+      source: journalEntries.source,
+      sourceId: journalEntries.sourceId,
+    })
     .from(journalEntries)
     .where(eq(journalEntries.id, input.entryId));
   if (!original) throw new LedgerError("This transaction no longer exists.");
@@ -255,8 +259,12 @@ export async function replaceJournalEntry(
     reference: input.reference,
     memo: input.memo,
     contactId: input.contactId,
-    // A bank transaction stays one after it's categorized (its bank line follows, below).
+    // A bank transaction stays one after it's categorized (its bank line follows, below), and an
+    // imported one keeps its ID from the other program, so importing the file again skips it.
     ...(original.source === "bank_import" ? { source: "bank_import" as const } : {}),
+    ...(original.source === "import"
+      ? { source: "import" as const, sourceId: original.sourceId }
+      : {}),
     entry: input.entry,
   });
   await carryEntryLinks(tx, { from: input.entryId, to: posted.id, userId: input.userId });

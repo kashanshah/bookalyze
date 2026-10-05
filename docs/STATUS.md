@@ -478,6 +478,15 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   change, delete, reorder. Transactions shows a wand on rule-categorized rows, and "Make a rule"
   in a transaction's dialog opens the form filled in (`?text=&category=`). Rule-categorized
   transactions stay unreviewed.
+- **Import fixes in the same PR:**
+  - Accounts step: each account can show up to 5 of its transactions from the file (date,
+    description, Dr/Cr amount, what's on the other side); ones that still need a choice open with
+    them showing.
+  - Re-importing brings back transactions that were removed (migration `0021_reimport_removed`:
+    the unique import ID now ignores reversed entries). An edited imported transaction keeps its
+    ID on the replacement (`replaceJournalEntry`), so it's still skipped; edits made before this
+    are recognised by their reversal and replacement being posted together (same moment, next
+    entry number).
 
 ---
 

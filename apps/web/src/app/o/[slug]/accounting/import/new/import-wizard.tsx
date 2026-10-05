@@ -30,6 +30,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  ChevronDown,
   FileSpreadsheet,
   Upload,
   Users,
@@ -444,6 +445,8 @@ export function ImportWizard({ slug, baseCurrency, locale, lockedThrough, accoun
           onDecide={(key, value) => setDecisions((d) => ({ ...d, [key]: value }))}
           onBack={() => setStep("columns")}
           onNext={goToReview}
+          currency={baseCurrency}
+          locale={locale}
         />
       ) : null}
 
@@ -826,6 +829,8 @@ function PlanPreview({
   );
 }
 
+const SAMPLE_LINES = 5;
+
 function AccountsStep({
   plan,
   accounts,
@@ -833,6 +838,8 @@ function AccountsStep({
   onDecide,
   onBack,
   onNext,
+  currency,
+  locale,
 }: {
   plan: ImportPlan;
   accounts: ExistingAccount[];
@@ -840,8 +847,50 @@ function AccountsStep({
   onDecide: (key: string, value: string) => void;
   onBack: () => void;
   onNext: () => void;
+  currency: string;
+  locale: string;
 }) {
   const [onlyUndecided, setOnlyUndecided] = useState(false);
+  // Accounts that still need a choice show their transactions straight away.
+  const [expanded, setExpanded] = useState(
+    () => new Set(plan.accounts.filter((a) => !decisions[a.key]).map((a) => a.key)),
+  );
+  const toggle = (key: string) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  // A few of each account's transactions from the file: what it is, and what's on the other side.
+  const samples = useMemo(() => {
+    const names = new Map(plan.accounts.map((a) => [a.key, a.name]));
+    const byAccount = new Map<
+      string,
+      { date: string; text: string; amount: string; others: string[]; id: string }[]
+    >();
+    for (const entry of plan.entries) {
+      for (const line of entry.lines) {
+        const list = byAccount.get(line.accountKey) ?? [];
+        if (list.length >= SAMPLE_LINES) continue;
+        list.push({
+          id: `${entry.externalId}:${list.length}`,
+          date: entry.date,
+          text: line.description || entry.memo || "No description",
+          amount: line.amount,
+          others: [
+            ...new Set(
+              entry.lines
+                .filter((l) => l.accountKey !== line.accountKey)
+                .map((l) => names.get(l.accountKey) ?? ""),
+            ),
+          ].filter(Boolean),
+        });
+        byAccount.set(line.accountKey, list);
+      }
+    }
+    return byAccount;
+  }, [plan]);
   const options: ComboboxOption[] = useMemo(
     () => [
       ...accounts
@@ -917,6 +966,55 @@ function AccountsStep({
                 searchPlaceholder="Search your accounts or account types"
                 invalid={!decisions[a.key]}
               />
+              <div className="sm:col-span-2">
+                <button
+                  type="button"
+                  onClick={() => toggle(a.key)}
+                  aria-expanded={expanded.has(a.key)}
+                  className="inline-flex items-center gap-1 text-primary text-xs hover:underline"
+                >
+                  <ChevronDown
+                    className={cn(
+                      "size-3.5 transition-transform",
+                      expanded.has(a.key) && "rotate-180",
+                    )}
+                  />
+                  {expanded.has(a.key) ? "Hide transactions" : "Show transactions"}
+                </button>
+                {expanded.has(a.key) ? (
+                  <ul className="fade-in-0 mt-2 animate-in divide-y rounded-lg border bg-muted/20 text-xs">
+                    {(samples.get(a.key) ?? []).map((t) => (
+                      <li
+                        key={t.id}
+                        className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-baseline gap-x-3 px-3 py-1.5"
+                      >
+                        <span className="tabular text-muted-foreground">
+                          {formatDate(t.date, locale)}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate">{t.text}</span>
+                          {t.others.length ? (
+                            <span className="block truncate text-muted-foreground">
+                              {t.amount.startsWith("-") ? "To" : "From"} {t.others.join(", ")}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="tabular whitespace-nowrap text-end">
+                          <span className="text-muted-foreground">
+                            {t.amount.startsWith("-") ? "Cr" : "Dr"}{" "}
+                          </span>
+                          {formatMoney(t.amount.replace("-", ""), currency, locale)}
+                        </span>
+                      </li>
+                    ))}
+                    {a.lineCount > SAMPLE_LINES ? (
+                      <li className="px-3 py-1.5 text-muted-foreground">
+                        and {(a.lineCount - SAMPLE_LINES).toLocaleString(locale)} more
+                      </li>
+                    ) : null}
+                  </ul>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>

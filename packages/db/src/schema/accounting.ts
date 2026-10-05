@@ -188,10 +188,12 @@ export const journalEntries = pgTable(
       foreignColumns: [importBatches.organizationId, importBatches.id],
     }),
     index("journal_entries_import_batch_idx").on(t.importBatchId),
-    // An entry from another program is imported once, however many times its file is.
+    // An entry from another program is in the books once, however many times its file is
+    // imported. A removed (reversed) one no longer counts, so importing again brings it back;
+    // an edited one keeps the ID on its replacement.
     uniqueIndex("journal_entries_org_import_source_key")
       .on(t.organizationId, t.sourceId)
-      .where(sql`${t.source} = 'import'`),
+      .where(sql`${t.source} = 'import' and ${t.reversedByEntryId} is null`),
     // A bank transaction (from a connection or a statement file) is posted once.
     uniqueIndex("journal_entries_org_bank_source_key")
       .on(t.organizationId, t.sourceId)

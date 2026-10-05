@@ -12,8 +12,9 @@ import {
   receiptCandidates,
   undoImportBatch,
 } from "../imports";
-import { createDefaultChart, reverseJournalEntry } from "../ledger";
+import { createDefaultChart, postJournalEntry, reverseJournalEntry } from "../ledger";
 import * as schema from "../schema";
+import { replaceJournalEntry } from "../transactions";
 
 const ownerUrl =
   process.env.TEST_DATABASE_URL_MIGRATOR ??
@@ -227,6 +228,72 @@ describe("imports", () => {
     expect(await pgErrorOf(inA((tx) => undoImportBatch(tx, batch?.id as string)))).toMatch(
       /changed since/,
     );
+  });
+
+  it("brings back a removed entry when the file is imported again, but never an edited one", async () => {
+    // The test above removed one of the two entries: importing again brings just that one back.
+    const again = await runImport("third.csv");
+    expect(again.result).toEqual({ posted: 1, skipped: 1 });
+    const current = async () =>
+      (
+        await inA((tx) =>
+          tx.select().from(schema.journalEntries).where(eq(schema.journalEntries.source, "import")),
+        )
+      ).filter((e) => !e.reversedByEntryId);
+    const [first, second] = await current();
+    expect((await current()).map((e) => e.sourceId).sort()).toEqual(["wave:1", "wave:2"]);
+
+    // Edited now: the replacement keeps the ID.
+    await inA((tx) =>
+      replaceJournalEntry(tx, {
+        orgId: orgA,
+        entryId: first?.id as string,
+        date: first?.date as string,
+        memo: first?.memo,
+        entry: {
+          currency: "CAD",
+          fxRate: "1",
+          total: "100.0000",
+          lines: [
+            {
+              index: 0,
+              accountId: code["1000"] ?? (code["4000"] as string),
+              description: null,
+              currency: "CAD",
+              amount: "100.0000",
+              baseAmount: "100.0000",
+            },
+            {
+              index: 1,
+              accountId: code["4000"] as string,
+              description: null,
+              currency: "CAD",
+              amount: "-100.0000",
+              baseAmount: "-100.0000",
+            },
+          ],
+        },
+      }),
+    );
+    // Edited before edits kept the ID: reversal and replacement posted together.
+    await inA(async (tx) => {
+      await reverseJournalEntry(tx, {
+        orgId: orgA,
+        entryId: second?.id as string,
+        date: second?.date as string,
+      });
+      await postJournalEntry(tx, {
+        orgId: orgA,
+        date: second?.date as string,
+        memo: second?.memo,
+        entry: await entry([
+          [code["4000"] as string, "-50"],
+          [code["1000"] ?? (code["4000"] as string), "50"],
+        ]),
+      });
+    });
+    const last = await runImport("fourth.csv");
+    expect(last.result).toEqual({ posted: 0, skipped: 2 });
   });
 
   it("refuses entries dated in a closed period", async () => {
