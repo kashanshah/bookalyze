@@ -114,4 +114,42 @@ describe("bank statement CSV", () => {
     // Account numbers are kept only as fingerprints, whatever their spacing.
     expect(accountFingerprint("00001 1111111")).toBe(accountFingerprint("00001-1111111"));
   });
+
+  it("finds the closing balance, whichever way the file runs", () => {
+    const newestFirst = readCsvTable(
+      [
+        "Date,Description,Amount,Balance",
+        "2026-10-04,Fee,-2.00,98.00",
+        "2026-10-04,Coffee,-5.00,100.00",
+        "2026-10-03,Deposit,105.00,105.00",
+      ].join("\n"),
+    );
+    const mapping = guessStatementColumns(newestFirst.headers);
+    expect(mapping.balance).toBe(3);
+    const options = { dateOrder: "ymd", positiveIs: "in" } as const;
+    expect(readStatement(newestFirst, mapping, options, feed).closingBalance).toEqual({
+      date: "2026-10-04",
+      amount: "98.0000",
+    });
+    const oldestFirst = readCsvTable(
+      [
+        "Date,Description,Amount,Balance",
+        "2026-10-03,Deposit,105.00,105.00",
+        "2026-10-04,Coffee,-5.00,100.00",
+        "2026-10-04,Fee,-2.00,98.00",
+      ].join("\n"),
+    );
+    expect(readStatement(oldestFirst, mapping, options, feed).closingBalance?.amount).toBe(
+      "98.0000",
+    );
+    // A card statement (positive is money spent): what's owed is a negative balance.
+    expect(
+      readStatement(oldestFirst, mapping, { ...options, positiveIs: "out" }, feed).closingBalance
+        ?.amount,
+    ).toBe("-98.0000");
+    // No balance column: nothing to compare with.
+    expect(
+      readStatement(oldestFirst, { ...mapping, balance: undefined }, options, feed).closingBalance,
+    ).toBeNull();
+  });
 });

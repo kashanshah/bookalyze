@@ -2,6 +2,7 @@ import { prepareJournalEntry, type TransactionInput, transactionLines } from "@b
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyAmountCorrections, misrecordedAccounts, misrecordedLines } from "../amount-fix";
+import { createConnection, moneyAccountBalances, recordFeedBalance } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import { createDefaultChart, postJournalEntry } from "../ledger";
 import * as schema from "../schema";
@@ -197,5 +198,49 @@ describe("correcting foreign-currency amounts", () => {
     expect(rows[0]).toMatchObject({ currency: "USD", fxRate: "1.4115447154" });
     expect(rows[0]?.view.amount).toBe("123.0000");
     expect(rows[0]?.view.splits.map((x) => x.amount)).toEqual(["123.0000"]);
+  });
+});
+
+describe("bank balances beside the books", () => {
+  it("compares the bank's figure with the account on that day, newest figure kept", async () => {
+    const visa = code["2100"] as string;
+    await bank("withdrawal", visa, "40.00", "2026-08-01", "Lunch");
+    await bank("withdrawal", visa, "10.00", "2026-08-20", "Parking");
+    const feedId = await scoped(async (tx) => {
+      const connection = await createConnection(tx, {
+        orgId,
+        provider: "csv",
+        name: "Visa statements",
+        settings: {},
+      });
+      const [feed] = await tx
+        .insert(schema.bankFeeds)
+        .values({
+          organizationId: orgId,
+          connectionId: connection.id,
+          externalId: "csv:visa",
+          currency: "CAD",
+          name: "Visa",
+          accountId: visa,
+          syncFrom: "2026-01-01",
+        })
+        .returning();
+      return feed?.id as string;
+    });
+    await scoped((tx) => recordFeedBalance(tx, feedId, { amount: "-40.00", on: "2026-08-10" }));
+    // An older statement uploaded afterwards doesn't replace it.
+    await scoped((tx) => recordFeedBalance(tx, feedId, { amount: "-1.00", on: "2026-07-01" }));
+    const { accounts: all, onBankDay } = await scoped((tx) => moneyAccountBalances(tx));
+    expect(all.find((a) => a.accountId === visa)).toMatchObject({
+      currency: "CAD",
+      balance: "-50.0000",
+      otherCurrency: 0,
+    });
+    // On Aug 10 the card held -40 in the books too: they agree.
+    expect(onBankDay.get(feedId)).toBe("-40.0000");
+    const [feed] = await scoped((tx) =>
+      tx.select().from(schema.bankFeeds).where(eq(schema.bankFeeds.id, feedId)),
+    );
+    expect(feed).toMatchObject({ bankBalance: "-40.0000", bankBalanceOn: "2026-08-10" });
   });
 });

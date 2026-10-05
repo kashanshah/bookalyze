@@ -11,15 +11,17 @@ import {
   missingCadRates,
   openSecret,
   recordConnectionSync,
+  recordFeedBalance,
   schema,
   sealSecret,
   withOrg,
 } from "@bookalyze/db";
 import { sql } from "drizzle-orm";
+import { nowIn } from "@/lib/dates";
 import { audit } from "./audit";
 import { env } from "./env";
 import { syncBankOfCanada } from "./fx";
-import { WiseError, wiseStatement } from "./wise";
+import { WiseError, wiseBalances, wiseStatement } from "./wise";
 
 /**
  * Syncing bank connections: fetch each feed's new transactions from the provider (outside any
@@ -86,6 +88,7 @@ export async function syncConnection(ctx: SyncContext, connectionId: string): Pr
   let error: string | null = null;
   const lines: FeedLine[] = [];
   const fetched = new Map<string, Date>();
+  const balances = new Map<string, string>();
   try {
     const token = openSecret(
       connection.secret,
@@ -114,6 +117,12 @@ export async function syncConnection(ctx: SyncContext, connectionId: string): Pr
       }
       fetched.set(feed.id, startedAt);
     }
+    // What Wise says each balance holds now, to show beside the balance in the books.
+    try {
+      for (const b of await wiseBalances(token, profileId)) balances.set(String(b.id), b.amount);
+    } catch {
+      // Not worth failing the sync over; the last figure stays.
+    }
   } catch (e) {
     error = e instanceof WiseError || e instanceof Error ? e.message : "The sync failed.";
   }
@@ -136,6 +145,11 @@ export async function syncConnection(ctx: SyncContext, connectionId: string): Pr
     );
     for (const [feedId, through] of fetched) {
       if (!stuck.has(feedId)) await markFeedSynced(tx, feedId, through);
+    }
+    const today = nowIn(profile.timezone).date;
+    for (const feed of feeds) {
+      const amount = balances.get(feed.externalId);
+      if (amount !== undefined) await recordFeedBalance(tx, feed.id, { amount, on: today });
     }
     await recordConnectionSync(tx, connectionId, { at: startedAt, error });
     if (imported.posted && ctx.userId) {

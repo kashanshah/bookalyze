@@ -917,7 +917,7 @@ test("banking: connect Wise, flag and merge duplicates, merge by hand, transfers
   await upload.getByLabel("Statement file").setInputFiles(statement);
   await expect(upload.getByText(/the way you matched this account's statements/)).toBeVisible();
   await upload.getByRole("button", { name: "Bring in 2 transactions" }).click();
-  await expect(page.getByText("Already in your books")).toBeVisible();
+  await expect(page.getByText("Already in your books", { exact: true })).toBeVisible();
 
   // Disconnecting deletes the token and keeps what was brought in.
   await page.getByRole("button", { name: "Disconnect" }).click();
@@ -1338,6 +1338,11 @@ test("amounts recorded in CAD on a USD account are flagged and corrected from Wi
   await dialog.getByRole("button", { name: "Correct 1 transaction" }).click();
   await expect(page.getByText("1 transaction corrected")).toBeVisible();
   await expect(page.getByText("Old USD: 1 amount isn't in USD")).toHaveCount(0);
+  // The balance Wise reports sits beside the one in the books, and they agree.
+  const row = page.locator("li", { hasText: "1030 · Old USD" });
+  await expect(row).toContainText(/Bank, .*US\$100\.00/);
+  await expect(row).toContainText(/In Bookalyze\s*US\$100\.00/);
+  await expect(row).toContainText("Matches");
 
   await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
   await expect(page).toHaveURL(/accounting\/accounts/);

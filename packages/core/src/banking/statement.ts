@@ -25,6 +25,7 @@ export const STATEMENT_FIELDS = [
   "moneyIn",
   "reference",
   "account",
+  "balance",
 ] as const;
 export type StatementField = (typeof STATEMENT_FIELDS)[number];
 export type StatementMapping = Partial<Record<StatementField, number>>;
@@ -84,6 +85,14 @@ const NAMES: Record<Exclude<StatementField, "description2">, string[]> = {
   moneyIn: ["credit", "credits", "deposit", "deposits", "money in", "paid in", "credit amount"],
   reference: ["reference", "cheque number", "check number", "ref", "transaction id", "id"],
   account: ["account number", "account", "account no", "card number", "account name"],
+  balance: [
+    "balance",
+    "running balance",
+    "closing balance",
+    "ledger balance",
+    "account balance",
+    "available balance",
+  ],
 };
 
 /**
@@ -117,6 +126,7 @@ export function guessStatementColumns(
     "description",
     "reference",
     "account",
+    "balance",
   ] as const) {
     if (mapping[field] !== undefined) continue;
     const index = find(NAMES[field]);
@@ -230,6 +240,11 @@ export type StatementRead = {
   lastDate: string | null;
   /** Rows for other accounts in the same file, left out. */
   otherAccounts: number;
+  /**
+   * The balance after the file's last transaction, when it has a balance column: what the bank
+   * says the account held on that day (signed like amounts: a card's debt is negative).
+   */
+  closingBalance: { date: string; amount: string } | null;
 };
 
 const normalizeDescription = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase();
@@ -261,6 +276,8 @@ export function readStatement(
   };
   const abs = (v: bigint) => (v < 0n ? -v : v);
 
+  // Balances by row, to find the one after the last transaction (files run either way in time).
+  const balances: { date: string; amount: bigint }[] = [];
   table.rows.forEach((row, i) => {
     const lineNumber = table.lineNumbers[i] ?? i + 2;
     if (options.accountFingerprint && mapping.account !== undefined) {
@@ -291,6 +308,15 @@ export function readStatement(
       problems.push({ lineNumber, message: "The amount isn't a number we can read." });
       return;
     }
+    if (mapping.balance !== undefined) {
+      const balance = amountOf(cell(row, "balance"));
+      if (balance !== null && cell(row, "balance") !== "") {
+        balances.push({
+          date,
+          amount: options.positiveIs === "in" ? balance : -balance,
+        });
+      }
+    }
     if (amount === 0n) return;
     const description =
       [cell(row, "description"), cell(row, "description2")].filter(Boolean).join(" · ") ||
@@ -319,5 +345,23 @@ export function readStatement(
     firstDate: dates[0] ?? null,
     lastDate: dates.at(-1) ?? null,
     otherAccounts,
+    closingBalance: closingBalance(balances),
   };
+}
+
+/**
+ * The balance after the last transaction: the latest day's row that comes last in time. Files
+ * listed newest first put that row first among the day's rows, oldest-first files last.
+ */
+function closingBalance(
+  rows: readonly { date: string; amount: bigint }[],
+): { date: string; amount: string } | null {
+  if (!rows.length) return null;
+  const first = rows[0];
+  const last = rows[rows.length - 1];
+  const newestFirst = Boolean(first && last && first.date > last.date);
+  const latest = rows.reduce((d, r) => (r.date > d ? r.date : d), "");
+  const sameDay = rows.filter((r) => r.date === latest);
+  const pick = newestFirst ? sameDay[0] : sameDay[sameDay.length - 1];
+  return pick ? { date: pick.date, amount: formatDecimal(pick.amount) } : null;
 }

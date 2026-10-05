@@ -8,6 +8,7 @@ import {
   disconnectConnection,
   getConnection,
   importBankLines,
+  recordFeedBalance,
   recordStatementUpload,
   schema,
   setConnectionSecret,
@@ -341,6 +342,14 @@ const statementSchema = z.object({
     )
     .min(1)
     .max(500),
+  /** The file's balance after its last transaction, when it has a balance column. */
+  closingBalance: z
+    .object({
+      date: z.string().refine(isIsoDate, "Not a date."),
+      amount: z.string().regex(/^-?\d{1,15}(\.\d{1,4})?$/, "Not an amount."),
+    })
+    .nullable()
+    .optional(),
 });
 export type StatementUploadInput = z.infer<typeof statementSchema>;
 
@@ -358,7 +367,7 @@ export async function uploadStatementAction(
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Check the file." };
   }
-  const { accountId, settings, lines } = parsed.data;
+  const { accountId, settings, lines, closingBalance } = parsed.data;
   if (lines.some((l) => !l.externalId.startsWith(`csv:${accountId}:`))) {
     return { ok: false, message: "This file was read for a different account. Start again." };
   }
@@ -399,6 +408,12 @@ export async function uploadStatementAction(
       })),
     });
     await recordStatementUpload(tx, feed.connectionId, { statement: settings });
+    if (closingBalance) {
+      await recordFeedBalance(tx, feed.feedId, {
+        amount: closingBalance.amount,
+        on: closingBalance.date,
+      });
+    }
     await audit(tx, {
       orgId: ctx.org.id,
       actorUserId: ctx.session.user.id,
