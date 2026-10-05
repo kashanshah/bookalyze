@@ -39,6 +39,8 @@ export type TxRow = {
   receivedAmount?: string;
   receivedCurrency?: string;
   splits: { accountId: string; amount: string; description?: string; taxRateId?: string }[];
+  /** No bank, card or cash account was ever chosen (an Uncategorized line stands in for it). */
+  needsAccount?: boolean;
   /** The words of the rule that categorized it, if one did. */
   rule?: string;
   /** Flagged as possibly a copy of a transaction already in the books. */

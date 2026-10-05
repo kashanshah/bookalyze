@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, nowIn, openDate } from "@/lib/dates";
 import { getAccountingContext, inOrg } from "@/server/accounting";
+import { DeleteDialog } from "./delete-dialog";
 import { ReverseDialog } from "./reverse-dialog";
 
 export const metadata: Metadata = { title: "Journal entry" };
@@ -131,14 +132,17 @@ export default async function JournalEntryPage({
         actions={
           <div className="flex gap-2">
             {!entry.reversedByEntryId && !entry.reversesEntryId ? (
-              <ReverseDialog
-                slug={slug}
-                entryId={entry.id}
-                entryNumber={number}
-                today={openDate(nowIn(ctx.profile.timezone).date, lockedThrough)}
-                lockedThrough={lockedThrough}
-                locale={locale}
-              />
+              <>
+                <DeleteDialog slug={slug} entryId={entry.id} entryNumber={number} />
+                <ReverseDialog
+                  slug={slug}
+                  entryId={entry.id}
+                  entryNumber={number}
+                  today={openDate(nowIn(ctx.profile.timezone).date, lockedThrough)}
+                  lockedThrough={lockedThrough}
+                  locale={locale}
+                />
+              </>
             ) : null}
             <Button asChild>
               <Link href={`${journalHref}/new`}>

@@ -9,6 +9,7 @@ import {
   Copy,
   FileCheck2,
   FileX2,
+  Landmark,
   Lock,
   Search,
   Wand2,
@@ -64,6 +65,7 @@ export function TransactionList({
   ctx,
   hasAny,
   duplicateCount,
+  needsAccountCount,
   footer,
 }: {
   rows: TxRow[];
@@ -72,6 +74,8 @@ export function TransactionList({
   hasAny: boolean;
   /** Possible duplicates waiting for a decision, across all pages. */
   duplicateCount: number;
+  /** Transactions that never said which bank, card or cash account they went through. */
+  needsAccountCount: number;
   /** Page count and paging buttons, shown beside the per-page choice. */
   footer?: React.ReactNode;
 }) {
@@ -215,6 +219,7 @@ export function TransactionList({
             { value: "unreviewed", label: "Needs review" },
             { value: "reviewed", label: "Reviewed" },
             { value: "duplicates", label: "Possible duplicates" },
+            { value: "no_account", label: "Account not chosen" },
           ]}
         />
         <div className="relative">
@@ -247,6 +252,26 @@ export function TransactionList({
             </span>
           </p>
           <Button size="sm" variant="outline" onClick={() => set({ status: "duplicates" })}>
+            Show only these
+          </Button>
+        </div>
+      ) : null}
+
+      {needsAccountCount > 0 && filters.status !== "no_account" ? (
+        <div className="fade-in-0 flex animate-in flex-wrap items-center gap-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 sm:px-5">
+          <Landmark className="size-4 shrink-0 text-warning" />
+          <p className="min-w-0 flex-1 text-sm">
+            <span className="font-medium">
+              {needsAccountCount === 1
+                ? "1 transaction doesn't say which account paid"
+                : `${needsAccountCount} transactions don't say which account paid`}
+            </span>
+            <span className="text-muted-foreground">
+              {" "}
+              (usually from an import). Open one and choose the bank or card account.
+            </span>
+          </p>
+          <Button size="sm" variant="outline" onClick={() => set({ status: "no_account" })}>
             Show only these
           </Button>
         </div>
@@ -312,7 +337,7 @@ export function TransactionList({
                   key={row.id}
                   className={cn(
                     "fade-in-0 flex animate-in flex-wrap items-center gap-3 fill-mode-both px-4 py-3 transition-colors hover:bg-muted/40 sm:px-5 md:grid md:grid-cols-[1.25rem_6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem_5.75rem] md:gap-4",
-                    row.duplicate && "bg-warning/[0.06] hover:bg-warning/10",
+                    (row.duplicate || row.needsAccount) && "bg-warning/[0.06] hover:bg-warning/10",
                     picked.has(row.id) && "bg-primary/5 hover:bg-primary/[0.07]",
                   )}
                   style={{ animationDelay: `${Math.min(i, 12) * 20}ms` }}
@@ -333,9 +358,15 @@ export function TransactionList({
                     <span className="col-start-1 row-start-1 min-w-0 truncate font-medium text-sm md:col-start-auto md:row-start-auto">
                       {row.memo || category}
                     </span>
-                    <span className="hidden truncate text-muted-foreground text-sm md:block">
-                      {row.kind === "transfer" ? "—" : name(row.moneyAccountIds[0])}
-                    </span>
+                    {row.needsAccount ? (
+                      <span className="col-start-1 row-start-4 truncate font-medium text-warning text-xs md:col-start-auto md:row-start-auto md:text-sm">
+                        Choose account
+                      </span>
+                    ) : (
+                      <span className="hidden truncate text-muted-foreground text-sm md:block">
+                        {row.kind === "transfer" ? "—" : name(row.moneyAccountIds[0])}
+                      </span>
+                    )}
                     <span className="col-start-1 row-start-3 truncate text-muted-foreground text-xs md:col-start-auto md:row-start-auto md:text-sm">
                       {row.rule ? (
                         <Wand2

@@ -493,6 +493,26 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Chart of accounts:** accounts held in another currency show their balance in that currency
   (sum of line amounts as recorded), with the main-currency value underneath.
 
+
+### Simpler like Wave: no-account transactions and deleting journal entries
+
+- **"Account not chosen" on Transactions:** an entry with no bank, card or cash line but an
+  Uncategorized income/expense line (e.g. Wave's "Unknown Account" mapped to Uncategorized) now
+  shows on Transactions, highlighted, with "Choose account" where the account goes. A banner counts
+  them ("Show only these" = status filter `no_account`). Opening one leaves "Paid from" empty with
+  a hint; saving replaces it with an ordinary transaction (`replaceJournalEntry`).
+  - Core: `describeTransaction(lines, isMoney, isPlaceholder?)` reads the Uncategorized lines as
+    the money side (`needsAccount: true`, `moneyAccountIds: []`); if every line is Uncategorized,
+    credits are the money out. `PLACEHOLDER_ACCOUNT_SUBTYPES` = uncategorized income/expense
+    (by subtype, so imported accounts mapped there count too).
+  - DB: `listTransactions` includes them (`needsAccount` filter, kind filter by the stand-in's
+    sign); `countNeedsAccount()`.
+  - Pure journal entries (no money account, nothing Uncategorized) still only appear in Journal
+    entries.
+- **Delete on a journal entry:** a plain Delete button (reverses on the entry's own date, same
+  guards as removing a transaction: closed period, reconciled, already changed). "Reverse" on a
+  chosen date stays, as a quieter button, for accountants.
+
 ---
 
 ## 3. Next up (in order)

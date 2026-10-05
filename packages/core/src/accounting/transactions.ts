@@ -148,6 +148,12 @@ export type TransactionView = {
   receivedCurrency?: string;
   /** Category lines (everything that isn't a money account), as positive amounts. */
   splits: TransactionSplit[];
+  /**
+   * The entry never said which bank, card or cash account the money moved through: an
+   * Uncategorized line stands in for it (e.g. an import where the account was "Unknown").
+   * `moneyAccountIds` is empty; choosing the account turns it into an ordinary transaction.
+   */
+  needsAccount?: boolean;
 };
 
 /**
@@ -157,9 +163,11 @@ export type TransactionView = {
 export function describeTransaction(
   lines: readonly LedgerLine[],
   isMoney: (accountId: string) => boolean,
+  /** Uncategorized income and expense accounts, which can stand in for a missing money account. */
+  isPlaceholder?: (accountId: string) => boolean,
 ): TransactionView | null {
   const money = lines.filter((l) => isMoney(l.accountId));
-  if (money.length === 0) return null;
+  if (money.length === 0) return isPlaceholder ? describeUnplaced(lines, isPlaceholder) : null;
   const others = lines.filter((l) => !isMoney(l.accountId));
   const net = money.reduce((t, l) => t + parseDecimal(l.amount), 0n);
   const abs = (v: bigint) => (v < 0n ? -v : v);
@@ -200,6 +208,47 @@ export function describeTransaction(
     })),
   };
 }
+
+/**
+ * An entry with no money account but an Uncategorized line, read as money in or out of an account
+ * nobody chose. The Uncategorized lines stand in for the money side; when every line is
+ * Uncategorized (e.g. Uncategorized income → Uncategorized expense), the credits are the money
+ * that went out and the debits what it was for. Null when nothing stands in.
+ */
+function describeUnplaced(
+  lines: readonly LedgerLine[],
+  isPlaceholder: (accountId: string) => boolean,
+): TransactionView | null {
+  const held = lines.filter((l) => isPlaceholder(l.accountId));
+  if (held.length === 0) return null;
+  let side = held;
+  let others = lines.filter((l) => !isPlaceholder(l.accountId));
+  if (others.length === 0) {
+    side = lines.filter((l) => parseDecimal(l.amount) < 0n);
+    others = lines.filter((l) => parseDecimal(l.amount) >= 0n);
+  }
+  const net = side.reduce((t, l) => t + parseDecimal(l.amount), 0n);
+  if (net === 0n || others.length === 0) return null;
+  const kind: TransactionKind = net > 0n ? "deposit" : "withdrawal";
+  return {
+    kind,
+    amount: formatDecimal(net < 0n ? -net : net),
+    moneyAccountIds: [],
+    splits: mergeTaxLines(others).map((l) => ({
+      accountId: l.accountId,
+      amount: formatDecimal(kind === "deposit" ? -l.units : l.units),
+      description: l.description ?? undefined,
+      ...(l.taxRateId ? { taxRateId: l.taxRateId } : {}),
+    })),
+    needsAccount: true,
+  };
+}
+
+/** Subtypes whose lines can stand in for a missing money account (see `describeTransaction`). */
+export const PLACEHOLDER_ACCOUNT_SUBTYPES = [
+  "uncategorized_income",
+  "uncategorized_expense",
+] as const;
 
 export type TransferInput = {
   fromAccountId: string;

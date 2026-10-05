@@ -130,7 +130,7 @@ function TransactionForm({
   const [contactId, setContactId] = useState(row?.contactId ?? "");
   const [contacts, setContacts] = useState(ctx.contacts);
   const [moneyAccountId, setMoneyAccountId] = useState(
-    row?.moneyAccountIds[0] ??
+    (row?.needsAccount ? "" : row?.moneyAccountIds[0]) ??
       (state.mode === "create" ? state.moneyAccountId : undefined) ??
       firstMoney,
   );
@@ -403,6 +403,11 @@ function TransactionForm({
               label={kind === "deposit" ? "Deposited into" : "Paid from"}
               htmlFor="tx-money"
               error={errors.moneyAccountId}
+              hint={
+                row?.needsAccount && !moneyAccountId
+                  ? "This transaction never said which account the money went through. Choose it, and it becomes a normal transaction."
+                  : undefined
+              }
             >
               <Combobox
                 id="tx-money"
