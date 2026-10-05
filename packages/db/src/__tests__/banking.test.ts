@@ -8,7 +8,9 @@ import {
   type FeedLine,
   importBankLines,
   listConnections,
+  recordStatementUpload,
   setConnectionSecret,
+  statementFeedFor,
 } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import {
@@ -490,10 +492,61 @@ describe("bank connections", () => {
     expect(await current(second.id)).toBe(false);
   });
 
+  it("brings in a statement file once, however often it's uploaded", async () => {
+    const upload = (lines: FeedLine[]) => sync(lines);
+    const feed = await inOrg(orgA, (tx) =>
+      statementFeedFor(tx, {
+        orgId: orgA,
+        accountId: cadBank,
+        accountName: "Bank statements",
+        currency: "CAD",
+        firstDate: "2027-08-01",
+      }),
+    );
+    const rows = [
+      line({
+        feedId: feed.feedId,
+        externalId: `csv:${cadBank}:2027-08-01:-3.5000:aa:0`,
+        date: "2027-08-01",
+        amount: "-3.5000",
+      }),
+      line({
+        feedId: feed.feedId,
+        externalId: `csv:${cadBank}:2027-08-01:-3.5000:aa:1`,
+        date: "2027-08-01",
+        amount: "-3.5000",
+      }),
+    ];
+    expect(await upload(rows)).toMatchObject({ posted: 2, duplicates: 0 });
+    expect(await upload(rows)).toMatchObject({ posted: 0, duplicates: 2 });
+    await inOrg(orgA, (tx) =>
+      recordStatementUpload(tx, feed.connectionId, { statement: { columns: { date: "Date" } } }),
+    );
+    // The same account gets the same feed (and its remembered columns) next time.
+    const again = await inOrg(orgA, (tx) =>
+      statementFeedFor(tx, {
+        orgId: orgA,
+        accountId: cadBank,
+        accountName: "Bank statements",
+        currency: "CAD",
+        firstDate: "2027-09-01",
+      }),
+    );
+    expect(again.feedId).toBe(feed.feedId);
+    expect(again.settings).toEqual({ statement: { columns: { date: "Date" } } });
+    // Uploads have no credentials, so the daily sync leaves them alone.
+    const listed = await app.db.execute<{ connection_id: string }>(
+      sql`select connection_id from syncable_connections()`,
+    );
+    expect(listed.rows.map((r) => r.connection_id)).not.toContain(feed.connectionId);
+  });
+
   it("keeps connections to their company and lists syncable ones for the daily job", async () => {
-    expect((await inOrg(orgA, (tx) => listConnections(tx))).map((c) => c.feeds.length)).toEqual([
-      2,
-    ]);
+    expect(
+      (await inOrg(orgA, (tx) => listConnections(tx)))
+        .filter((c) => c.provider === "wise")
+        .map((c) => c.feeds.length),
+    ).toEqual([2]);
     expect(await inOrg(orgB, (tx) => listConnections(tx))).toEqual([]);
     expect(await entriesOf(orgB)).toEqual([]);
     const listed = await app.db.execute<{ organization_id: string; connection_id: string }>(

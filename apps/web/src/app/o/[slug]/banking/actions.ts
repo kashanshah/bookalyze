@@ -1,22 +1,30 @@
 "use server";
 
-import { fiscalYearFor } from "@bookalyze/core";
+import { fiscalYearFor, isMoneyAccountSubtype } from "@bookalyze/core";
 import {
   addBankFeed,
   createConnection,
   disconnectConnection,
   getConnection,
+  importBankLines,
+  recordStatementUpload,
   schema,
   setConnectionSecret,
+  statementFeedFor,
   VaultError,
 } from "@bookalyze/db";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { isIsoDate, nowIn } from "@/lib/dates";
-import { getBankingContext, inOrg } from "@/server/accounting";
+import { getBankingContext, inOrg, listAccounts } from "@/server/accounting";
 import { audit } from "@/server/audit";
-import { type SyncSummary, sealConnectionSecret, syncConnection } from "@/server/banking";
+import {
+  ensureRates,
+  type SyncSummary,
+  sealConnectionSecret,
+  syncConnection,
+} from "@/server/banking";
 import { fiscalConfigOf, isOrgAdmin } from "@/server/org";
 import { WiseError, wiseBalances, wiseProfiles } from "@/server/wise";
 
@@ -308,3 +316,102 @@ export async function disconnectAction(
 }
 
 class ConnectError extends Error {}
+
+const statementSchema = z.object({
+  accountId: z.string().uuid(),
+  settings: z.object({
+    columns: z.record(z.string(), z.string().max(200)),
+    dateOrder: z.enum(["ymd", "mdy", "dmy"]),
+    positiveIs: z.enum(["in", "out"]),
+    account: z
+      .object({ fingerprint: z.string().regex(/^[0-9a-f]{16}$/), hint: z.string().max(12) })
+      .optional(),
+  }),
+  lines: z
+    .array(
+      z.object({
+        externalId: z.string().max(200),
+        date: z.string().refine(isIsoDate, "Not a date."),
+        amount: z.string().regex(/^-?\d{1,15}(\.\d{1,4})?$/, "Not an amount."),
+        description: z.string().min(1).max(500),
+        reference: z.string().max(120).nullable(),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+export type StatementUploadInput = z.infer<typeof statementSchema>;
+
+/**
+ * Brings in one part of a bank statement (up to 500 rows) for a money account. Rows already
+ * brought in are recognised by their external ID and left alone; rows that look like a
+ * transaction already in the books are flagged on the Transactions screen.
+ */
+export async function uploadStatementAction(
+  slug: string,
+  input: StatementUploadInput,
+): Promise<{ ok: true; summary: SyncSummary } | Failure> {
+  const ctx = await getBankingContext(slug);
+  const parsed = statementSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Check the file." };
+  }
+  const { accountId, settings, lines } = parsed.data;
+  if (lines.some((l) => !l.externalId.startsWith(`csv:${accountId}:`))) {
+    return { ok: false, message: "This file was read for a different account. Start again." };
+  }
+  const account = (await listAccounts(ctx)).find((a) => a.id === accountId);
+  if (!account || account.isArchived || !isMoneyAccountSubtype(account.subtype)) {
+    return { ok: false, message: "Pick a bank, card or cash account." };
+  }
+  const base = ctx.profile.baseCurrency;
+  const currency = account.currency ?? base;
+  await ensureRates(
+    base,
+    lines.map((l) => ({ currency, date: l.date })),
+  );
+  const summary = await inOrg(ctx, async (tx) => {
+    const feed = await statementFeedFor(tx, {
+      orgId: ctx.org.id,
+      userId: ctx.session.user.id,
+      accountId,
+      accountName: account.name,
+      currency,
+      firstDate: [...lines].map((l) => l.date).sort()[0] as string,
+    });
+    const result = await importBankLines(tx, {
+      orgId: ctx.org.id,
+      userId: ctx.session.user.id,
+      baseCurrency: base,
+      lines: lines.map((l) => ({
+        feedId: feed.feedId,
+        externalId: l.externalId,
+        date: l.date,
+        currency,
+        amount: l.amount,
+        fee: "0.0000",
+        description: l.description,
+        counterparty: null,
+        reference: l.reference,
+        kind: l.amount.startsWith("-") ? "other" : "deposit",
+      })),
+    });
+    await recordStatementUpload(tx, feed.connectionId, { statement: settings });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "bank.statement_upload",
+      entityType: "connection",
+      entityId: feed.connectionId,
+      after: {
+        posted: result.posted,
+        duplicates: result.duplicates,
+        flagged: result.flagged,
+        skipped: result.skipped.length,
+      },
+    });
+    return result;
+  });
+  revalidatePath(`/o/${slug}`, "layout");
+  return { ok: true, summary: { ...summary, error: null } };
+}

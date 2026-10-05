@@ -24,7 +24,7 @@ _Last updated: 2026-10-04, phase 1b (importing from other software)._
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
-| 2. Banking, plus Entity & compliance | **In progress.** Wise connection (API sync) with duplicate flagging and merging done. Next: bank statement upload (CSV) for any other bank, then rules and transfer matching |
+| 2. Banking, plus Entity & compliance | **In progress.** Wise connection (API sync), bank statement upload (CSV) for any bank, and duplicate flagging and merging done. Next: Wise strong customer authentication (UAE), then rules and transfer matching |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -420,6 +420,32 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Not yet:** Wise asks for strong customer authentication (a signed request) for profiles
   outside the US, Canada, Australia, New Zealand, Singapore and Malaysia, e.g. the UAE company.
   The sync shows a plain message for now; signing with an uploaded key comes next.
+
+
+### Phase 2, slice 2: bank statement upload (any bank)
+- **Core** (`banking/statement.ts`): `guessStatementColumns()` (date, description and a second
+  description, one amount column or separate money out / money in columns, reference, account
+  number; a column named after the account's currency wins for the amount), `readStatement()`
+  (rows without a date and amount are skipped quietly, unreadable ones reported) and remembered
+  settings by column name (`statementSettings`, `mappingFromSettings`).
+  - External ID: `csv:<accountId>:<date>:<amount>:<hash of description>:<n>`, where `n` counts
+    identical rows in the same file. The same file, or an overlapping one, adds nothing twice;
+    two identical coffees on one day are both kept. Keyed by account, not feed, so removing and
+    re-adding uploads doesn't duplicate either.
+  - Files with several accounts (one account-number column): the user picks one; only a
+    fingerprint (FNV-1a) and the last 4 digits are stored, never the number.
+- **Schema** (migration `0018_statement_uploads`): connection provider `csv`, one connection and
+  one feed per money account (`statementFeedFor`), settings under `settings.statement`. No secret,
+  so `syncable_connections()` skips it.
+- **Web:** Bank accounts → "Upload a statement" (any member). Choose the account and the file;
+  the first time, match the columns (with a 5-row preview and the date range); later uploads
+  reuse them ("Change columns" to adjust). Rows go to `uploadStatementAction` in parts of 500,
+  through `importBankLines`, so they get the same duplicate check and possible-duplicate flags as
+  Wise. Foreign-currency accounts fetch missing Bank of Canada rates first (`ensureRates`).
+  Each upload account shows as a card with "Upload statement" and "Remove".
+- `Field` now lets its control shrink (`grid-cols-[minmax(0,1fr)]`), so long dropdown labels
+  truncate instead of widening dialogs on phones. Chart of accounts: the currency of an account
+  with transactions explains why it's fixed.
 
 ---
 

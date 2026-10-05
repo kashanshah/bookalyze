@@ -18,7 +18,8 @@ import { accounts, journalEntries } from "./accounting";
 import { organization, user } from "./auth";
 import { tenantIsolationPolicy } from "./tenancy";
 
-export const CONNECTION_PROVIDERS = ["wise"] as const;
+/** "csv": bank statements uploaded as files, one connection per account. */
+export const CONNECTION_PROVIDERS = ["wise", "csv"] as const;
 export type ConnectionProvider = (typeof CONNECTION_PROVIDERS)[number];
 
 export const CONNECTION_STATUSES = ["active", "error", "disconnected"] as const;

@@ -205,9 +205,11 @@ function AccountForm({
           htmlFor="currency"
           error={errors.currency}
           hint={
-            needsCurrency
-              ? "The currency this account is held in."
-              : "Leave as “Any currency” unless this account only ever holds one."
+            account?.isUsed
+              ? "Fixed, because this account already has transactions recorded in this currency. For another currency, add a new account and move the balance to it with a transfer."
+              : needsCurrency
+                ? "The currency this account is held in."
+                : "Leave as “Any currency” unless this account only ever holds one."
           }
         >
           <Combobox
