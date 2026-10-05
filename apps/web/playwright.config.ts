@@ -24,12 +24,20 @@ export default defineConfig({
       reuseExistingServer: true,
     },
     {
+      // A stand-in for Login with Amazon and the SP-API (e2e/amazon-mock.mjs).
+      command: "node e2e/amazon-mock.mjs",
+      url: "http://localhost:4011/health",
+      reuseExistingServer: true,
+    },
+    {
       command: "pnpm start",
       url: `http://localhost:${port}/sign-in`,
       reuseExistingServer: true,
       timeout: 120_000,
       env: {
         WISE_API_URL: process.env.WISE_API_URL ?? "http://localhost:4010",
+        AMAZON_LWA_URL: process.env.AMAZON_LWA_URL ?? "http://localhost:4011/auth/o2/token",
+        AMAZON_SPAPI_URL: process.env.AMAZON_SPAPI_URL ?? "http://localhost:4011",
         // Test-only key for the credential vault (32 zero bytes); real keys live in Vercel.
         APP_ENCRYPTION_KEY:
           process.env.APP_ENCRYPTION_KEY ?? "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",

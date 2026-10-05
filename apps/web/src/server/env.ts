@@ -36,6 +36,9 @@ const schema = z.object({
   APP_ENCRYPTION_KEY: z.string().optional(),
   /** Base URL of the Wise API. Tests point it at a local stand-in; leave unset in production. */
   WISE_API_URL: z.url().optional(),
+  /** Amazon's Login with Amazon token URL and SP-API base URL. Tests point them at a stand-in. */
+  AMAZON_LWA_URL: z.url().optional(),
+  AMAZON_SPAPI_URL: z.url().optional(),
   /** Secret Vercel Cron sends as a bearer token to scheduled routes (e.g. the daily FX sync). */
   CRON_SECRET: z.string().min(16).optional(),
   /** "s3", or "local" to keep files on disk (development and CI only). */

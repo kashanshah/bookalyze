@@ -81,14 +81,14 @@ test("features respect dependencies and drive navigation", async ({ page }) => {
 
   await page.locator("#module-commerce").click();
   await expect(page.getByText("Commerce switched on")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Orders", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Orders", exact: true }).click();
-  await expect(page.getByText("Coming in phase 3")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Commerce", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Connect Amazon Seller Central" })).toBeVisible();
 
   await page.getByRole("link", { name: "Features", exact: true }).click();
   await page.locator("#module-commerce").click();
   await expect(page.getByText("Commerce switched off")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Orders", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Commerce", exact: true })).toHaveCount(0);
 });
 
 test("financial year follows settings, including a short first year", async ({ page }) => {
@@ -1185,6 +1185,51 @@ test("company: profile, registration numbers, people, documents and the complian
   const comingUp = page.locator("section", { hasText: "Coming up" });
   await expect(comingUp.getByText("Insurance certificate expires")).toBeVisible();
   await expect(comingUp.getByText("Renew business licence")).toHaveCount(0);
+});
+
+test("commerce: connect Amazon Seller Central, choose marketplaces, test and disconnect", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Features", exact: true }).click();
+  await page.locator("#module-commerce").click();
+  await expect(page.getByText("Commerce switched on")).toBeVisible();
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("button", { name: "Connect Amazon" }).click();
+
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByLabel("LWA client ID")
+    .fill("amzn1.application-oa2-client.e2e0000000000000000000000000000");
+  await dialog.getByLabel("LWA client secret").fill("e2e-client-secret-000000");
+  // A token that looks right but Amazon refuses.
+  await dialog.getByLabel("Refresh token").fill("Atzr|wrong-token");
+  await dialog.getByRole("button", { name: "Check and connect" }).click();
+  await expect(page.getByText(/didn't accept the refresh token/)).toBeVisible();
+  await dialog.getByLabel("Refresh token").fill("Atzr|e2e-refresh-token-0000");
+  await dialog.getByRole("button", { name: "Check and connect" }).click();
+  await expect(page.getByText("Amazon connected")).toBeVisible();
+  await expect(page.getByText("Selling in 1 marketplace")).toBeVisible();
+
+  // Where the seller sells starts switched on; elsewhere starts off.
+  await expect(page.getByText("Maple Goods Store", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("Bring in orders from Amazon.ca")).toBeChecked();
+  await expect(page.getByLabel("Bring in orders from Amazon.com")).not.toBeChecked();
+  await page.getByLabel("Bring in orders from Amazon.com").click();
+  await expect(page.getByLabel("Bring in orders from Amazon.com")).toBeChecked();
+
+  await page.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByText("Amazon answered")).toBeVisible();
+
+  // It isn't a bank: Bank accounts doesn't list it.
+  await page.getByRole("link", { name: "Bank accounts", exact: true }).click();
+  await expect(page.getByText("Amazon Seller Central")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("button", { name: "Disconnect" }).click();
+  await page.getByRole("button", { name: "Click again to disconnect" }).click();
+  await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect Amazon" })).toBeVisible();
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {

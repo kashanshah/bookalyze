@@ -1,6 +1,7 @@
 export * from "./attachments";
 export * from "./banking";
 export * from "./client";
+export * from "./commerce";
 export * from "./contacts";
 export * from "./duplicates";
 export * from "./entity";

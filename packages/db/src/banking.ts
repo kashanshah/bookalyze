@@ -9,7 +9,7 @@ import {
   prepareTransfer,
   transactionLines,
 } from "@bookalyze/core";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { findDuplicateOf, suggestDuplicate } from "./duplicates";
 import { fxRateOn } from "./fx";
@@ -60,7 +60,7 @@ export async function getConnection(tx: Transaction, connectionId: string) {
   return row ?? null;
 }
 
-/** Connections with their feeds and the accounts they fill, newest first. No secrets. */
+/** Bank connections with their feeds and the accounts they fill, newest first. No secrets. */
 export async function listConnections(tx: Transaction) {
   const rows = await tx
     .select({
@@ -74,6 +74,8 @@ export async function listConnections(tx: Transaction) {
       createdAt: connections.createdAt,
     })
     .from(connections)
+    // Marketplace connections live under Commerce.
+    .where(ne(connections.provider, "amazon_sp"))
     .orderBy(asc(connections.createdAt));
   const feeds = await tx
     .select({
