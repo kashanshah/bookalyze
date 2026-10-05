@@ -2,6 +2,7 @@ import {
   type BankTransaction,
   bankMemo,
   bankTransactionInput,
+  firstMatchingRule,
   type LedgerAccount,
   pairConversions,
   prepareJournalEntry,
@@ -13,6 +14,7 @@ import type { Transaction } from "./client";
 import { findDuplicateOf, suggestDuplicate } from "./duplicates";
 import { fxRateOn } from "./fx";
 import { LedgerError, postJournalEntry } from "./ledger";
+import { activeRules, recordRuleApplication } from "./rules";
 import { accounts } from "./schema/accounting";
 import { bankFeeds, bankLines, type ConnectionProvider, connections } from "./schema/banking";
 
@@ -240,6 +242,8 @@ export type ImportResult = {
   duplicates: number;
   /** Of those posted, how many look like a transaction already in the books (flagged to check). */
   flagged: number;
+  /** Of those posted, how many a rule put in a category (instead of Uncategorized). */
+  categorized: number;
   /** Couldn't be posted yet, with the reason; they're tried again next time. */
   skipped: { externalId: string; date: string; reason: string }[];
 };
@@ -265,7 +269,13 @@ export async function importBankLines(
     lines: readonly FeedLine[];
   },
 ): Promise<ImportResult> {
-  const result: ImportResult = { posted: 0, duplicates: 0, flagged: 0, skipped: [] };
+  const result: ImportResult = {
+    posted: 0,
+    duplicates: 0,
+    flagged: 0,
+    categorized: 0,
+    skipped: [],
+  };
   if (!input.lines.length) return result;
 
   const inserted: BankLineRow[] = [];
@@ -308,6 +318,7 @@ export async function importBankLines(
   const done = await postBankLines(tx, { ...input, rows: [...inserted, ...retry] });
   result.posted = done.posted;
   result.flagged = done.flagged;
+  result.categorized = done.categorized;
   result.skipped = done.skipped;
   return result;
 }
@@ -337,7 +348,12 @@ async function postBankLines(
     rows: readonly BankLineRow[];
   },
 ): Promise<Omit<ImportResult, "duplicates">> {
-  const result = { posted: 0, flagged: 0, skipped: [] as ImportResult["skipped"] };
+  const result = {
+    posted: 0,
+    flagged: 0,
+    categorized: 0,
+    skipped: [] as ImportResult["skipped"],
+  };
   if (!input.rows.length) return result;
   const all = await tx.select().from(accounts);
   const ledger = new Map<string, LedgerAccount>(
@@ -389,6 +405,7 @@ async function postBankLines(
     sourceId: string,
     build: () => Promise<ReturnType<typeof prepareJournalEntry>>,
     match: Omit<Parameters<typeof findDuplicateOf>[1], "entryId">,
+    rule?: { id: string; contactId: string | null } | null,
   ) => {
     const line = rows[0] as BankLineRow;
     try {
@@ -407,11 +424,16 @@ async function postBankLines(
           reference: line.reference,
           source: "bank_import",
           sourceId,
+          contactId: rule?.contactId ?? null,
           entry: prepared.entry,
         }),
       );
       await mark(rows, { status: "posted", journalEntryId: entry.id, reason: null });
       result.posted++;
+      if (rule) {
+        await recordRuleApplication(tx, { orgId: input.orgId, entryId: entry.id, ruleId: rule.id });
+        result.categorized++;
+      }
       const duplicateOf = await findDuplicateOf(tx, { ...match, entryId: entry.id });
       if (
         duplicateOf &&
@@ -471,10 +493,20 @@ async function postBankLines(
     );
   }
 
+  const rules = await activeRules(tx);
   for (const line of singles) {
     const feed = feeds.get(line.feedId);
     const row = byExternal.get(line.externalId);
     if (!feed || !row) continue;
+    // A rule puts it straight into its category; fees still go to the fee account.
+    const rule =
+      line.kind === "fee"
+        ? null
+        : firstMatchingRule(rules, {
+            text: [line.description, line.counterparty, line.reference].filter(Boolean).join(" "),
+            amount: line.amount,
+            accountId: feed.accountId,
+          });
     await post(
       [row],
       line.externalId,
@@ -487,8 +519,8 @@ async function postBankLines(
             lines: transactionLines(
               bankTransactionInput(line, {
                 moneyAccountId: feed.accountId,
-                uncategorizedIncomeId: income.id,
-                uncategorizedExpenseId: expense.id,
+                uncategorizedIncomeId: rule?.categoryAccountId ?? income.id,
+                uncategorizedExpenseId: rule?.categoryAccountId ?? expense.id,
                 feeAccountId: feed.feeAccountId,
               }),
               null,
@@ -497,6 +529,7 @@ async function postBankLines(
           ledger,
         ),
       { feedId: line.feedId, accountId: feed.accountId, amount: line.amount, date: line.date },
+      rule,
     );
   }
   return result;

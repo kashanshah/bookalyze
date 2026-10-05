@@ -172,6 +172,7 @@ export function StatementUploadDialog({
       posted: 0,
       duplicates: 0,
       flagged: 0,
+      categorized: 0,
       skipped: [] as { externalId: string; date: string; reason: string }[],
     };
     for (let i = 0; i < read.lines.length; i += CHUNK) {
@@ -199,6 +200,7 @@ export function StatementUploadDialog({
       total.posted += result.summary.posted;
       total.duplicates += result.summary.duplicates;
       total.flagged += result.summary.flagged;
+      total.categorized += result.summary.categorized;
       total.skipped.push(...result.summary.skipped);
       setProgress({ done: Math.min(i + CHUNK, read.lines.length), total: read.lines.length });
     }

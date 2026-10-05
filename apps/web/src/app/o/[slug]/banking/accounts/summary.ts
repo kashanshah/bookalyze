@@ -12,6 +12,13 @@ export function summaryMessage(summary: SyncSummary): {
       `${summary.posted} new transaction${summary.posted === 1 ? "" : "s"} to sort on the Transactions screen.`,
     );
   }
+  if (summary.categorized) {
+    parts.push(
+      summary.categorized === 1
+        ? "1 was categorized by your rules."
+        : `${summary.categorized} were categorized by your rules.`,
+    );
+  }
   if (summary.flagged) {
     parts.push(
       summary.flagged === 1

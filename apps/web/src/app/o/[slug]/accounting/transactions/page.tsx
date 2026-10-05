@@ -1,4 +1,5 @@
 import {
+  can,
   formatDecimal,
   isMoneyAccountSubtype,
   parseDecimal,
@@ -12,6 +13,7 @@ import {
   listDuplicateSuggestions,
   listTaxRates,
   listTransactions,
+  ruleNamesFor,
   schema,
 } from "@bookalyze/db";
 import { eq, sql } from "drizzle-orm";
@@ -75,7 +77,7 @@ export default async function TransactionsPage({
   const q = (sp.q ?? "").slice(0, 100);
   const contact = sp.contact && UUID.test(sp.contact) ? sp.contact : "";
 
-  const { result, hasAny, balance, contacts, taxRates, flags, duplicateCount } = await inOrg(
+  const { result, hasAny, balance, contacts, taxRates, flags, duplicateCount, rules } = await inOrg(
     ctx,
     async (tx) => {
       const contacts = await contactOptions(tx, { includeArchived: true });
@@ -102,7 +104,11 @@ export default async function TransactionsPage({
         : null;
       const flags = await listDuplicateSuggestions(tx, { entryIds: result.rows.map((r) => r.id) });
       const duplicateCount = await countOpenDuplicates(tx);
-      return { result, hasAny, balance, contacts, taxRates, flags, duplicateCount };
+      const rules = await ruleNamesFor(
+        tx,
+        result.rows.map((r) => r.id),
+      );
+      return { result, hasAny, balance, contacts, taxRates, flags, duplicateCount, rules };
     },
   );
   const flagOf = new Map(flags.map((f) => [f.entryId, f]));
@@ -132,6 +138,7 @@ export default async function TransactionsPage({
       isRecoverable: r.isRecoverable,
       isArchived: r.isArchived,
     })),
+    canMakeRules: can(ctx.plan, ctx.enabledModules, "banking.rules"),
   };
 
   const rows: TxRow[] = result.rows.map((r) => {
@@ -160,6 +167,7 @@ export default async function TransactionsPage({
         ...(s.description ? { description: s.description } : {}),
         ...(s.taxRateId ? { taxRateId: s.taxRateId } : {}),
       })),
+      ...(rules.get(r.id) ? { rule: rules.get(r.id) } : {}),
       ...(flag
         ? {
             duplicate: {

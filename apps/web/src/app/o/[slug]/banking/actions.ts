@@ -407,6 +407,7 @@ export async function uploadStatementAction(
         posted: result.posted,
         duplicates: result.duplicates,
         flagged: result.flagged,
+        categorized: result.categorized,
         skipped: result.skipped.length,
       },
     });

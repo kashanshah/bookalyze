@@ -141,6 +141,20 @@
       "when": 1791168082424,
       "tag": "0019_account_currency_change",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791170035589,
+      "tag": "0020_bank_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791172216949,
+      "tag": "0021_reimport_removed",
+      "breakpoints": true
     }
   ]
 }

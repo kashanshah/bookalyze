@@ -1,5 +1,5 @@
 import { type AccountSubtype, getAccountSubtype, type PreparedEntry } from "@bookalyze/core";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { assertPeriodOpen, nextEntryNumber } from "./ledger";
 import {
@@ -187,18 +187,25 @@ export async function postImportedEntries(
   );
   await assertPeriodOpen(tx, earliest);
   const ids = input.entries.map((e) => e.externalId);
+  // In the books already: a current entry with that ID, or one edited before edits kept the
+  // ID (its reversal and replacement were posted together: same moment, next entry number).
+  // One that was only removed doesn't count, so importing again brings it back.
   const already = new Set<string>();
   for (let i = 0; i < ids.length; i += CHUNK) {
-    const found = await tx
-      .select({ sourceId: journalEntries.sourceId })
-      .from(journalEntries)
-      .where(
-        and(
-          eq(journalEntries.source, "import"),
-          inArray(journalEntries.sourceId, ids.slice(i, i + CHUNK)),
-        ),
-      );
-    for (const f of found) if (f.sourceId) already.add(f.sourceId);
+    const chunk = ids.slice(i, i + CHUNK);
+    const found = await tx.execute<{ source_id: string }>(sql`
+      select e.source_id from journal_entries e
+      where e.source = 'import'
+        and e.source_id in (${sql.join(
+          chunk.map((id) => sql`${id}`),
+          sql`, `,
+        )})
+        and (e.reversed_by_entry_id is null or exists (
+          select 1 from journal_entries r
+          join journal_entries n on n.created_at = r.created_at
+            and n.entry_number = r.entry_number + 1 and n.reverses_entry_id is null
+          where r.id = e.reversed_by_entry_id))`);
+    for (const f of found.rows) already.add(f.source_id);
   }
   const seen = new Set<string>();
   const fresh = input.entries

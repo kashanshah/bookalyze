@@ -71,7 +71,10 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     phase: "2",
     requires: ["accounting"],
     features: ["banking.imports", "banking.wise", "banking.rules", "banking.reconciliation"],
-    nav: [{ label: "Bank accounts", href: "/banking/accounts" }],
+    nav: [
+      { label: "Bank accounts", href: "/banking/accounts" },
+      { label: "Rules", href: "/banking/rules" },
+    ],
     status: "available",
   },
   commerce: {

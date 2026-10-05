@@ -18,6 +18,7 @@ import {
   Lock,
   Plus,
   Trash2,
+  Wand2,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -705,6 +706,19 @@ function TransactionForm({
             >
               <Trash2 />
               {confirmDelete ? "Click again to remove" : "Remove"}
+            </Button>
+          ) : null}
+          {row && ctx.canMakeRules && kind !== "transfer" && !split && splits[0]?.accountId ? (
+            <Button asChild type="button" variant="ghost">
+              <Link
+                href={`/o/${ctx.slug}/banking/rules?${new URLSearchParams({
+                  text: (row.memo ?? "").slice(0, 60),
+                  category: splits[0].accountId,
+                })}`}
+              >
+                <Wand2 />
+                Make a rule
+              </Link>
             </Button>
           ) : null}
           {row ? (

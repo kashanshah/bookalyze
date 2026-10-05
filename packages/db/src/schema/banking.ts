@@ -6,6 +6,7 @@ import {
   date,
   foreignKey,
   index,
+  integer,
   jsonb,
   numeric,
   pgTable,
@@ -14,7 +15,7 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
-import { accounts, journalEntries } from "./accounting";
+import { accounts, contacts, journalEntries } from "./accounting";
 import { organization, user } from "./auth";
 import { tenantIsolationPolicy } from "./tenancy";
 
@@ -172,5 +173,92 @@ export const bankLines = pgTable(
       sql`(${t.status} = 'posted') = (${t.journalEntryId} is not null)`,
     ),
     tenantIsolationPolicy("bank_lines", t.organizationId),
+  ],
+);
+
+export const RULE_DIRECTIONS = ["any", "in", "out"] as const;
+
+/**
+ * "When the description contains BELL, file it under Telephone." Applied, in `position` order,
+ * to bank transactions as they arrive, and on request to uncategorized ones already in the books.
+ */
+export const bankRules = pgTable(
+  "bank_rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    matchText: text("match_text").notNull(),
+    direction: text("direction", { enum: RULE_DIRECTIONS }).notNull().default("any"),
+    amountMin: numeric("amount_min", { precision: 20, scale: 4 }),
+    amountMax: numeric("amount_max", { precision: 20, scale: 4 }),
+    /** Only this bank or card account; null for any. */
+    accountId: uuid("account_id"),
+    categoryAccountId: uuid("category_account_id").notNull(),
+    contactId: uuid("contact_id"),
+    position: integer("position").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    unique("bank_rules_org_id_key").on(t.organizationId, t.id),
+    index("bank_rules_org_position_idx").on(t.organizationId, t.position),
+    foreignKey({
+      name: "bank_rules_account_fk",
+      columns: [t.organizationId, t.accountId],
+      foreignColumns: [accounts.organizationId, accounts.id],
+    }),
+    foreignKey({
+      name: "bank_rules_category_fk",
+      columns: [t.organizationId, t.categoryAccountId],
+      foreignColumns: [accounts.organizationId, accounts.id],
+    }),
+    foreignKey({
+      name: "bank_rules_contact_fk",
+      columns: [t.organizationId, t.contactId],
+      foreignColumns: [contacts.organizationId, contacts.id],
+    }),
+    check(
+      "bank_rules_direction_valid",
+      sql`${t.direction} in (${sql.raw(RULE_DIRECTIONS.map((d) => `'${d}'`).join(", "))})`,
+    ),
+    check("bank_rules_match_text_present", sql`length(trim(${t.matchText})) > 0`),
+    tenantIsolationPolicy("bank_rules", t.organizationId),
+  ],
+);
+
+/**
+ * Which rule categorized a transaction, shown on the Transactions screen. Editing the
+ * transaction posts a new entry, so the mark drops off by itself.
+ */
+export const ruleApplications = pgTable(
+  "rule_applications",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    journalEntryId: uuid("journal_entry_id").primaryKey(),
+    ruleId: uuid("rule_id").notNull(),
+    appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("rule_applications_rule_idx").on(t.ruleId),
+    foreignKey({
+      name: "rule_applications_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    foreignKey({
+      name: "rule_applications_rule_fk",
+      columns: [t.organizationId, t.ruleId],
+      foreignColumns: [bankRules.organizationId, bankRules.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("rule_applications", t.organizationId),
   ],
 );

@@ -225,6 +225,8 @@ export function guessColumns(headers: readonly string[], source: ImportSource): 
 const TYPE_RULES: [RegExp, AccountSubtype][] = [
   [/bank (fee|charge|service)|service charge|interest expense/, "operating_expense"],
   [/money in transit|undeposited|clearing/, "money_in_transit"],
+  // Wave parks what it can't place in "Unknown Account", an asset: keep it on the balance sheet.
+  [/unknown account|suspense/, "other_current_asset"],
   [/cash|bank|chequing|checking|savings|wallet|paypal|stripe balance|wise/, "cash_bank"],
   [/credit card|\bvisa\b|mastercard|\bamex\b|american express/, "credit_card"],
   [/sales tax|\bhst\b|\bgst\b|\bqst\b|\bpst\b|\bvat\b|tax payable/, "sales_tax"],
