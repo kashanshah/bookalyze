@@ -11,7 +11,7 @@ import {
   listOrders,
   orderSyncChannels,
 } from "@bookalyze/db";
-import { ArrowLeft, ArrowRight, ChevronRight, PackageSearch, Search, Store } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, PackageSearch, Search, Store, X } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Amount } from "@/components/accounting/amount";
@@ -275,21 +275,52 @@ export default async function OrdersPage({
       </div>
 
       {list.totals.length ? (
-        <div className="grid gap-3 sm:grid-cols-3">
-          {list.totals.slice(0, 3).map((t) => (
-            <div key={t.currency} className="rounded-2xl border bg-card px-5 py-4 shadow-xs">
-              <p className="text-muted-foreground text-xs">
-                Sales{list.totals.length > 1 ? ` in ${t.currency}` : ""}, not counting cancelled
-              </p>
-              <p className="mt-1 font-semibold text-xl tracking-tight">
-                <Amount value={t.sales} currency={t.currency} locale={locale} />
-              </p>
-              <p className="mt-0.5 text-muted-foreground text-xs">
-                {t.sold} {t.sold === 1 ? "order" : "orders"} · {t.units}{" "}
-                {t.units === 1 ? "unit" : "units"}
-              </p>
-            </div>
-          ))}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {list.totals.map((t) => {
+            const active = channel === t.channelId;
+            const clickable = channels.length > 1;
+            const body = (
+              <>
+                <p className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
+                  <span>
+                    {t.channelName} sales, not counting cancelled
+                    {list.totals.some((o) => o.channelId === t.channelId && o !== t)
+                      ? ` (${t.currency})`
+                      : ""}
+                  </span>
+                  {active ? <X className="size-3.5 shrink-0" aria-hidden /> : null}
+                </p>
+                <p className="mt-1 font-semibold text-xl tracking-tight">
+                  <Amount value={t.sales} currency={t.currency} locale={locale} />
+                </p>
+                <p className="mt-0.5 text-muted-foreground text-xs">
+                  {t.sold} {t.sold === 1 ? "order" : "orders"} · {t.units}{" "}
+                  {t.units === 1 ? "unit" : "units"}
+                </p>
+              </>
+            );
+            const card = "rounded-2xl border bg-card px-5 py-4 shadow-xs";
+            return clickable ? (
+              <Link
+                key={`${t.channelId}:${t.currency}`}
+                href={href({ channel: active ? "" : t.channelId })}
+                scroll={false}
+                aria-current={active ? "true" : undefined}
+                title={active ? "Show every marketplace" : `Show only ${t.channelName}`}
+                className={cn(
+                  card,
+                  "transition-[border-color,box-shadow] hover:border-primary/30 hover:shadow-md",
+                  active && "border-primary/50 ring-2 ring-primary/15",
+                )}
+              >
+                {body}
+              </Link>
+            ) : (
+              <div key={`${t.channelId}:${t.currency}`} className={card}>
+                {body}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 

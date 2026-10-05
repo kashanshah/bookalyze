@@ -329,8 +329,11 @@ export async function listOrders(
     .orderBy(desc(orders.purchasedAt), desc(orders.externalId))
     .limit(filters.limit)
     .offset(filters.offset);
+  // Per marketplace (and currency, should a marketplace ever mix them), biggest first.
   const totals = await tx
     .select({
+      channelId: salesChannels.id,
+      channelName: salesChannels.name,
       currency: sql<string>`coalesce(${orders.currency}, ${salesChannels.currency})`,
       orders: sql<number>`count(*)::int`,
       sold: sql<number>`(count(*) filter (where ${orders.status} not in ('Canceled', 'Unfulfillable')))::int`,
@@ -340,8 +343,8 @@ export async function listOrders(
     .from(orders)
     .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
     .where(where)
-    .groupBy(sql`1`)
-    .orderBy(sql`2 desc`);
+    .groupBy(salesChannels.id, salesChannels.name, sql`3`)
+    .orderBy(sql`4 desc`, salesChannels.name);
   return {
     rows: rows.map((r) => ({ ...r, total: r.total === null ? null : String(r.total) })),
     count: totals.reduce((n, t) => n + t.orders, 0),

@@ -186,7 +186,15 @@ describe("orders", () => {
       channelName: "Amazon.ca",
     });
     expect(all.totals).toEqual([
-      { currency: "CAD", orders: 2, sold: 2, units: 2, sales: "65.0000" },
+      {
+        channelId: expect.any(String),
+        channelName: "Amazon.ca",
+        currency: "CAD",
+        orders: 2,
+        sold: 2,
+        units: 2,
+        sales: "65.0000",
+      },
     ]);
 
     const bySku = await scoped((tx) =>
