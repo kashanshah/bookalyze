@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { choose, latestLink, signIn, signOut, signUp, verifyEmail, withOwnerDb } from "./helpers";
+import { statementPdf } from "./statement-pdf";
 
 // Unique emails per run so the suite can run against a reused database.
 const run = Date.now().toString(36);
@@ -1317,7 +1318,7 @@ test("amounts recorded in CAD on a USD account are flagged and corrected from Wi
 
   await page.getByRole("link", { name: "Bank accounts", exact: true }).click();
   await expect(page.getByText("Old USD: 1 amount isn't in USD")).toBeVisible();
-  await expect(page.getByText(/Connect Wise and link its USD balance to Old USD/)).toBeVisible();
+  await expect(page.getByText(/Add the bank's USD statements \(PDF\)/)).toBeVisible();
 
   // Link Wise's USD balance to it (bringing in nothing new), then correct from the statement.
   await page.getByRole("button", { name: "Connect Wise" }).first().click();
@@ -1347,6 +1348,73 @@ test("amounts recorded in CAD on a USD account are flagged and corrected from Wi
   await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
   await expect(page).toHaveURL(/accounting\/accounts/);
   await expect(page.locator("li", { hasText: "1030" })).toContainText("US$100.00");
+});
+
+test("amounts recorded in CAD on a USD account are corrected from the bank's PDF statements", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
+  await page.getByRole("button", { name: "Add account" }).click();
+  await page.getByLabel("Name").fill("Bank USD");
+  await page.getByLabel("Code (optional)").fill("1035");
+  await choose(page.locator("#currency"), /^CAD · /);
+  await page.getByRole("button", { name: "Add account" }).last().click();
+  await expect(page.getByText("Account added")).toBeVisible();
+
+  // US$100 that arrived, recorded as its CAD value (136.50 at 1.365), then switched to USD.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("button", { name: "Add income" }).click();
+  await choose(page.locator("#tx-money"), /^1035 · Bank USD/);
+  await page.locator("#tx-memo").fill("Funds transfer credit");
+  await choose(page.getByLabel("Category 1", { exact: true }), "4000 · Sales");
+  await page.getByLabel("Amount 1").fill("136.50");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added").first()).toBeVisible();
+  await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
+  await page.getByRole("button", { name: "Edit Bank USD" }).click();
+  await choose(page.locator("#currency"), /^USD · /);
+  await page.getByRole("button", { name: "Save changes" }).click();
+
+  // No Wise here: the bank's monthly PDF statement, read in the browser.
+  await page.getByRole("link", { name: "Bank accounts", exact: true }).click();
+  await expect(page.getByText("Bank USD: 1 amount isn't in USD")).toBeVisible();
+  await page.getByRole("button", { name: "Correct from statements" }).click();
+  const dialog = page.getByRole("dialog");
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    new Date(),
+  );
+  const [y, m, d] = today.split("-").map(Number) as [number, number, number];
+  const month = new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(
+    new Date(Date.UTC(y, m - 1, 1)),
+  );
+  const short = month.slice(0, 3);
+  await dialog.getByLabel("Statement PDFs").setInputFiles({
+    name: "statement.pdf",
+    mimeType: "application/pdf",
+    buffer: statementPdf({
+      period: `${month} 1, ${y} to ${month} ${new Date(Date.UTC(y, m, 0)).getUTCDate()}, ${y}`,
+      opening: "50.00",
+      rows: [
+        {
+          date: `${String(d).padStart(2, "0")} ${short}`,
+          text: "Funds transfer credit Example Co",
+          into: "100.00",
+        },
+        { text: "Funds transfer fee Example Co", out: "17.00", balance: "133.00" },
+      ],
+      closing: "133.00",
+    }),
+  });
+  await expect(dialog.getByText("Balances check out")).toBeVisible();
+  await dialog.getByRole("button", { name: "Match 2 transactions" }).click();
+  await expect(dialog.getByText("matched", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Correct 1 transaction" }).click();
+  await expect(page.getByText("1 transaction corrected")).toBeVisible();
+  await expect(page.getByText("Bank USD: 1 amount isn't in USD")).toHaveCount(0);
+  await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
+  await expect(page).toHaveURL(/accounting\/accounts/);
+  await expect(page.locator("li", { hasText: "1035" })).toContainText("US$100.00");
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {
