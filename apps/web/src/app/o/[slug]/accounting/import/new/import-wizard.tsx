@@ -41,6 +41,7 @@ import { toast } from "sonner";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Field } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
@@ -126,6 +127,15 @@ export function ImportWizard({ slug, baseCurrency, locale, lockedThrough, accoun
     skipped: number;
     failed: { externalId: string; message: string }[];
   } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const run = useRef<{
+    batchId: string;
+    accountIds: Record<string, string>;
+    contactIds: Record<string, string>;
+    /** Index of the first entry not saved yet. */
+    next: number;
+    failed: { externalId: string; message: string }[];
+  } | null>(null);
   const source = importSource(sourceKey);
 
   const columnsReady =
@@ -207,6 +217,7 @@ export function ImportWizard({ slug, baseCurrency, locale, lockedThrough, accoun
   async function runImport() {
     if (!plan || !file) return;
     setStep("importing");
+    setImportError(null);
     setProgress({ done: 0, total: plan.entries.length });
     const newAccounts = plan.accounts
       .filter((a) => decisions[a.key]?.startsWith("new:"))
@@ -221,20 +232,40 @@ export function ImportWizard({ slug, baseCurrency, locale, lockedThrough, accoun
       fileName: file.name,
       accounts: newAccounts,
       contacts,
-    });
-    if (!started.ok) {
-      toast.error(started.message);
+    }).catch(() => null);
+    if (!started?.ok) {
+      toast.error(
+        started?.message ?? "The import couldn't start. Check your connection and try again.",
+      );
       setStep("review");
       return;
     }
+    run.current = {
+      batchId: started.batchId,
+      accountIds: started.accountIds,
+      contactIds: started.contactIds,
+      next: 0,
+      failed: [],
+    };
+    await postEntries();
+  }
+
+  /**
+   * Posts the plan's entries from where the run got to. A batch that fails stops the import with
+   * a "Try again" (entries already saved are skipped on the server), instead of finishing it with
+   * only part of the history in the books.
+   */
+  async function postEntries() {
+    const current = run.current;
+    if (!plan || !current) return;
+    setImportError(null);
     const accountId = (key: string) => {
       const decision = decisions[key] ?? "";
-      return decision.startsWith("existing:") ? decision.slice(9) : started.accountIds[key];
+      return decision.startsWith("existing:") ? decision.slice(9) : current.accountIds[key];
     };
-    const failed: { externalId: string; message: string }[] = [];
-    for (let i = 0; i < plan.entries.length; i += CHUNK) {
+    for (let i = current.next; i < plan.entries.length; i += CHUNK) {
       const chunk = plan.entries.slice(i, i + CHUNK).map((e) => {
-        const contactId = e.contactKey ? started.contactIds[e.contactKey] : undefined;
+        const contactId = e.contactKey ? current.contactIds[e.contactKey] : undefined;
         return {
           externalId: e.externalId,
           date: e.date,
@@ -248,20 +279,26 @@ export function ImportWizard({ slug, baseCurrency, locale, lockedThrough, accoun
           })),
         };
       });
-      const response = await importChunkAction(slug, started.batchId, chunk);
-      if (!response.ok) {
-        toast.error(response.message);
-        break;
+      const response = await importChunkAction(slug, current.batchId, chunk).catch(() => null);
+      if (!response?.ok) {
+        setImportError(
+          response?.message ??
+            "The connection dropped or the server took too long while saving this part.",
+        );
+        return;
       }
-      failed.push(...response.failed);
+      current.failed.push(...response.failed);
+      current.next = i + CHUNK;
       setProgress({ done: Math.min(i + CHUNK, plan.entries.length), total: plan.entries.length });
     }
-    const finished = await finishImportAction(slug, started.batchId);
-    if (!finished.ok) {
-      toast.error(finished.message);
+    const finished = await finishImportAction(slug, current.batchId).catch(() => null);
+    if (!finished?.ok) {
+      setImportError(
+        finished?.message ?? "Everything was saved, but the import couldn't be closed.",
+      );
       return;
     }
-    setResult({ entries: finished.entries, skipped: finished.skipped, failed });
+    setResult({ entries: finished.entries, skipped: finished.skipped, failed: current.failed });
     setStep("done");
     toast.success(
       `${finished.entries.toLocaleString(locale)} ${finished.entries === 1 ? "transaction" : "transactions"} imported`,
@@ -432,7 +469,14 @@ export function ImportWizard({ slug, baseCurrency, locale, lockedThrough, accoun
       ) : null}
 
       {step === "importing" ? (
-        <Card title="Importing…" description="Keep this page open. Big histories take a minute.">
+        <Card
+          title={importError ? "The import paused" : "Importing…"}
+          description={
+            importError
+              ? "Nothing is lost: what's saved stays, and trying again carries on from here without adding anything twice."
+              : "Keep this page open. Big histories take a minute."
+          }
+        >
           <div className="grid gap-2">
             <div
               className="h-2 overflow-hidden rounded-full bg-muted"
@@ -453,6 +497,14 @@ export function ImportWizard({ slug, baseCurrency, locale, lockedThrough, accoun
               {progress.done.toLocaleString(locale)} of {progress.total.toLocaleString(locale)}{" "}
               transactions
             </p>
+            {importError ? (
+              <div className="fade-in-0 mt-2 grid animate-in gap-3">
+                <Alert variant="destructive">{importError}</Alert>
+                <div>
+                  <Button onClick={postEntries}>Try again</Button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </Card>
       ) : null}
@@ -811,7 +863,9 @@ function AccountsStep({
   const undecided = plan.accounts.filter((a) => !decisions[a.key]).length;
   const matched = plan.accounts.filter((a) => decisions[a.key]?.startsWith("existing:")).length;
   const created = plan.accounts.filter((a) => decisions[a.key]?.startsWith("new:")).length;
-  const shown = onlyUndecided ? plan.accounts.filter((a) => !decisions[a.key]) : plan.accounts;
+  // Once every account has a place, the filter would show nothing: show them all again.
+  const filtering = onlyUndecided && undecided > 0;
+  const shown = filtering ? plan.accounts.filter((a) => !decisions[a.key]) : plan.accounts;
 
   return (
     <section className="fade-in-0 grid animate-in gap-6">
@@ -820,15 +874,21 @@ function AccountsStep({
         description={`${plan.accounts.length} accounts in the file: ${matched} match accounts you have, ${created} will be added${undecided ? `, and ${undecided} need you to choose` : ""}.`}
       >
         {undecided ? (
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+          <div className="flex items-center gap-2 text-sm">
+            <Checkbox
               checked={onlyUndecided}
-              onChange={(e) => setOnlyUndecided(e.target.checked)}
-              className="size-4 accent-primary"
+              onChange={() => setOnlyUndecided((v) => !v)}
+              label="Only show accounts that need a choice"
             />
-            Only show accounts that need a choice
-          </label>
+            <button
+              type="button"
+              onClick={() => setOnlyUndecided((v) => !v)}
+              className="text-start"
+              tabIndex={-1}
+            >
+              Only show accounts that need a choice
+            </button>
+          </div>
         ) : null}
         <ul className="divide-y rounded-xl border">
           {shown.map((a) => (
