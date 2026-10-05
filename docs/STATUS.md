@@ -931,6 +931,10 @@ screenshots work well).
 
 ## 6. Gotchas
 
+- **Dialog triggers made on the server** (`trigger={<Button>…</Button>}` from a page into a
+  client dialog) arrive as lazy references, and Radix `asChild` threw "Primitive.button failed to
+  slot onto its children". `DialogTrigger` in `components/ui/dialog.tsx` unwraps them first (and
+  falls back to a `display: contents` wrapper). Use it rather than `DialogPrimitive.Trigger`.
 - **Drizzle wraps Postgres errors.** The real message and code are on `error.cause` (see
   `pgError()` in the accounting actions).
 - **Never run `pkill -f <pattern>`** in an agent shell; it can kill the shell itself. Find
