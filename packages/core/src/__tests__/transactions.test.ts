@@ -3,6 +3,7 @@ import { type LedgerAccount, prepareJournalEntry } from "../accounting/journal";
 import {
   describeTransaction,
   isMoneyAccountSubtype,
+  restateAmounts,
   transactionLines,
 } from "../accounting/transactions";
 
@@ -173,5 +174,33 @@ describe("transactions", () => {
       splits: [{ accountId: "rent", amount: "" }],
     });
     expect(lines[0]).toMatchObject({ accountId: "bank", credit: "" });
+  });
+});
+
+describe("transactions recorded half in the main currency", () => {
+  it("shows the categories in the money account's currency", () => {
+    // Corrected from Wise before categories moved too: bank US$-200 (CA$-283.27), category CA$283.27.
+    const view = describeTransaction(
+      [
+        { accountId: "usd", currency: "USD", amount: "-200.0000", baseAmount: "-283.2700" },
+        { accountId: "fees", currency: "CAD", amount: "200.0000", baseAmount: "200.0000" },
+        { accountId: "rent", currency: "CAD", amount: "83.2700", baseAmount: "83.2700" },
+      ],
+      (id) => id === "usd",
+    );
+    expect(view?.amount).toBe("200.0000");
+    // 200 × 200/283.27 = 141.21 and 83.27 × 200/283.27 = 58.79: they add up to 200 exactly.
+    expect(view?.splits.map((s) => s.amount)).toEqual(["141.2100", "58.7900"]);
+  });
+
+  it("restates amounts with the rounding on the largest line", () => {
+    expect(
+      restateAmounts(
+        ["1.00", "1.00", "1.00"],
+        { amount: "1.00", baseAmount: "3.00" },
+        "USD",
+        "1.00",
+      ),
+    ).toEqual(["0.3400", "0.3300", "0.3300"]);
   });
 });

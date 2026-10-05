@@ -676,6 +676,15 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   move; the Wise transaction is recorded in `bank_lines` so a later sync recognises it. Closed
   periods, reconciled lines and entries with a second misrecorded account are skipped with the
   reason. No migration.
+- **Whole transaction in USD:** when the rest of the entry is categories in the old currency (the
+  usual case), they move to the account's currency too, at the rate the fixed line implies
+  (`restateAmounts`, core; rounding on the largest line), and the entry's currency and rate
+  become USD and |base| ÷ |USD|. Otherwise (e.g. a transfer to a CAD account) the other lines
+  keep their currency.
+- **Entries corrected before that** (bank line USD, categories still CAD) read in USD anyway:
+  `describeTransaction` restates the categories at the money line's own rate, and
+  `listTransactions` reports the row in the money account's currency with that implied rate, so
+  the edit form shows US$200 (not the CA$283.27 it's worth) and saving keeps the CAD value.
 - Not covered: accounts no Wise balance fills (e.g. Cash in Hand USD), and the 7 rows the import
   skipped for it; next step there is a statement upload or typed amounts on the same screen.
 

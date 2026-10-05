@@ -1,8 +1,11 @@
 import {
   describeTransaction,
+  divideDecimals,
+  formatDecimal,
   MONEY_ACCOUNT_SUBTYPES,
   PLACEHOLDER_ACCOUNT_SUBTYPES,
   type PreparedEntry,
+  parseDecimal,
   type TransactionKind,
   type TransactionView,
 } from "@bookalyze/core";
@@ -90,6 +93,7 @@ export type TransactionRow = {
     accountId: string;
     currency: string;
     amount: string;
+    baseAmount: string;
     description: string | null;
     taxRateId: string | null;
   }[];
@@ -183,6 +187,7 @@ export async function listTransactions(
       accountId: journalLines.accountId,
       currency: journalLines.currency,
       amount: journalLines.amount,
+      baseAmount: journalLines.baseAmount,
       description: journalLines.description,
       taxRateId: journalLines.taxRateId,
       subtype: accounts.subtype,
@@ -211,10 +216,11 @@ export async function listTransactions(
   const rows: TransactionRow[] = [];
   for (const entry of entries) {
     const entryLines = (byEntry.get(entry.id) ?? []).map(
-      ({ accountId, currency, amount, description, taxRateId }) => ({
+      ({ accountId, currency, amount, baseAmount, description, taxRateId }) => ({
         accountId,
         currency,
         amount,
+        baseAmount,
         description,
         taxRateId,
       }),
@@ -227,6 +233,7 @@ export async function listTransactions(
     if (view) {
       rows.push({
         ...entry,
+        ...moneyCurrency(entry, entryLines, view),
         reviewed: Boolean(entry.reviewed),
         attachments: attachmentCounts.get(entry.id) ?? 0,
         lines: entryLines,
@@ -235,6 +242,34 @@ export async function listTransactions(
     }
   }
   return { rows, total: totalRow?.n ?? 0 };
+}
+
+/**
+ * A deposit or withdrawal is in its money account's currency. An entry recorded in the main
+ * currency whose money line was later re-recorded in the account's (Correct from Wise) reads in
+ * the account's currency, at the rate its two values imply.
+ */
+function moneyCurrency(
+  entry: { currency: string; fxRate: string },
+  lines: readonly { accountId: string; currency: string; amount: string; baseAmount: string }[],
+  view: TransactionView,
+): { currency: string; fxRate: string } {
+  if (view.kind === "transfer" || view.moneyAccountIds.length !== 1) return entry;
+  const money = lines.filter((l) => l.accountId === view.moneyAccountIds[0]);
+  const currency = money[0]?.currency;
+  if (!currency || currency === entry.currency || money.some((l) => l.currency !== currency)) {
+    return entry;
+  }
+  const amount = money.reduce((t, l) => t + parseDecimal(l.amount), 0n);
+  const base = money.reduce((t, l) => t + parseDecimal(l.baseAmount), 0n);
+  if (amount === 0n) return entry;
+  return {
+    currency,
+    fxRate: divideDecimals(
+      formatDecimal(base < 0n ? -base : base),
+      formatDecimal(amount < 0n ? -amount : amount),
+    ),
+  };
 }
 
 /** Marks a transaction reviewed or not. */

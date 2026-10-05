@@ -1,4 +1,10 @@
-import { formatDecimal, type PreparedEntry, parseDecimal } from "@bookalyze/core";
+import {
+  divideDecimals,
+  formatDecimal,
+  type PreparedEntry,
+  parseDecimal,
+  restateAmounts,
+} from "@bookalyze/core";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { LedgerError } from "./ledger";
@@ -168,29 +174,58 @@ export async function applyAmountCorrections(
       );
       continue;
     }
-    const prepared: PreparedEntry = {
-      currency: entry.currency,
-      fxRate: entry.fxRate,
-      total: formatDecimal(
-        lines
-          .filter((l) => l.line.currency === entry.currency)
-          .map((l) => parseDecimal(l.line.amount))
-          .filter((a) => a > 0n)
-          .reduce((t, a) => t + a, 0n),
-      ),
-      lines: lines.map(({ line }, index) => {
-        const fix = byLine.get(line.id);
-        return {
-          index,
-          accountId: line.accountId,
-          description: line.description,
-          currency: fix ? currency : line.currency,
-          amount: fix ? formatDecimal(parseDecimal(fix.amount)) : line.amount,
-          baseAmount: line.baseAmount,
-          taxRateId: line.taxRateId,
-        };
-      }),
+    // Usually the rest is categories in the main currency: they move to the account's currency
+    // too (at the rate the fixed line implies), so the whole transaction reads in it. Otherwise
+    // (e.g. a transfer to a CAD account) the other lines keep their own currency.
+    const rest = lines.filter((l) => !byLine.has(l.line.id));
+    const whole =
+      rest.length > 0 &&
+      rest.every((l) => l.accountCurrency === null && l.line.currency === entry.currency);
+    const fixedAmount = mine.reduce(
+      (t, l) => t + parseDecimal(byLine.get(l.line.id)?.amount ?? "0"),
+      0n,
+    );
+    const fixedBase = mine.reduce((t, l) => t + parseDecimal(l.line.baseAmount), 0n);
+    const restated = whole
+      ? restateAmounts(
+          rest.map((l) => l.line.baseAmount),
+          { amount: formatDecimal(fixedAmount), baseAmount: formatDecimal(fixedBase) },
+          currency,
+          formatDecimal(-fixedAmount),
+        )
+      : [];
+    const amountOf = (lineId: string, original: string) => {
+      const fix = byLine.get(lineId);
+      if (fix) return formatDecimal(parseDecimal(fix.amount));
+      const i = rest.findIndex((l) => l.line.id === lineId);
+      return whole ? (restated[i] ?? original) : original;
     };
+    const abs = (v: bigint) => (v < 0n ? -v : v);
+    const entryCurrency = whole ? currency : entry.currency;
+    const prepared: PreparedEntry = {
+      currency: entryCurrency,
+      fxRate:
+        whole && fixedAmount !== 0n
+          ? divideDecimals(formatDecimal(abs(fixedBase)), formatDecimal(abs(fixedAmount)))
+          : entry.fxRate,
+      total: "0",
+      lines: lines.map(({ line }, index) => ({
+        index,
+        accountId: line.accountId,
+        description: line.description,
+        currency: byLine.has(line.id) || whole ? currency : line.currency,
+        amount: amountOf(line.id, line.amount),
+        baseAmount: line.baseAmount,
+        taxRateId: line.taxRateId,
+      })),
+    };
+    prepared.total = formatDecimal(
+      prepared.lines
+        .filter((l) => l.currency === entryCurrency)
+        .map((l) => parseDecimal(l.amount))
+        .filter((a) => a > 0n)
+        .reduce((t, a) => t + a, 0n),
+    );
     try {
       await tx.transaction(async (sp) => {
         const posted = await replaceJournalEntry(sp, {
