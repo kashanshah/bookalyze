@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  accountTypes,
   divideDecimals,
   formatDecimal,
   formatMoney,
@@ -25,6 +24,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { CategoryPicker, type NewCategory } from "@/components/accounting/category-picker";
 import { RateField } from "@/components/accounting/rate-field";
 import { ReceiptsPanel } from "@/components/accounting/receipts-panel";
 import { Alert } from "@/components/ui/alert";
@@ -52,6 +52,7 @@ import {
   unmatchTransferAction,
 } from "./actions";
 import { ContactPicker } from "./contact-picker";
+import { toInput } from "./row-input";
 import type { TxFormContext, TxRow } from "./types";
 
 const KINDS: { key: TransactionKind; label: string; icon: typeof ArrowDownLeft }[] = [
@@ -82,11 +83,6 @@ const newSplit = (accountId = "", amount = "", taxRateId = ""): Split => ({
   taxRateId,
 });
 
-/** Trims "125.5000" to "125.50"-style input values. */
-function toInput(amount: string): string {
-  return amount.replace(/(\.\d\d\d*?)0+$/, "$1").replace(/\.00$/, "");
-}
-
 export type DialogState =
   | { mode: "create"; kind: TransactionKind; moneyAccountId?: string }
   | { mode: "edit"; row: TxRow }
@@ -96,10 +92,12 @@ export function TransactionDialog({
   state,
   onClose,
   ctx,
+  onCategoryCreated,
 }: {
   state: DialogState;
   onClose: () => void;
   ctx: TxFormContext;
+  onCategoryCreated?: (category: NewCategory) => void;
 }) {
   return (
     <Dialog open={state !== null} onOpenChange={(open) => !open && onClose()}>
@@ -110,6 +108,7 @@ export function TransactionDialog({
             state={state}
             ctx={ctx}
             onDone={onClose}
+            onCategoryCreated={onCategoryCreated}
           />
         ) : null}
       </DialogContent>
@@ -121,10 +120,12 @@ function TransactionForm({
   state,
   ctx,
   onDone,
+  onCategoryCreated,
 }: {
   state: NonNullable<DialogState>;
   ctx: TxFormContext;
   onDone: () => void;
+  onCategoryCreated?: (category: NewCategory) => void;
 }) {
   const row = state.mode === "edit" ? state.row : null;
   const firstMoney = ctx.moneyAccounts[0]?.id ?? "";
@@ -312,21 +313,6 @@ function TransactionForm({
       keywords: a.currency,
       disabled: a.id === exclude,
     }));
-  // The likeliest categories first: expenses for money out, income for money in.
-  const typeOrder =
-    kind === "withdrawal"
-      ? ["expense", "asset", "liability", "equity", "income"]
-      : ["income", "liability", "equity", "asset", "expense"];
-  const categoryGroups = [...ctx.categories].sort(
-    (a, b) => typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type),
-  );
-  const categoryOptions: ComboboxOption[] = categoryGroups.flatMap((group) =>
-    group.options.map((o) => ({
-      value: o.id,
-      label: o.label,
-      group: accountTypes[group.type].label,
-    })),
-  );
   const taxOptions = (current: string): ComboboxOption[] => [
     { value: "", label: "No tax" },
     ...ctx.taxRates
@@ -580,15 +566,15 @@ function TransactionForm({
                       <label htmlFor={`split-account-${s.key}`} className="sr-only">
                         Category {index + 1}
                       </label>
-                      <Combobox
+                      <CategoryPicker
                         id={`split-account-${s.key}`}
+                        slug={ctx.slug}
+                        groups={ctx.categories}
                         value={s.accountId}
-                        options={categoryOptions}
-                        placeholder="Choose a category…"
-                        searchPlaceholder="Search categories or codes"
-                        emptyText="No category matches. Add one in your chart of accounts."
+                        direction={kind === "deposit" ? "in" : "out"}
                         invalid={Boolean(error)}
                         wrapperClassName={cn(showTax && "col-span-3 sm:col-span-1")}
+                        onCreated={onCategoryCreated}
                         onChange={(v) => {
                           updateSplit(s.key, { accountId: v });
                           clearError(`splits.${index}`);

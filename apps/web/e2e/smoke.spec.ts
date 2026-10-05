@@ -1,6 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import { choose, latestLink, signIn, signOut, signUp, verifyEmail, withOwnerDb } from "./helpers";
+import {
+  choose,
+  latestLink,
+  openTransaction,
+  signIn,
+  signOut,
+  signUp,
+  verifyEmail,
+  withOwnerDb,
+} from "./helpers";
 import { statementPdf } from "./statement-pdf";
 
 // Unique emails per run so the suite can run against a reused database.
@@ -290,7 +299,7 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
   await expect(page.getByText("Client payment")).toBeVisible();
 
   // Edit keeps the review tick and replaces the amount.
-  await page.getByText("Client payment").click();
+  await openTransaction(page, "Client payment");
   await expect(page.getByRole("heading", { name: "Edit transaction" })).toBeVisible();
   await page.getByLabel("Amount 1").fill("850");
   await page.getByRole("button", { name: "Save changes" }).click();
@@ -301,7 +310,7 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
 
   // Remove.
   await choose(page.getByLabel("Status"), "Reviewed or not");
-  await page.getByText("Supplies and shipping").click();
+  await openTransaction(page, "Supplies and shipping");
   await page.getByRole("button", { name: "Remove", exact: true }).click();
   await page.getByRole("button", { name: "Click again to remove" }).click();
   await expect(page.getByText("Transaction removed")).toBeVisible();
@@ -348,6 +357,92 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
   await expect(page.getByText("$5,850.00")).toBeVisible();
 });
 
+test("transactions: add a category on the spot, change values on the list, remove from the menu", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+
+  // A category that doesn't exist yet, added from the dropdown without leaving the form.
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+  await page.locator("#tx-memo").fill("Courier");
+  await page.getByLabel("Category 1", { exact: true }).click();
+  await page.locator('input[role="combobox"][aria-autocomplete="list"]').fill("Courier fees");
+  await page.getByRole("button", { name: "Add “Courier fees” as a new category" }).click();
+  const form = page.getByRole("dialog", { name: "Add a category" });
+  await expect(form.getByLabel("Name")).toHaveValue("Courier fees");
+  await form.getByRole("button", { name: "Add category" }).click();
+  await expect(page.getByText("Courier fees added")).toBeVisible();
+  await expect(page.getByLabel("Category 1", { exact: true })).toHaveText("Courier fees");
+  await page.getByLabel("Amount 1").fill("18");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  // The transaction's row (not the toast or the dialog's category line, which also say it).
+  const courier = page.locator("li", {
+    hasText: "Courier",
+    has: page.getByRole("checkbox", { name: /^Select JE-/ }),
+  });
+  await expect(courier).toContainText("−$18.00");
+  const saved = () => expect(page.locator("li[aria-busy]")).toHaveCount(0);
+
+  // Description, amount and date change in place; Enter saves.
+  await courier.getByRole("button", { name: "Courier", exact: true }).click();
+  await page.getByLabel("Description", { exact: true }).fill("Courier to Ottawa");
+  await page.keyboard.press("Enter");
+  await saved();
+  await expect(courier).toContainText("Courier to Ottawa");
+
+  await courier.getByRole("button", { name: "−$18.00" }).click();
+  await page.getByLabel("Amount", { exact: true }).fill("21.50");
+  await page.keyboard.press("Enter");
+  await saved();
+  await expect(courier).toContainText("−$21.50");
+
+  // Escape keeps the old value.
+  await courier.getByRole("button", { name: "−$21.50" }).click();
+  await page.getByLabel("Amount", { exact: true }).fill("99");
+  await page.keyboard.press("Escape");
+  await expect(courier).toContainText("−$21.50");
+
+  const yesterday = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    new Date(Date.now() - 86_400_000),
+  );
+  await courier.getByTitle("Click to change the date").click();
+  await page.getByLabel("Date", { exact: true }).fill(yesterday);
+  await page.keyboard.press("Enter");
+  await saved();
+
+  // Category and account are dropdowns on the row.
+  await choose(courier.getByRole("combobox", { name: "Category" }), "6400 · Shipping and postage");
+  await saved();
+  await expect(courier).toContainText("Shipping and postage");
+
+  // Everything stuck: the details show the new values.
+  await openTransaction(page, "Courier to Ottawa");
+  await expect(page.locator("#tx-date")).toHaveValue(yesterday);
+  await expect(page.getByLabel("Amount 1")).toHaveValue("21.50");
+  await expect(page.getByLabel("Category 1", { exact: true })).toHaveText(
+    "6400 · Shipping and postage",
+  );
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  // Filter by category (the filter comes before the rows' own category dropdowns).
+  await choose(
+    page.getByRole("combobox", { name: "Category", exact: true }).first(),
+    "6400 · Shipping and postage",
+  );
+  await expect(page).toHaveURL(/category=/);
+  await expect(courier).toBeVisible();
+  await expect(page.locator("li", { hasText: "Client payment" })).toHaveCount(0);
+
+  // The row menu removes it after a confirmation.
+  await courier.getByRole("button", { name: /^More for / }).click();
+  await page.getByRole("menuitem", { name: "Remove" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Remove transaction" }).click();
+  await expect(page.getByText("Transaction removed")).toBeVisible();
+  await expect(courier).toHaveCount(0);
+});
+
 test("receipts: inbox, attach to a transaction, and attach while adding one", async ({ page }) => {
   // A 1×1 PNG and a tiny PDF, both synthetic.
   const png = Buffer.from(
@@ -376,7 +471,7 @@ test("receipts: inbox, attach to a transaction, and attach while adding one", as
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
   const payment = page.locator("li", { hasText: "Client payment" });
   await expect(payment.getByText("1 file attached")).toBeAttached();
-  await payment.getByText("Client payment", { exact: true }).click();
+  await openTransaction(page, "Client payment");
   await expect(page.getByRole("link", { name: /march-receipt\.pdf/ })).toBeVisible();
   const href = await page.getByRole("link", { name: /march-receipt\.pdf/ }).getAttribute("href");
   const file = await page.request.get(href ?? "");
@@ -451,7 +546,9 @@ test("customers and vendors: add, pick on transactions, totals and filter", asyn
   await choose(page.getByLabel("Category 1", { exact: true }), "4000 · Sales");
   await page.getByLabel("Amount 1").fill("1500");
   await page.getByRole("button", { name: "Add transaction" }).click();
-  await expect(page.getByText("Sales · Northwind Traders")).toBeVisible();
+  await expect(page.locator("li", { hasText: "Consulting invoice 101" })).toContainText(
+    "Consulting invoice 101 · Northwind Traders",
+  );
 
   // Money out to a vendor created on the spot.
   await page.getByRole("button", { name: "Add expense" }).click();
@@ -466,7 +563,7 @@ test("customers and vendors: add, pick on transactions, totals and filter", asyn
   await choose(page.getByLabel("Category 1", { exact: true }), "6250 · Office supplies");
   await page.getByLabel("Amount 1").fill("30");
   await page.getByRole("button", { name: "Add transaction" }).click();
-  await expect(page.getByText("Office supplies · Office Depot")).toBeVisible();
+  await expect(page.locator("li", { hasText: "Toner" })).toContainText("Toner · Office Depot");
 
   // Totals on the contact page, and its transactions in the list.
   await page.getByRole("link", { name: "Customers & vendors", exact: true }).click();
@@ -588,7 +685,7 @@ test("sales tax: Ontario setup, HST on transactions and the filing report", asyn
   await expect(ink).toContainText("−$56.50");
 
   // Reopening shows the amount with tax included and the rate picked.
-  await page.locator("li", { hasText: "Website sale" }).getByRole("button").first().click();
+  await openTransaction(page, "Website sale");
   await expect(page.getByLabel("Amount 1")).toHaveValue("113");
   await expect(page.getByLabel("Sales tax 1")).toHaveText("HST 13% (Ontario)");
   await page.getByRole("button", { name: "Cancel" }).click();
@@ -779,7 +876,7 @@ test("reconcile: tick to the statement balance, lock, undo and cancel", async ({
   // Reconciled transactions show a lock and can't be changed.
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByText(/Reconciled to the statement of/).first()).toBeAttached();
-  await page.locator("li", { hasText: "Website sale" }).getByRole("button").first().click();
+  await openTransaction(page, "Website sale");
   await expect(page.getByText(/This transaction is reconciled to your statement/)).toBeVisible();
   await page.keyboard.press("Escape");
 
@@ -971,7 +1068,7 @@ test("rules: categorize what's uncategorized, then new bank transactions as they
 
   // Any categorized transaction can become a rule.
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
-  await page.getByText("Team lunch", { exact: true }).click();
+  await openTransaction(page, "Team lunch");
   await page.getByRole("link", { name: "Make a rule" }).click();
   await expect(page).toHaveURL(/banking\/rules\?text=Team/);
   await expect(page.getByLabel("When the description contains")).toHaveValue("Team lunch");
@@ -1055,7 +1152,7 @@ test("transfers: match a suggested pair, unmatch it, match two by hand", async (
   await expect(page.locator("li", { hasText: "Cash float" })).toHaveCount(0);
 
   // Unmatching brings both back, and they aren't suggested together again.
-  await page.locator("li", { hasText: "ATM withdrawal" }).getByText("ATM withdrawal").click();
+  await openTransaction(page, "ATM withdrawal");
   await page.getByRole("button", { name: "Unmatch" }).click();
   await expect(page.getByText("Unmatched", { exact: true })).toBeVisible();
   await expect(page.locator("li", { hasText: "Cash float" })).toBeVisible();

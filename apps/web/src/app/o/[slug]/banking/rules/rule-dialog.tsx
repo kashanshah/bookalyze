@@ -1,9 +1,10 @@
 "use client";
 
-import { accountTypes, type RuleDirection } from "@bookalyze/core";
+import type { RuleDirection } from "@bookalyze/core";
 import { Wand2 } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { CategoryPicker, useCategoryList } from "@/components/accounting/category-picker";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import {
@@ -77,6 +78,7 @@ export function RuleDialog({
   initial: RuleDraft;
 }) {
   const [draft, setDraft] = useState<RuleDraft>(initial);
+  const categories = useCategoryList(ctx.categories);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [matches, setMatches] = useState<number | null>(null);
   const [pending, start] = useTransition();
@@ -202,19 +204,14 @@ export function RuleDialog({
             error={errors.categoryAccountId}
             className="sm:col-span-2"
           >
-            <Combobox
+            <CategoryPicker
               id="rule-category"
+              slug={ctx.slug}
+              groups={categories.groups}
               value={draft.categoryAccountId}
+              direction={draft.direction}
               onChange={(v) => set({ categoryAccountId: v })}
-              options={ctx.categories.flatMap((g) =>
-                g.options.map((o) => ({
-                  value: o.id,
-                  label: o.label,
-                  group: accountTypes[g.type].label,
-                })),
-              )}
-              placeholder="Choose a category…"
-              searchPlaceholder="Search categories"
+              onCreated={categories.add}
               invalid={Boolean(errors.categoryAccountId)}
             />
           </Field>

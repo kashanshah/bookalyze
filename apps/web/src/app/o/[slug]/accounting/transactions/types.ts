@@ -1,4 +1,7 @@
-import type { AccountType, TransactionKind } from "@bookalyze/core";
+import type { TransactionKind } from "@bookalyze/core";
+import type { CategoryGroup } from "@/components/accounting/category-picker";
+
+export type { CategoryGroup };
 
 /** Shapes passed from the Transactions page (server) to its client components. */
 
@@ -10,11 +13,6 @@ export type ContactOption = {
 };
 
 export type MoneyAccountOption = { id: string; label: string; currency: string };
-
-export type CategoryGroup = {
-  type: AccountType;
-  options: { id: string; label: string }[];
-};
 
 export type TxRow = {
   id: string;

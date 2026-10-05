@@ -140,7 +140,8 @@ Real company details are entered in the app and never committed.
 - **Screen** (`/accounting/transactions`, the Accounting home):
   - Every current entry that touches a money account: cash and bank, credit card, money in transit
     (`MONEY_ACCOUNT_SUBTYPES` in core).
-  - Filters for account, type (money in, money out, transfers), reviewed status and search.
+  - Filters for account, category (`?category=`, any split counts; `categoryId` in
+    `listTransactions`), type (money in, money out, transfers), reviewed status and search.
   - Choosing one account shows its balance.
 - **Forms:** add income, add expense or transfer.
   - Income and expenses can be split across categories. A negative split goes the other way, for
@@ -210,7 +211,7 @@ Real company details are entered in the app and never committed.
 - **Transaction form:**
   - An optional Customer (money in) or Vendor (money out) field.
   - "+ Add a new customer/vendor…" creates one inline.
-  - Rows show "Category · Contact". `?contact=` filters, with a chip to clear it.
+  - Rows show "Description · Contact". `?contact=` filters, with a chip to clear it.
 - **Journal entry page:** shows "With {contact}".
 - **E2E:** the `signIn` helper retries after Better Auth's sign-in rate limit, because the suite
   signs in often.
@@ -517,7 +518,35 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Receipts inbox: select and delete several:** a tick box on each receipt and "Select all
   (n)" above the grid; a bar at the bottom deletes the ticked ones after a confirm
   (`deleteAttachmentsAction`, 200 per request; the inbox sends bigger selections in batches; files
-  attached to a transaction are skipped and counted).
+   attached to a transaction are skipped and counted).
+
+### Simpler like Wave: edit on the list, add categories anywhere
+
+- **Edit straight from the Transactions list** (wide screens, `lg` and up): date, description and
+  amount turn into a field when clicked (Enter or leaving the field saves, Escape cancels);
+  account and category are dropdowns. Each change saves the row exactly as the dialog would
+  (`rowInput()` in `transactions/row-input.ts` builds the full `saveTransactionAction` input), so
+  it's a normal edit: a corrected entry replaces the old one, review tick and receipts carry over.
+  The row shows the change at once and dims while saving; a failure puts it back with a toast.
+  - Amount changes in place only for one-category rows and same-currency transfers; splits open
+    the dialog. Picking an account in another currency opens the dialog to ask for a rate.
+  - Rows still needing an account only allow choosing the account in place. Reconciled rows and
+    rows in a closed period show plain values that open the read-only dialog.
+  - Phones and tablets: the row is a compact summary and a tap anywhere opens the dialog (one
+    set of cells, placed by the grid; a capture-phase click handler sends narrow-screen taps to
+    the dialog). The table layout starts at `lg` (was `md`).
+- **Row menu** (… at the end): Edit details (View details when read-only), Journal entry JE-…,
+  Make a rule, Remove (asks first, `deleteTransactionAction`).
+- **"Add a new category" in every category dropdown** (`components/accounting/category-picker.tsx`):
+  the transaction dialog, the list rows and the rule form. Typing a name that doesn't exist offers
+  "Add “…” as a new category", which opens a small form on top (type, what it's for, name, optional
+  code; `saveAccountAction`). The new category is picked and appears in every dropdown on the page
+  (`useCategoryList`) and, after the save, everywhere else.
+- **Refunds, like Wave:** for money in (transactions and rules), the expense categories are listed
+  under "Return on an expense recorded in Bookalyze" (searchable as "refund" or "return").
+  Picking one books the money against that expense, lowering it; no separate account.
+- E2E: `openTransaction()` helper opens a row through its menu (clicking a value now edits it);
+  new test for adding a category on the spot, editing on the list and removing from the menu.
 
 
 ### Phase 2, slice 4: transfer matching
