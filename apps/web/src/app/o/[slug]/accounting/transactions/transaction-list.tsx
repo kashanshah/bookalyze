@@ -5,31 +5,37 @@ import {
   ArrowDownLeft,
   ArrowRightLeft,
   ArrowUpRight,
-  Check,
   Copy,
-  FileCheck2,
-  FileX2,
   Landmark,
   Lightbulb,
-  Lock,
   Search,
-  Wand2,
+  Trash2,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useOptimistic, useState, useTransition } from "react";
+import { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { useCategoryList } from "@/components/accounting/category-picker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox } from "@/components/ui/combobox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-import { setReviewedAction } from "./actions";
+import { deleteTransactionAction, setReviewedAction } from "./actions";
 import { DuplicateReviewDialog, SelectionBar } from "./duplicate-dialogs";
 import { type DialogState, TransactionDialog } from "./transaction-dialog";
+import { ROW_GRID, TransactionRow } from "./transaction-row";
 import { TransferReviewDialog } from "./transfer-dialogs";
 import type { TxFormContext, TxRow } from "./types";
 
@@ -65,13 +71,13 @@ function useFilterNavigation() {
 export function TransactionList({
   rows,
   filters,
-  ctx,
   hasAny,
   duplicateCount,
   needsAccountCount,
   transferCount,
   ruleSuggestionCount,
   footer,
+  ctx: pageCtx,
 }: {
   rows: TxRow[];
   filters: Filters;
@@ -88,6 +94,20 @@ export function TransactionList({
   /** Page count and paging buttons, shown beside the per-page choice. */
   footer?: React.ReactNode;
 }) {
+  // Categories added from any picker on this screen show in all of them straight away.
+  const { groups, added, add: addCategory } = useCategoryList(pageCtx.categories);
+  const ctx = useMemo<TxFormContext>(
+    () => ({
+      ...pageCtx,
+      categories: groups,
+      accountNames: {
+        ...pageCtx.accountNames,
+        ...Object.fromEntries(added.map((c) => [c.id, c.name])),
+      },
+    }),
+    [pageCtx, groups, added],
+  );
+  const [removing, setRemoving] = useState<TxRow | null>(null);
   const [reviewing, setReviewing] = useState<TxRow | null>(null);
   const [transferring, setTransferring] = useState<TxRow | null>(null);
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
@@ -124,8 +144,6 @@ export function TransactionList({
   const filterAccount = filters.account || null;
   const contactNames = new Map(ctx.contacts.map((c) => [c.id, c.name]));
   const filterContact = filters.contact ? contactNames.get(filters.contact) : undefined;
-  const name = (id?: string) => (id ? (ctx.accountNames[id] ?? "Unknown account") : "—");
-
   const allPicked = optimisticRows.length > 0 && optimisticRows.every((r) => picked.has(r.id));
   const selectAll = (
     <Checkbox
@@ -339,7 +357,12 @@ export function TransactionList({
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
-          <div className="hidden grid-cols-[1.25rem_6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem_5.75rem] gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider md:grid">
+          <div
+            className={cn(
+              "hidden gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider lg:grid",
+              ROW_GRID,
+            )}
+          >
             {selectAll}
             <span>Date</span>
             <span>Description</span>
@@ -348,220 +371,29 @@ export function TransactionList({
             <span className="text-end">Amount</span>
             <span className="text-end">Status</span>
           </div>
-          <div className="flex items-center gap-3 border-b bg-muted/30 px-4 py-2.5 text-muted-foreground text-xs sm:px-5 md:hidden">
+          <div className="flex items-center gap-3 border-b bg-muted/30 px-4 py-2.5 text-muted-foreground text-xs sm:px-5 lg:hidden">
             {selectAll}
             Select all on this page
           </div>
           <ul className="divide-y">
-            {optimisticRows.map((row, i) => {
-              // Direction relative to the filtered account (transfers are in or out depending on it).
-              const direction =
-                row.kind === "transfer"
-                  ? filterAccount === row.toAccountId
-                    ? "in"
-                    : filterAccount === row.fromAccountId
-                      ? "out"
-                      : "move"
-                  : row.kind === "deposit"
-                    ? "in"
-                    : "out";
-              const category =
-                row.kind === "transfer"
-                  ? `${name(row.fromAccountId)} → ${name(row.toAccountId)}`
-                  : row.splits.length > 1
-                    ? `Split (${row.splits.length})`
-                    : name(row.splits[0]?.accountId);
-              const contactName = row.contactId ? contactNames.get(row.contactId) : undefined;
-              // Between currencies, show each side in its own currency: what arrived when viewing the
-              // receiving account, what left when viewing the sending one, both otherwise.
-              const sent = formatMoney(row.amount, row.currency, ctx.locale);
-              const got =
-                row.receivedAmount && row.receivedCurrency
-                  ? formatMoney(row.receivedAmount, row.receivedCurrency, ctx.locale)
-                  : null;
-              const money = got && direction === "in" ? got : sent;
-              const arrived = got && direction === "move" ? got : null;
-              return (
-                <li
-                  key={row.id}
-                  className={cn(
-                    "fade-in-0 flex animate-in flex-wrap items-center gap-3 fill-mode-both px-4 py-3 transition-colors hover:bg-muted/40 sm:px-5 md:grid md:grid-cols-[1.25rem_6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem_5.75rem] md:gap-4",
-                    (row.duplicate || row.needsAccount) && "bg-warning/[0.06] hover:bg-warning/10",
-                    picked.has(row.id) && "bg-primary/5 hover:bg-primary/[0.07]",
-                  )}
-                  style={{ animationDelay: `${Math.min(i, 12) * 20}ms` }}
-                >
-                  <Checkbox
-                    checked={picked.has(row.id)}
-                    onChange={() => togglePicked(row.id)}
-                    label={`Select ${row.number}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setDialog({ mode: "edit", row })}
-                    className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 text-start md:col-span-5 md:grid-cols-subgrid md:items-center md:gap-4"
-                  >
-                    <span className="tabular col-start-1 row-start-2 text-muted-foreground text-xs md:row-start-auto md:text-foreground md:text-sm">
-                      {formatDate(row.date, ctx.locale)}
-                    </span>
-                    <span className="col-start-1 row-start-1 min-w-0 truncate font-medium text-sm md:col-start-auto md:row-start-auto">
-                      {row.memo || category}
-                    </span>
-                    {row.needsAccount ? (
-                      <span className="col-start-1 row-start-4 truncate font-medium text-warning text-xs md:col-start-auto md:row-start-auto md:text-sm">
-                        Choose account
-                      </span>
-                    ) : (
-                      <span className="hidden truncate text-muted-foreground text-sm md:block">
-                        {row.kind === "transfer" ? "—" : name(row.moneyAccountIds[0])}
-                      </span>
-                    )}
-                    <span className="col-start-1 row-start-3 truncate text-muted-foreground text-xs md:col-start-auto md:row-start-auto md:text-sm">
-                      {row.rule ? (
-                        <Wand2
-                          className="me-1 inline size-3.5 align-[-2px] text-primary"
-                          aria-label={`Categorized by your rule “${row.rule}”`}
-                        >
-                          <title>Categorized by your rule “{row.rule}”</title>
-                        </Wand2>
-                      ) : null}
-                      {contactName ? `${category} · ${contactName}` : category}
-                    </span>
-                    <span
-                      className={cn(
-                        "tabular col-start-2 row-span-3 row-start-1 self-center whitespace-nowrap text-end font-medium text-sm md:col-start-auto md:row-span-1 md:row-start-auto",
-                        direction === "in" && "text-success",
-                        direction === "move" && "text-muted-foreground",
-                      )}
-                    >
-                      {direction === "in" ? "+" : direction === "out" ? "−" : ""}
-                      {money}
-                      {arrived ? (
-                        <span className="block font-normal text-muted-foreground text-xs">
-                          → {arrived}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                  <div className="flex shrink-0 items-center justify-end gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setDialog({ mode: "edit", row })}
-                      title={
-                        row.attachments
-                          ? `${row.attachments} ${row.attachments === 1 ? "receipt or file" : "receipts or files"} attached`
-                          : "No receipt yet"
-                      }
-                      className={cn(
-                        "relative flex size-7 items-center justify-center rounded-md transition-colors hover:bg-muted",
-                        row.attachments ? "text-primary" : "text-muted-foreground/35",
-                      )}
-                    >
-                      {row.attachments ? (
-                        <FileCheck2 className="size-4" />
-                      ) : (
-                        <FileX2 className="size-4" />
-                      )}
-                      {row.attachments > 1 ? (
-                        <span className="tabular absolute -end-0.5 -top-0.5 rounded-full bg-primary px-1 font-semibold text-[9px] text-primary-foreground leading-3.5">
-                          {row.attachments}
-                        </span>
-                      ) : null}
-                      <span className="sr-only">
-                        {row.attachments
-                          ? `${row.attachments} ${row.attachments === 1 ? "file" : "files"} attached`
-                          : "No receipt"}
-                      </span>
-                    </button>
-                    <span
-                      className={cn(
-                        "flex size-5 items-center justify-center",
-                        row.reconciledThrough ? "text-primary" : "invisible",
-                      )}
-                      title={
-                        row.reconciledThrough
-                          ? `Reconciled to the statement of ${formatDate(row.reconciledThrough, ctx.locale)}`
-                          : undefined
-                      }
-                    >
-                      {row.reconciledThrough ? (
-                        <>
-                          <Lock className="size-3.5" />
-                          <span className="sr-only">
-                            Reconciled to the statement of{" "}
-                            {formatDate(row.reconciledThrough, ctx.locale)}
-                          </span>
-                        </>
-                      ) : null}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => toggleReviewed(row)}
-                      aria-pressed={row.reviewed}
-                      aria-label={
-                        row.reviewed
-                          ? `Mark ${row.number} as not reviewed`
-                          : `Mark ${row.number} as reviewed`
-                      }
-                      title={row.reviewed ? "Reviewed" : "Mark as reviewed"}
-                      className={cn(
-                        "flex size-7 shrink-0 items-center justify-center rounded-full border transition-all duration-200",
-                        row.reviewed
-                          ? "border-success bg-success text-white"
-                          : "text-transparent hover:border-success/60 hover:text-success/60",
-                      )}
-                    >
-                      <Check
-                        className={cn(
-                          "size-4 transition-transform",
-                          row.reviewed && "zoom-in-50 animate-in",
-                        )}
-                        strokeWidth={2.5}
-                      />
-                    </button>
-                  </div>
-                  {row.transfer ? (
-                    <button
-                      type="button"
-                      onClick={() => setTransferring(row)}
-                      className="flex w-full min-w-0 basis-full items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-start text-sm transition-colors hover:bg-primary/15 md:col-span-full md:col-start-2"
-                    >
-                      <ArrowRightLeft className="size-4 shrink-0 text-primary" />
-                      <span className="min-w-0 flex-1 truncate">
-                        <span className="font-medium">
-                          Possible transfer {row.transfer.outId === row.id ? "to" : "from"}{" "}
-                          {name(row.transfer.other.accountId)}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {" "}
-                          · {row.transfer.other.number},{" "}
-                          {formatDate(row.transfer.other.date, ctx.locale)}
-                        </span>
-                      </span>
-                      <span className="shrink-0 font-medium text-primary">Review</span>
-                    </button>
-                  ) : null}
-                  {row.duplicate ? (
-                    <button
-                      type="button"
-                      onClick={() => setReviewing(row)}
-                      className="flex w-full min-w-0 basis-full items-center gap-2 rounded-lg bg-warning/15 px-3 py-2 text-start text-sm transition-colors hover:bg-warning/25 md:col-span-full md:col-start-2"
-                    >
-                      <Copy className="size-4 shrink-0 text-warning" />
-                      <span className="min-w-0 flex-1 truncate">
-                        <span className="font-medium">Possible duplicate</span>
-                        <span className="text-muted-foreground">
-                          {" "}
-                          of {row.duplicate.of.number}
-                          {row.duplicate.of.memo ? ` · ${row.duplicate.of.memo}` : ""}
-                        </span>
-                      </span>
-                      <span className="shrink-0 font-medium text-primary">Review</span>
-                    </button>
-                  ) : null}
-                </li>
-              );
-            })}
+            {optimisticRows.map((row, i) => (
+              <TransactionRow
+                key={row.id}
+                row={row}
+                index={i}
+                ctx={ctx}
+                filterAccount={filterAccount}
+                contactName={row.contactId ? contactNames.get(row.contactId) : undefined}
+                picked={picked.has(row.id)}
+                onTogglePicked={() => togglePicked(row.id)}
+                onEdit={(r) => setDialog({ mode: "edit", row: r })}
+                onRemove={() => setRemoving(row)}
+                onToggleReviewed={() => toggleReviewed(row)}
+                onReviewDuplicate={() => setReviewing(row)}
+                onReviewTransfer={() => setTransferring(row)}
+                onCategoryCreated={addCategory}
+              />
+            ))}
           </ul>
         </div>
       )}
@@ -591,7 +423,72 @@ export function TransactionList({
         onClear={() => setPicked(new Set())}
       />
 
-      <TransactionDialog key={dialogKey} state={dialog} onClose={() => setDialog(null)} ctx={ctx} />
+      <TransactionDialog
+        key={dialogKey}
+        state={dialog}
+        onClose={() => setDialog(null)}
+        ctx={ctx}
+        onCategoryCreated={addCategory}
+      />
+      <RemoveDialog row={removing} ctx={ctx} onClose={() => setRemoving(null)} />
     </div>
+  );
+}
+
+/** "Remove this transaction?" from a row's menu. It's reversed, so the journal keeps a record. */
+function RemoveDialog({
+  row,
+  ctx,
+  onClose,
+}: {
+  row: TxRow | null;
+  ctx: TxFormContext;
+  onClose: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const name = (id?: string) => (id ? (ctx.accountNames[id] ?? "Unknown account") : "");
+
+  function remove() {
+    if (!row) return;
+    startTransition(async () => {
+      const result = await deleteTransactionAction(ctx.slug, row.id);
+      if (result.ok) {
+        toast.success("Transaction removed", {
+          description: "It stays in the journal as a reversed entry, for your records.",
+        });
+        onClose();
+      } else toast.error(result.message);
+    });
+  }
+
+  return (
+    <Dialog open={row !== null} onOpenChange={(open) => !open && !pending && onClose()}>
+      <DialogContent>
+        {row ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Remove this transaction?</DialogTitle>
+              <DialogDescription>
+                <span className="font-medium text-foreground">
+                  {row.memo || name(row.splits[0]?.accountId) || row.number}
+                </span>
+                , {formatDate(row.date, ctx.locale, "long")},{" "}
+                {formatMoney(row.amount, row.currency, ctx.locale)}. It comes off your reports and
+                stays in the journal as a reversed entry, for your records.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
+                Cancel
+              </Button>
+              <Button type="button" variant="destructive" onClick={remove} disabled={pending}>
+                {pending ? <Spinner /> : <Trash2 />}
+                Remove transaction
+              </Button>
+            </DialogFooter>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
