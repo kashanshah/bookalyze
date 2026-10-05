@@ -76,6 +76,17 @@ export function ReconcileScreen({
     () => new Map(lines.map((l) => [l.lineId, parseDecimal(naturalAmount(type, l.amount))])),
     [lines, type],
   );
+  // The balance after each line, in date order, from what earlier reconciliations cleared: if
+  // every line is on the statement, it follows the statement's own balance column.
+  const running = useMemo(() => {
+    let balance = parseDecimal(opening);
+    const after = new Map<string, bigint>();
+    for (const l of lines) {
+      balance += natural.get(l.lineId) ?? 0n;
+      after.set(l.lineId, balance);
+    }
+    return after;
+  }, [lines, natural, opening]);
   const change = [...cleared].reduce((sum, id) => sum + (natural.get(id) ?? 0n), 0n);
   const clearedBalance = parseDecimal(opening) + change;
   const difference = parseDecimal(reconciliation.statementBalance) - clearedBalance;
@@ -195,7 +206,7 @@ export function ReconcileScreen({
       </div>
 
       <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
-        <div className="flex items-center gap-3 border-b bg-muted/30 px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider sm:px-5 md:grid md:grid-cols-[2rem_6.5rem_minmax(0,1fr)_8.5rem_8.5rem] md:gap-4">
+        <div className="flex items-center gap-3 border-b bg-muted/30 px-4 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider sm:px-5 md:grid md:grid-cols-[2rem_6.5rem_minmax(0,1fr)_8rem_8rem_8.5rem] md:gap-4">
           <Checkbox
             checked={allShownTicked}
             label={allShownTicked ? "Untick all shown" : "Tick all shown"}
@@ -210,6 +221,7 @@ export function ReconcileScreen({
           <span className="flex-1 md:flex-none">Description</span>
           <span className="hidden text-end md:block">{inLabel}</span>
           <span className="hidden text-end md:block">{outLabel}</span>
+          <span className="hidden text-end md:block">Balance</span>
         </div>
         {shown.length === 0 ? (
           <p className="px-5 py-10 text-center text-muted-foreground text-sm">
@@ -224,11 +236,17 @@ export function ReconcileScreen({
               const amount = money(formatDecimal(n < 0n ? -n : n));
               const ticked = cleared.has(l.lineId);
               const text = l.memo || l.description || l.contactName || "No description";
+              const balance = money(formatDecimal(running.get(l.lineId) ?? 0n));
+              const mobileBalance = (
+                <span className="block font-normal text-muted-foreground text-xs md:hidden">
+                  {balance}
+                </span>
+              );
               return (
                 <li
                   key={l.lineId}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-2.5 transition-colors sm:px-5 md:grid md:grid-cols-[2rem_6.5rem_minmax(0,1fr)_8.5rem_8.5rem] md:gap-4",
+                    "flex items-center gap-3 px-4 py-2.5 transition-colors sm:px-5 md:grid md:grid-cols-[2rem_6.5rem_minmax(0,1fr)_8rem_8rem_8.5rem] md:gap-4",
                     ticked && "bg-success/[0.04]",
                   )}
                 >
@@ -260,6 +278,7 @@ export function ReconcileScreen({
                   >
                     <span className="md:hidden">+</span>
                     {n > 0n ? amount : ""}
+                    {n > 0n ? mobileBalance : null}
                   </span>
                   <span
                     className={cn(
@@ -269,6 +288,10 @@ export function ReconcileScreen({
                   >
                     <span className="md:hidden">−</span>
                     {n < 0n ? amount : ""}
+                    {n < 0n ? mobileBalance : null}
+                  </span>
+                  <span className="tabular hidden text-end text-muted-foreground text-sm md:block">
+                    {balance}
                   </span>
                 </li>
               );

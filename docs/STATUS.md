@@ -363,6 +363,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   - Each account's page has the start form, the reconcile screen and its history.
   - The reconcile screen has ticks, tick all shown, filter and search, and a sticky bar with
     statement, cleared and difference. Finish is enabled at zero.
+  - A Balance column shows the balance after each line, in date order, starting from what
+    earlier reconciliations cleared (under the amount on phones). When every line is on the
+    statement it follows the statement's own balance, so a gap shows where they part ways.
 - **Transactions list:** the review tick is at the end of the row. A receipt icon shows whether
   files are attached (faint when none), and a lock marks reconciled transactions (tooltip: the
   statement date). Reconciled transactions open read-only; the server refuses changes too.
