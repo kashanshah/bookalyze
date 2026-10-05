@@ -1,4 +1,5 @@
-import { prepareTransfer } from "@bookalyze/core";
+import { prepareJournalEntry, prepareTransfer, transactionLines } from "@bookalyze/core";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
 import { fxRateOn, missingCadRates, upsertFxRates } from "../fx";
@@ -208,6 +209,58 @@ describe("entries in more than one currency", () => {
           },
         ]);
       }),
+    );
+    expect(message).toMatch(/only holds USD/);
+  });
+
+  it("lets an account's currency change without touching amounts, and still undoes old entries", async () => {
+    const all = await scoped((tx) => tx.select().from(schema.accounts));
+    const ledger = new Map(all.map((a) => [a.id, a]));
+    const [imported] = await scoped((tx) =>
+      tx
+        .insert(schema.accounts)
+        .values({
+          organizationId: orgId,
+          name: "Imported USD account",
+          type: "asset",
+          subtype: "cash_bank",
+          currency: "CAD",
+        })
+        .returning(),
+    );
+    const account = imported?.id as string;
+    ledger.set(account, imported as (typeof all)[number]);
+    const prepared = prepareJournalEntry(
+      {
+        currency: "CAD",
+        baseCurrency: "CAD",
+        lines: transactionLines({
+          kind: "deposit",
+          moneyAccountId: account,
+          splits: [{ accountId: ids["4000"] as string, amount: "804.10" }],
+        }),
+      },
+      ledger,
+    );
+    if (!prepared.ok) throw new Error("bad entry");
+    const entry = prepared.entry;
+    const posted = await scoped((tx) =>
+      postJournalEntry(tx, { orgId, date: "2026-10-05", memo: "From the old books", entry }),
+    );
+    await scoped((tx) =>
+      tx.update(schema.accounts).set({ currency: "USD" }).where(eq(schema.accounts.id, account)),
+    );
+    const [line] = await scoped((tx) =>
+      tx.select().from(schema.journalLines).where(eq(schema.journalLines.accountId, account)),
+    );
+    expect(line).toMatchObject({ currency: "CAD", amount: "804.1000", baseAmount: "804.1000" });
+    // Removing the old entry undoes it in the currency it was written in.
+    await scoped((tx) =>
+      reverseJournalEntry(tx, { orgId, entryId: posted.id, date: "2026-10-05" }),
+    );
+    // New lines must be in the new currency.
+    const message = await pgErrorOf(
+      scoped((tx) => postJournalEntry(tx, { orgId, date: "2026-10-06", memo: "Again", entry })),
     );
     expect(message).toMatch(/only holds USD/);
   });

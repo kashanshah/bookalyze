@@ -160,12 +160,8 @@ export async function saveAccountAction(
           errors: { type: "This account already has entries, so its type can't change." },
         };
       }
-      if (used && existing.currency !== value.currency) {
-        return {
-          ok: false,
-          errors: { currency: "This account already has entries, so its currency can't change." },
-        };
-      }
+      // The currency may change at any time; amounts already recorded stay exactly as they are
+      // (each line keeps the currency it was written in). Only new transactions use the new one.
       const [row] = await tx
         .update(schema.accounts)
         .set({

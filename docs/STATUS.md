@@ -452,8 +452,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   left alone and reported) besides "Merge" for two. "Show 25 / 50 / 100 per page" (`?per=`,
   default 50) sits beside the page count. One transaction is still removed from its edit dialog.
 - `Field` now lets its control shrink (`grid-cols-[minmax(0,1fr)]`), so long dropdown labels
-  truncate instead of widening dialogs on phones. Chart of accounts: the currency of an account
-  with transactions explains why it's fixed.
+  truncate instead of widening dialogs on phones. Chart of accounts: an account's currency can
+  change even after it has transactions (see "Changing an account's currency" in §4).
 
 ---
 
@@ -565,6 +565,12 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
   (`trialBalance`, `profitAndLoss`, `balanceSheet`) so it can be unit-tested.
 
 ---
+
+- **Changing an account's currency** (migration `0019_account_currency_change`): allowed at any
+  time, and no amount changes. Lines already written keep the currency they were written in;
+  only new lines must be in the account's new currency (`assert_line_currency_matches_account`).
+  Reversals are exempt, so an old transaction can still be edited or removed: it's undone in
+  its original currency. Base amounts never change, so CAD reports stay the same.
 
 ## 5. How we work
 
