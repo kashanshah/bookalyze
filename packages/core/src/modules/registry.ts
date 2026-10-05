@@ -85,7 +85,10 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     phase: "3",
     requires: ["accounting"],
     features: ["commerce.channels", "commerce.orders", "commerce.settlements"],
-    nav: [{ label: "Channels", href: "/commerce/channels" }],
+    nav: [
+      { label: "Orders", href: "/commerce/orders" },
+      { label: "Channels", href: "/commerce/channels" },
+    ],
     status: "available",
   },
   inventory: {

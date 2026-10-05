@@ -1,9 +1,9 @@
-import type { MarketplaceParticipation } from "@bookalyze/core";
-import { and, asc, eq, sql } from "drizzle-orm";
+import type { AmazonOrder, AmazonOrderItem, MarketplaceParticipation } from "@bookalyze/core";
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { disconnectConnection } from "./banking";
 import type { Transaction } from "./client";
 import { connections } from "./schema/banking";
-import { salesChannels } from "./schema/commerce";
+import { orderItems, orders, salesChannels } from "./schema/commerce";
 
 /**
  * Commerce: marketplace connections (Amazon Seller Central through the SP-API) and the sales
@@ -31,11 +31,17 @@ export async function listAmazonConnections(tx: Transaction) {
 
 /**
  * Records the marketplaces an Amazon account sells in as channels. New ones start switched on
- * when the seller participates there; existing ones keep the choice made before.
+ * when the seller participates there; existing ones keep the choice made before, unless
+ * `reset` (reconnecting after a disconnect, which switched them all off).
  */
 export async function saveAmazonChannels(
   tx: Transaction,
-  input: { orgId: string; connectionId: string; marketplaces: readonly MarketplaceParticipation[] },
+  input: {
+    orgId: string;
+    connectionId: string;
+    marketplaces: readonly MarketplaceParticipation[];
+    reset?: boolean;
+  },
 ) {
   for (const m of input.marketplaces) {
     await tx
@@ -52,7 +58,11 @@ export async function saveAmazonChannels(
       })
       .onConflictDoUpdate({
         target: [salesChannels.connectionId, salesChannels.marketplaceId],
-        set: { name: sql`excluded.name`, currency: sql`excluded.currency` },
+        set: {
+          name: sql`excluded.name`,
+          currency: sql`excluded.currency`,
+          ...(input.reset ? { isActive: sql`excluded.is_active` } : {}),
+        },
       });
   }
 }
@@ -96,4 +106,289 @@ export async function disconnectAmazon(tx: Transaction, connectionId: string) {
     .update(salesChannels)
     .set({ isActive: false })
     .where(eq(salesChannels.connectionId, connectionId));
+}
+
+// --- orders ----------------------------------------------------------------------------------
+
+/** A channel with its connection (credentials sealed), for syncing. */
+export async function getChannelForSync(tx: Transaction, channelId: string) {
+  const [row] = await tx
+    .select({ channel: salesChannels, connection: connections })
+    .from(salesChannels)
+    .innerJoin(connections, eq(connections.id, salesChannels.connectionId))
+    .where(eq(salesChannels.id, channelId));
+  return row ?? null;
+}
+
+/**
+ * Starts bringing orders in from `from` (YYYY-MM-DD). Moving the date earlier reads everything
+ * again from there; moving it later only stops older orders coming in (those already in stay).
+ */
+export async function startOrderSync(tx: Transaction, channelIds: readonly string[], from: string) {
+  if (!channelIds.length) return;
+  await tx
+    .update(salesChannels)
+    .set({
+      ordersFrom: from,
+      ordersSyncedThrough: sql`case when ${salesChannels.ordersFrom} is null or ${salesChannels.ordersFrom} > ${from}::date then null else ${salesChannels.ordersSyncedThrough} end`,
+      ordersNextToken: null,
+      ordersWindowEnd: null,
+    })
+    .where(inArray(salesChannels.id, [...channelIds]));
+}
+
+/** Where the orders query got to: mid-way (a page token) or done up to `syncedThrough`. */
+export async function saveOrderCursor(
+  tx: Transaction,
+  channelId: string,
+  cursor: { nextToken: string; windowEnd: Date } | { nextToken: null; syncedThrough: Date | null },
+) {
+  await tx
+    .update(salesChannels)
+    .set(
+      cursor.nextToken !== null
+        ? { ordersNextToken: cursor.nextToken, ordersWindowEnd: cursor.windowEnd }
+        : {
+            ordersNextToken: null,
+            ordersWindowEnd: null,
+            ordersSyncedThrough: cursor.syncedThrough,
+          },
+    )
+    .where(eq(salesChannels.id, channelId));
+}
+
+/**
+ * Saves orders as the marketplace reports them: new ones are added, changed ones updated (an
+ * older copy never overwrites a newer one). A change of status or total means the items are
+ * fetched again. Orders placed before the channel's start date are left out. Returns how many
+ * were added or changed.
+ */
+export async function upsertOrders(
+  tx: Transaction,
+  input: { orgId: string; channelId: string; from: string; orders: readonly AmazonOrder[] },
+): Promise<number> {
+  const start = new Date(`${input.from}T00:00:00Z`).getTime();
+  const rows = input.orders.filter((o) => new Date(o.purchasedAt).getTime() >= start);
+  if (!rows.length) return 0;
+  const saved = await tx
+    .insert(orders)
+    .values(
+      rows.map((o) => ({
+        organizationId: input.orgId,
+        channelId: input.channelId,
+        externalId: o.orderId,
+        purchasedAt: new Date(o.purchasedAt),
+        lastUpdatedAt: new Date(o.lastUpdatedAt),
+        status: o.status,
+        fulfillment: o.fulfillment,
+        currency: o.currency,
+        total: o.total,
+        itemsShipped: o.itemsShipped,
+        itemsUnshipped: o.itemsUnshipped,
+        shipCountry: o.shipCountry,
+        shipRegion: o.shipRegion,
+        isBusiness: o.isBusiness,
+        isPrime: o.isPrime,
+        isReplacement: o.isReplacement,
+        latestDelivery: o.latestDelivery,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [orders.channelId, orders.externalId],
+      set: {
+        lastUpdatedAt: sql`excluded.last_updated_at`,
+        status: sql`excluded.status`,
+        fulfillment: sql`excluded.fulfillment`,
+        currency: sql`excluded.currency`,
+        total: sql`excluded.total`,
+        itemsShipped: sql`excluded.items_shipped`,
+        itemsUnshipped: sql`excluded.items_unshipped`,
+        shipCountry: sql`excluded.ship_country`,
+        shipRegion: sql`excluded.ship_region`,
+        isBusiness: sql`excluded.is_business`,
+        isPrime: sql`excluded.is_prime`,
+        isReplacement: sql`excluded.is_replacement`,
+        latestDelivery: sql`excluded.latest_delivery`,
+        itemsSyncedAt: sql`case when ${orders.status} is distinct from excluded.status or ${orders.total} is distinct from excluded.total then null else ${orders.itemsSyncedAt} end`,
+        updatedAt: sql`now()`,
+      },
+      setWhere: sql`${orders.lastUpdatedAt} < excluded.last_updated_at`,
+    })
+    .returning({ id: orders.id });
+  return saved.length;
+}
+
+const pricedFilter = sql`${orders.status} not in ('Pending', 'PendingAvailability')`;
+
+/** Orders whose items haven't been fetched (priced orders only), oldest first. */
+export async function ordersNeedingItems(tx: Transaction, channelId: string, limit: number) {
+  return tx
+    .select({ id: orders.id, externalId: orders.externalId })
+    .from(orders)
+    .where(and(eq(orders.channelId, channelId), isNull(orders.itemsSyncedAt), pricedFilter))
+    .orderBy(asc(orders.purchasedAt))
+    .limit(limit);
+}
+
+export async function countOrdersNeedingItems(tx: Transaction, channelIds?: readonly string[]) {
+  const [row] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(orders)
+    .where(
+      and(
+        isNull(orders.itemsSyncedAt),
+        pricedFilter,
+        channelIds ? inArray(orders.channelId, [...channelIds]) : undefined,
+      ),
+    );
+  return row?.n ?? 0;
+}
+
+/** Replaces an order's items with what the marketplace reports now. */
+export async function saveOrderItems(
+  tx: Transaction,
+  input: { orgId: string; orderId: string; items: readonly AmazonOrderItem[] },
+) {
+  await tx.delete(orderItems).where(eq(orderItems.orderId, input.orderId));
+  if (input.items.length) {
+    await tx.insert(orderItems).values(
+      input.items.map((i) => ({
+        organizationId: input.orgId,
+        orderId: input.orderId,
+        externalId: i.itemId,
+        asin: i.asin || null,
+        sku: i.sku,
+        title: i.title,
+        quantityOrdered: i.quantityOrdered,
+        quantityShipped: i.quantityShipped,
+        itemPrice: i.itemPrice,
+        itemTax: i.itemTax,
+        shippingPrice: i.shippingPrice,
+        shippingTax: i.shippingTax,
+        promotionDiscount: i.promotionDiscount,
+      })),
+    );
+  }
+  await tx.update(orders).set({ itemsSyncedAt: new Date() }).where(eq(orders.id, input.orderId));
+}
+
+export type OrderFilters = {
+  channelId?: string | null;
+  statuses?: readonly string[] | null;
+  /** Order number, SKU, ASIN or product title. */
+  search?: string | null;
+  /** Purchase dates (YYYY-MM-DD) in the company's timezone. */
+  from?: string | null;
+  to?: string | null;
+  timezone: string;
+};
+
+function orderWhere(f: OrderFilters) {
+  const day = sql`(${orders.purchasedAt} at time zone ${f.timezone})::date`;
+  const like = f.search ? `%${f.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+  return and(
+    f.channelId ? eq(orders.channelId, f.channelId) : undefined,
+    f.statuses?.length ? inArray(orders.status, [...f.statuses]) : undefined,
+    f.from ? sql`${day} >= ${f.from}::date` : undefined,
+    f.to ? sql`${day} <= ${f.to}::date` : undefined,
+    like
+      ? or(
+          ilike(orders.externalId, like),
+          sql`exists (select 1 from ${orderItems} i where i.order_id = ${orders.id} and (i.sku ilike ${like} or i.asin ilike ${like} or i.title ilike ${like}))`,
+        )
+      : undefined,
+  );
+}
+
+/** Orders, newest first, with their channel and a summary of what was bought. */
+export async function listOrders(
+  tx: Transaction,
+  filters: OrderFilters & { limit: number; offset: number },
+) {
+  const where = orderWhere(filters);
+  const rows = await tx
+    .select({
+      id: orders.id,
+      externalId: orders.externalId,
+      channelName: salesChannels.name,
+      purchasedAt: orders.purchasedAt,
+      status: orders.status,
+      fulfillment: orders.fulfillment,
+      currency: sql<string>`coalesce(${orders.currency}, ${salesChannels.currency})`,
+      total: orders.total,
+      units: sql<number>`(${orders.itemsShipped} + ${orders.itemsUnshipped})::int`,
+      itemsSynced: sql<boolean>`${orders.itemsSyncedAt} is not null`,
+      firstTitle: sql<
+        string | null
+      >`(select coalesce(i.title, i.sku) from ${orderItems} i where i.order_id = ${orders.id} order by i.item_price desc nulls last, i.external_id limit 1)`,
+      lines: sql<number>`(select count(*)::int from ${orderItems} i where i.order_id = ${orders.id})`,
+    })
+    .from(orders)
+    .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
+    .where(where)
+    .orderBy(desc(orders.purchasedAt), desc(orders.externalId))
+    .limit(filters.limit)
+    .offset(filters.offset);
+  const totals = await tx
+    .select({
+      currency: sql<string>`coalesce(${orders.currency}, ${salesChannels.currency})`,
+      orders: sql<number>`count(*)::int`,
+      sold: sql<number>`(count(*) filter (where ${orders.status} not in ('Canceled', 'Unfulfillable')))::int`,
+      units: sql<number>`coalesce(sum(${orders.itemsShipped} + ${orders.itemsUnshipped}) filter (where ${orders.status} not in ('Canceled', 'Unfulfillable')), 0)::int`,
+      sales: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} not in ('Canceled', 'Unfulfillable')), 0)::text`,
+    })
+    .from(orders)
+    .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
+    .where(where)
+    .groupBy(sql`1`)
+    .orderBy(sql`2 desc`);
+  return {
+    rows: rows.map((r) => ({ ...r, total: r.total === null ? null : String(r.total) })),
+    count: totals.reduce((n, t) => n + t.orders, 0),
+    totals,
+  };
+}
+
+/** One order with its channel and items. */
+export async function getOrder(tx: Transaction, orderId: string) {
+  const [row] = await tx
+    .select({ order: orders, channel: salesChannels })
+    .from(orders)
+    .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
+    .where(eq(orders.id, orderId));
+  if (!row) return null;
+  const items = await tx
+    .select()
+    .from(orderItems)
+    .where(eq(orderItems.orderId, orderId))
+    .orderBy(desc(orderItems.itemPrice), asc(orderItems.externalId));
+  return { ...row, items };
+}
+
+/** Whether the company has any orders at all (for the empty state). */
+export async function hasOrders(tx: Transaction) {
+  const [row] = await tx.select({ id: orders.id }).from(orders).limit(1);
+  return Boolean(row);
+}
+
+/** Channels orders are being brought in for (switched on, started, connection has credentials). */
+export async function orderSyncChannels(tx: Transaction) {
+  return tx
+    .select({
+      id: salesChannels.id,
+      name: salesChannels.name,
+      ordersFrom: salesChannels.ordersFrom,
+      ordersSyncedThrough: salesChannels.ordersSyncedThrough,
+    })
+    .from(salesChannels)
+    .innerJoin(connections, eq(connections.id, salesChannels.connectionId))
+    .where(
+      and(
+        eq(salesChannels.isActive, true),
+        isNotNull(salesChannels.ordersFrom),
+        isNotNull(connections.secret),
+        ne(connections.status, "disconnected"),
+      ),
+    )
+    .orderBy(asc(salesChannels.name));
 }

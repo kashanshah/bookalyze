@@ -25,7 +25,7 @@ _Last updated: 2026-10-04, phase 1b (importing from other software)._
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
-| 3. Commerce connections, orders & review requests | **In progress.** Slice 1 (connect Amazon Seller Central, channels) done. Next: order sync and the Orders screen, then review requests |
+| 3. Commerce connections, orders & review requests | **In progress.** Slice 1 (connect Amazon Seller Central, channels) and slice 2 (order sync, Orders screen) done. Next: review requests |
 | 4+. Settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -593,8 +593,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 
 ### Phase 3, slice 1: connect Amazon Seller Central
 
-- **Commerce module is live** (Features → Commerce). Sidebar: Commerce → `/commerce/channels`
-  (`/commerce` redirects there until Orders exists).
+- **Commerce module is live** (Features → Commerce). Sidebar: Commerce → Orders, Channels
+  (`/commerce/channels`).
 - **Bring your own app:** an admin enters the region (North America / Europe, Middle East and
   India / Far East), the app's LWA client ID and secret, and the seller's refresh token. They're
   checked with Amazon (LWA token exchange, then `GET /sellers/v1/marketplaceParticipations`),
@@ -613,6 +613,47 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: `AMAZON_LWA_URL` / `AMAZON_SPAPI_URL` point at `e2e/amazon-mock.mjs` in e2e. Leave them
   unset in production.
 
+
+### Phase 3, slice 2: Amazon orders
+
+- **Orders screen** (`/commerce/orders`, sidebar Commerce → Orders; `/commerce` opens it): tabs
+  All / Open / Shipped / Cancelled, marketplace (when more than one), placed-from/to dates and a
+  search over order number, SKU, ASIN and product title. A sales card per currency (cancelled
+  left out), 50 orders per page. Order page (`/commerce/orders/[id]`): items with SKU and ASIN,
+  items / shipping / tax / discounts / total, ship-to region, who ships it, Prime / Business /
+  Replacement, and "Open in Seller Central" (`sellercentral.<marketplace domain>`).
+- **Orders don't post to the books.** Settlements will (one summarized entry per settlement,
+  PLAN §3.4); orders are for operations and analytics. **No buyer PII:** only ship-to country
+  and region are kept (sales tax needs them); no Restricted Data Tokens.
+- **First time:** an admin picks "Bring in orders placed from" (defaults to the start of the
+  financial year, at most two years back) for every switched-on marketplace
+  (`startOrdersAction` → `startOrderSync`). An earlier date later re-reads from there.
+  Marketplaces switched on afterwards get a "Bring theirs in too" prompt.
+- **Sync** (`server/amazon-orders.ts`, `syncChannelOrders`), per channel within a time budget:
+  1. Orders changed since the last sync less an hour (`orderSyncWindow`, core
+     `commerce/orders.ts`; `LastUpdatedBefore` is now − 3 min as Amazon requires),
+     `GET /orders/v0/orders` 100 per page. The page token and window end are kept on the
+     channel (`orders_next_token`, `orders_window_end`), so a big first sync carries on across
+     runs; an expired token restarts the window. A channel synced in the last 10 minutes isn't
+     asked again.
+  2. Items (`GET /orders/v0/orders/{id}/orderItems`) for orders without them, except Pending /
+     PendingAvailability (not priced yet). A newer copy of an order with another status or
+     total clears `items_synced_at`, so items are fetched again. An older copy never overwrites
+     a newer one (`upsertOrders`, `setWhere` on `last_updated_at`).
+  - Amazon's 429 is `AmazonError` code `throttled`: the sync waits (5 s orders, 2.1 s items)
+    while the budget lasts, then stops with `more: true`.
+- **Runs:** "Bring in new orders" (`syncOrdersAction`, any member, 20 s per call; the button
+  calls again while `more`, up to 30 rounds, refreshing the list) and the daily job
+  (`/api/cron/fx-rates` → `syncAllOrders`, 150 s total, at most 60 s per channel, over
+  `syncable_sales_channels()`; route `maxDuration = 300`).
+- **Schema** (migration `0026_amazon_orders`): `orders` (unique per channel + order number;
+  Amazon's own status text, mapped to words by `orderStatusLabel`), `order_items` (prices for
+  the whole quantity), four `orders_*` columns on `sales_channels`, and the security-definer
+  `syncable_sales_channels()` for the daily job.
+- Reconnecting a disconnected Amazon account puts the marketplaces back as Amazon reports them
+  (disconnect had switched them all off).
+- Tests: core `amazon-orders.test.ts`, db `commerce.test.ts`, e2e "bring in Amazon orders" (the
+  mock answers three orders in two pages, with items).
 
 ### Fix: foreign-currency amounts recorded in the main currency ("Correct from Wise")
 

@@ -83,6 +83,8 @@ test("features respect dependencies and drive navigation", async ({ page }) => {
   await expect(page.getByText("Commerce switched on")).toBeVisible();
   await expect(page.getByRole("link", { name: "Commerce", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await expect(page.getByText("Connect a marketplace first")).toBeVisible();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Connect Amazon Seller Central" })).toBeVisible();
 
   await page.getByRole("link", { name: "Features", exact: true }).click();
@@ -1196,7 +1198,7 @@ test("commerce: connect Amazon Seller Central, choose marketplaces, test and dis
   await page.getByRole("link", { name: "Features", exact: true }).click();
   await page.locator("#module-commerce").click();
   await expect(page.getByText("Commerce switched on")).toBeVisible();
-  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
   await page.getByRole("button", { name: "Connect Amazon" }).click();
 
   const dialog = page.getByRole("dialog");
@@ -1227,11 +1229,61 @@ test("commerce: connect Amazon Seller Central, choose marketplaces, test and dis
   await page.getByRole("link", { name: "Bank accounts", exact: true }).click();
   await expect(page.getByText("Amazon Seller Central")).toHaveCount(0);
 
-  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
   await page.getByRole("button", { name: "Disconnect" }).click();
   await page.getByRole("button", { name: "Click again to disconnect" }).click();
   await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect Amazon" })).toBeVisible();
+});
+
+test("commerce: bring in Amazon orders, find one by SKU and open it", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  // Reconnect (the test before disconnected): the marketplaces start as Amazon has them again.
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("button", { name: "Connect Amazon" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByLabel("LWA client ID")
+    .fill("amzn1.application-oa2-client.e2e0000000000000000000000000000");
+  await dialog.getByLabel("LWA client secret").fill("e2e-client-secret-000000");
+  await dialog.getByLabel("Refresh token").fill("Atzr|e2e-refresh-token-0000");
+  await dialog.getByRole("button", { name: "Check and connect" }).click();
+  await expect(page.getByText("Amazon connected")).toBeVisible();
+  await expect(page.getByLabel("Bring in orders from Amazon.ca")).toBeChecked();
+
+  // First time: choose the start date, then the orders come in (two pages, then their items).
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Bring in your orders" })).toBeVisible();
+  const start = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  await page.getByLabel("Bring in orders placed from").fill(start);
+  await page.getByRole("button", { name: /^Bring in orders from/ }).click();
+  await expect(page.getByText("3 orders brought in")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Maple leaf ceramic mug")).toBeVisible();
+  await expect(page.getByText("Pine forest candle")).toBeVisible();
+  await expect(page.getByText("To ship", { exact: true })).toBeVisible();
+  await expect(page.getByText("Cancelled", { exact: true }).last()).toBeVisible();
+  // Sales leave out the cancelled order.
+  await expect(page.getByText("$63.69")).toBeVisible();
+
+  await page.getByLabel("Search orders").fill("PINE-CANDLE");
+  await page.getByLabel("Search orders").press("Enter");
+  await expect(page.getByText("Maple leaf ceramic mug")).toHaveCount(0);
+  await expect(page.getByText("Pine forest candle")).toBeVisible();
+
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  await page.getByText("Maple leaf ceramic mug").click();
+  await expect(page.getByRole("heading", { name: "Order 702-1000001-0000001" })).toBeVisible();
+  await expect(page.getByText("SKU MAPLE-MUG · ASIN B0E2E00001")).toBeVisible();
+  await expect(page.getByText("Prime", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open in Seller Central" })).toHaveAttribute(
+    "href",
+    "https://sellercentral.amazon.ca/orders-v3/order/702-1000001-0000001",
+  );
+
+  // Running it again finds nothing new.
+  await page.getByRole("link", { name: "Orders", exact: true }).first().click();
+  await page.getByRole("button", { name: "Bring in new orders" }).click();
+  await expect(page.getByText("Your orders are up to date")).toBeVisible({ timeout: 30_000 });
 });
 
 test("amounts recorded in CAD on a USD account are flagged and corrected from Wise", async ({
