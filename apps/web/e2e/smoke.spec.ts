@@ -411,6 +411,20 @@ test("receipts: inbox, attach to a transaction, and attach while adding one", as
   await page.getByRole("button", { name: "Confirm delete photo.png" }).click();
   await expect(page.getByText("Receipt deleted")).toBeVisible();
   await expect(page.getByText("Your inbox is empty")).toBeVisible();
+
+  // Several at once: tick "Select all" and delete them together.
+  await page.getByLabel("Upload receipts").setInputFiles([
+    { name: "one.png", mimeType: "image/png", buffer: png },
+    { name: "two.png", mimeType: "image/png", buffer: png },
+  ]);
+  await expect(page.getByText("two.png", { exact: true })).toBeVisible();
+  await expect(page.getByText("one.png", { exact: true })).toBeVisible();
+  await page.getByLabel("Select all receipts").check({ force: true });
+  await expect(page.getByText("2 of 2 selected")).toBeVisible();
+  await page.getByRole("button", { name: "Delete 2" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete 2" }).click();
+  await expect(page.getByText("2 receipts deleted")).toBeVisible();
+  await expect(page.getByText("Your inbox is empty")).toBeVisible();
 });
 
 test("customers and vendors: add, pick on transactions, totals and filter", async ({ page }) => {
