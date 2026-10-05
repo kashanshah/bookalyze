@@ -169,6 +169,13 @@
       "when": 1791178101750,
       "tag": "0023_rule_suggestions",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791179253399,
+      "tag": "0024_entity_compliance",
+      "breakpoints": true
     }
   ]
 }

@@ -24,7 +24,7 @@ _Last updated: 2026-10-04, phase 1b (importing from other software)._
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
-| 2. Banking, plus Entity & compliance | **In progress.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicate flagging and merging, and rules done. Rules done. Next: transfer matching, Entity & compliance, then Wise strong customer authentication (UAE) |
+| 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -557,6 +557,37 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   (`rule_suggestion_dismissals`, migration `0023_rule_suggestions`).
 - Rules page: "Suggested for you" cards ("Make this rule" opens the rule form filled in; X turns
   it down). Transactions shows a "n rules suggested" banner linking there.
+
+
+### Phase 2, slice 6: Entity & compliance
+
+- **Company → Profile** (`/company`): company details (legal name, trade name, type and year end
+  come from the org profile and are changed in Company settings; jurisdiction, incorporation
+  date and registered address are edited here, owners and admins only), registration numbers
+  (`entity_identifiers`; kinds per country in core `IDENTIFIER_KINDS`, licenses can expire) and
+  people (`entity_people`: roles, title, ownership %, start and end dates).
+- **Company → Documents** (`/company/documents`): the vault. Files upload like receipts, then
+  `entity_documents` holds the name, kind and expiry; the attachment is linked as
+  `entity_document`, so it never appears in the receipts inbox. Deleting removes the file.
+- **Company → Compliance calendar** (`/company/calendar`): worked out each time by
+  `complianceCalendar` (core `entity/compliance.ts`), never stored:
+  - Canadian corporations: T2 balance (2 months after year end; hint mentions CCPC's 3), T2
+    return (6 months), annual return 60 days after the incorporation anniversary for CA-FED
+    (Corporations Canada) and CA-ON (Ontario Business Registry).
+  - UAE: corporate tax return 9 months after year end once a corporate tax TRN is added.
+  - Sales tax registrations: one return per period (monthly/quarterly by fiscal quarter: 1 month
+    after; annual: 3 months after year end; UAE VAT: 28 days after).
+  - Licenses and documents with an expiry date; items added by hand (`compliance_items`, once or
+    monthly/quarterly/yearly).
+  Ticks are stored per occurrence (`compliance_completions`, item key + due date). Overdue items
+  (last 90 days) show on top.
+- **Reminders:** the daily cron (`/api/cron/fx-rates`) ends with `sendComplianceReminders`
+  (`server/compliance.ts`): per company with the module on, one digest email
+  (`emails/compliance-reminder.tsx`) to owners and admins for items due in 30, 7, 1 or 0 days,
+  each lead time once (`compliance_reminders`); a missed run sends the latest one.
+- **Home:** a "Coming up" card (next 60 days, overdue first) and the getting-started steps now
+  link to the Wave import and bank accounts.
+- Migration `0024_entity_compliance` (also allows `entity_document` in `attachment_links`).
 
 ---
 

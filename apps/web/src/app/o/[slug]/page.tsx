@@ -1,15 +1,16 @@
-import { fiscalYearFor, modules } from "@bookalyze/core";
+import { addDaysIso, daysBetween, fiscalYearFor, modules } from "@bookalyze/core";
 import { getCountry, getSubdivision } from "@bookalyze/core/reference-data";
 import { getDb, schema, withOrg } from "@bookalyze/db";
 import { and, count, eq, gt, like } from "drizzle-orm";
-import { ArrowRight, CalendarRange, Check, Coins, Lock, MapPin } from "lucide-react";
+import { ArrowRight, CalendarClock, CalendarRange, Check, Coins, Lock, MapPin } from "lucide-react";
 import Link from "next/link";
 import { MODULE_ICONS } from "@/components/shell/module-icons";
 import { Badge } from "@/components/ui/badge";
 import { ProgressRing } from "@/components/ui/progress-ring";
-import { nowIn } from "@/lib/dates";
+import { formatDate, nowIn } from "@/lib/dates";
 import { timezoneLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { dueIn, loadCalendar } from "@/server/compliance";
 import { fiscalConfigOf, getOrgContext } from "@/server/org";
 
 function greeting(hour: number) {
@@ -41,7 +42,8 @@ export default async function OrgHomePage({ params }: { params: Promise<{ slug: 
     : 0;
 
   const db = getDb();
-  const [[members], [invites], moduleChanges] = await Promise.all([
+  const showCompliance = Boolean(p) && ctx.activeModules.includes("entity");
+  const [[members], [invites], moduleChanges, setup, comingUp] = await Promise.all([
     db
       .select({ n: count() })
       .from(schema.member)
@@ -62,6 +64,16 @@ export default async function OrgHomePage({ params }: { params: Promise<{ slug: 
         .from(schema.auditLogs)
         .where(like(schema.auditLogs.action, "module.%")),
     ),
+    withOrg(db, { orgId: ctx.org.id }, async (tx) => ({
+      imports: (await tx.select({ n: count() }).from(schema.importBatches))[0]?.n ?? 0,
+      banks: (await tx.select({ n: count() }).from(schema.connections))[0]?.n ?? 0,
+    })),
+    // What's due in the next 60 days (and anything overdue in the last 90), not yet done.
+    showCompliance && p
+      ? withOrg(db, { orgId: ctx.org.id }, (tx) =>
+          loadCalendar(tx, p, { from: addDaysIso(now.date, -90), to: addDaysIso(now.date, 60) }),
+        ).then((items) => items.filter((i) => !i.done).slice(0, 5))
+      : Promise.resolve([]),
   ]);
 
   const base = `/o/${slug}`;
@@ -84,17 +96,27 @@ export default async function OrgHomePage({ params }: { params: Promise<{ slug: 
       href: `${base}/settings/members`,
       done: (members?.n ?? 0) > 1 || (invites?.n ?? 0) > 0,
     },
-    {
-      title: "Bring over your books from Wave",
-      body: "Full history, including receipts.",
-      soon: "Phase 1b",
-    },
-    {
-      title: "Connect your bank accounts",
-      body: "Wise sync and RBC/Wio statement uploads.",
-      soon: "Phase 2",
-    },
-  ];
+    ...(ctx.activeModules.includes("accounting")
+      ? [
+          {
+            title: "Bring over your books from Wave",
+            body: "Full history, including receipts.",
+            href: `${base}/accounting/import`,
+            done: setup.imports > 0,
+          },
+        ]
+      : []),
+    ...(ctx.activeModules.includes("banking")
+      ? [
+          {
+            title: "Connect your bank accounts",
+            body: "Wise sync, or statement uploads from any bank.",
+            href: `${base}/banking/accounts`,
+            done: setup.banks > 0,
+          },
+        ]
+      : []),
+  ] as { title: string; body: string; href?: string; done?: boolean; soon?: string }[];
   const doneCount = steps.filter((s) => s.done).length;
   const actionable = steps.filter((s) => !s.soon).length;
   const location = p
@@ -147,6 +169,52 @@ export default async function OrgHomePage({ params }: { params: Promise<{ slug: 
         </StatCard>
       </div>
 
+      {showCompliance ? (
+        <section className="rounded-2xl border bg-card shadow-xs">
+          <div className="flex flex-wrap items-center gap-3 border-b px-5 py-4 sm:px-6">
+            <span className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <CalendarClock className="size-4.5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="font-semibold">Coming up</h2>
+              <p className="text-muted-foreground text-sm">
+                Filings and renewals in the next 60 days.
+              </p>
+            </div>
+            <Link
+              href={`${base}/company/calendar`}
+              className="whitespace-nowrap font-medium text-primary text-sm hover:underline"
+            >
+              Open calendar
+            </Link>
+          </div>
+          {comingUp.length ? (
+            <ul className="divide-y">
+              {comingUp.map((item) => {
+                const days = daysBetween(now.date, item.dueDate);
+                return (
+                  <li key={item.occurrence} className="flex items-center gap-4 px-5 py-3 sm:px-6">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium text-sm">{item.title}</span>
+                      <span className="block text-muted-foreground text-xs">
+                        {formatDate(item.dueDate, p?.locale, "long")}
+                      </span>
+                    </span>
+                    <Badge variant={days <= 7 ? "warning" : "outline"}>
+                      {days < 0 ? "Overdue" : dueIn(now.date, item.dueDate)}
+                    </Badge>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="px-5 py-5 text-muted-foreground text-sm sm:px-6">
+              Nothing due in the next 60 days.
+            </p>
+          )}
+        </section>
+      ) : null}
+
       <section className="rounded-2xl border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.03),0_4px_16px_-8px_rgb(0_0_0/0.06)]">
         <div className="flex items-center gap-4 border-b p-5 sm:p-6">
           <div className="relative">
@@ -161,7 +229,7 @@ export default async function OrgHomePage({ params }: { params: Promise<{ slug: 
             </h2>
             <p className="text-muted-foreground text-sm">
               {doneCount === actionable
-                ? "Next up: bringing over your Wave books and connecting your banks."
+                ? "Everything's in place. Keep an eye on what's coming up."
                 : `A few steps to get ${ctx.org.name} ready.`}
             </p>
           </div>
