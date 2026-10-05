@@ -734,6 +734,8 @@ test("reconcile: tick to the statement balance, lock, undo and cancel", async ({
   await page.getByRole("button", { name: "Start reconciling" }).click();
 
   // Tick everything, then set the statement balance to what's cleared.
+  // Each line shows the balance after it, as a bank statement does.
+  await expect(page.getByText("Balance", { exact: true })).toBeVisible();
   await page.getByLabel("Tick all shown").check({ force: true });
   const cleared = page.locator("dt", { hasText: "Cleared" }).locator("..").locator("dd");
   await expect(cleared).not.toHaveText("$0.00");
