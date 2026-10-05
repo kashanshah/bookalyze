@@ -11,6 +11,7 @@ import {
   FileX2,
   Lock,
   Search,
+  Wand2,
   X,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -336,6 +337,14 @@ export function TransactionList({
                       {row.kind === "transfer" ? "—" : name(row.moneyAccountIds[0])}
                     </span>
                     <span className="col-start-1 row-start-3 truncate text-muted-foreground text-xs md:col-start-auto md:row-start-auto md:text-sm">
+                      {row.rule ? (
+                        <Wand2
+                          className="me-1 inline size-3.5 align-[-2px] text-primary"
+                          aria-label={`Categorized by your rule “${row.rule}”`}
+                        >
+                          <title>Categorized by your rule “{row.rule}”</title>
+                        </Wand2>
+                      ) : null}
                       {contactName ? `${category} · ${contactName}` : category}
                     </span>
                     <span

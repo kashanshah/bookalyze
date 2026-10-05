@@ -21,6 +21,7 @@ import {
 } from "../duplicates";
 import { upsertFxRates } from "../fx";
 import { createDefaultChart, postJournalEntry } from "../ledger";
+import { applyRuleToExisting, countRuleMatches, createRule, deleteRule, listRules } from "../rules";
 import * as schema from "../schema";
 import { replaceJournalEntry } from "../transactions";
 
@@ -191,8 +192,20 @@ describe("bank connections", () => {
       kind: "card",
       description: "Card at Example Cafe",
     });
-    expect(await sync([card])).toEqual({ posted: 1, duplicates: 0, flagged: 0, skipped: [] });
-    expect(await sync([card])).toEqual({ posted: 0, duplicates: 1, flagged: 0, skipped: [] });
+    expect(await sync([card])).toEqual({
+      posted: 1,
+      duplicates: 0,
+      flagged: 0,
+      categorized: 0,
+      skipped: [],
+    });
+    expect(await sync([card])).toEqual({
+      posted: 0,
+      duplicates: 1,
+      flagged: 0,
+      categorized: 0,
+      skipped: [],
+    });
     const [entry] = (await entriesOf(orgA)).filter((e) => e.sourceId === "wise:10:CARD-1");
     expect(entry?.memo).toBe("Card at Example Cafe");
     const lines = await linesOf(entry?.id as string);
@@ -234,6 +247,7 @@ describe("bank connections", () => {
       posted: 1,
       duplicates: 0,
       flagged: 0,
+      categorized: 0,
       skipped: [],
     });
     const [entry] = (await entriesOf(orgA)).filter((e) => e.sourceId === "conversion:CONVERSION-3");
@@ -248,7 +262,13 @@ describe("bank connections", () => {
       base: "13.5000",
     });
     // Seen again (from either balance), it's a duplicate.
-    expect(await sync([into])).toEqual({ posted: 0, duplicates: 1, flagged: 0, skipped: [] });
+    expect(await sync([into])).toEqual({
+      posted: 0,
+      duplicates: 1,
+      flagged: 0,
+      categorized: 0,
+      skipped: [],
+    });
   });
 
   it("leaves a line for later when there's no exchange rate yet", async () => {
@@ -329,7 +349,13 @@ describe("bank connections", () => {
       kind: "transfer",
       description: "Sent to Example Landlord",
     });
-    expect(await sync([fromBank])).toEqual({ posted: 1, duplicates: 0, flagged: 1, skipped: [] });
+    expect(await sync([fromBank])).toEqual({
+      posted: 1,
+      duplicates: 0,
+      flagged: 1,
+      categorized: 0,
+      skipped: [],
+    });
     const imported = (await bankLineOf("wise:10:TRANSFER-RENT"))?.journalEntryId as string;
     const [flag] = await suggestions();
     expect(flag).toMatchObject({
@@ -539,6 +565,57 @@ describe("bank connections", () => {
       sql`select connection_id from syncable_connections()`,
     );
     expect(listed.rows.map((r) => r.connection_id)).not.toContain(feed.connectionId);
+  });
+
+  it("categorizes bank lines with rules as they arrive, and uncategorized ones on request", async () => {
+    const all = await inOrg(orgA, (tx) => tx.select().from(schema.accounts));
+    const phone = all.find((a) => a.code === "6350")?.id as string;
+    const bell = (n: number, date: string) =>
+      line({
+        feedId: cadFeed,
+        externalId: `wise:10:BELL-${n}`,
+        date,
+        amount: "-85.0000",
+        kind: "card",
+        description: "PAD Bell Canada",
+      });
+    expect(await sync([bell(1, "2027-09-01")])).toMatchObject({ posted: 1, categorized: 0 });
+    const rule = await inOrg(orgA, (tx) =>
+      createRule(tx, {
+        orgId: orgA,
+        matchText: "bell canada",
+        direction: "out",
+        amountMin: null,
+        amountMax: null,
+        accountId: null,
+        categoryAccountId: phone,
+        contactId: null,
+        isActive: true,
+      }),
+    );
+    expect(await inOrg(orgA, (tx) => countRuleMatches(tx, rule))).toBe(1);
+
+    // A new one arrives already in the rule's category.
+    expect(await sync([bell(2, "2027-10-01")])).toMatchObject({ posted: 1, categorized: 1 });
+    const second = (await bankLineOf("wise:10:BELL-2"))?.journalEntryId as string;
+    expect(await linesOf(second)).toContainEqual({
+      accountId: phone,
+      amount: "85.0000",
+      base: "85.0000",
+    });
+
+    // The one already in the books is categorized on request, keeping its bank link.
+    expect(
+      await inOrg(orgA, (tx) => applyRuleToExisting(tx, { orgId: orgA, ruleId: rule.id })),
+    ).toEqual({ categorized: 1, skipped: 0 });
+    const first = (await bankLineOf("wise:10:BELL-1"))?.journalEntryId as string;
+    expect((await linesOf(first)).map((l) => l.accountId)).toContain(phone);
+    expect(await inOrg(orgA, (tx) => countRuleMatches(tx, rule))).toBe(0);
+    expect((await inOrg(orgA, (tx) => listRules(tx)))[0]?.applied).toBe(2);
+    // Rules belong to their company.
+    expect(await inOrg(orgB, (tx) => listRules(tx))).toEqual([]);
+    await inOrg(orgA, (tx) => deleteRule(tx, rule.id));
+    expect(await inOrg(orgA, (tx) => listRules(tx))).toEqual([]);
   });
 
   it("keeps connections to their company and lists syncable ones for the daily job", async () => {

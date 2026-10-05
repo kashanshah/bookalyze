@@ -39,6 +39,8 @@ export type TxRow = {
   receivedAmount?: string;
   receivedCurrency?: string;
   splits: { accountId: string; amount: string; description?: string; taxRateId?: string }[];
+  /** The words of the rule that categorized it, if one did. */
+  rule?: string;
   /** Flagged as possibly a copy of a transaction already in the books. */
   duplicate?: {
     suggestionId: string;
@@ -67,4 +69,6 @@ export type TxFormContext = {
   contacts: ContactOption[];
   /** Sales tax rates, archived ones included so older transactions still show theirs. */
   taxRates: TaxRateOption[];
+  /** Banking rules are available, so a transaction can become a rule. */
+  canMakeRules: boolean;
 };

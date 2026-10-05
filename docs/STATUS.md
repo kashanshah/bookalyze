@@ -24,7 +24,7 @@ _Last updated: 2026-10-04, phase 1b (importing from other software)._
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
-| 2. Banking, plus Entity & compliance | **In progress.** Wise connection (API sync), bank statement upload (CSV) for any bank, and duplicate flagging and merging done. Next: Wise strong customer authentication (UAE), then rules and transfer matching |
+| 2. Banking, plus Entity & compliance | **In progress.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicate flagging and merging, and rules done. Rules done. Next: transfer matching, Entity & compliance, then Wise strong customer authentication (UAE) |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -454,6 +454,30 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - `Field` now lets its control shrink (`grid-cols-[minmax(0,1fr)]`), so long dropdown labels
   truncate instead of widening dialogs on phones. Chart of accounts: an account's currency can
   change even after it has transactions (see "Changing an account's currency" in §4).
+
+
+### Phase 2, slice 3: rules
+- **Core** (`banking/rules.ts`): `ruleMatches()` / `firstMatchingRule()`: description contains
+  the words (case and spacing ignored), money in / out / either, optional amount range
+  (inclusive, on the size of the amount), optional bank or card account. First active rule in
+  order wins.
+- **Schema** (migration `0020_bank_rules`): `bank_rules` (match text, direction, amounts,
+  account, category, contact, `position`, `is_active`) and `rule_applications` (which rule
+  categorized which journal entry; editing posts a new entry, so the mark drops off). Both RLS.
+- **DB** (`rules.ts`): list (with how many current transactions each categorized), create,
+  update, delete, move up/down, `countRuleMatches()` and `applyRuleToExisting()`: current
+  transactions still on Uncategorized income/expense with one money account are reposted with the
+  rule's category (via `replaceJournalEntry`, so review tick, receipts and bank link stay);
+  closed-period or reconciled ones are skipped and counted.
+- **Import:** `postBankLines()` puts a matching bank line straight into the rule's category (fee
+  split unchanged; fee lines never) and sets the rule's contact; `ImportResult.categorized`
+  counts them and the sync/upload toast says so.
+- **Web:** Banking → Rules. Plain-language form ("When the description contains", "Money", "On",
+  "Amount from / up to", "Put it in", "Customer or vendor") with a live count of matching
+  uncategorized transactions and "Save and categorize N". Each rule: apply to uncategorized,
+  change, delete, reorder. Transactions shows a wand on rule-categorized rows, and "Make a rule"
+  in a transaction's dialog opens the form filled in (`?text=&category=`). Rule-categorized
+  transactions stay unreviewed.
 
 ---
 

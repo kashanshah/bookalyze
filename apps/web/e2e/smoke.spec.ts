@@ -901,6 +901,54 @@ test("banking: connect Wise, flag and merge duplicates, merge by hand, transfers
   await expect(page.getByText("Converted 136.50 CAD to 100.00 USD")).toBeVisible();
 });
 
+test("rules: categorize what's uncategorized, then new bank transactions as they arrive", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Banking", exact: true }).click();
+  await page.getByRole("link", { name: "Rules", exact: true }).click();
+  await expect(page.getByText("Let the regulars sort themselves")).toBeVisible();
+  await page.getByRole("button", { name: "New rule" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("When the description contains").fill("restaurant");
+  await choose(dialog.locator("#rule-direction"), "Money out only");
+  await choose(dialog.locator("#rule-category"), "6200 · Meals and entertainment");
+  // The statement uploaded earlier has "Restaurant downtown", still uncategorized.
+  await expect(dialog.getByText("1 uncategorized transaction matches it today.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Save and categorize 1" }).click();
+  await expect(page.getByText("Rule added")).toBeVisible();
+  await expect(page.getByText("Categorized 1 transaction")).toBeVisible();
+
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  const restaurant = page.locator("li", { hasText: "Restaurant downtown" });
+  await expect(restaurant).toContainText("Meals and entertainment");
+  await expect(restaurant.getByLabel(/Categorized by your rule/)).toBeVisible();
+
+  // New ones from the bank arrive already categorized.
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    new Date(),
+  );
+  await page.getByRole("link", { name: "Banking", exact: true }).click();
+  await page.getByRole("button", { name: "Upload statement" }).click();
+  const upload = page.getByRole("dialog");
+  await upload.getByLabel("Statement file").setInputFiles({
+    name: "october.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      `Date,Description,Withdrawals,Deposits\n${today},Restaurant uptown,41.10,\n`,
+    ),
+  });
+  await upload.getByRole("button", { name: "Bring in 1 transaction" }).click();
+  await expect(page.getByText(/1 was categorized by your rules/)).toBeVisible();
+
+  // Any categorized transaction can become a rule.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByText("Team lunch", { exact: true }).click();
+  await page.getByRole("link", { name: "Make a rule" }).click();
+  await expect(page).toHaveURL(/banking\/rules\?text=Team/);
+  await expect(page.getByLabel("When the description contains")).toHaveValue("Team lunch");
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();
