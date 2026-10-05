@@ -30,6 +30,9 @@ import {
   type MatchCandidate,
 } from "./actions";
 
+/** Files per delete request (the server takes up to 200). */
+const DELETE_BATCH = 200;
+
 export function ReceiptsInbox({
   slug,
   locale,
@@ -69,18 +72,33 @@ export function ReceiptsInbox({
 
   const deletePicked = () =>
     startDelete(async () => {
+      // In batches, so a whole imported inbox can go at once.
       const ids = [...picked];
-      const result = await deleteAttachmentsAction(slug, ids);
-      if (!result.ok) return void toast.error(result.message);
-      const { deleted, kept } = result.data;
+      let deleted = 0;
+      let kept = 0;
+      const done = new Set<string>();
+      for (let i = 0; i < ids.length; i += DELETE_BATCH) {
+        const batch = ids.slice(i, i + DELETE_BATCH);
+        const result = await deleteAttachmentsAction(slug, batch);
+        if (!result.ok) {
+          toast.error(result.message, {
+            description: deleted ? `${deleted} were deleted before this.` : undefined,
+          });
+          break;
+        }
+        deleted += result.data.deleted;
+        kept += result.data.kept;
+        for (const id of batch) done.add(id);
+      }
+      if (!done.size) return;
       const label = `${deleted} ${deleted === 1 ? "receipt" : "receipts"} deleted`;
       if (kept) {
         toast.warning(deleted ? label : "Nothing deleted", {
           description: `${kept} ${kept === 1 ? "is" : "are"} attached to a transaction. Remove ${kept === 1 ? "it" : "them"} from there first.`,
         });
       } else toast.success(label);
-      setFiles((f) => f.filter((x) => !picked.has(x.id)));
-      setPicked(new Set());
+      setFiles((f) => f.filter((x) => !done.has(x.id)));
+      setPicked((p) => new Set([...p].filter((id) => !done.has(id))));
       setConfirming(false);
       router.refresh();
     });

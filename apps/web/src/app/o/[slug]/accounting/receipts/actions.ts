@@ -226,6 +226,9 @@ export async function deleteAttachmentAction(
   return { ok: true, data: null };
 }
 
+/** How many files one delete request takes; the inbox sends bigger selections in batches. */
+const DELETE_BATCH = 200;
+
 /**
  * Deletes several inbox files at once. Files attached to a transaction are left alone (remove them
  * from the transaction first) and counted in `kept`.
@@ -235,8 +238,16 @@ export async function deleteAttachmentsAction(
   attachmentIds: string[],
 ): Promise<Result<{ deleted: number; kept: number }>> {
   const ctx = await getAccountingContext(slug);
-  const parsed = z.array(z.uuid()).min(1).max(500).safeParse(attachmentIds);
-  if (!parsed.success) return { ok: false, message: "Something went wrong." };
+  const parsed = z.array(z.uuid()).min(1).max(DELETE_BATCH).safeParse(attachmentIds);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message:
+        attachmentIds.length > DELETE_BATCH
+          ? `Delete at most ${DELETE_BATCH} files at a time.`
+          : "Something went wrong.",
+    };
+  }
   const ids = [...new Set(parsed.data)];
   const { keys, deleted, kept } = await inOrg(ctx, async (tx) => {
     const linked = new Set(

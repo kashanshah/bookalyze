@@ -515,7 +515,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 
 - **Receipts inbox: select and delete several:** a tick box on each receipt and "Select all
   (n)" above the grid; a bar at the bottom deletes the ticked ones after a confirm
-  (`deleteAttachmentsAction`, up to 500, files attached to a transaction are skipped and counted).
+  (`deleteAttachmentsAction`, 200 per request; the inbox sends bigger selections in batches; files
+  attached to a transaction are skipped and counted).
 
 ---
 
