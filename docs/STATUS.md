@@ -573,6 +573,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Editing a matched transfer** into income or an expense: `replaceJournalEntry` calls
   `followTransferEdit`, which reposts the side the new entry no longer touches (with its bank
   line), so nothing the bank sent goes missing. Removing a matched transfer removes both.
+- **Reposting a bank side** (unmatch, or an edit that gives a side back) leaves its bank
+  `source_id` on the reversed original: `journal_entries_org_bank_source_key` covers reversed
+  entries too, so copying it failed with a duplicate-key error. The bank line links the copy.
 
 
 ### Phase 2, slice 5: rule suggestions

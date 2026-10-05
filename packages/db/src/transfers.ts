@@ -311,7 +311,11 @@ export async function dismissTransfer(
     .onConflictDoNothing();
 }
 
-/** Posts a copy of a reversed entry again (same date, lines, source and import ID). */
+/**
+ * Posts a copy of a reversed entry again (same date, lines, source and import ID). A bank
+ * transaction's ID stays on the reversed original, which still holds it in the unique index;
+ * the copy is linked to the bank through its bank line instead, as after any edit.
+ */
 async function repost(
   tx: Transaction,
   input: { orgId: string; userId?: string | null; entryId: string },
@@ -353,7 +357,7 @@ async function repost(
     memo: entry.memo,
     contactId: entry.contactId,
     source: entry.source === "reversal" ? "manual" : entry.source,
-    sourceId: entry.sourceId,
+    sourceId: entry.source === "bank_import" ? null : entry.sourceId,
     entry: prepared,
   });
   await copyAttachmentLinks(tx, {

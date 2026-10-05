@@ -2,11 +2,45 @@
 
 import { X } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
-import type * as React from "react";
+import * as React from "react";
 import { cn } from "@/lib/utils";
 
 export const Dialog = DialogPrimitive.Root;
-export const DialogTrigger = DialogPrimitive.Trigger;
+
+const REACT_LAZY = Symbol.for("react.lazy");
+type LazyNode = { $$typeof: symbol; _payload: unknown; _init: (payload: unknown) => unknown };
+const isLazy = (node: unknown): node is LazyNode =>
+  typeof node === "object" && node !== null && (node as LazyNode).$$typeof === REACT_LAZY;
+
+/**
+ * A trigger built on the server reaches the client as a lazy reference (sometimes one inside
+ * another), which Radix's `asChild` can't always slot onto. Unwrap it first.
+ */
+function resolveNode(node: React.ReactNode): React.ReactNode {
+  let current: unknown = node;
+  while (isLazy(current)) {
+    const payload = current._payload;
+    current =
+      typeof (payload as PromiseLike<unknown> | null)?.then === "function"
+        ? React.use(payload as Promise<unknown>)
+        : current._init(payload);
+  }
+  return current as React.ReactNode;
+}
+
+export function DialogTrigger({
+  asChild,
+  children,
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
+  if (!asChild) return <DialogPrimitive.Trigger {...props}>{children}</DialogPrimitive.Trigger>;
+  const child = resolveNode(children);
+  return (
+    <DialogPrimitive.Trigger asChild {...props}>
+      {React.isValidElement(child) ? child : <span className="contents">{child}</span>}
+    </DialogPrimitive.Trigger>
+  );
+}
 export const DialogClose = DialogPrimitive.Close;
 
 /** A centred dialog that becomes a bottom sheet on small screens. */

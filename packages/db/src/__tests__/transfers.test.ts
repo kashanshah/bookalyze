@@ -27,7 +27,7 @@ let orgId: string;
 const code: Record<string, string> = {};
 const scoped = <T>(fn: (tx: Transaction) => Promise<T>) => withOrg(app.db, { orgId }, fn);
 
-async function post(input: TransactionInput, date: string, memo: string) {
+async function post(input: TransactionInput, date: string, memo: string, bankId?: string) {
   const all = await scoped((tx) => tx.select().from(schema.accounts));
   const prepared = prepareJournalEntry(
     { currency: "CAD", baseCurrency: "CAD", lines: transactionLines(input, memo) },
@@ -37,7 +37,13 @@ async function post(input: TransactionInput, date: string, memo: string) {
   return {
     prepared: prepared.entry,
     posted: await scoped((tx) =>
-      postJournalEntry(tx, { orgId, date, memo, entry: prepared.entry }),
+      postJournalEntry(tx, {
+        orgId,
+        date,
+        memo,
+        entry: prepared.entry,
+        ...(bankId ? { source: "bank_import" as const, sourceId: bankId } : {}),
+      }),
     ),
   };
 }
@@ -88,6 +94,7 @@ async function bank(
   amount: string,
   date: string,
   memo: string,
+  bankId?: string,
 ) {
   if (!uncIncome) {
     const all = await scoped((tx) => tx.select().from(schema.accounts));
@@ -102,6 +109,7 @@ async function bank(
     },
     date,
     memo,
+    bankId,
   );
   return posted.id;
 }
@@ -206,5 +214,55 @@ describe("transfer matching", () => {
     ]);
     expect(restored[0]?.view.splits.map((s) => s.accountId)).toEqual([uncIncome]);
     expect(await scoped((tx) => matchedTransferIds(tx, [transferId]))).toEqual(new Set());
+  });
+
+  it("gives back bank transactions too (their bank IDs stay on the reversed originals)", async () => {
+    const all = await scoped((tx) => tx.select().from(schema.accounts));
+    const expense = (memo: string) => {
+      const prepared = prepareJournalEntry(
+        {
+          currency: "CAD",
+          baseCurrency: "CAD",
+          lines: transactionLines(
+            {
+              kind: "withdrawal",
+              moneyAccountId: id("1000"),
+              splits: [{ accountId: id("6350"), amount: "60" }],
+            },
+            memo,
+          ),
+        },
+        new Map(all.map((a) => [a.id, a])),
+      );
+      if (!prepared.ok) throw new Error("bad entry");
+      return prepared.entry;
+    };
+
+    // Edited into an expense: the deposit side comes back.
+    const out = await bank("withdrawal", id("1000"), "60", "2026-06-02", "Sent money A", "w:1");
+    const into = await bank("deposit", id("2100"), "60", "2026-06-02", "Received A", "w:2");
+    const { transferId } = await scoped((tx) =>
+      matchTransfer(tx, { orgId, baseCurrency: "CAD", outId: out, inId: into }),
+    );
+    await scoped((tx) =>
+      replaceJournalEntry(tx, {
+        orgId,
+        entryId: transferId,
+        date: "2026-06-02",
+        memo: "Sent money A",
+        entry: expense("Sent money A"),
+      }),
+    );
+    expect((await current("Received A")).map((r) => r.view.kind)).toEqual(["deposit"]);
+
+    // Unmatched: both sides come back.
+    const out2 = await bank("withdrawal", id("1000"), "61", "2026-06-05", "Sent money B", "w:3");
+    const into2 = await bank("deposit", id("2100"), "61", "2026-06-05", "Received B", "w:4");
+    const match = await scoped((tx) =>
+      matchTransfer(tx, { orgId, baseCurrency: "CAD", outId: out2, inId: into2 }),
+    );
+    await scoped((tx) => unmatchTransfer(tx, { orgId, transferEntryId: match.transferId }));
+    expect((await current("Sent money B")).map((r) => r.view.kind)).toEqual(["withdrawal"]);
+    expect((await current("Received B")).map((r) => r.view.kind)).toEqual(["deposit"]);
   });
 });
