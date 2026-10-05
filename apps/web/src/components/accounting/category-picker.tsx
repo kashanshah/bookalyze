@@ -39,6 +39,9 @@ const ORDER: Record<CategoryDirection, AccountType[]> = {
   any: ["expense", "income", "asset", "liability", "equity"],
 };
 
+/** Money in on an expense category is a refund that lowers that expense, as in Wave. */
+const REFUND_HEADING = "Return on an expense recorded in Bookalyze";
+
 /**
  * Category groups plus the ones added on this screen, so a new category shows in every picker
  * straight away (the page's own list catches up when it refreshes).
@@ -104,13 +107,15 @@ export function CategoryPicker({
   const order = ORDER[direction];
   const options: ComboboxOption[] = [...groups]
     .sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type))
-    .flatMap((group) =>
-      group.options.map((o) => ({
+    .flatMap((group) => {
+      const refund = direction === "in" && group.type === "expense";
+      return group.options.map((o) => ({
         value: o.id,
         label: o.label,
-        group: accountTypes[group.type].label,
-      })),
-    );
+        group: refund ? REFUND_HEADING : accountTypes[group.type].label,
+        ...(refund ? { keywords: "refund return" } : {}),
+      }));
+    });
 
   return (
     <>

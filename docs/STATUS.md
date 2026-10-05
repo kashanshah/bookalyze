@@ -542,6 +542,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   "Add “…” as a new category", which opens a small form on top (type, what it's for, name, optional
   code; `saveAccountAction`). The new category is picked and appears in every dropdown on the page
   (`useCategoryList`) and, after the save, everywhere else.
+- **Refunds, like Wave:** for money in (transactions and rules), the expense categories are listed
+  under "Return on an expense recorded in Bookalyze" (searchable as "refund" or "return").
+  Picking one books the money against that expense, lowering it; no separate account.
 - E2E: `openTransaction()` helper opens a row through its menu (clicking a value now edits it);
   new test for adding a category on the spot, editing on the list and removing from the menu.
 
