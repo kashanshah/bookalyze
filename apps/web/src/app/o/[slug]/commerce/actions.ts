@@ -6,18 +6,22 @@ import {
   disconnectAmazon,
   findAmazonConnection,
   getConnection,
+  listAmazonConnections,
   recordConnectionSync,
   saveAmazonChannels,
   schema,
   setChannelActive,
   setConnectionSecret,
+  startOrderSync,
   VaultError,
 } from "@bookalyze/db";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { isIsoDate, nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { AmazonError, marketplaceParticipations } from "@/server/amazon";
+import { type OrderSyncResult, syncOrgOrders } from "@/server/amazon-orders";
 import { audit } from "@/server/audit";
 import {
   getCommerceContext,
@@ -116,7 +120,12 @@ export async function connectAmazonAction(
           .where(eq(schema.connections.id, id));
       }
       await setConnectionSecret(tx, id, sealAmazonCredentials(ctx.org.id, id, creds));
-      await saveAmazonChannels(tx, { orgId: ctx.org.id, connectionId: id, marketplaces });
+      await saveAmazonChannels(tx, {
+        orgId: ctx.org.id,
+        connectionId: id,
+        marketplaces,
+        reset: existing?.status === "disconnected",
+      });
       await recordConnectionSync(tx, id, { at: new Date(), error: null });
       await audit(tx, {
         orgId: ctx.org.id,
@@ -216,4 +225,71 @@ export async function disconnectAmazonAction(
   });
   revalidate(slug);
   return { ok: true };
+}
+
+/** How long one "bring in orders" request may run; the screen calls again while there's more. */
+const ORDER_SYNC_BUDGET_MS = 20_000;
+/** Amazon keeps orders about two years back. */
+const ORDERS_MAX_YEARS = 2;
+
+/**
+ * Starts bringing in orders from `from` on every switched-on marketplace (an earlier date reads
+ * everything again from there). The sync itself runs with syncOrdersAction.
+ */
+export async function startOrdersAction(
+  slug: string,
+  from: string,
+): Promise<CommerceResult<{ channels: number }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const today = nowIn(ctx.profile.timezone).date;
+  const earliest = `${Number(today.slice(0, 4)) - ORDERS_MAX_YEARS}${today.slice(4)}`;
+  if (!isIsoDate(from)) return { ok: false, message: "Choose a start date." };
+  if (from > today) return { ok: false, message: "The start date can't be in the future." };
+  if (from < earliest) {
+    return {
+      ok: false,
+      message: "Amazon only keeps orders for about two years. Pick a later date.",
+    };
+  }
+  const channels = await inOrg(ctx, async (tx) => {
+    const ids = (await listAmazonConnections(tx))
+      .filter((c) => c.status !== "disconnected")
+      .flatMap((c) => c.channels.filter((ch) => ch.isActive).map((ch) => ch.id));
+    await startOrderSync(tx, ids, from);
+    if (ids.length) {
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "orders.sync_started",
+        entityType: "organization",
+        entityId: ctx.org.id,
+        after: { from, channels: ids.length },
+      });
+    }
+    return ids.length;
+  });
+  if (!channels) {
+    return { ok: false, message: "Switch on a marketplace on the Channels page first." };
+  }
+  revalidate(slug);
+  return { ok: true, channels };
+}
+
+/**
+ * Brings in new and changed orders, then their items, for up to ~20 seconds. `more` says to call
+ * again (a first sync of a busy account takes several calls: Amazon rations its answers).
+ */
+export async function syncOrdersAction(slug: string): Promise<CommerceResult<OrderSyncResult>> {
+  const ctx = await getCommerceContext(slug);
+  const result = await syncOrgOrders(
+    { orgId: ctx.org.id, userId: ctx.session.user.id },
+    ORDER_SYNC_BUDGET_MS,
+  );
+  if (!result.channels) {
+    return { ok: false, message: "No marketplace is bringing orders in yet." };
+  }
+  revalidate(slug);
+  const { channels: _, ...rest } = result;
+  return { ok: true, ...rest };
 }

@@ -32,6 +32,76 @@ const participations = {
   ],
 };
 
+// Three synthetic orders on Amazon.ca, answered in two pages to exercise the page token.
+const orders = [
+  {
+    AmazonOrderId: "702-1000001-0000001",
+    MarketplaceId: "A2EUQ1WTGCTBG2",
+    PurchaseDate: daysAgo(3),
+    LastUpdateDate: daysAgo(2),
+    OrderStatus: "Shipped",
+    FulfillmentChannel: "AFN",
+    OrderTotal: { CurrencyCode: "CAD", Amount: "45.19" },
+    NumberOfItemsShipped: 2,
+    NumberOfItemsUnshipped: 0,
+    ShippingAddress: { StateOrRegion: "ON", CountryCode: "CA" },
+    IsPrime: true,
+  },
+  {
+    AmazonOrderId: "702-1000002-0000002",
+    MarketplaceId: "A2EUQ1WTGCTBG2",
+    PurchaseDate: daysAgo(2),
+    LastUpdateDate: daysAgo(2),
+    OrderStatus: "Unshipped",
+    FulfillmentChannel: "MFN",
+    OrderTotal: { CurrencyCode: "CAD", Amount: "18.50" },
+    NumberOfItemsShipped: 0,
+    NumberOfItemsUnshipped: 1,
+    ShippingAddress: { StateOrRegion: "BC", CountryCode: "CA" },
+  },
+  {
+    AmazonOrderId: "702-1000003-0000003",
+    MarketplaceId: "A2EUQ1WTGCTBG2",
+    PurchaseDate: daysAgo(1),
+    LastUpdateDate: daysAgo(1),
+    OrderStatus: "Canceled",
+    FulfillmentChannel: "AFN",
+    NumberOfItemsShipped: 0,
+    NumberOfItemsUnshipped: 0,
+  },
+];
+const items = {
+  "702-1000001-0000001": [
+    {
+      OrderItemId: "50001",
+      ASIN: "B0E2E00001",
+      SellerSKU: "MAPLE-MUG",
+      Title: "Maple leaf ceramic mug",
+      QuantityOrdered: 2,
+      QuantityShipped: 2,
+      ItemPrice: { CurrencyCode: "CAD", Amount: "39.98" },
+      ItemTax: { CurrencyCode: "CAD", Amount: "5.21" },
+    },
+  ],
+  "702-1000002-0000002": [
+    {
+      OrderItemId: "50002",
+      ASIN: "B0E2E00002",
+      SellerSKU: "PINE-CANDLE",
+      Title: "Pine forest candle",
+      QuantityOrdered: 1,
+      QuantityShipped: 0,
+      ItemPrice: { CurrencyCode: "CAD", Amount: "16.37" },
+      ItemTax: { CurrencyCode: "CAD", Amount: "2.13" },
+    },
+  ],
+  "702-1000003-0000003": [],
+};
+
+function daysAgo(n) {
+  return new Date(Date.now() - n * 86_400_000).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
 function json(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
@@ -60,6 +130,25 @@ createServer((req, res) => {
   }
   if (url.pathname === "/sellers/v1/marketplaceParticipations") {
     return json(res, 200, participations);
+  }
+  if (url.pathname === "/orders/v0/orders") {
+    if (!url.searchParams.get("MarketplaceIds")) return json(res, 400, { errors: [] });
+    const after = url.searchParams.get("LastUpdatedAfter");
+    const token = url.searchParams.get("NextToken");
+    if (!token && !after) return json(res, 400, { errors: [] });
+    const matching = token
+      ? orders.slice(2)
+      : orders.filter((o) => o.LastUpdateDate >= after).slice(0, 2);
+    const more = !token && orders.filter((o) => o.LastUpdateDate >= after).length > 2;
+    return json(res, 200, {
+      payload: { Orders: matching, ...(more ? { NextToken: "e2e-page-2" } : {}) },
+    });
+  }
+  const itemsPath = /^\/orders\/v0\/orders\/([^/]+)\/orderItems$/.exec(url.pathname);
+  if (itemsPath) {
+    const id = decodeURIComponent(itemsPath[1]);
+    if (!(id in items)) return json(res, 404, { errors: [{ code: "NotFound" }] });
+    return json(res, 200, { payload: { AmazonOrderId: id, OrderItems: items[id] } });
   }
   json(res, 404, { errors: [{ code: "NotFound" }] });
 }).listen(port);
