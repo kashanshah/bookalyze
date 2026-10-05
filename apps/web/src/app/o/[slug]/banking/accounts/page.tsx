@@ -1,5 +1,5 @@
 import { isMoneyAccountSubtype, type StatementSettings } from "@bookalyze/core";
-import { countOpenDuplicates, listConnections } from "@bookalyze/db";
+import { countOpenDuplicates, listConnections, misrecordedAccounts } from "@bookalyze/db";
 import {
   AlertTriangle,
   ArrowRight,
@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/dates";
 import { getBankingContext, inOrg, listAccounts } from "@/server/accounting";
 import { isOrgAdmin } from "@/server/org";
+import { AmountFixDialog } from "./amount-fix-dialog";
 import { ConnectWiseDialog } from "./connect-wise-dialog";
 import { ConnectionActions } from "./connection-actions";
 import { StatementUploadButton } from "./statement-upload-button";
@@ -36,8 +37,14 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
   const { slug } = await params;
   const ctx = await getBankingContext(slug);
   const { locale, timezone } = ctx.profile;
-  const [allConnections, duplicates] = await inOrg(ctx, (tx) =>
-    Promise.all([listConnections(tx), countOpenDuplicates(tx)]),
+  const [allConnections, duplicates, misrecorded] = await inOrg(ctx, (tx) =>
+    Promise.all([listConnections(tx), countOpenDuplicates(tx), misrecordedAccounts(tx)]),
+  );
+  // Accounts a Wise balance fills: their misrecorded amounts can be corrected from Wise.
+  const wiseFed = new Set(
+    allConnections
+      .filter((c) => c.provider === "wise" && c.status !== "disconnected")
+      .flatMap((c) => c.feeds.map((f) => f.accountId)),
   );
   const connections = allConnections.filter((c) => c.status !== "disconnected");
   const admin = isOrgAdmin(ctx);
@@ -97,6 +104,42 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
           <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
         </Link>
       ) : null}
+
+      {misrecorded.map((m) => (
+        <div
+          key={m.accountId}
+          className="fade-in-0 flex animate-in flex-wrap items-center gap-3 rounded-2xl border border-warning/40 bg-warning/10 px-5 py-4 sm:px-6"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-warning/20 text-warning">
+            <AlertTriangle className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">
+              {m.name}: {m.count} {m.count === 1 ? "amount isn't" : "amounts aren't"} in{" "}
+              {m.currency}
+            </span>
+            <span className="block text-muted-foreground text-sm">
+              {m.count === 1 ? "It was" : "They were"} recorded in {ctx.profile.baseCurrency}{" "}
+              (usually from Wave's export), so this account's {m.currency} balance is off. Your{" "}
+              {ctx.profile.baseCurrency} reports are right.
+              {wiseFed.has(m.accountId)
+                ? ""
+                : ` Connect Wise and link its ${m.currency} balance to ${m.name} to correct ${m.count === 1 ? "it" : "them"} automatically.`}
+            </span>
+          </span>
+          {admin && wiseFed.has(m.accountId) ? (
+            <AmountFixDialog
+              slug={slug}
+              accountId={m.accountId}
+              accountName={m.name}
+              currency={m.currency}
+              baseCurrency={ctx.profile.baseCurrency}
+              count={m.count}
+              locale={locale}
+            />
+          ) : null}
+        </div>
+      ))}
 
       {connections.length === 0 ? (
         <div className="grid gap-4 md:grid-cols-2">

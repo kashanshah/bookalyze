@@ -206,7 +206,7 @@ function AccountForm({
           error={errors.currency}
           hint={
             account?.isUsed && currency !== (account.currency ?? "")
-              ? "Amounts already recorded stay exactly as they are; only new transactions use the new currency."
+              ? "Amounts already recorded stay exactly as they are; only new transactions use the new currency. If they were really in the new currency, correct them on Banking → Bank accounts."
               : needsCurrency
                 ? "The currency this account is held in."
                 : "Leave as “Any currency” unless this account only ever holds one."

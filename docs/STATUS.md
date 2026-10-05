@@ -613,6 +613,31 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: `AMAZON_LWA_URL` / `AMAZON_SPAPI_URL` point at `e2e/amazon-mock.mjs` in e2e. Leave them
   unset in production.
 
+
+### Fix: foreign-currency amounts recorded in the main currency ("Correct from Wise")
+
+- **Why:** Wave's accounting export has only main-currency (CAD) values, so a US$123 Wise
+  payment came in as 173.62. Imported while the account held CAD, then the account was switched
+  to USD (amounts are never converted on a switch), so it showed US$173.62. CAD reports were
+  right all along (the line's base amount is Wave's CAD value); the account's own currency wasn't.
+- **Found by:** `misrecordedAccounts` / `misrecordedLines` (db `amount-fix.ts`): current lines on
+  an account with a currency whose line currency differs. Bank accounts shows a banner per
+  account; the account dialog's currency hint now says to correct them there.
+- **Correct from Wise** (admins, accounts a Wise balance fills): `previewAmountFix`
+  (`server/amount-fix.ts`) reads the balance's statement over those dates (nothing posted) and
+  core `matchStatementAmounts` (`banking/amount-fix.ts`) matches each line: same direction,
+  within 4 days, within 3% of the CAD value at that day's Bank of Canada rate (the rate only
+  judges the fit; Wise's amount is used); obvious ones first, descriptions break ties, real
+  look-alikes are left for a person. The dialog shows counts (matched / need a choice / not in
+  Wise), a choice per unclear one, amounts to type (or BoC estimates) for missing ones.
+- **Apply** (`applyAmountCorrections`, 100 per request): each entry is replaced like an edit
+  with the line in the account's currency and the **same base amount**, so CAD reports don't
+  move; the Wise transaction is recorded in `bank_lines` so a later sync recognises it. Closed
+  periods, reconciled lines and entries with a second misrecorded account are skipped with the
+  reason. No migration.
+- Not covered: accounts no Wise balance fills (e.g. Cash in Hand USD), and the 7 rows the import
+  skipped for it; next step there is a statement upload or typed amounts on the same screen.
+
 ---
 
 ## 3. Next up (in order)

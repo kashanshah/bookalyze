@@ -1,3 +1,4 @@
+export * from "./amount-fix";
 export * from "./attachments";
 export * from "./banking";
 export * from "./client";

@@ -417,8 +417,10 @@ test("receipts: inbox, attach to a transaction, and attach while adding one", as
     { name: "one.png", mimeType: "image/png", buffer: png },
     { name: "two.png", mimeType: "image/png", buffer: png },
   ]);
-  await expect(page.getByText("two.png", { exact: true })).toBeVisible();
-  await expect(page.getByText("one.png", { exact: true })).toBeVisible();
+  // Both uploads finished (their names also show while uploading).
+  await expect(page.getByText("one.png added to your inbox")).toBeVisible();
+  await expect(page.getByText("two.png added to your inbox")).toBeVisible();
+  await expect(page.getByText("Select all (2)")).toBeVisible();
   await page.getByLabel("Select all receipts").check({ force: true });
   await expect(page.getByText("2 of 2 selected")).toBeVisible();
   await page.getByRole("button", { name: "Delete 2" }).click();
@@ -1230,6 +1232,64 @@ test("commerce: connect Amazon Seller Central, choose marketplaces, test and dis
   await page.getByRole("button", { name: "Click again to disconnect" }).click();
   await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Connect Amazon" })).toBeVisible();
+});
+
+test("amounts recorded in CAD on a USD account are flagged and corrected from Wise", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
+  await page.getByRole("button", { name: "Add account" }).click();
+  await page.getByLabel("Name").fill("Old USD");
+  await page.getByLabel("Code (optional)").fill("1030");
+  await choose(page.locator("#currency"), /^CAD · /);
+  await page.getByRole("button", { name: "Add account" }).last().click();
+  await expect(page.getByText("Account added")).toBeVisible();
+
+  // Recorded in CAD (like Wave's export), then the account is switched to USD.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  // US$100 that arrived, recorded as its CAD value (136.50 at 1.365).
+  await page.getByRole("button", { name: "Add income" }).click();
+  await choose(page.locator("#tx-money"), /^1030 · Old USD/);
+  await page.locator("#tx-memo").fill("Received in US dollars");
+  await choose(page.getByLabel("Category 1", { exact: true }), "4000 · Sales");
+  await page.getByLabel("Amount 1").fill("136.50");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added").first()).toBeVisible();
+
+  await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
+  await page.getByRole("button", { name: "Edit Old USD" }).click();
+  await choose(page.locator("#currency"), /^USD · /);
+  await expect(page.getByText(/correct them on Banking → Bank accounts/)).toBeVisible();
+  await page.getByRole("button", { name: "Save changes" }).click();
+
+  await page.getByRole("link", { name: "Bank accounts", exact: true }).click();
+  await expect(page.getByText("Old USD: 1 amount isn't in USD")).toBeVisible();
+  await expect(page.getByText(/Connect Wise and link its USD balance to Old USD/)).toBeVisible();
+
+  // Link Wise's USD balance to it (bringing in nothing new), then correct from the statement.
+  await page.getByRole("button", { name: "Connect Wise" }).first().click();
+  await page.getByLabel("API token").fill("e2e-wise-token-0000-1111-2222");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await choose(page.getByLabel("Account for the CAD balance"), "Don't bring this one in");
+  await choose(page.getByLabel("Account for the USD balance"), /^1030 · Old USD/);
+  const tomorrow = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    new Date(Date.now() + 86_400_000),
+  );
+  await page.locator("#sync-from").fill(tomorrow);
+  await page.getByRole("button", { name: "Connect 1 balance" }).click();
+  await expect(page.getByText("Wise connected")).toBeVisible();
+
+  await page.getByRole("button", { name: "Correct from Wise" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("matched to Wise")).toBeVisible();
+  await dialog.getByRole("button", { name: "Correct 1 transaction" }).click();
+  await expect(page.getByText("1 transaction corrected")).toBeVisible();
+  await expect(page.getByText("Old USD: 1 amount isn't in USD")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
+  await expect(page).toHaveURL(/accounting\/accounts/);
+  await expect(page.locator("li", { hasText: "1030" })).toContainText("US$100.00");
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {
