@@ -28,7 +28,7 @@ import type { TxFormContext, TxRow } from "./types";
 
 export const metadata: Metadata = { title: "Transactions" };
 
-const PAGE_SIZE = 50;
+const PER_PAGE = [25, 50, 100];
 const STATUSES = ["reviewed", "unreviewed", "duplicates"] as const;
 const ORIGINS: Record<string, string> = {
   manual: "Entered by hand",
@@ -50,6 +50,7 @@ export default async function TransactionsPage({
     status?: string;
     q?: string;
     page?: string;
+    per?: string;
   }>;
 }) {
   const { slug } = await params;
@@ -57,6 +58,7 @@ export default async function TransactionsPage({
   const ctx = await getAccountingContext(slug);
   const profile = ctx.profile;
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
+  const perPage = PER_PAGE.includes(Number(sp.per)) ? Number(sp.per) : 50;
 
   const accounts = await listAccounts(ctx);
   const moneyAccounts = accounts.filter((a) => isMoneyAccountSubtype(a.subtype) && !a.isArchived);
@@ -85,8 +87,8 @@ export default async function TransactionsPage({
         reviewed: status === "reviewed" ? true : status === "unreviewed" ? false : null,
         possibleDuplicates: status === "duplicates",
         search: q || null,
-        limit: PAGE_SIZE,
-        offset: (page - 1) * PAGE_SIZE,
+        limit: perPage,
+        offset: (page - 1) * perPage,
       });
       const hasAny =
         result.total > 0 || (await listTransactions(tx, { limit: 1, offset: 0 })).total > 0;
@@ -176,7 +178,7 @@ export default async function TransactionsPage({
   });
 
   const selected = moneyAccounts.find((a) => a.id === account);
-  const pages = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(result.total / perPage));
   const pageHref = (n: number) => {
     const next = new URLSearchParams(Object.entries(sp).filter(([, v]) => v) as [string, string][]);
     next.set("page", String(n));
@@ -240,44 +242,47 @@ export default async function TransactionsPage({
       ) : (
         <TransactionList
           rows={rows}
-          filters={{ account, contact, kind: kind ?? "", status, q }}
+          filters={{ account, contact, kind: kind ?? "", status, q, per: sp.per ?? "" }}
           ctx={ctxForForms}
           hasAny={hasAny}
           duplicateCount={duplicateCount}
+          footer={
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-muted-foreground">
+                {pages > 1 ? `Page ${page} of ${pages} · ` : ""}
+                {result.total.toLocaleString(profile.locale)}{" "}
+                {result.total === 1 ? "transaction" : "transactions"}
+              </span>
+              {pages > 1 ? (
+                <div className="flex gap-2">
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className={page <= 1 ? "pointer-events-none opacity-50" : ""}
+                  >
+                    <Link href={pageHref(page - 1)}>
+                      <ArrowLeft className="rtl:rotate-180" />
+                      Newer
+                    </Link>
+                  </Button>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className={page >= pages ? "pointer-events-none opacity-50" : ""}
+                  >
+                    <Link href={pageHref(page + 1)}>
+                      Older
+                      <ArrowRight className="rtl:rotate-180" />
+                    </Link>
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          }
         />
       )}
-
-      {pages > 1 ? (
-        <div className="flex items-center justify-between gap-4 text-sm">
-          <span className="text-muted-foreground">
-            Page {page} of {pages} · {result.total} transactions
-          </span>
-          <div className="flex gap-2">
-            <Button
-              asChild
-              variant="outline"
-              size="sm"
-              className={page <= 1 ? "pointer-events-none opacity-50" : ""}
-            >
-              <Link href={pageHref(page - 1)}>
-                <ArrowLeft className="rtl:rotate-180" />
-                Newer
-              </Link>
-            </Button>
-            <Button
-              asChild
-              variant="outline"
-              size="sm"
-              className={page >= pages ? "pointer-events-none opacity-50" : ""}
-            >
-              <Link href={pageHref(page + 1)}>
-                Older
-                <ArrowRight className="rtl:rotate-180" />
-              </Link>
-            </Button>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

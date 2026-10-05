@@ -443,6 +443,11 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   through `importBankLines`, so they get the same duplicate check and possible-duplicate flags as
   Wise. Foreign-currency accounts fetch missing Bank of Canada rates first (`ensureRates`).
   Each upload account shows as a card with "Upload statement" and "Remove".
+- **Transactions screen:** a select-all tick box (header, or a row above the list on phones)
+  ticks every transaction on the page; the selection bar now offers "Remove" for any number
+  (`removeTransactionsAction`: each reversed on its own date, closed-period or reconciled ones
+  left alone and reported) besides "Merge" for two. "Show 25 / 50 / 100 per page" (`?per=`,
+  default 50) sits beside the page count. One transaction is still removed from its edit dialog.
 - `Field` now lets its control shrink (`grid-cols-[minmax(0,1fr)]`), so long dropdown labels
   truncate instead of widening dialogs on phones. Chart of accounts: the currency of an account
   with transactions explains why it's fixed.

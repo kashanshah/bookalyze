@@ -24,11 +24,20 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { setReviewedAction } from "./actions";
-import { DuplicateReviewDialog, MergeBar } from "./duplicate-dialogs";
+import { DuplicateReviewDialog, SelectionBar } from "./duplicate-dialogs";
 import { type DialogState, TransactionDialog } from "./transaction-dialog";
 import type { TxFormContext, TxRow } from "./types";
 
-type Filters = { account: string; contact: string; kind: string; status: string; q: string };
+type Filters = {
+  account: string;
+  contact: string;
+  kind: string;
+  status: string;
+  q: string;
+  per: string;
+};
+
+export const PER_PAGE = [25, 50, 100] as const;
 
 function useFilterNavigation() {
   const router = useRouter();
@@ -54,6 +63,7 @@ export function TransactionList({
   ctx,
   hasAny,
   duplicateCount,
+  footer,
 }: {
   rows: TxRow[];
   filters: Filters;
@@ -61,6 +71,8 @@ export function TransactionList({
   hasAny: boolean;
   /** Possible duplicates waiting for a decision, across all pages. */
   duplicateCount: number;
+  /** Page count and paging buttons, shown beside the per-page choice. */
+  footer?: React.ReactNode;
 }) {
   const [reviewing, setReviewing] = useState<TxRow | null>(null);
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
@@ -98,6 +110,15 @@ export function TransactionList({
   const contactNames = new Map(ctx.contacts.map((c) => [c.id, c.name]));
   const filterContact = filters.contact ? contactNames.get(filters.contact) : undefined;
   const name = (id?: string) => (id ? (ctx.accountNames[id] ?? "Unknown account") : "—");
+
+  const allPicked = optimisticRows.length > 0 && optimisticRows.every((r) => picked.has(r.id));
+  const selectAll = (
+    <Checkbox
+      checked={allPicked}
+      onChange={() => setPicked(allPicked ? new Set() : new Set(optimisticRows.map((r) => r.id)))}
+      label={allPicked ? "Clear selection" : "Select all on this page"}
+    />
+  );
 
   function toggleReviewed(row: TxRow) {
     startTransition(async () => {
@@ -244,13 +265,17 @@ export function TransactionList({
       ) : (
         <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
           <div className="hidden grid-cols-[1.25rem_6.5rem_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem_5.75rem] gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider md:grid">
-            <span />
+            {selectAll}
             <span>Date</span>
             <span>Description</span>
             <span>Account</span>
             <span>Category</span>
             <span className="text-end">Amount</span>
             <span className="text-end">Status</span>
+          </div>
+          <div className="flex items-center gap-3 border-b bg-muted/30 px-4 py-2.5 text-muted-foreground text-xs sm:px-5 md:hidden">
+            {selectAll}
+            Select all on this page
           </div>
           <ul className="divide-y">
             {optimisticRows.map((row, i) => {
@@ -431,8 +456,25 @@ export function TransactionList({
         </div>
       )}
 
+      {optimisticRows.length ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span>Show</span>
+            <Combobox
+              aria-label="Transactions per page"
+              value={filters.per || "50"}
+              onChange={(v) => set({ per: v === "50" ? "" : v })}
+              options={PER_PAGE.map((n) => ({ value: String(n), label: String(n) }))}
+              className="h-8 w-20"
+            />
+            <span>per page</span>
+          </div>
+          {footer}
+        </div>
+      ) : null}
+
       <DuplicateReviewDialog row={reviewing} ctx={ctx} onClose={() => setReviewing(null)} />
-      <MergeBar
+      <SelectionBar
         selected={optimisticRows.filter((r) => picked.has(r.id))}
         ctx={ctx}
         onClear={() => setPicked(new Set())}

@@ -304,6 +304,41 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
   await expect(page.getByText("Transaction removed")).toBeVisible();
   await expect(page.getByText("Supplies and shipping")).toHaveCount(0);
 
+  // Remove several at once, and select everything on the page.
+  for (const memo of ["Duplicate order A", "Duplicate order B"]) {
+    await page.getByRole("button", { name: "Add expense" }).click();
+    await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+    await page.locator("#tx-memo").fill(memo);
+    await choose(page.getByLabel("Category 1", { exact: true }), "6250 · Office supplies");
+    await page.getByLabel("Amount 1").fill("12");
+    await page.getByRole("button", { name: "Add transaction" }).click();
+    await expect(page.locator("li", { hasText: memo })).toBeVisible();
+  }
+  await page
+    .getByRole("checkbox", { name: "Select all on this page" })
+    .first()
+    .check({ force: true });
+  await expect(page.getByText(/^\d+ selected$/)).toBeVisible();
+  await page.getByRole("checkbox", { name: "Clear selection" }).first().uncheck({ force: true });
+  await expect(page.getByText(/^\d+ selected$/)).toHaveCount(0);
+  await page
+    .locator("li", { hasText: "Duplicate order A" })
+    .getByRole("checkbox")
+    .check({ force: true });
+  await page
+    .locator("li", { hasText: "Duplicate order B" })
+    .getByRole("checkbox")
+    .check({ force: true });
+  await page.getByRole("button", { name: "Remove 2 selected" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Remove 2" }).click();
+  await expect(page.getByText("2 transactions removed")).toBeVisible();
+  await expect(page.getByText("Duplicate order A")).toHaveCount(0);
+  await expect(page.getByText("Duplicate order B")).toHaveCount(0);
+
+  // Fewer per page.
+  await choose(page.getByLabel("Transactions per page"), "25");
+  await expect(page).toHaveURL(/per=25/);
+
   // One account at a time, with its balance: 5,000 + 850.
   await choose(page.getByLabel("Account", { exact: true }), "1010 · RBC Chequing");
   await expect(page.getByText("RBC Chequing balance")).toBeVisible();
