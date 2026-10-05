@@ -15,17 +15,22 @@ import {
   booksLockedThrough,
   DuplicateError,
   dismissDuplicate,
+  dismissTransfer,
   entryReconciledThrough,
   formatEntryNumber,
   getContact,
   LedgerError,
   linkAttachments,
   listTaxRates,
+  matchSelected,
+  matchTransfer,
   mergeSelected,
   postJournalEntry,
   replaceJournalEntry,
   schema,
   setTransactionReviewed,
+  TransferError,
+  unmatchTransfer,
   voidJournalEntry,
 } from "@bookalyze/db";
 import { eq } from "drizzle-orm";
@@ -361,7 +366,11 @@ export async function deleteTransactionAction(
 }
 
 function duplicateFailure(error: unknown): SimpleResult {
-  if (error instanceof DuplicateError || error instanceof LedgerError) {
+  if (
+    error instanceof DuplicateError ||
+    error instanceof TransferError ||
+    error instanceof LedgerError
+  ) {
     return { ok: false, message: error.message };
   }
   throw error;
@@ -507,4 +516,110 @@ export async function removeTransactionsAction(
   }
   if (removed) revalidate(slug);
   return { ok: true, removed, kept, reasons: [...reasons] };
+}
+
+/** Checks every entry can still be changed (current, open period, not reconciled). */
+async function allEditable(ctx: AccountingContext, ids: readonly string[]) {
+  for (const id of ids) {
+    const editable = await loadEditable(ctx, id);
+    if ("error" in editable) return editable.error ?? "These can't be changed.";
+  }
+  return null;
+}
+
+/**
+ * Matches money out of one account with money into another as one transfer: both are replaced
+ * by a single transfer that keeps their bank links and receipts. `outId` sends, `inId` receives;
+ * picked by hand (`entryIds`), the direction comes from the amounts.
+ */
+export async function matchTransferAction(
+  slug: string,
+  input: { outId: string; inId: string } | { entryIds: string[] },
+): Promise<SimpleResult> {
+  const ctx = await getAccountingContext(slug);
+  const ids = "entryIds" in input ? input.entryIds : [input.outId, input.inId];
+  const parsed = z.array(idSchema).length(2).safeParse(ids);
+  if (!parsed.success) return { ok: false, message: "Pick two transactions to match." };
+  const blocked = await allEditable(ctx, parsed.data);
+  if (blocked) return { ok: false, message: blocked };
+  try {
+    await inOrg(ctx, async (tx) => {
+      const common = {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        baseCurrency: ctx.profile.baseCurrency,
+      };
+      const [outId, inId] = parsed.data as [string, string];
+      const { transferId } =
+        "entryIds" in input
+          ? await matchSelected(tx, { ...common, entryIds: parsed.data })
+          : await matchTransfer(tx, { ...common, outId, inId });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "transaction.transfer_matched",
+        entityType: "journal_entry",
+        entityId: transferId,
+        after: { entryIds: parsed.data, manual: "entryIds" in input },
+      });
+    });
+  } catch (error) {
+    return duplicateFailure(error);
+  }
+  revalidate(slug);
+  return { ok: true };
+}
+
+/** A suggested pair isn't a transfer: both stay as they are and the pair isn't suggested again. */
+export async function dismissTransferAction(
+  slug: string,
+  outId: string,
+  inId: string,
+): Promise<SimpleResult> {
+  const ctx = await getAccountingContext(slug);
+  if (!idSchema.safeParse(outId).success || !idSchema.safeParse(inId).success || outId === inId) {
+    return { ok: false, message: "Unknown item." };
+  }
+  await inOrg(ctx, async (tx) => {
+    await dismissTransfer(tx, { orgId: ctx.org.id, userId: ctx.session.user.id, outId, inId });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "transaction.transfer_dismissed",
+      entityType: "journal_entry",
+      entityId: outId,
+      after: { inId },
+    });
+  });
+  revalidate(slug);
+  return { ok: true };
+}
+
+/** Undoes a match: the transfer goes and both bank transactions come back, uncategorized. */
+export async function unmatchTransferAction(slug: string, entryId: string): Promise<SimpleResult> {
+  const ctx = await getAccountingContext(slug);
+  if (!idSchema.safeParse(entryId).success) return { ok: false, message: "Unknown item." };
+  const blocked = await allEditable(ctx, [entryId]);
+  if (blocked) return { ok: false, message: blocked };
+  try {
+    await inOrg(ctx, async (tx) => {
+      const back = await unmatchTransfer(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        transferEntryId: entryId,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "transaction.transfer_unmatched",
+        entityType: "journal_entry",
+        entityId: entryId,
+        after: back,
+      });
+    });
+  } catch (error) {
+    return duplicateFailure(error);
+  }
+  revalidate(slug);
+  return { ok: true };
 }

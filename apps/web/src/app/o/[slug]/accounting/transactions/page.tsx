@@ -14,8 +14,10 @@ import {
   listDuplicateSuggestions,
   listTaxRates,
   listTransactions,
+  matchedTransferIds,
   ruleNamesFor,
   schema,
+  suggestTransfers,
 } from "@bookalyze/db";
 import { eq, sql } from "drizzle-orm";
 import { ArrowLeft, ArrowRight, Download, Landmark } from "lucide-react";
@@ -32,7 +34,7 @@ import type { TxFormContext, TxRow } from "./types";
 export const metadata: Metadata = { title: "Transactions" };
 
 const PER_PAGE = [25, 50, 100];
-const STATUSES = ["reviewed", "unreviewed", "duplicates", "no_account"] as const;
+const STATUSES = ["reviewed", "unreviewed", "duplicates", "no_account", "transfers"] as const;
 const ORIGINS: Record<string, string> = {
   manual: "Entered by hand",
   bank_import: "From your bank",
@@ -88,9 +90,13 @@ export default async function TransactionsPage({
     duplicateCount,
     needsAccountCount,
     rules,
+    transferPairs,
+    partners,
+    matched,
   } = await inOrg(ctx, async (tx) => {
     const contacts = await contactOptions(tx, { includeArchived: true });
     const taxRates = await listTaxRates(tx, { includeArchived: true });
+    const transferPairs = await suggestTransfers(tx);
     const result = await listTransactions(tx, {
       accountId: account || null,
       contactId: contact || null,
@@ -98,6 +104,7 @@ export default async function TransactionsPage({
       reviewed: status === "reviewed" ? true : status === "unreviewed" ? false : null,
       possibleDuplicates: status === "duplicates",
       needsAccount: status === "no_account",
+      entryIds: status === "transfers" ? transferPairs.flatMap((p) => [p.outId, p.inId]) : null,
       search: q || null,
       limit: perPage,
       offset: (page - 1) * perPage,
@@ -119,6 +126,16 @@ export default async function TransactionsPage({
       tx,
       result.rows.map((r) => r.id),
     );
+    // The other side of each suggested transfer on this page, to show beside it.
+    const onPage = new Set(result.rows.map((r) => r.id));
+    const partnerIds = transferPairs
+      .filter((p) => onPage.has(p.outId) || onPage.has(p.inId))
+      .flatMap((p) => [p.outId, p.inId]);
+    const partners = partnerIds.length
+      ? (await listTransactions(tx, { entryIds: partnerIds, limit: partnerIds.length, offset: 0 }))
+          .rows
+      : [];
+    const matched = await matchedTransferIds(tx, [...onPage]);
     return {
       result,
       hasAny,
@@ -129,9 +146,16 @@ export default async function TransactionsPage({
       duplicateCount,
       needsAccountCount,
       rules,
+      transferPairs,
+      partners,
+      matched,
     };
   });
   const flagOf = new Map(flags.map((f) => [f.entryId, f]));
+  const partnerOf = new Map(partners.map((p) => [p.id, p]));
+  const pairOf = new Map(
+    transferPairs.flatMap((p) => [[p.outId, p] as const, [p.inId, p] as const]),
+  );
 
   const categoryAccounts = accounts.filter((a) => !isMoneyAccountSubtype(a.subtype));
   const ctxForForms: TxFormContext = {
@@ -182,6 +206,8 @@ export default async function TransactionsPage({
       receivedAmount: r.view.receivedAmount,
       receivedCurrency: r.view.receivedCurrency,
       ...(r.view.needsAccount ? { needsAccount: true } : {}),
+      ...(matched.has(r.id) ? { matchedTransfer: true } : {}),
+      ...transferSuggestion(r.id),
       splits: r.view.splits.map((s) => ({
         accountId: s.accountId,
         amount: s.amount,
@@ -205,6 +231,27 @@ export default async function TransactionsPage({
         : {}),
     };
   });
+
+  function transferSuggestion(id: string): Pick<TxRow, "transfer"> {
+    const pair = pairOf.get(id);
+    const other = pair && partnerOf.get(pair.outId === id ? pair.inId : pair.outId);
+    if (!pair || !other) return {};
+    return {
+      transfer: {
+        outId: pair.outId,
+        inId: pair.inId,
+        other: {
+          id: other.id,
+          number: formatEntryNumber(other.entryNumber),
+          date: other.date,
+          memo: other.memo,
+          accountId: other.view.moneyAccountIds[0] ?? "",
+          amount: other.view.amount,
+          currency: other.currency,
+        },
+      },
+    };
+  }
 
   const selected = moneyAccounts.find((a) => a.id === account);
   const pages = Math.max(1, Math.ceil(result.total / perPage));
@@ -276,6 +323,7 @@ export default async function TransactionsPage({
           hasAny={hasAny}
           duplicateCount={duplicateCount}
           needsAccountCount={needsAccountCount}
+          transferCount={transferPairs.length}
           footer={
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-muted-foreground">

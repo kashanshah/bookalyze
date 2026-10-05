@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { setReviewedAction } from "./actions";
 import { DuplicateReviewDialog, SelectionBar } from "./duplicate-dialogs";
 import { type DialogState, TransactionDialog } from "./transaction-dialog";
+import { TransferReviewDialog } from "./transfer-dialogs";
 import type { TxFormContext, TxRow } from "./types";
 
 type Filters = {
@@ -66,6 +67,7 @@ export function TransactionList({
   hasAny,
   duplicateCount,
   needsAccountCount,
+  transferCount,
   footer,
 }: {
   rows: TxRow[];
@@ -76,10 +78,13 @@ export function TransactionList({
   duplicateCount: number;
   /** Transactions that never said which bank, card or cash account they went through. */
   needsAccountCount: number;
+  /** Suggested transfers waiting for a decision, across all pages. */
+  transferCount: number;
   /** Page count and paging buttons, shown beside the per-page choice. */
   footer?: React.ReactNode;
 }) {
   const [reviewing, setReviewing] = useState<TxRow | null>(null);
+  const [transferring, setTransferring] = useState<TxRow | null>(null);
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const togglePicked = (id: string) =>
     setPicked((current) => {
@@ -220,6 +225,7 @@ export function TransactionList({
             { value: "reviewed", label: "Reviewed" },
             { value: "duplicates", label: "Possible duplicates" },
             { value: "no_account", label: "Account not chosen" },
+            { value: "transfers", label: "Possible transfers" },
           ]}
         />
         <div className="relative">
@@ -252,6 +258,24 @@ export function TransactionList({
             </span>
           </p>
           <Button size="sm" variant="outline" onClick={() => set({ status: "duplicates" })}>
+            Show only these
+          </Button>
+        </div>
+      ) : null}
+
+      {transferCount > 0 && filters.status !== "transfers" ? (
+        <div className="fade-in-0 flex animate-in flex-wrap items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 sm:px-5">
+          <ArrowRightLeft className="size-4 shrink-0 text-primary" />
+          <p className="min-w-0 flex-1 text-sm">
+            <span className="font-medium">
+              {transferCount === 1 ? "1 possible transfer" : `${transferCount} possible transfers`}
+            </span>
+            <span className="text-muted-foreground">
+              {" "}
+              between your accounts. Match them so the money isn't counted as spent and earned.
+            </span>
+          </p>
+          <Button size="sm" variant="outline" onClick={() => set({ status: "transfers" })}>
             Show only these
           </Button>
         </div>
@@ -471,6 +495,27 @@ export function TransactionList({
                       />
                     </button>
                   </div>
+                  {row.transfer ? (
+                    <button
+                      type="button"
+                      onClick={() => setTransferring(row)}
+                      className="flex w-full min-w-0 basis-full items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-start text-sm transition-colors hover:bg-primary/15 md:col-span-full md:col-start-2"
+                    >
+                      <ArrowRightLeft className="size-4 shrink-0 text-primary" />
+                      <span className="min-w-0 flex-1 truncate">
+                        <span className="font-medium">
+                          Possible transfer {row.transfer.outId === row.id ? "to" : "from"}{" "}
+                          {name(row.transfer.other.accountId)}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · {row.transfer.other.number},{" "}
+                          {formatDate(row.transfer.other.date, ctx.locale)}
+                        </span>
+                      </span>
+                      <span className="shrink-0 font-medium text-primary">Review</span>
+                    </button>
+                  ) : null}
                   {row.duplicate ? (
                     <button
                       type="button"
@@ -514,6 +559,7 @@ export function TransactionList({
       ) : null}
 
       <DuplicateReviewDialog row={reviewing} ctx={ctx} onClose={() => setReviewing(null)} />
+      <TransferReviewDialog row={transferring} ctx={ctx} onClose={() => setTransferring(null)} />
       <SelectionBar
         selected={optimisticRows.filter((r) => picked.has(r.id))}
         ctx={ctx}

@@ -12,4 +12,5 @@ export * from "./rules";
 export * as schema from "./schema";
 export * from "./tax";
 export * from "./transactions";
+export * from "./transfers";
 export * from "./vault";

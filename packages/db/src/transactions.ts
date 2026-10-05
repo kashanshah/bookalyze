@@ -13,6 +13,7 @@ import { carryEntryLinks } from "./duplicates";
 import { LedgerError, postJournalEntry, reverseJournalEntry } from "./ledger";
 import { accounts, journalEntries, journalLines, transactionReviews } from "./schema/accounting";
 import { reconciliationLines, reconciliations } from "./schema/reconciliation";
+import { followTransferEdit } from "./transfers";
 
 /**
  * The Transactions screen's queries and writes. A transaction is any current journal entry
@@ -63,6 +64,8 @@ export type TransactionFilters = {
   possibleDuplicates?: boolean;
   /** Only transactions whose bank, card or cash account was never chosen. */
   needsAccount?: boolean;
+  /** Only these entries (e.g. the ones in a suggested transfer). */
+  entryIds?: readonly string[] | null;
   search?: string | null;
   limit: number;
   offset: number;
@@ -108,6 +111,10 @@ export async function listTransactions(
     );
   }
   if (filters.contactId) conditions.push(eq(journalEntries.contactId, filters.contactId));
+  if (filters.entryIds) {
+    if (!filters.entryIds.length) return { rows: [], total: 0 };
+    conditions.push(inArray(journalEntries.id, [...filters.entryIds]));
+  }
   if (filters.kind === "transfer") conditions.push(sql`not ${touchesCategory}`);
   if (filters.kind === "deposit" || filters.kind === "withdrawal") {
     conditions.push(touchesCategory);
@@ -300,6 +307,13 @@ export async function replaceJournalEntry(
       ? { source: "import" as const, sourceId: original.sourceId }
       : {}),
     entry: input.entry,
+  });
+  // A matched transfer edited into something else gives back the side it no longer covers.
+  await followTransferEdit(tx, {
+    orgId: input.orgId,
+    userId: input.userId,
+    from: input.entryId,
+    to: posted.id,
   });
   await carryEntryLinks(tx, { from: input.entryId, to: posted.id, userId: input.userId });
   // Receipts stay with the transaction (the original keeps its links too, for history).
