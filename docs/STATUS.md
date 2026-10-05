@@ -931,6 +931,10 @@ screenshots work well).
 
 ## 6. Gotchas
 
+- **pnpm only: no `package-lock.json`.** With an npm lockfile at the root, Vercel installs with
+  `npm install` (only the root's few dev packages) and the build uses stale cached modules, so a
+  newly added dependency is "Module not found" (this broke production builds once). It's in
+  `.gitignore`; use `pnpm add`.
 - **Dialog triggers made on the server** (`trigger={<Button>…</Button>}` from a page into a
   client dialog) arrive as lazy references, and Radix `asChild` threw "Primitive.button failed to
   slot onto its children". `DialogTrigger` in `components/ui/dialog.tsx` unwraps them first (and

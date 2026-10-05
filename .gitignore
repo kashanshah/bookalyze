@@ -25,3 +25,6 @@ next-env.d.ts
 /apps/web/.uploads/
 .vercel
 .env*
+
+# The repo uses pnpm (pnpm-lock.yaml). An npm lockfile makes Vercel install with npm and miss packages.
+package-lock.json
