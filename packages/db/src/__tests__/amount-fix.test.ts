@@ -238,6 +238,9 @@ describe("bank balances beside the books", () => {
     });
     // On Aug 10 the card held -40 in the books too: they agree.
     expect(onBankDay.get(feedId)).toBe("-40.0000");
+    // The USD account corrected above: the fixed line and its reversal aren't counted, the
+    // refund still in CAD is.
+    expect(all.find((a) => a.currency === "USD")?.otherCurrency).toBe(1);
     const [feed] = await scoped((tx) =>
       tx.select().from(schema.bankFeeds).where(eq(schema.bankFeeds.id, feedId)),
     );

@@ -579,9 +579,12 @@ export async function moneyAccountBalances(tx: Transaction) {
       -- An account without a currency of its own is shown in the main currency.
       coalesce(sum(case when a.currency is null then l.base_amount
         when l.currency = a.currency then l.amount end), 0)::text as balance,
-      count(l.id) filter (where l.currency <> a.currency)::text as other_currency
+      -- Only current entries: a corrected line and its reversal cancel out.
+      count(l.id) filter (where l.currency <> a.currency
+        and e.reversed_by_entry_id is null and e.reverses_entry_id is null)::text as other_currency
     from accounts a
     left join journal_lines l on l.account_id = a.id
+    left join journal_entries e on e.id = l.journal_entry_id
     where a.subtype in ('cash_bank', 'credit_card', 'money_in_transit') and not a.is_archived
     group by a.id, a.currency`);
   const asOf = await tx.execute<{ feed_id: string; balance: string }>(sql`
