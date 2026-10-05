@@ -3,6 +3,7 @@
 import { fiscalYearFor, isMoneyAccountSubtype } from "@bookalyze/core";
 import {
   addBankFeed,
+  applyAmountCorrections,
   createConnection,
   disconnectConnection,
   getConnection,
@@ -18,6 +19,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { isIsoDate, nowIn } from "@/lib/dates";
 import { getBankingContext, inOrg, listAccounts } from "@/server/accounting";
+import { AmountFixError, type AmountFixPreview, previewAmountFix } from "@/server/amount-fix";
 import { audit } from "@/server/audit";
 import {
   ensureRates,
@@ -415,4 +417,82 @@ export async function uploadStatementAction(
   });
   revalidatePath(`/o/${slug}`, "layout");
   return { ok: true, summary: { ...summary, error: null } };
+}
+
+/** Reads the account's Wise statement and matches each misrecorded line to it. Nothing changes. */
+export async function previewAmountFixAction(
+  slug: string,
+  accountId: string,
+): Promise<{ ok: true; preview: AmountFixPreview } | Failure> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  if (!z.string().uuid().safeParse(accountId).success) {
+    return { ok: false, message: "Unknown account." };
+  }
+  try {
+    return { ok: true, preview: await previewAmountFix(ctx, accountId) };
+  } catch (error) {
+    if (error instanceof AmountFixError || error instanceof VaultError) {
+      return { ok: false, message: error.message };
+    }
+    throw error;
+  }
+}
+
+const correctionSchema = z.object({
+  lineId: z.string().uuid(),
+  amount: z
+    .string()
+    .trim()
+    .regex(/^-?\d{1,15}(\.\d{1,4})?$/, "Enter an amount like 123.45."),
+  statement: z
+    .object({
+      feedId: z.string().uuid(),
+      externalId: z.string().min(1).max(200),
+      date: z.string().refine(isIsoDate),
+      description: z.string().max(500),
+    })
+    .nullable()
+    .optional(),
+});
+
+/**
+ * Re-records a batch of lines in the account's currency (the page sends them 100 at a time).
+ * Their main-currency value stays as it was.
+ */
+export async function applyAmountFixAction(
+  slug: string,
+  accountId: string,
+  corrections: z.input<typeof correctionSchema>[],
+): Promise<
+  { ok: true; corrected: number; skipped: { lineId: string; reason: string }[] } | Failure
+> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const parsed = z.array(correctionSchema).min(1).max(100).safeParse(corrections);
+  if (!parsed.success || !z.string().uuid().safeParse(accountId).success) {
+    return { ok: false, message: "Something went wrong. Open the screen again." };
+  }
+  const result = await inOrg(ctx, async (tx) => {
+    const done = await applyAmountCorrections(tx, {
+      orgId: ctx.org.id,
+      userId: ctx.session.user.id,
+      accountId,
+      corrections: parsed.data,
+    });
+    if (done.corrected) {
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "account.amounts_corrected",
+        entityType: "account",
+        entityId: accountId,
+        after: { corrected: done.corrected, skipped: done.skipped.length },
+      });
+    }
+    return done;
+  });
+  revalidatePath(`/o/${slug}/accounting`, "layout");
+  revalidatePath(`/o/${slug}/banking`, "layout");
+  return { ok: true, ...result };
 }

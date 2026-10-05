@@ -1,3 +1,4 @@
+export * from "./amount-fix";
 export * from "./feed";
 export * from "./rule-suggestions";
 export * from "./rules";
