@@ -8,7 +8,7 @@ import {
   prepareTransfer,
   transactionLines,
 } from "@bookalyze/core";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { findDuplicateOf, suggestDuplicate } from "./duplicates";
 import { fxRateOn } from "./fx";
@@ -137,6 +137,85 @@ export async function recordConnectionSync(
       lastError: result.error,
       status: result.error ? "error" : "active",
     })
+    .where(eq(connections.id, connectionId));
+}
+
+/** The statement-upload feed for a money account: its connection, feed and remembered columns. */
+export async function findStatementFeed(tx: Transaction, accountId: string) {
+  const [row] = await tx
+    .select({
+      connectionId: connections.id,
+      feedId: bankFeeds.id,
+      currency: bankFeeds.currency,
+      settings: connections.settings,
+      isActive: bankFeeds.isActive,
+    })
+    .from(bankFeeds)
+    .innerJoin(connections, eq(connections.id, bankFeeds.connectionId))
+    .where(and(eq(connections.provider, "csv"), eq(bankFeeds.accountId, accountId)))
+    .orderBy(desc(bankFeeds.isActive), desc(bankFeeds.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * The statement-upload feed for a money account, made on its first upload. Uploads are a
+ * connection of their own (provider "csv", no credentials), so their lines go through the same
+ * bank lines, duplicate check and possible-duplicate flags as a synced bank.
+ */
+export async function statementFeedFor(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    userId?: string | null;
+    accountId: string;
+    accountName: string;
+    currency: string;
+    firstDate: string;
+  },
+) {
+  const found = await findStatementFeed(tx, input.accountId);
+  if (found) {
+    // Uploads stopped earlier start again on the same feed.
+    if (!found.isActive) {
+      await tx.update(bankFeeds).set({ isActive: true }).where(eq(bankFeeds.id, found.feedId));
+    }
+    return found;
+  }
+  const connection = await createConnection(tx, {
+    orgId: input.orgId,
+    userId: input.userId,
+    provider: "csv",
+    name: input.accountName,
+    settings: {},
+  });
+  const feed = await addBankFeed(tx, {
+    orgId: input.orgId,
+    connectionId: connection.id,
+    externalId: "statement",
+    currency: input.currency,
+    name: input.accountName,
+    accountId: input.accountId,
+    syncFrom: input.firstDate,
+  });
+  return {
+    connectionId: connection.id,
+    feedId: feed.id,
+    currency: input.currency,
+    settings: {} as Record<string, unknown>,
+    isActive: true,
+  };
+}
+
+/** Remembers how an account's statements are written, and when one was last uploaded. */
+export async function recordStatementUpload(
+  tx: Transaction,
+  connectionId: string,
+  settings: Record<string, unknown>,
+) {
+  await tx
+    .update(connections)
+    .set({ settings, lastSyncedAt: new Date(), lastError: null, status: "active" })
     .where(eq(connections.id, connectionId));
 }
 

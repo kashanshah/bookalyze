@@ -304,6 +304,41 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
   await expect(page.getByText("Transaction removed")).toBeVisible();
   await expect(page.getByText("Supplies and shipping")).toHaveCount(0);
 
+  // Remove several at once, and select everything on the page.
+  for (const memo of ["Duplicate order A", "Duplicate order B"]) {
+    await page.getByRole("button", { name: "Add expense" }).click();
+    await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+    await page.locator("#tx-memo").fill(memo);
+    await choose(page.getByLabel("Category 1", { exact: true }), "6250 · Office supplies");
+    await page.getByLabel("Amount 1").fill("12");
+    await page.getByRole("button", { name: "Add transaction" }).click();
+    await expect(page.locator("li", { hasText: memo })).toBeVisible();
+  }
+  await page
+    .getByRole("checkbox", { name: "Select all on this page" })
+    .first()
+    .check({ force: true });
+  await expect(page.getByText(/^\d+ selected$/)).toBeVisible();
+  await page.getByRole("checkbox", { name: "Clear selection" }).first().uncheck({ force: true });
+  await expect(page.getByText(/^\d+ selected$/)).toHaveCount(0);
+  await page
+    .locator("li", { hasText: "Duplicate order A" })
+    .getByRole("checkbox")
+    .check({ force: true });
+  await page
+    .locator("li", { hasText: "Duplicate order B" })
+    .getByRole("checkbox")
+    .check({ force: true });
+  await page.getByRole("button", { name: "Remove 2 selected" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Remove 2" }).click();
+  await expect(page.getByText("2 transactions removed")).toBeVisible();
+  await expect(page.getByText("Duplicate order A")).toHaveCount(0);
+  await expect(page.getByText("Duplicate order B")).toHaveCount(0);
+
+  // Fewer per page.
+  await choose(page.getByLabel("Transactions per page"), "25");
+  await expect(page).toHaveURL(/per=25/);
+
   // One account at a time, with its balance: 5,000 + 850.
   await choose(page.getByLabel("Account", { exact: true }), "1010 · RBC Chequing");
   await expect(page.getByText("RBC Chequing balance")).toBeVisible();
@@ -819,13 +854,47 @@ test("banking: connect Wise, flag and merge duplicates, merge by hand, transfers
   await expect(page.getByText("Coffee entered twice")).toHaveCount(0);
   await expect(coffee).toHaveCount(1);
 
-  // Disconnecting deletes the token and keeps what was brought in.
+  // A statement file from any bank: columns matched once, flagged duplicates, nothing twice.
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+  await page.locator("#tx-memo").fill("Team lunch");
+  await choose(page.getByLabel("Category 1", { exact: true }), "6200 · Meals and entertainment");
+  await page.getByLabel("Amount 1").fill("23.45");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added")).toBeVisible();
   const transactionsUrl = page.url();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    new Date(),
+  );
+  const statement = {
+    name: "statement.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      `Date,Description,Withdrawals,Deposits\n${today},Restaurant downtown,23.45,\n${today},Customer payment,,310.00\n`,
+    ),
+  };
   await page.getByRole("link", { name: "Banking", exact: true }).click();
+  await page.getByRole("button", { name: "Upload a statement" }).click();
+  const upload = page.getByRole("dialog");
+  await choose(upload.locator("#statement-account"), "1010 · RBC Chequing");
+  await upload.getByLabel("Statement file").setInputFiles(statement);
+  await expect(upload.getByText("Customer payment")).toBeVisible();
+  await upload.getByRole("button", { name: "Bring in 2 transactions" }).click();
+  await expect(page.getByText(/2 new transactions to sort/)).toBeVisible();
+  await expect(page.getByText(/1 might be a duplicate/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /RBC Chequing · Statements/ })).toBeVisible();
+  // The second time, the columns are remembered and nothing is added again.
+  await page.getByRole("button", { name: "Upload statement" }).click();
+  await upload.getByLabel("Statement file").setInputFiles(statement);
+  await expect(upload.getByText(/the way you matched this account's statements/)).toBeVisible();
+  await upload.getByRole("button", { name: "Bring in 2 transactions" }).click();
+  await expect(page.getByText("Already in your books")).toBeVisible();
+
+  // Disconnecting deletes the token and keeps what was brought in.
   await page.getByRole("button", { name: "Disconnect" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Disconnect" }).click();
   await expect(page.getByText("Disconnected")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Connect Wise" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect Wise" })).toBeVisible();
   await page.goto(transactionsUrl);
   await expect(page.getByText("Converted 136.50 CAD to 100.00 USD")).toBeVisible();
 });

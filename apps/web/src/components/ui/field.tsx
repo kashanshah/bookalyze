@@ -19,7 +19,7 @@ export function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("grid content-start gap-2", className)}>
+    <div className={cn("grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-2", className)}>
       <Label htmlFor={htmlFor}>{label}</Label>
       {children}
       {error ? (

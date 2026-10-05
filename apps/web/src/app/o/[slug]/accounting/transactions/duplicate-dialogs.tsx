@@ -1,7 +1,7 @@
 "use client";
 
 import { formatMoney, mergeProblem } from "@bookalyze/core";
-import { ExternalLink, GitMerge, Split, X } from "lucide-react";
+import { ExternalLink, GitMerge, Split, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -17,7 +17,12 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
-import { acceptDuplicateAction, dismissDuplicateAction, mergeTransactionsAction } from "./actions";
+import {
+  acceptDuplicateAction,
+  dismissDuplicateAction,
+  mergeTransactionsAction,
+  removeTransactionsAction,
+} from "./actions";
 import type { TxFormContext, TxRow } from "./types";
 
 const entryNo = (number: string) => Number.parseInt(number.replace(/\D/g, ""), 10) || 0;
@@ -171,10 +176,10 @@ export function DuplicateReviewDialog({
 }
 
 /**
- * Appears while transactions are ticked. Merging needs exactly two with the same amount, bank
- * account and category; the bar says what's missing otherwise.
+ * Appears while transactions are ticked: remove them, or merge two. Merging needs exactly two
+ * with the same amount, bank account and category; the bar says what's missing otherwise.
  */
-export function MergeBar({
+export function SelectionBar({
   selected,
   ctx,
   onClear,
@@ -184,6 +189,7 @@ export function MergeBar({
   onClear: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [pending, start] = useTransition();
   const name = (id?: string) => (id ? (ctx.accountNames[id] ?? "Unknown account") : "—");
   if (!selected.length) return null;
@@ -191,6 +197,31 @@ export function MergeBar({
   const [a, b] = [...selected].sort((x, y) => entryNo(x.number) - entryNo(y.number));
   const problem =
     selected.length !== 2 || !a || !b ? "Pick two transactions to merge them." : mergeProblem(a, b);
+  const hint =
+    selected.length === 2
+      ? (problem ?? "Same amount, bank account and category: these can be merged.")
+      : "Remove them, or pick exactly two to merge.";
+
+  const remove = () =>
+    start(async () => {
+      const result = await removeTransactionsAction(
+        ctx.slug,
+        selected.map((r) => r.id),
+      );
+      if (!result.ok) return void toast.error(result.message);
+      setRemoving(false);
+      onClear();
+      const removed = `${result.removed} ${result.removed === 1 ? "transaction" : "transactions"} removed`;
+      if (result.kept) {
+        toast.warning(result.removed ? removed : "Nothing removed", {
+          description: `${result.kept} couldn't be: ${result.reasons[0] ?? ""}`,
+        });
+      } else {
+        toast.success(removed, {
+          description: "Each was reversed on its own date, so your history shows what happened.",
+        });
+      }
+    });
 
   const merge = () =>
     start(async () => {
@@ -207,13 +238,25 @@ export function MergeBar({
       <div className="fade-in-0 slide-in-from-bottom-4 fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-xl animate-in items-center gap-3 rounded-2xl border bg-card px-4 py-3 shadow-lg sm:px-5">
         <div className="min-w-0 flex-1">
           <p className="font-medium text-sm">{selected.length} selected</p>
-          <p className="line-clamp-2 text-muted-foreground text-xs">
-            {problem ?? "Same amount, bank account and category: these can be merged."}
-          </p>
+          <p className="line-clamp-2 text-muted-foreground text-xs">{hint}</p>
         </div>
-        <Button type="button" onClick={() => setConfirming(true)} disabled={Boolean(problem)}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setRemoving(true)}
+          aria-label={`Remove ${selected.length} selected`}
+        >
+          <Trash2 />
+          <span className="hidden sm:inline">Remove</span>
+        </Button>
+        <Button
+          type="button"
+          onClick={() => setConfirming(true)}
+          disabled={Boolean(problem)}
+          aria-label="Merge"
+        >
           <GitMerge />
-          Merge
+          <span className="hidden sm:inline">Merge</span>
         </Button>
         <Button
           type="button"
@@ -225,6 +268,29 @@ export function MergeBar({
           <X />
         </Button>
       </div>
+
+      <Dialog open={removing} onOpenChange={setRemoving}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Remove {selected.length} {selected.length === 1 ? "transaction" : "transactions"}?
+            </DialogTitle>
+            <DialogDescription>
+              Each one is reversed on its own date, so your reports change but the history keeps a
+              record. Transactions in a closed period or a completed reconciliation are left alone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRemoving(false)}>
+              Keep them
+            </Button>
+            <Button type="button" variant="destructive" onClick={remove} disabled={pending}>
+              {pending ? <Spinner /> : <Trash2 />}
+              Remove {selected.length}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirming && !problem} onOpenChange={setConfirming}>
         <DialogContent className="sm:max-w-2xl">

@@ -22,11 +22,14 @@ export function ConnectionActions({
   connectionId,
   name,
   canDisconnect,
+  uploads = false,
 }: {
   slug: string;
   connectionId: string;
   name: string;
   canDisconnect: boolean;
+  /** Statement uploads: nothing to sync, and nothing secret to delete. */
+  uploads?: boolean;
 }) {
   const [syncing, startSync] = useTransition();
   const [removing, startRemove] = useTransition();
@@ -45,32 +48,38 @@ export function ConnectionActions({
       const result = await disconnectAction(slug, connectionId);
       if (!result.ok) return void toast.error(result.message);
       setOpen(false);
-      toast.success("Disconnected", {
-        description: "The token was deleted. Transactions already brought in stay in your books.",
+      toast.success(uploads ? "Removed" : "Disconnected", {
+        description: uploads
+          ? "Transactions already brought in stay in your books."
+          : "The token was deleted. Transactions already brought in stay in your books.",
       });
     });
 
   return (
     <div className="flex flex-wrap gap-2">
-      <Button type="button" variant="outline" onClick={sync} disabled={syncing}>
-        {syncing ? <Spinner /> : <RefreshCw />}
-        {syncing ? "Syncing…" : "Sync now"}
-      </Button>
+      {uploads ? null : (
+        <Button type="button" variant="outline" onClick={sync} disabled={syncing}>
+          {syncing ? <Spinner /> : <RefreshCw />}
+          {syncing ? "Syncing…" : "Sync now"}
+        </Button>
+      )}
       {canDisconnect ? (
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button type="button" variant="ghost">
               <Unplug />
-              Disconnect
+              {uploads ? "Remove" : "Disconnect"}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Disconnect {name}?</DialogTitle>
+              <DialogTitle>
+                {uploads ? `Remove statement uploads for ${name}?` : `Disconnect ${name}?`}
+              </DialogTitle>
               <DialogDescription>
-                Bookalyze deletes the saved API token and stops syncing. Transactions already
-                brought in stay in your books, and you can connect again at any time without getting
-                duplicates.
+                {uploads
+                  ? "It disappears from this page. Transactions already brought in stay in your books, and uploading again later won't duplicate them."
+                  : "Bookalyze deletes the saved API token and stops syncing. Transactions already brought in stay in your books, and you can connect again at any time without getting duplicates."}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -79,7 +88,7 @@ export function ConnectionActions({
               </Button>
               <Button type="button" variant="destructive" onClick={disconnect} disabled={removing}>
                 {removing ? <Spinner /> : null}
-                Disconnect
+                {uploads ? "Remove" : "Disconnect"}
               </Button>
             </DialogFooter>
           </DialogContent>

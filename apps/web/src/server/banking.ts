@@ -39,6 +39,33 @@ export function sealConnectionSecret(orgId: string, connectionId: string, secret
 
 export type SyncSummary = ImportResult & { error: string | null };
 
+/**
+ * Bank of Canada rates for foreign-currency bank lines, fetched once for the whole range when any
+ * are missing (lines without a rate wait as pending otherwise).
+ */
+export async function ensureRates(
+  baseCurrency: string,
+  lines: readonly { currency: string; date: string }[],
+) {
+  const foreign = lines.filter((l) => l.currency !== baseCurrency);
+  if (!foreign.length) return;
+  const dates = foreign.map((l) => l.date).sort();
+  const first = dates[0] as string;
+  const last = dates.at(-1) as string;
+  const db = getDb();
+  let missing = false;
+  for (const c of new Set(foreign.map((l) => l.currency))) {
+    if ((await missingCadRates(db, baseCurrency, c, last)).length) missing = true;
+    if ((await missingCadRates(db, baseCurrency, c, first)).length) missing = true;
+  }
+  if (missing) {
+    const from = new Date(new Date(`${first}T00:00:00Z`).getTime() - 7 * DAY)
+      .toISOString()
+      .slice(0, 10);
+    await syncBankOfCanada(from, last).catch(() => 0);
+  }
+}
+
 type SyncContext = { orgId: string; userId: string | null };
 
 /** Syncs one connection. Errors are recorded on it and returned, not thrown. */
@@ -91,29 +118,7 @@ export async function syncConnection(ctx: SyncContext, connectionId: string): Pr
     error = e instanceof WiseError || e instanceof Error ? e.message : "The sync failed.";
   }
 
-  // Exchange rates for foreign-currency lines, fetched once for the whole range if any are missing.
-  const foreign = lines
-    .filter((l) => l.currency !== profile.baseCurrency)
-    .map((l) => l.date)
-    .sort();
-  if (foreign.length) {
-    const first = foreign[0] as string;
-    const last = foreign.at(-1) as string;
-    const currencies = [...new Set(lines.map((l) => l.currency))].filter(
-      (c) => c !== profile.baseCurrency,
-    );
-    let missing = false;
-    for (const c of currencies) {
-      if ((await missingCadRates(db, profile.baseCurrency, c, last)).length) missing = true;
-      if ((await missingCadRates(db, profile.baseCurrency, c, first)).length) missing = true;
-    }
-    if (missing) {
-      const from = new Date(new Date(`${first}T00:00:00Z`).getTime() - 7 * DAY)
-        .toISOString()
-        .slice(0, 10);
-      await syncBankOfCanada(from, last).catch(() => 0);
-    }
-  }
+  await ensureRates(profile.baseCurrency, lines);
 
   const result = await withOrg(db, ctx, async (tx) => {
     const imported = lines.length

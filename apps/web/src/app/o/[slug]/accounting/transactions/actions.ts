@@ -458,3 +458,53 @@ export async function mergeTransactionsAction(
   revalidate(slug);
   return { ok: true };
 }
+
+/**
+ * Removes several transactions (each reversed on its own date, like removing one). Those in a
+ * closed period or a completed reconciliation are left alone and reported.
+ */
+export async function removeTransactionsAction(
+  slug: string,
+  entryIds: string[],
+): Promise<
+  { ok: true; removed: number; kept: number; reasons: string[] } | { ok: false; message: string }
+> {
+  const ctx = await getAccountingContext(slug);
+  const parsed = z.array(idSchema).min(1).max(200).safeParse(entryIds);
+  if (!parsed.success) return { ok: false, message: "Pick up to 200 transactions to remove." };
+  let removed = 0;
+  let kept = 0;
+  const reasons = new Set<string>();
+  for (const entryId of new Set(parsed.data)) {
+    const editable = await loadEditable(ctx, entryId);
+    if ("error" in editable) {
+      kept++;
+      reasons.add(editable.error ?? "It couldn't be removed.");
+      continue;
+    }
+    try {
+      await inOrg(ctx, async (tx) => {
+        const reversal = await voidJournalEntry(tx, {
+          orgId: ctx.org.id,
+          userId: ctx.session.user.id,
+          entryId,
+        });
+        await audit(tx, {
+          orgId: ctx.org.id,
+          actorUserId: ctx.session.user.id,
+          action: "transaction.removed",
+          entityType: "journal_entry",
+          entityId: entryId,
+          after: { reversalId: reversal.id, bulk: true },
+        });
+      });
+      removed++;
+    } catch (error) {
+      if (!(error instanceof LedgerError)) throw error;
+      kept++;
+      reasons.add(error.message);
+    }
+  }
+  if (removed) revalidate(slug);
+  return { ok: true, removed, kept, reasons: [...reasons] };
+}

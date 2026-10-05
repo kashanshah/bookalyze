@@ -127,6 +127,13 @@
       "when": 1791157187183,
       "tag": "0017_bank_lines",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791165109858,
+      "tag": "0018_statement_uploads",
+      "breakpoints": true
     }
   ]
 }
