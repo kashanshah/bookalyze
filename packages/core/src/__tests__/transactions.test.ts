@@ -120,6 +120,52 @@ describe("transactions", () => {
     ).toBeNull();
   });
 
+  it("reads an Uncategorized stand-in as money out of an account nobody chose", () => {
+    const isPlaceholder = (id: string) => id === "unc-income" || id === "unc-expense";
+    expect(
+      describeTransaction(
+        [
+          { accountId: "unc-income", amount: "-90.39" },
+          { accountId: "fees", amount: "90.39" },
+        ],
+        isMoney,
+        isPlaceholder,
+      ),
+    ).toMatchObject({
+      kind: "withdrawal",
+      amount: "90.3900",
+      moneyAccountIds: [],
+      splits: [{ accountId: "fees", amount: "90.3900" }],
+      needsAccount: true,
+    });
+    // Both sides Uncategorized: the credit is the money that went out.
+    expect(
+      describeTransaction(
+        [
+          { accountId: "unc-income", amount: "-164.07" },
+          { accountId: "unc-expense", amount: "164.07" },
+        ],
+        isMoney,
+        isPlaceholder,
+      ),
+    ).toMatchObject({
+      kind: "withdrawal",
+      amount: "164.0700",
+      splits: [{ accountId: "unc-expense", amount: "164.0700" }],
+    });
+    // Without a stand-in, an entry that doesn't touch money still isn't a transaction.
+    expect(
+      describeTransaction(
+        [
+          { accountId: "rent", amount: "5" },
+          { accountId: "sales", amount: "-5" },
+        ],
+        isMoney,
+        isPlaceholder,
+      ),
+    ).toBeNull();
+  });
+
   it("leaves the money line empty when splits have no amount yet", () => {
     const lines = transactionLines({
       kind: "withdrawal",

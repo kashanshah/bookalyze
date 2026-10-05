@@ -958,6 +958,49 @@ test("rules: categorize what's uncategorized, then new bank transactions as they
   await expect(page.getByLabel("When the description contains")).toHaveValue("Team lunch");
 });
 
+test("no bank account: choose it on Transactions; delete a journal entry", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  const postEntry = async (memo: string, debit: string, credit: string, amount: string) => {
+    await page.getByRole("link", { name: "Journal entries", exact: true }).click();
+    await page
+      .getByRole("link", { name: /New (journal )?entry/ })
+      .first()
+      .click();
+    await page.getByLabel("Description", { exact: true }).fill(memo);
+    await choose(page.getByLabel("Account for line 1"), debit);
+    await page.getByLabel("Debit").nth(0).fill(amount);
+    await choose(page.getByLabel("Account for line 2"), credit);
+    await page.getByLabel("Credit").nth(1).fill(amount);
+    await page.getByRole("button", { name: "Post entry" }).click();
+    await expect(page.getByRole("heading", { name: memo })).toBeVisible();
+  };
+  // Like a bill imported against Wave's "Unknown Account": no bank side, so it needs one.
+  await postEntry("Insurance bill", "6150 · Insurance", "4990 · Uncategorized income", "75");
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await expect(page.getByText(/(doesn't|don't) say which account paid/)).toBeVisible();
+  await page.getByRole("button", { name: "Show only these" }).last().click();
+  const bill = page.locator("li", { hasText: "Insurance bill" });
+  await expect(bill).toContainText("Choose account");
+  await bill.getByText("Insurance bill").click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/never said which account the money went through/)).toBeVisible();
+  await choose(dialog.locator("#tx-money"), "1010 · RBC Chequing");
+  await dialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Transaction updated")).toBeVisible();
+  await choose(page.getByRole("combobox", { name: "Status" }), "Reviewed or not");
+  await expect(page.locator("li", { hasText: "Insurance bill" })).toContainText("RBC Chequing");
+  await expect(page.locator("li", { hasText: "Insurance bill" })).not.toContainText(
+    "Choose account",
+  );
+
+  // Journal entries delete like anything else.
+  await postEntry("Posted by mistake", "6150 · Insurance", "1010 · RBC Chequing", "10");
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByText(/deleted/).first()).toBeVisible();
+  await expect(page).toHaveURL(/\/accounting\/journal$/);
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

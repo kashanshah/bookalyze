@@ -8,6 +8,7 @@ import {
 } from "@bookalyze/core";
 import {
   contactOptions,
+  countNeedsAccount,
   countOpenDuplicates,
   formatEntryNumber,
   listDuplicateSuggestions,
@@ -31,7 +32,7 @@ import type { TxFormContext, TxRow } from "./types";
 export const metadata: Metadata = { title: "Transactions" };
 
 const PER_PAGE = [25, 50, 100];
-const STATUSES = ["reviewed", "unreviewed", "duplicates"] as const;
+const STATUSES = ["reviewed", "unreviewed", "duplicates", "no_account"] as const;
 const ORIGINS: Record<string, string> = {
   manual: "Entered by hand",
   bank_import: "From your bank",
@@ -77,40 +78,59 @@ export default async function TransactionsPage({
   const q = (sp.q ?? "").slice(0, 100);
   const contact = sp.contact && UUID.test(sp.contact) ? sp.contact : "";
 
-  const { result, hasAny, balance, contacts, taxRates, flags, duplicateCount, rules } = await inOrg(
-    ctx,
-    async (tx) => {
-      const contacts = await contactOptions(tx, { includeArchived: true });
-      const taxRates = await listTaxRates(tx, { includeArchived: true });
-      const result = await listTransactions(tx, {
-        accountId: account || null,
-        contactId: contact || null,
-        kind,
-        reviewed: status === "reviewed" ? true : status === "unreviewed" ? false : null,
-        possibleDuplicates: status === "duplicates",
-        search: q || null,
-        limit: perPage,
-        offset: (page - 1) * perPage,
-      });
-      const hasAny =
-        result.total > 0 || (await listTransactions(tx, { limit: 1, offset: 0 })).total > 0;
-      const balance = account
-        ? ((
-            await tx
-              .select({ total: sql<string>`coalesce(sum(${schema.journalLines.amount}), 0)::text` })
-              .from(schema.journalLines)
-              .where(eq(schema.journalLines.accountId, account))
-          )[0]?.total ?? "0")
-        : null;
-      const flags = await listDuplicateSuggestions(tx, { entryIds: result.rows.map((r) => r.id) });
-      const duplicateCount = await countOpenDuplicates(tx);
-      const rules = await ruleNamesFor(
-        tx,
-        result.rows.map((r) => r.id),
-      );
-      return { result, hasAny, balance, contacts, taxRates, flags, duplicateCount, rules };
-    },
-  );
+  const {
+    result,
+    hasAny,
+    balance,
+    contacts,
+    taxRates,
+    flags,
+    duplicateCount,
+    needsAccountCount,
+    rules,
+  } = await inOrg(ctx, async (tx) => {
+    const contacts = await contactOptions(tx, { includeArchived: true });
+    const taxRates = await listTaxRates(tx, { includeArchived: true });
+    const result = await listTransactions(tx, {
+      accountId: account || null,
+      contactId: contact || null,
+      kind,
+      reviewed: status === "reviewed" ? true : status === "unreviewed" ? false : null,
+      possibleDuplicates: status === "duplicates",
+      needsAccount: status === "no_account",
+      search: q || null,
+      limit: perPage,
+      offset: (page - 1) * perPage,
+    });
+    const hasAny =
+      result.total > 0 || (await listTransactions(tx, { limit: 1, offset: 0 })).total > 0;
+    const balance = account
+      ? ((
+          await tx
+            .select({ total: sql<string>`coalesce(sum(${schema.journalLines.amount}), 0)::text` })
+            .from(schema.journalLines)
+            .where(eq(schema.journalLines.accountId, account))
+        )[0]?.total ?? "0")
+      : null;
+    const flags = await listDuplicateSuggestions(tx, { entryIds: result.rows.map((r) => r.id) });
+    const duplicateCount = await countOpenDuplicates(tx);
+    const needsAccountCount = await countNeedsAccount(tx);
+    const rules = await ruleNamesFor(
+      tx,
+      result.rows.map((r) => r.id),
+    );
+    return {
+      result,
+      hasAny,
+      balance,
+      contacts,
+      taxRates,
+      flags,
+      duplicateCount,
+      needsAccountCount,
+      rules,
+    };
+  });
   const flagOf = new Map(flags.map((f) => [f.entryId, f]));
 
   const categoryAccounts = accounts.filter((a) => !isMoneyAccountSubtype(a.subtype));
@@ -161,6 +181,7 @@ export default async function TransactionsPage({
       toAccountId: r.view.toAccountId,
       receivedAmount: r.view.receivedAmount,
       receivedCurrency: r.view.receivedCurrency,
+      ...(r.view.needsAccount ? { needsAccount: true } : {}),
       splits: r.view.splits.map((s) => ({
         accountId: s.accountId,
         amount: s.amount,
@@ -254,6 +275,7 @@ export default async function TransactionsPage({
           ctx={ctxForForms}
           hasAny={hasAny}
           duplicateCount={duplicateCount}
+          needsAccountCount={needsAccountCount}
           footer={
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-muted-foreground">

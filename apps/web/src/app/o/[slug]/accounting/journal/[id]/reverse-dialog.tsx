@@ -45,7 +45,7 @@ export function ReverseDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline">
+        <Button variant="ghost" title="For accountants: cancel it out on a date you choose">
           <Undo2 />
           Reverse
         </Button>

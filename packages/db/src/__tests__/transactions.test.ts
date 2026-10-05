@@ -1,9 +1,11 @@
 import { prepareJournalEntry, type TransactionInput, transactionLines } from "@bookalyze/core";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
 import { createDefaultChart, postJournalEntry } from "../ledger";
 import * as schema from "../schema";
 import {
+  countNeedsAccount,
   listTransactions,
   replaceJournalEntry,
   setTransactionReviewed,
@@ -202,5 +204,90 @@ describe("transactions", () => {
       (await scoped((tx) => listTransactions(tx, { limit: 50, offset: 0, search: "Card payment" })))
         .total,
     ).toBe(0);
+  });
+
+  it("lists entries whose account was never chosen, until one is chosen", async () => {
+    const all = await scoped((tx) => tx.select().from(schema.accounts));
+    const byId = new Map(all.map((a) => [a.id, a]));
+    const unknown = all.find((a) => a.systemKey === "uncategorized_income");
+    const fees = all.find((a) => a.subtype === "operating_expense" && !a.systemKey);
+    if (!unknown || !fees) throw new Error("Chart is missing accounts");
+    // A bill imported against "Unknown Account", mapped to Uncategorized income: no bank side.
+    const prepared = prepareJournalEntry(
+      {
+        currency: "CAD",
+        baseCurrency: "CAD",
+        lines: [
+          { accountId: fees.id, debit: "90.39" },
+          { accountId: unknown.id, credit: "90.39" },
+        ],
+      },
+      byId,
+    );
+    if (!prepared.ok) throw new Error(JSON.stringify(prepared.errors));
+    const bill = await scoped((tx) =>
+      postJournalEntry(tx, {
+        orgId,
+        date: "2026-09-01",
+        memo: "City permit",
+        entry: prepared.entry,
+      }),
+    );
+
+    const { rows } = await scoped((tx) =>
+      listTransactions(tx, { needsAccount: true, limit: 10, offset: 0 }),
+    );
+    expect(rows.map((r) => r.id)).toEqual([bill.id]);
+    expect(rows[0]?.view).toMatchObject({
+      kind: "withdrawal",
+      amount: "90.3900",
+      moneyAccountIds: [],
+      needsAccount: true,
+    });
+    expect(await scoped((tx) => countNeedsAccount(tx))).toBe(1);
+    const out = await scoped((tx) =>
+      listTransactions(tx, { kind: "withdrawal", search: "permit", limit: 10, offset: 0 }),
+    );
+    expect(out.rows.map((r) => r.id)).toEqual([bill.id]);
+    const into = await scoped((tx) =>
+      listTransactions(tx, { kind: "deposit", search: "permit", limit: 10, offset: 0 }),
+    );
+    expect(into.rows).toEqual([]);
+
+    // Choosing the account that paid turns it into an ordinary transaction.
+    const fixed = prepareJournalEntry(
+      {
+        currency: "CAD",
+        baseCurrency: "CAD",
+        lines: transactionLines(
+          {
+            kind: "withdrawal",
+            moneyAccountId: code["1000"] as string,
+            splits: [{ accountId: fees.id, amount: "90.39" }],
+          },
+          "City permit",
+        ),
+      },
+      byId,
+    );
+    if (!fixed.ok) throw new Error(JSON.stringify(fixed.errors));
+    const next = await scoped((tx) =>
+      replaceJournalEntry(tx, {
+        orgId,
+        entryId: bill.id,
+        date: "2026-09-01",
+        memo: "City permit",
+        entry: fixed.entry,
+      }),
+    );
+    expect(await scoped((tx) => countNeedsAccount(tx))).toBe(0);
+    const after = await scoped((tx) =>
+      listTransactions(tx, { search: "permit", limit: 10, offset: 0 }),
+    );
+    expect(after.rows.map((r) => [r.id, r.view.needsAccount])).toEqual([[next.id, undefined]]);
+    const [original] = await scoped((tx) =>
+      tx.select().from(schema.journalEntries).where(eq(schema.journalEntries.id, bill.id)),
+    );
+    expect(original?.reversedByEntryId).not.toBeNull();
   });
 });

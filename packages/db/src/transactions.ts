@@ -1,6 +1,7 @@
 import {
   describeTransaction,
   MONEY_ACCOUNT_SUBTYPES,
+  PLACEHOLDER_ACCOUNT_SUBTYPES,
   type PreparedEntry,
   type TransactionKind,
   type TransactionView,
@@ -15,10 +16,12 @@ import { reconciliationLines, reconciliations } from "./schema/reconciliation";
 
 /**
  * The Transactions screen's queries and writes. A transaction is any current journal entry
- * (not reversed, not itself a reversal) with a line on a money account.
+ * (not reversed, not itself a reversal) with a line on a money account, or with an Uncategorized
+ * line standing in for one nobody chose (see `describeTransaction` in core).
  */
 
 const moneySubtypes = sql.raw(MONEY_ACCOUNT_SUBTYPES.map((s) => `'${s}'`).join(", "));
+const placeholderSubtypes = sql.raw(PLACEHOLDER_ACCOUNT_SUBTYPES.map((s) => `'${s}'`).join(", "));
 
 /** True when the entry has a line on an account matching `accountCondition`. */
 function hasLine(accountCondition: SQL): SQL {
@@ -31,6 +34,23 @@ function hasLine(accountCondition: SQL): SQL {
 
 const touchesMoney = hasLine(sql`a.subtype in (${moneySubtypes})`);
 const touchesCategory = hasLine(sql`a.subtype not in (${moneySubtypes})`);
+/** No money account, but an Uncategorized line standing in for it: the account wasn't chosen. */
+const needsAccountSql = sql`(not ${touchesMoney} and ${hasLine(sql`a.subtype in (${placeholderSubtypes})`)})`;
+
+/** Current entries that don't say which bank, card or cash account the money moved through. */
+export async function countNeedsAccount(tx: Transaction): Promise<number> {
+  const [row] = await tx
+    .select({ n: count() })
+    .from(journalEntries)
+    .where(
+      and(
+        isNull(journalEntries.reversedByEntryId),
+        isNull(journalEntries.reversesEntryId),
+        needsAccountSql,
+      ),
+    );
+  return row?.n ?? 0;
+}
 
 export type TransactionFilters = {
   /** Only transactions touching this account. */
@@ -41,6 +61,8 @@ export type TransactionFilters = {
   reviewed?: boolean | null;
   /** Only transactions flagged as possibly a copy of another (see duplicates.ts). */
   possibleDuplicates?: boolean;
+  /** Only transactions whose bank, card or cash account was never chosen. */
+  needsAccount?: boolean;
   search?: string | null;
   limit: number;
   offset: number;
@@ -78,7 +100,7 @@ export async function listTransactions(
   const conditions: SQL[] = [
     isNull(journalEntries.reversedByEntryId),
     isNull(journalEntries.reversesEntryId),
-    touchesMoney,
+    filters.needsAccount ? needsAccountSql : sql`(${touchesMoney} or ${needsAccountSql})`,
   ];
   if (filters.accountId) {
     conditions.push(
@@ -92,7 +114,16 @@ export async function listTransactions(
     const net = sql`(select coalesce(sum(l.amount), 0) from ${journalLines} l
       join ${accounts} a on a.id = l.account_id
       where l.journal_entry_id = ${journalEntries.id} and a.subtype in (${moneySubtypes}))`;
-    conditions.push(filters.kind === "deposit" ? sql`${net} >= 0` : sql`${net} < 0`);
+    // Without a money account, the Uncategorized stand-in says which way the money went (all
+    // Uncategorized nets to zero, which core reads as money out).
+    const standIn = sql`(select coalesce(sum(l.amount), 0) from ${journalLines} l
+      join ${accounts} a on a.id = l.account_id
+      where l.journal_entry_id = ${journalEntries.id} and a.subtype in (${placeholderSubtypes}))`;
+    conditions.push(
+      filters.kind === "deposit"
+        ? sql`(case when ${touchesMoney} then ${net} >= 0 else ${standIn} > 0 end)`
+        : sql`(case when ${touchesMoney} then ${net} < 0 else ${standIn} <= 0 end)`,
+    );
   }
   const reviewedSql = sql`exists (select 1 from ${transactionReviews} r where r.journal_entry_id = ${journalEntries.id})`;
   if (filters.reviewed === true) conditions.push(reviewedSql);
@@ -158,11 +189,10 @@ export async function listTransactions(
       ),
     )
     .orderBy(journalLines.lineNo);
-  const moneyIds = new Set(
-    lines
-      .filter((l) => (MONEY_ACCOUNT_SUBTYPES as readonly string[]).includes(l.subtype))
-      .map((l) => l.accountId),
-  );
+  const idsOf = (subtypes: readonly string[]) =>
+    new Set(lines.filter((l) => subtypes.includes(l.subtype)).map((l) => l.accountId));
+  const moneyIds = idsOf(MONEY_ACCOUNT_SUBTYPES);
+  const placeholderIds = idsOf(PLACEHOLDER_ACCOUNT_SUBTYPES);
   const byEntry = new Map<string, typeof lines>();
   for (const line of lines) byEntry.set(line.entryId, [...(byEntry.get(line.entryId) ?? []), line]);
 
@@ -182,7 +212,11 @@ export async function listTransactions(
         taxRateId,
       }),
     );
-    const view = describeTransaction(entryLines, (id) => moneyIds.has(id));
+    const view = describeTransaction(
+      entryLines,
+      (id) => moneyIds.has(id),
+      (id) => placeholderIds.has(id),
+    );
     if (view) {
       rows.push({
         ...entry,
