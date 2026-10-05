@@ -518,6 +518,46 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   (`deleteAttachmentsAction`, 200 per request; the inbox sends bigger selections in batches; files
   attached to a transaction are skipped and counted).
 
+
+### Phase 2, slice 4: transfer matching
+
+- **Suggested pairs:** money out of one bank/card/cash account and money into another, within
+  `TRANSFER_WINDOW_DAYS` (5), both uncategorized (one money line, every other line on an
+  Uncategorized account). Same currency: exact amount. Different currencies: main-currency values
+  within 3% (`TRANSFER_FX_TOLERANCE_BP`). Each transaction pairs once, exact and closest first
+  (`pairTransfers`, core `accounting/transfer-match.ts`). Found on the fly on page load
+  (`suggestTransfers`, db `transfers.ts`, newest 3,000 candidates); nothing stored until someone
+  decides.
+- **Transactions screen:** a banner ("n possible transfers", "Show only these" = status
+  `transfers`), a strip on each side ("Possible transfer to/from X") opening a review dialog:
+  Match as transfer, or Not a transfer. Ticking two shows **Match** instead of Merge when
+  `transferMatchProblem` allows (one out, one in, different accounts, same amount in one currency).
+- **Matching** (`matchTransfer`): reverses both on their own dates and posts one transfer on the
+  date the money left (`prepareTransfer`; between currencies each side keeps its amount, the main
+  value from the side already in it or the sending side's recorded rate). Bank links, open
+  duplicate flags and receipts move to the transfer. `transfer_matches` (migration
+  `0022_transfer_matches`) records it: `matched` (with `transfer_entry_id`), `dismissed`, or
+  `unmatched`; turned-down pairs aren't suggested again (ids follow edits in `carryEntryLinks`).
+- **Unmatch** (button in the transaction dialog): reverses the transfer, reposts both originals
+  as they were (same source and import ID, receipts copied back), bank lines go back by sign.
+- **Editing a matched transfer** into income or an expense: `replaceJournalEntry` calls
+  `followTransferEdit`, which reposts the side the new entry no longer touches (with its bank
+  line), so nothing the bank sent goes missing. Removing a matched transfer removes both.
+
+
+### Phase 2, slice 5: rule suggestions
+
+- A payee categorized the same way by hand at least 3 times in the last year (80%+ to one
+  category, same direction) is suggested as a rule, unless a rule already covers it or someone
+  turned it down. Payee = up to three words in a row from the bank text, minus reference numbers
+  and filler ("POS PURCHASE BELL CANADA 0423" → "bell canada"), so it's always found as-is by
+  `ruleMatches`. Core `banking/rule-suggestions.ts` (`payeeKey`, `suggestRules`); db
+  `suggestedRules` (learns from entries with one money line and one non-Uncategorized category,
+  not categorized by a rule; counts what's waiting uncategorized) and `dismissRuleSuggestion`
+  (`rule_suggestion_dismissals`, migration `0023_rule_suggestions`).
+- Rules page: "Suggested for you" cards ("Make this rule" opens the rule form filled in; X turns
+  it down). Transactions shows a "n rules suggested" banner linking there.
+
 ---
 
 ## 3. Next up (in order)

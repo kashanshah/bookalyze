@@ -167,6 +167,19 @@ export async function carryEntryLinks(
     .update(bankLines)
     .set({ journalEntryId: input.to })
     .where(eq(bankLines.journalEntryId, input.from));
+  // A pair turned down as a transfer stays turned down (a matched one follows in transfers.ts).
+  for (const side of ["out_entry_id", "in_entry_id"] as const) {
+    const column = sql.raw(side);
+    const other = sql.raw(side === "out_entry_id" ? "in_entry_id" : "out_entry_id");
+    await tx.execute(sql`
+      delete from transfer_matches t where t.${column} = ${input.from} and t.status <> 'matched'
+        and exists (select 1 from transfer_matches u
+          where u.${column} = ${input.to} and u.${other} = t.${other})`);
+    await tx.execute(sql`
+      update transfer_matches set ${column} = ${input.to}, updated_at = now()
+      where ${column} = ${input.from} and status <> 'matched'
+        and ${other} <> ${input.to}`);
+  }
   const open = await tx
     .select()
     .from(duplicateSuggestions)

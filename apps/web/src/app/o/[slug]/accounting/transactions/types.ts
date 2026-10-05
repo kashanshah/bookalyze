@@ -41,6 +41,22 @@ export type TxRow = {
   splits: { accountId: string; amount: string; description?: string; taxRateId?: string }[];
   /** No bank, card or cash account was ever chosen (an Uncategorized line stands in for it). */
   needsAccount?: boolean;
+  /** A transfer made by matching two bank transactions (so it can be unmatched). */
+  matchedTransfer?: boolean;
+  /** Looks like one side of a transfer: money out of one account and into another. */
+  transfer?: {
+    outId: string;
+    inId: string;
+    other: {
+      id: string;
+      number: string;
+      date: string;
+      memo: string | null;
+      accountId: string;
+      amount: string;
+      currency: string;
+    };
+  };
   /** The words of the rule that categorized it, if one did. */
   rule?: string;
   /** Flagged as possibly a copy of a transaction already in the books. */

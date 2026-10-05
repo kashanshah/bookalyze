@@ -333,3 +333,61 @@ export const duplicateSuggestions = pgTable(
     tenantIsolationPolicy("duplicate_suggestions", t.organizationId),
   ],
 );
+
+export const TRANSFER_MATCH_STATUSES = ["matched", "dismissed", "unmatched"] as const;
+export type TransferMatchStatus = (typeof TRANSFER_MATCH_STATUSES)[number];
+
+/**
+ * Two transactions, money out of one account and money into another, seen as one transfer:
+ * - `matched`: both were reversed and `transfer_entry_id` stands for them (it follows edits);
+ * - `dismissed`: someone said they aren't a transfer, so the pair isn't suggested again;
+ * - `unmatched`: a match that was undone; the two sides were posted again (`out_entry_id` and
+ *   `in_entry_id` then point at the new ones, so they aren't suggested again either).
+ */
+export const transferMatches = pgTable(
+  "transfer_matches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    outEntryId: uuid("out_entry_id").notNull(),
+    inEntryId: uuid("in_entry_id").notNull(),
+    transferEntryId: uuid("transfer_entry_id"),
+    status: text("status", { enum: TRANSFER_MATCH_STATUSES }).notNull(),
+    decidedBy: uuid("decided_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("transfer_matches_pair_key").on(t.organizationId, t.outEntryId, t.inEntryId),
+    index("transfer_matches_out_idx").on(t.outEntryId),
+    index("transfer_matches_in_idx").on(t.inEntryId),
+    index("transfer_matches_transfer_idx").on(t.transferEntryId),
+    foreignKey({
+      name: "transfer_matches_out_fk",
+      columns: [t.organizationId, t.outEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    foreignKey({
+      name: "transfer_matches_in_fk",
+      columns: [t.organizationId, t.inEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    foreignKey({
+      name: "transfer_matches_transfer_fk",
+      columns: [t.organizationId, t.transferEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    check(
+      "transfer_matches_status_valid",
+      sql`${t.status} in (${inList(TRANSFER_MATCH_STATUSES)})`,
+    ),
+    check("transfer_matches_distinct", sql`${t.outEntryId} <> ${t.inEntryId}`),
+    check(
+      "transfer_matches_transfer_when_matched",
+      sql`(${t.status} = 'matched') = (${t.transferEntryId} is not null)`,
+    ),
+    tenantIsolationPolicy("transfer_matches", t.organizationId),
+  ],
+);

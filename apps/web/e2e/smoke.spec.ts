@@ -1015,6 +1015,104 @@ test("no bank account: choose it on Transactions; delete a journal entry", async
   await expect(page).toHaveURL(/\/accounting\/journal$/);
 });
 
+test("transfers: match a suggested pair, unmatch it, match two by hand", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  const add = async (
+    kind: "income" | "expense",
+    account: string,
+    memo: string,
+    category: string,
+  ) => {
+    await page.getByRole("button", { name: `Add ${kind}` }).click();
+    await choose(page.locator("#tx-money"), account);
+    await page.locator("#tx-memo").fill(memo);
+    await choose(page.getByLabel("Category 1", { exact: true }), category);
+    await page.getByLabel("Amount 1").fill("250.37");
+    await page.getByRole("button", { name: "Add transaction" }).click();
+    await expect(page.getByText("Transaction added")).toBeVisible();
+  };
+  // Cash taken out of the bank and put in the cash box: two uncategorized transactions.
+  await add("expense", "1010 · RBC Chequing", "ATM withdrawal", "6990 · Uncategorized expense");
+  await add("income", "1000 · Cash on hand", "Cash float", "4990 · Uncategorized income");
+
+  await expect(page.getByText(/possible transfers? between your accounts/)).toBeVisible();
+  const atm = page.locator("li", { hasText: "ATM withdrawal" });
+  await expect(atm.getByText("Possible transfer to Cash on hand")).toBeVisible();
+  await atm.getByText("Possible transfer to Cash on hand").click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Possible transfer", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Match as transfer" }).click();
+  await expect(page.getByText("Matched as a transfer", { exact: true })).toBeVisible();
+  await expect(page.locator("li", { hasText: "ATM withdrawal" })).toContainText(
+    "RBC Chequing → Cash on hand",
+  );
+  await expect(page.locator("li", { hasText: "Cash float" })).toHaveCount(0);
+
+  // Unmatching brings both back, and they aren't suggested together again.
+  await page.locator("li", { hasText: "ATM withdrawal" }).getByText("ATM withdrawal").click();
+  await page.getByRole("button", { name: "Unmatch" }).click();
+  await expect(page.getByText("Unmatched", { exact: true })).toBeVisible();
+  await expect(page.locator("li", { hasText: "Cash float" })).toBeVisible();
+  await expect(page.locator("li", { hasText: "ATM withdrawal" })).not.toContainText(
+    "Possible transfer",
+  );
+
+  // Picked by hand: tick both, then Match.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page
+    .locator("li", { hasText: "ATM withdrawal" })
+    .getByLabel(/^Select/)
+    .check({ force: true });
+  await page
+    .locator("li", { hasText: "Cash float" })
+    .getByLabel(/^Select/)
+    .check({ force: true });
+  await expect(page.getByText(/can be matched as a transfer/)).toBeVisible();
+  await page.getByRole("button", { name: "Match as transfer" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Match as transfer" }).click();
+  await expect(page.getByText("Matched as a transfer", { exact: true })).toBeVisible();
+  await expect(page.locator("li", { hasText: "ATM withdrawal" })).toContainText(
+    "RBC Chequing → Cash on hand",
+  );
+});
+
+test("rule suggestions: a payee categorized three times by hand becomes a rule", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  for (const amount of ["15.99", "15.99", "17.99"]) {
+    await page.getByRole("button", { name: "Add expense" }).click();
+    await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+    await page.locator("#tx-memo").fill("NETFLIX.COM 866-579");
+    await choose(
+      page.getByLabel("Category 1", { exact: true }),
+      "6100 · Software and subscriptions",
+    );
+    await page.getByLabel("Amount 1").fill(amount);
+    await page.getByRole("button", { name: "Add transaction" }).click();
+    await expect(page.getByText("Transaction added").first()).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+  await page.reload();
+  await expect(page.getByText(/rules? suggested/)).toBeVisible();
+  await page.getByRole("link", { name: "See suggestions" }).click();
+
+  const card = page.getByRole("listitem").filter({ hasText: "“netflix.com”" });
+  await expect(card).toContainText("Software and subscriptions");
+  await expect(card).toContainText("You categorized 3 like this");
+  await card.getByRole("button", { name: "Make this rule" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("When the description contains")).toHaveValue("netflix.com");
+  await dialog.getByRole("button", { name: "Add rule" }).click();
+  await expect(page.getByText("Rule added")).toBeVisible();
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "Make this rule" }).filter({ hasText: "netflix" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("“netflix.com”")).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

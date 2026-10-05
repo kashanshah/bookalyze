@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Lock,
   Plus,
+  Split as SplitIcon,
   Trash2,
   Wand2,
   X,
@@ -44,7 +45,12 @@ import type { AttachmentSummary } from "@/lib/attachments";
 import { formatDate, nextDay } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { entryAttachmentsAction } from "../receipts/actions";
-import { deleteTransactionAction, saveTransactionAction, type TransactionErrors } from "./actions";
+import {
+  deleteTransactionAction,
+  saveTransactionAction,
+  type TransactionErrors,
+  unmatchTransferAction,
+} from "./actions";
 import { ContactPicker } from "./contact-picker";
 import type { TxFormContext, TxRow } from "./types";
 
@@ -271,6 +277,20 @@ function TransactionForm({
     });
   }
 
+  function unmatch() {
+    if (!row) return;
+    startTransition(async () => {
+      const result = await unmatchTransferAction(ctx.slug, row.id);
+      if (result.ok) {
+        toast.success("Unmatched", {
+          description:
+            "Both bank transactions are back, uncategorized, and won't be suggested together again.",
+        });
+        onDone();
+      } else toast.error(result.message);
+    });
+  }
+
   function remove() {
     if (!row) return;
     if (!confirmDelete) return setConfirmDelete(true);
@@ -329,9 +349,11 @@ function TransactionForm({
       <DialogHeader>
         <DialogTitle>{row ? "Edit transaction" : "Add a transaction"}</DialogTitle>
         <DialogDescription>
-          {row
-            ? `Saving replaces ${row.number} with a corrected entry. The original stays in the journal.`
-            : "Record money that came in, went out, or moved between your accounts."}
+          {row?.matchedTransfer
+            ? "Matched from two bank transactions. If you make it income or an expense instead, the other account's transaction comes back on its own."
+            : row
+              ? `Saving replaces ${row.number} with a corrected entry. The original stays in the journal.`
+              : "Record money that came in, went out, or moved between your accounts."}
         </DialogDescription>
       </DialogHeader>
 
@@ -711,6 +733,12 @@ function TransactionForm({
             >
               <Trash2 />
               {confirmDelete ? "Click again to remove" : "Remove"}
+            </Button>
+          ) : null}
+          {row?.matchedTransfer && !readOnly ? (
+            <Button type="button" variant="ghost" onClick={unmatch} disabled={pending}>
+              <SplitIcon />
+              Unmatch
             </Button>
           ) : null}
           {row && ctx.canMakeRules && kind !== "transfer" && !split && splits[0]?.accountId ? (

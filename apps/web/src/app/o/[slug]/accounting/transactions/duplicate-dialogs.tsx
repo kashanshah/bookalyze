@@ -1,7 +1,7 @@
 "use client";
 
-import { formatMoney, mergeProblem } from "@bookalyze/core";
-import { ExternalLink, GitMerge, Split, Trash2, X } from "lucide-react";
+import { formatMoney, mergeProblem, transferMatchProblem } from "@bookalyze/core";
+import { ArrowRightLeft, ExternalLink, GitMerge, Split, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import {
   acceptDuplicateAction,
   dismissDuplicateAction,
+  matchTransferAction,
   mergeTransactionsAction,
   removeTransactionsAction,
 } from "./actions";
@@ -27,7 +28,7 @@ import type { TxFormContext, TxRow } from "./types";
 
 const entryNo = (number: string) => Number.parseInt(number.replace(/\D/g, ""), 10) || 0;
 
-function signedAmount(row: TxRow, locale: string) {
+export function signedAmount(row: TxRow, locale: string) {
   const money = formatMoney(row.amount, row.currency, locale);
   return row.kind === "deposit" ? `+${money}` : row.kind === "withdrawal" ? `−${money}` : money;
 }
@@ -43,7 +44,7 @@ function category(row: TxRow, name: (id?: string) => string) {
   return row.splits.length > 1 ? `Split (${row.splits.length})` : name(row.splits[0]?.accountId);
 }
 
-function Side({
+export function Side({
   label,
   title,
   lines,
@@ -189,6 +190,7 @@ export function SelectionBar({
   onClear: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [matching, setMatching] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [pending, start] = useTransition();
   const name = (id?: string) => (id ? (ctx.accountNames[id] ?? "Unknown account") : "—");
@@ -197,10 +199,18 @@ export function SelectionBar({
   const [a, b] = [...selected].sort((x, y) => entryNo(x.number) - entryNo(y.number));
   const problem =
     selected.length !== 2 || !a || !b ? "Pick two transactions to merge them." : mergeProblem(a, b);
+  const transferProblem =
+    selected.length !== 2 || !a || !b ? "Pick two transactions." : transferMatchProblem(a, b);
+  // For a transfer: the money out first.
+  const [sent, received] = a?.kind === "deposit" ? [b, a] : [a, b];
   const hint =
-    selected.length === 2
-      ? (problem ?? "Same amount, bank account and category: these can be merged.")
-      : "Remove them, or pick exactly two to merge.";
+    selected.length !== 2
+      ? "Remove them, or pick exactly two to merge or match as a transfer."
+      : !problem
+        ? "Same amount, bank account and category: these can be merged."
+        : !transferProblem
+          ? "Money out of one account and into another: these can be matched as a transfer."
+          : problem;
 
   const remove = () =>
     start(async () => {
@@ -221,6 +231,18 @@ export function SelectionBar({
           description: "Each was reversed on its own date, so your history shows what happened.",
         });
       }
+    });
+
+  const match = () =>
+    start(async () => {
+      if (!a || !b) return;
+      const result = await matchTransferAction(ctx.slug, { entryIds: [a.id, b.id] });
+      if (!result.ok) return void toast.error(result.message);
+      toast.success("Matched as a transfer", {
+        description: "The two are now one transfer between your accounts.",
+      });
+      setMatching(false);
+      onClear();
     });
 
   const merge = () =>
@@ -249,15 +271,22 @@ export function SelectionBar({
           <Trash2 />
           <span className="hidden sm:inline">Remove</span>
         </Button>
-        <Button
-          type="button"
-          onClick={() => setConfirming(true)}
-          disabled={Boolean(problem)}
-          aria-label="Merge"
-        >
-          <GitMerge />
-          <span className="hidden sm:inline">Merge</span>
-        </Button>
+        {!transferProblem ? (
+          <Button type="button" onClick={() => setMatching(true)} aria-label="Match as transfer">
+            <ArrowRightLeft />
+            <span className="hidden sm:inline">Match</span>
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={Boolean(problem)}
+            aria-label="Merge"
+          >
+            <GitMerge />
+            <span className="hidden sm:inline">Merge</span>
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"
@@ -287,6 +316,52 @@ export function SelectionBar({
             <Button type="button" variant="destructive" onClick={remove} disabled={pending}>
               {pending ? <Spinner /> : <Trash2 />}
               Remove {selected.length}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={matching && !transferProblem} onOpenChange={setMatching}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Match as a transfer?</DialogTitle>
+            <DialogDescription>
+              The two become one transfer between your accounts, dated when the money left. Their
+              categories are replaced, and their bank links and receipts move to the transfer. You
+              can unmatch it later.
+            </DialogDescription>
+          </DialogHeader>
+          {sent && received ? (
+            <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+              <Side
+                label="Money out"
+                title={sent.memo || category(sent, name)}
+                lines={[
+                  `${sent.number} · ${formatDate(sent.date, ctx.locale)}`,
+                  name(sent.moneyAccountIds[0]),
+                ]}
+                amount={signedAmount(sent, ctx.locale)}
+              />
+              <ArrowRightLeft className="mx-auto size-4 rotate-90 text-muted-foreground sm:rotate-0" />
+              <Side
+                label="Money in"
+                title={received.memo || category(received, name)}
+                lines={[
+                  `${received.number} · ${formatDate(received.date, ctx.locale)}`,
+                  name(received.moneyAccountIds[0]),
+                ]}
+                amount={signedAmount(received, ctx.locale)}
+                tone="kept"
+              />
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setMatching(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={match} disabled={pending}>
+              {pending ? <Spinner /> : <ArrowRightLeft />}
+              Match as transfer
             </Button>
           </DialogFooter>
         </DialogContent>

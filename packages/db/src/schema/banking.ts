@@ -262,3 +262,20 @@ export const ruleApplications = pgTable(
     tenantIsolationPolicy("rule_applications", t.organizationId),
   ],
 );
+
+/** Suggested rules someone turned down ("bell canada"), so they aren't suggested again. */
+export const ruleSuggestionDismissals = pgTable(
+  "rule_suggestion_dismissals",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    matchText: text("match_text").notNull(),
+    dismissedBy: uuid("dismissed_by").references(() => user.id, { onDelete: "set null" }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("rule_suggestion_dismissals_key").on(t.organizationId, t.matchText),
+    tenantIsolationPolicy("rule_suggestion_dismissals", t.organizationId),
+  ],
+);
