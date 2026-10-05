@@ -19,8 +19,11 @@ import { accounts, contacts, journalEntries } from "./accounting";
 import { organization, user } from "./auth";
 import { tenantIsolationPolicy } from "./tenancy";
 
-/** "csv": bank statements uploaded as files, one connection per account. */
-export const CONNECTION_PROVIDERS = ["wise", "csv"] as const;
+/**
+ * "csv": bank statements uploaded as files, one connection per account. "amazon_sp": an Amazon
+ * seller account through the Selling Partner API (with the company's own developer app).
+ */
+export const CONNECTION_PROVIDERS = ["wise", "csv", "amazon_sp"] as const;
 export type ConnectionProvider = (typeof CONNECTION_PROVIDERS)[number];
 
 export const CONNECTION_STATUSES = ["active", "error", "disconnected"] as const;
