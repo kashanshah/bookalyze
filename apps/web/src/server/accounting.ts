@@ -18,6 +18,13 @@ export async function getAccountingContext(slug: string): Promise<AccountingCont
   return ctx as AccountingContext;
 }
 
+/** The context for banking pages and actions: Accounting plus the Banking module. */
+export async function getBankingContext(slug: string): Promise<AccountingContext> {
+  const ctx = await getAccountingContext(slug);
+  if (!can(ctx.plan, ctx.enabledModules, "banking.wise")) notFound();
+  return ctx;
+}
+
 /** Runs `fn` scoped to the organization, as the signed-in user. */
 export function inOrg<T>(ctx: OrgContext, fn: (tx: Transaction) => Promise<T>): Promise<T> {
   return withOrg(getDb(), { orgId: ctx.org.id, userId: ctx.session.user.id }, fn);

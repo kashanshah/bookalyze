@@ -4,6 +4,7 @@ export * from "./compare";
 export * from "./export";
 export * from "./fx";
 export * from "./journal";
+export * from "./merge";
 export * from "./reconcile";
 export * from "./reports";
 export * from "./tax";

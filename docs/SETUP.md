@@ -47,6 +47,16 @@ http://localhost:3000/dev/emails.
 
 Neon branches copy roles, so a `preview` branch works the same way with its own host.
 
+## Connections (Wise)
+
+1. Set `APP_ENCRYPTION_KEY` in Vercel (Production and Preview) to `openssl rand -base64 32`. It
+   encrypts each company's saved tokens. Keep a copy somewhere safe; if it changes, connections
+   must be made again (their transactions stay).
+2. In the app: Banking → Bank accounts → Connect Wise. In Wise, a read-only API token comes from
+   Settings → API tokens (on the business profile for a company).
+3. The daily cron (`vercel.json`, weekdays) syncs every connection after fetching exchange rates;
+   "Sync now" does it on demand.
+
 ## Vercel
 
 1. Import the GitHub repository. Set **Root Directory** to `apps/web` (framework: Next.js). Vercel

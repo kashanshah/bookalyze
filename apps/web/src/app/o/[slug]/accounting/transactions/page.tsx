@@ -7,7 +7,9 @@ import {
 } from "@bookalyze/core";
 import {
   contactOptions,
+  countOpenDuplicates,
   formatEntryNumber,
+  listDuplicateSuggestions,
   listTaxRates,
   listTransactions,
   schema,
@@ -27,6 +29,13 @@ import type { TxFormContext, TxRow } from "./types";
 export const metadata: Metadata = { title: "Transactions" };
 
 const PAGE_SIZE = 50;
+const STATUSES = ["reviewed", "unreviewed", "duplicates"] as const;
+const ORIGINS: Record<string, string> = {
+  manual: "Entered by hand",
+  bank_import: "From your bank",
+  wave_import: "Imported from Wave",
+  import: "Imported",
+};
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function TransactionsPage({
@@ -58,34 +67,43 @@ export default async function TransactionsPage({
   const kind = (TRANSACTION_KINDS as readonly string[]).includes(sp.kind ?? "")
     ? (sp.kind as TransactionKind)
     : null;
-  const status = sp.status === "reviewed" || sp.status === "unreviewed" ? sp.status : "";
+  const status = (STATUSES as readonly string[]).includes(sp.status ?? "")
+    ? (sp.status as (typeof STATUSES)[number])
+    : "";
   const q = (sp.q ?? "").slice(0, 100);
   const contact = sp.contact && UUID.test(sp.contact) ? sp.contact : "";
 
-  const { result, hasAny, balance, contacts, taxRates } = await inOrg(ctx, async (tx) => {
-    const contacts = await contactOptions(tx, { includeArchived: true });
-    const taxRates = await listTaxRates(tx, { includeArchived: true });
-    const result = await listTransactions(tx, {
-      accountId: account || null,
-      contactId: contact || null,
-      kind,
-      reviewed: status === "reviewed" ? true : status === "unreviewed" ? false : null,
-      search: q || null,
-      limit: PAGE_SIZE,
-      offset: (page - 1) * PAGE_SIZE,
-    });
-    const hasAny =
-      result.total > 0 || (await listTransactions(tx, { limit: 1, offset: 0 })).total > 0;
-    const balance = account
-      ? ((
-          await tx
-            .select({ total: sql<string>`coalesce(sum(${schema.journalLines.amount}), 0)::text` })
-            .from(schema.journalLines)
-            .where(eq(schema.journalLines.accountId, account))
-        )[0]?.total ?? "0")
-      : null;
-    return { result, hasAny, balance, contacts, taxRates };
-  });
+  const { result, hasAny, balance, contacts, taxRates, flags, duplicateCount } = await inOrg(
+    ctx,
+    async (tx) => {
+      const contacts = await contactOptions(tx, { includeArchived: true });
+      const taxRates = await listTaxRates(tx, { includeArchived: true });
+      const result = await listTransactions(tx, {
+        accountId: account || null,
+        contactId: contact || null,
+        kind,
+        reviewed: status === "reviewed" ? true : status === "unreviewed" ? false : null,
+        possibleDuplicates: status === "duplicates",
+        search: q || null,
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+      });
+      const hasAny =
+        result.total > 0 || (await listTransactions(tx, { limit: 1, offset: 0 })).total > 0;
+      const balance = account
+        ? ((
+            await tx
+              .select({ total: sql<string>`coalesce(sum(${schema.journalLines.amount}), 0)::text` })
+              .from(schema.journalLines)
+              .where(eq(schema.journalLines.accountId, account))
+          )[0]?.total ?? "0")
+        : null;
+      const flags = await listDuplicateSuggestions(tx, { entryIds: result.rows.map((r) => r.id) });
+      const duplicateCount = await countOpenDuplicates(tx);
+      return { result, hasAny, balance, contacts, taxRates, flags, duplicateCount };
+    },
+  );
+  const flagOf = new Map(flags.map((f) => [f.entryId, f]));
 
   const categoryAccounts = accounts.filter((a) => !isMoneyAccountSubtype(a.subtype));
   const ctxForForms: TxFormContext = {
@@ -114,31 +132,48 @@ export default async function TransactionsPage({
     })),
   };
 
-  const rows: TxRow[] = result.rows.map((r) => ({
-    id: r.id,
-    number: formatEntryNumber(r.entryNumber),
-    date: r.date,
-    memo: r.memo,
-    currency: r.currency,
-    fxRate: r.fxRate,
-    reviewed: r.reviewed,
-    reconciledThrough: r.reconciledThrough,
-    contactId: r.contactId,
-    attachments: r.attachments,
-    kind: r.view.kind,
-    amount: r.view.amount,
-    moneyAccountIds: r.view.moneyAccountIds,
-    fromAccountId: r.view.fromAccountId,
-    toAccountId: r.view.toAccountId,
-    receivedAmount: r.view.receivedAmount,
-    receivedCurrency: r.view.receivedCurrency,
-    splits: r.view.splits.map((s) => ({
-      accountId: s.accountId,
-      amount: s.amount,
-      ...(s.description ? { description: s.description } : {}),
-      ...(s.taxRateId ? { taxRateId: s.taxRateId } : {}),
-    })),
-  }));
+  const rows: TxRow[] = result.rows.map((r) => {
+    const flag = flagOf.get(r.id);
+    return {
+      id: r.id,
+      number: formatEntryNumber(r.entryNumber),
+      date: r.date,
+      memo: r.memo,
+      currency: r.currency,
+      fxRate: r.fxRate,
+      reviewed: r.reviewed,
+      reconciledThrough: r.reconciledThrough,
+      contactId: r.contactId,
+      attachments: r.attachments,
+      kind: r.view.kind,
+      amount: r.view.amount,
+      moneyAccountIds: r.view.moneyAccountIds,
+      fromAccountId: r.view.fromAccountId,
+      toAccountId: r.view.toAccountId,
+      receivedAmount: r.view.receivedAmount,
+      receivedCurrency: r.view.receivedCurrency,
+      splits: r.view.splits.map((s) => ({
+        accountId: s.accountId,
+        amount: s.amount,
+        ...(s.description ? { description: s.description } : {}),
+        ...(s.taxRateId ? { taxRateId: s.taxRateId } : {}),
+      })),
+      ...(flag
+        ? {
+            duplicate: {
+              suggestionId: flag.id,
+              of: {
+                id: flag.duplicateOf.id,
+                number: formatEntryNumber(flag.duplicateOf.entryNumber),
+                date: flag.duplicateOf.date,
+                memo: flag.duplicateOf.memo,
+                origin: ORIGINS[flag.duplicateOf.source] ?? "In your books",
+              },
+            },
+          }
+        : {}),
+    };
+  });
 
   const selected = moneyAccounts.find((a) => a.id === account);
   const pages = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
@@ -208,6 +243,7 @@ export default async function TransactionsPage({
           filters={{ account, contact, kind: kind ?? "", status, q }}
           ctx={ctxForForms}
           hasAny={hasAny}
+          duplicateCount={duplicateCount}
         />
       )}
 

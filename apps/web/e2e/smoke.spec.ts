@@ -730,6 +730,106 @@ test("reconcile: tick to the statement balance, lock, undo and cancel", async ({
   await expect(page.getByText("Start with your bank statement")).toBeVisible();
 });
 
+test("banking: connect Wise, flag and merge duplicates, merge by hand, transfers, disconnect", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  // Already in the books by hand: the same card payment Wise is about to send.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+  await page.locator("#tx-memo").fill("Coffee with a client");
+  await choose(page.getByLabel("Category 1", { exact: true }), "6250 · Office supplies");
+  await page.getByLabel("Amount 1").fill("7.76");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added")).toBeVisible();
+
+  await page.getByRole("link", { name: "Banking", exact: true }).click();
+  await expect(page).toHaveURL(/\/banking\/accounts$/);
+  await expect(page.getByRole("heading", { name: "Connect Wise" })).toBeVisible();
+  await page.getByRole("button", { name: "Connect Wise" }).click();
+
+  // A wrong token is refused with a plain explanation.
+  await page.getByLabel("API token").fill("e2e-wrong-token-0000-1111-2222");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByText(/Wise didn't accept this API token/)).toBeVisible();
+
+  // The right one goes straight to the only profile's balances.
+  await page.getByLabel("API token").fill("e2e-wise-token-0000-1111-2222");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "Choose what to bring in" })).toBeVisible();
+  await choose(page.getByLabel("Account for the CAD balance"), "1010 · RBC Chequing");
+  await choose(page.getByLabel("Account for the USD balance"), "New account “Wise USD”");
+  await page.getByRole("button", { name: "Connect 2 balances" }).click();
+  await expect(page.getByText("Wise connected")).toBeVisible();
+  await expect(page.getByText(/2 new transactions to sort/)).toBeVisible();
+  await expect(page.getByText(/1 might be a duplicate of one already in your books/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Wise · Example Trading Inc." })).toBeVisible();
+  await expect(page.getByText(/Synced just now/)).toBeVisible();
+
+  // Everything came in; the card payment is flagged beside the one entered by hand.
+  await page.getByRole("link", { name: /1 possible duplicate/ }).click();
+  await expect(page).toHaveURL(/status=duplicates/);
+  const flagged = page.locator("li", { hasText: "Card transaction at Example Cafe" });
+  const flag = flagged.getByRole("button", { name: /Possible duplicate/ });
+  await expect(flag).toContainText("Coffee with a client");
+  await flag.click();
+  const review = page.getByRole("dialog");
+  await expect(review.getByText("Already in your books", { exact: true })).toBeVisible();
+  await review.getByRole("button", { name: "Merge", exact: true }).click();
+  await expect(page.getByText("Merged", { exact: true })).toBeVisible();
+  await expect(page.getByText("Card transaction at Example Cafe")).toHaveCount(0);
+
+  // Syncing again brings in nothing new.
+  await page.getByRole("link", { name: "Banking", exact: true }).click();
+  await expect(page.getByText(/possible duplicate/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Sync now" }).click();
+  await expect(page.getByText("Up to date")).toBeVisible();
+
+  // The account has the hand-entered payment once, and the conversion as one transfer.
+  await page.getByRole("link", { name: /RBC Chequing/ }).click();
+  await expect(page.locator("li", { hasText: "Coffee with a client" })).toContainText("−$7.76");
+  await expect(page.getByText("Card transaction at Example Cafe")).toHaveCount(0);
+  await expect(page.locator("li", { hasText: "Converted 136.50 CAD to 100.00 USD" })).toHaveCount(
+    1,
+  );
+
+  // Merging by hand: two with the same amount, account and category.
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+  await page.locator("#tx-memo").fill("Coffee entered twice");
+  await choose(page.getByLabel("Category 1", { exact: true }), "6250 · Office supplies");
+  await page.getByLabel("Amount 1").fill("7.76");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added")).toBeVisible();
+  const coffee = page.locator("li", { hasText: "Coffee with a client" });
+  const twice = page.locator("li", { hasText: "Coffee entered twice" });
+  const transfer = page.locator("li", { hasText: "Converted 136.50 CAD" });
+  await coffee.getByRole("checkbox").check({ force: true });
+  await transfer.getByRole("checkbox").check({ force: true });
+  await expect(
+    page.getByText("They need to be the same amount, in the same direction."),
+  ).toBeVisible();
+  await transfer.getByRole("checkbox").uncheck({ force: true });
+  await twice.getByRole("checkbox").check({ force: true });
+  await expect(page.getByText(/these can be merged/)).toBeVisible();
+  await page.getByRole("button", { name: "Merge", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Merge", exact: true }).click();
+  await expect(page.getByText("Merged", { exact: true })).toBeVisible();
+  await expect(page.getByText("Coffee entered twice")).toHaveCount(0);
+  await expect(coffee).toHaveCount(1);
+
+  // Disconnecting deletes the token and keeps what was brought in.
+  const transactionsUrl = page.url();
+  await page.getByRole("link", { name: "Banking", exact: true }).click();
+  await page.getByRole("button", { name: "Disconnect" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Disconnect" }).click();
+  await expect(page.getByText("Disconnected")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connect Wise" })).toBeVisible();
+  await page.goto(transactionsUrl);
+  await expect(page.getByText("Converted 136.50 CAD to 100.00 USD")).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

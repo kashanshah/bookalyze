@@ -32,6 +32,10 @@ const schema = z.object({
   AWS_S3_BUCKET: z.string().optional(),
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  /** Encrypts saved connection credentials (Wise and others): 32 random bytes, base64. */
+  APP_ENCRYPTION_KEY: z.string().optional(),
+  /** Base URL of the Wise API. Tests point it at a local stand-in; leave unset in production. */
+  WISE_API_URL: z.url().optional(),
   /** Secret Vercel Cron sends as a bearer token to scheduled routes (e.g. the daily FX sync). */
   CRON_SECRET: z.string().min(16).optional(),
   /** "s3", or "local" to keep files on disk (development and CI only). */

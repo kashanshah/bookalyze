@@ -8,6 +8,7 @@ import {
 import { and, count, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { copyAttachmentLinks, countAttachments } from "./attachments";
 import type { Transaction } from "./client";
+import { carryEntryLinks } from "./duplicates";
 import { LedgerError, postJournalEntry, reverseJournalEntry } from "./ledger";
 import { accounts, journalEntries, journalLines, transactionReviews } from "./schema/accounting";
 import { reconciliationLines, reconciliations } from "./schema/reconciliation";
@@ -38,6 +39,8 @@ export type TransactionFilters = {
   contactId?: string | null;
   kind?: TransactionKind | null;
   reviewed?: boolean | null;
+  /** Only transactions flagged as possibly a copy of another (see duplicates.ts). */
+  possibleDuplicates?: boolean;
   search?: string | null;
   limit: number;
   offset: number;
@@ -94,6 +97,12 @@ export async function listTransactions(
   const reviewedSql = sql`exists (select 1 from ${transactionReviews} r where r.journal_entry_id = ${journalEntries.id})`;
   if (filters.reviewed === true) conditions.push(reviewedSql);
   if (filters.reviewed === false) conditions.push(sql`not ${reviewedSql}`);
+  if (filters.possibleDuplicates) {
+    conditions.push(sql`exists (select 1 from duplicate_suggestions d
+      join ${journalEntries} k on k.id = d.duplicate_of_entry_id
+      where d.entry_id = ${journalEntries.id} and d.status = 'open'
+        and k.reversed_by_entry_id is null and k.reverses_entry_id is null)`);
+  }
   const search = filters.search?.trim();
   if (search) {
     const pattern = `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -225,7 +234,7 @@ export async function replaceJournalEntry(
   },
 ) {
   const [original] = await tx
-    .select({ date: journalEntries.date })
+    .select({ date: journalEntries.date, source: journalEntries.source })
     .from(journalEntries)
     .where(eq(journalEntries.id, input.entryId));
   if (!original) throw new LedgerError("This transaction no longer exists.");
@@ -246,8 +255,11 @@ export async function replaceJournalEntry(
     reference: input.reference,
     memo: input.memo,
     contactId: input.contactId,
+    // A bank transaction stays one after it's categorized (its bank line follows, below).
+    ...(original.source === "bank_import" ? { source: "bank_import" as const } : {}),
     entry: input.entry,
   });
+  await carryEntryLinks(tx, { from: input.entryId, to: posted.id, userId: input.userId });
   // Receipts stay with the transaction (the original keeps its links too, for history).
   await copyAttachmentLinks(tx, {
     orgId: input.orgId,

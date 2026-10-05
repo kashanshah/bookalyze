@@ -192,6 +192,10 @@ export const journalEntries = pgTable(
     uniqueIndex("journal_entries_org_import_source_key")
       .on(t.organizationId, t.sourceId)
       .where(sql`${t.source} = 'import'`),
+    // A bank transaction (from a connection or a statement file) is posted once.
+    uniqueIndex("journal_entries_org_bank_source_key")
+      .on(t.organizationId, t.sourceId)
+      .where(sql`${t.source} = 'bank_import'`),
     foreignKey({
       name: "journal_entries_reversed_by_fk",
       columns: [t.organizationId, t.reversedByEntryId],
@@ -277,5 +281,53 @@ export const transactionReviews = pgTable(
       foreignColumns: [journalEntries.organizationId, journalEntries.id],
     }).onDelete("cascade"),
     tenantIsolationPolicy("transaction_reviews", t.organizationId),
+  ],
+);
+
+export const DUPLICATE_STATUSES = ["open", "merged", "dismissed"] as const;
+export type DuplicateStatus = (typeof DUPLICATE_STATUSES)[number];
+
+/**
+ * "This transaction might be a copy of that one", found when a bank line is brought in. Both
+ * stay in the books until someone decides: merging keeps `duplicate_of_entry_id` and reverses
+ * `entry_id`; dismissing leaves both. A pair is only ever suggested once.
+ */
+export const duplicateSuggestions = pgTable(
+  "duplicate_suggestions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** The newer one, from the bank: removed if they're merged. */
+    entryId: uuid("entry_id").notNull(),
+    /** The one already in the books: kept if they're merged. */
+    duplicateOfEntryId: uuid("duplicate_of_entry_id").notNull(),
+    status: text("status", { enum: DUPLICATE_STATUSES }).notNull().default("open"),
+    decidedBy: uuid("decided_by").references(() => user.id, { onDelete: "set null" }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("duplicate_suggestions_pair_key").on(t.organizationId, t.entryId, t.duplicateOfEntryId),
+    index("duplicate_suggestions_org_status_idx").on(t.organizationId, t.status),
+    index("duplicate_suggestions_entry_idx").on(t.entryId),
+    index("duplicate_suggestions_duplicate_of_idx").on(t.duplicateOfEntryId),
+    foreignKey({
+      name: "duplicate_suggestions_entry_fk",
+      columns: [t.organizationId, t.entryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    foreignKey({
+      name: "duplicate_suggestions_duplicate_of_fk",
+      columns: [t.organizationId, t.duplicateOfEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    check(
+      "duplicate_suggestions_status_valid",
+      sql`${t.status} in (${inList(DUPLICATE_STATUSES)})`,
+    ),
+    check("duplicate_suggestions_distinct", sql`${t.entryId} <> ${t.duplicateOfEntryId}`),
+    tenantIsolationPolicy("duplicate_suggestions", t.organizationId),
   ],
 );

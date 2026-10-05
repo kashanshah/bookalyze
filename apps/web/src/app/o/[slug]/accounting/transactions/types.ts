@@ -39,6 +39,11 @@ export type TxRow = {
   receivedAmount?: string;
   receivedCurrency?: string;
   splits: { accountId: string; amount: string; description?: string; taxRateId?: string }[];
+  /** Flagged as possibly a copy of a transaction already in the books. */
+  duplicate?: {
+    suggestionId: string;
+    of: { id: string; number: string; date: string; memo: string | null; origin: string };
+  };
 };
 
 export type TaxRateOption = {

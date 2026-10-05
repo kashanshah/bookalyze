@@ -24,7 +24,7 @@ _Last updated: 2026-10-04, phase 1b (importing from other software)._
 | 0. Foundations | **Done**, except the items listed under "Phase 0 leftovers" below |
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
-| 2. Banking, plus Entity & compliance | Not started |
+| 2. Banking, plus Entity & compliance | **In progress.** Wise connection (API sync) with duplicate flagging and merging done. Next: bank statement upload (CSV) for any other bank, then rules and transfer matching |
 | 3+. Commerce, settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -367,6 +367,60 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   files are attached (faint when none), and a lock marks reconciled transactions (tooltip: the
   statement date). Reconciled transactions open read-only; the server refuses changes too.
 
+### Phase 2, slice 1: Wise connection
+- **Credential vault** (`packages/db/src/vault.ts`): AES-256-GCM with `APP_ENCRYPTION_KEY`
+  (32 bytes, base64). Each secret is bound to its organization and connection (associated data),
+  so a value copied to another row won't decrypt. Format `v1.<iv>.<tag>.<ciphertext>`.
+- **Schema** (migration `0016_banking_connections`):
+  - `connections` (provider `wise`, sealed `secret`, `settings` such as the Wise profile and fee
+    account, last sync and last error) and `bank_feeds` (one per Wise balance → one `cash_bank`
+    account, `sync_from`, `synced_through`). Both under RLS.
+  - Unique `(organization_id, source_id)` where `source = 'bank_import'`: a bank line is posted
+    once, ever. Edits and deletes keep the original (reversed) row, so it stays recognised.
+  - `syncable_connections()` (SECURITY DEFINER) gives the daily job organization and connection
+    IDs only; each sync then runs inside `withOrg()`.
+- **Core** (`banking/`): `parseWiseProfiles/Balances/Statement` (JSON numbers become exact
+  decimals at the currency's precision; dates in the company's time zone), `BankTransaction`,
+  `bankTransactionInput()` (bank line → Uncategorized income/expense, fee as its own split),
+  `pairConversions()`.
+- **Bank lines** (migration `0017_bank_lines`): every transaction a bank sends is stored once in
+  `bank_lines`, unique on `(organization_id, external_id)` (Wise: `wise:<balance>:<reference>`; a
+  statement upload will hash its rows the same way). Syncing again, overlapping windows or
+  uploading the same file twice can't add it twice. Status `posted` (`journal_entry_id`) or
+  `pending` (`reason`, e.g. no rate yet; retried every sync). Editing a bank transaction
+  (`replaceJournalEntry`) or merging it moves the link to the entry that stands for it now
+  (`carryEntryLinks`), and an edited one keeps source `bank_import`.
+- **DB** (`banking.ts`): connections and feeds, and `importBankLines()`: stores the lines, then
+  posts each new or pending one (each in a savepoint). A conversion between two connected
+  balances is one cross-currency transfer (source id `conversion:<ref>`); foreign lines use the
+  Bank of Canada rate of the day.
+- **Possible duplicates, the Wave way** (`duplicates.ts`, table `duplicate_suggestions`):
+  everything the bank sends is posted; one that looks like a transaction already in the books is
+  flagged (`open`). "Looks like": a line on the same account for the same signed amount within
+  `DUPLICATE_WINDOW_DAYS` (5) days, still current, not itself flagged as a copy, and not sent
+  separately by the same bank feed (the bank's own IDs already tell two same-day coffees apart).
+  A conversion also needs the received amount on the other account. Nobody merges automatically:
+  - `acceptDuplicate()` keeps the transaction that was in the books first and reverses the copy
+    on its own date; bank link and receipts move to the one kept (`mergeEntries`).
+  - `dismissDuplicate()` keeps both; the pair is never flagged again (unique per pair).
+  - `mergeSelected()` merges two picked by hand when `mergeProblem()` (core) allows it: same
+    amount and direction, same bank account, same category (for splits, the same categories).
+    The older one (lower entry number) stays.
+- **Web:** Banking → Bank accounts. "Connect Wise" (owners and admins): paste a read-only token,
+  pick the profile, map each balance to a new or existing bank account, choose the start date
+  and the fee account; it syncs straight away. "Sync now" for anyone; "Disconnect" deletes the
+  token and keeps the transactions. The daily cron (`/api/cron/fx-rates`) fetches rates, then
+  syncs every connection. `WISE_API_URL` points tests at `e2e/wise-mock.mjs`. The sync toast
+  and a notice on Bank accounts say how many possible duplicates wait.
+- **Transactions screen:** flagged rows are highlighted with "Possible duplicate of JE-…"; it opens
+  both side by side with "Merge" and "Not a duplicate". A banner counts them and the Status filter
+  has "Possible duplicates" (`?status=duplicates`). Each row has a tick box: with two ticked, a
+  bar offers "Merge" (or says what doesn't match) and a confirmation shows which one stays.
+  `Checkbox` is now a shared component (`components/ui/checkbox.tsx`).
+- **Not yet:** Wise asks for strong customer authentication (a signed request) for profiles
+  outside the US, Canada, Australia, New Zealand, Singapore and Malaysia, e.g. the UAE company.
+  The sync shows a plain message for now; signing with an uploaded key comes next.
+
 ---
 
 ## 3. Next up (in order)
@@ -425,8 +479,7 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.
-- [ ] Encrypted credential vault (AES-GCM) and a `connections` table, for SP-API, Wise and
-  others. `APP_ENCRYPTION_KEY` is already set in Vercel; the code that uses it isn't built yet.
+- [x] Encrypted credential vault (AES-GCM) and a `connections` table. Done in phase 2, slice 1.
 - [ ] Platform admin console: list organizations, set plans, overrides.
 - [ ] Two-step sign-in UI. The Better Auth twoFactor plugin is already enabled.
 - [ ] Vercel Workflows and Cron wiring.
