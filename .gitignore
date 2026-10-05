@@ -8,6 +8,7 @@
 
 # Dependencies & build output
 node_modules/
+.pnpm-store/
 .next/
 dist/
 .turbo/
@@ -22,3 +23,5 @@ playwright-report/
 next-env.d.ts
 *.tsbuildinfo
 /apps/web/.uploads/
+.vercel
+.env*
