@@ -205,8 +205,8 @@ function AccountForm({
           htmlFor="currency"
           error={errors.currency}
           hint={
-            account?.isUsed
-              ? "Fixed, because this account already has transactions recorded in this currency. For another currency, add a new account and move the balance to it with a transfer."
+            account?.isUsed && currency !== (account.currency ?? "")
+              ? "Amounts already recorded stay exactly as they are; only new transactions use the new currency."
               : needsCurrency
                 ? "The currency this account is held in."
                 : "Leave as “Any currency” unless this account only ever holds one."
@@ -215,7 +215,6 @@ function AccountForm({
           <Combobox
             id="currency"
             value={currency}
-            disabled={account?.isUsed}
             onChange={setCurrency}
             placeholder="Choose a currency…"
             searchPlaceholder="Search currencies"

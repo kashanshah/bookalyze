@@ -134,6 +134,13 @@
       "when": 1791165109858,
       "tag": "0018_statement_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791168082424,
+      "tag": "0019_account_currency_change",
+      "breakpoints": true
     }
   ]
 }
