@@ -11,7 +11,7 @@ import {
   schema,
   unlinkAttachment,
 } from "@bookalyze/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
@@ -224,6 +224,52 @@ export async function deleteAttachmentAction(
   if (result.key) await deleteStoredFile(result.key).catch(() => {});
   revalidate(slug);
   return { ok: true, data: null };
+}
+
+/**
+ * Deletes several inbox files at once. Files attached to a transaction are left alone (remove them
+ * from the transaction first) and counted in `kept`.
+ */
+export async function deleteAttachmentsAction(
+  slug: string,
+  attachmentIds: string[],
+): Promise<Result<{ deleted: number; kept: number }>> {
+  const ctx = await getAccountingContext(slug);
+  const parsed = z.array(z.uuid()).min(1).max(500).safeParse(attachmentIds);
+  if (!parsed.success) return { ok: false, message: "Something went wrong." };
+  const ids = [...new Set(parsed.data)];
+  const { keys, deleted, kept } = await inOrg(ctx, async (tx) => {
+    const linked = new Set(
+      (
+        await tx
+          .select({ id: schema.attachmentLinks.attachmentId })
+          .from(schema.attachmentLinks)
+          .where(inArray(schema.attachmentLinks.attachmentId, ids))
+      ).map((l) => l.id),
+    );
+    const keys: string[] = [];
+    let deleted = 0;
+    for (const id of ids) {
+      if (linked.has(id)) continue;
+      const attachment = await getAttachment(tx, id);
+      if (!attachment) continue;
+      const key = await deleteAttachment(tx, id);
+      if (key) keys.push(key);
+      deleted++;
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "attachment.deleted",
+        entityType: "attachment",
+        entityId: id,
+        before: { fileName: attachment.fileName },
+      });
+    }
+    return { keys, deleted, kept: linked.size };
+  });
+  await Promise.all(keys.map((key) => deleteStoredFile(key).catch(() => {})));
+  revalidate(slug);
+  return { ok: true, data: { deleted, kept } };
 }
 
 export type MatchCandidate = {

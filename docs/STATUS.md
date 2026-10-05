@@ -513,6 +513,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   guards as removing a transaction: closed period, reconciled, already changed). "Reverse" on a
   chosen date stays, as a quieter button, for accountants.
 
+- **Receipts inbox: select and delete several:** a tick box on each receipt and "Select all
+  (n)" above the grid; a bar at the bottom deletes the ticked ones after a confirm
+  (`deleteAttachmentsAction`, up to 500, files attached to a transaction are skipped and counted).
+
 ---
 
 ## 3. Next up (in order)

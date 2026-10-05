@@ -1,16 +1,18 @@
 "use client";
 
 import { formatMoney } from "@bookalyze/core";
-import { Inbox, Link2, Paperclip, Search, Trash2, UploadCloud } from "lucide-react";
+import { Inbox, Link2, Paperclip, Search, Trash2, UploadCloud, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { FileThumbnail } from "@/components/accounting/receipts-panel";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -23,6 +25,7 @@ import { cn } from "@/lib/utils";
 import {
   attachToEntryAction,
   deleteAttachmentAction,
+  deleteAttachmentsAction,
   findTransactionsAction,
   type MatchCandidate,
 } from "./actions";
@@ -44,8 +47,43 @@ export function ReceiptsInbox({
   const [uploading, setUploading] = useState<{ key: string; name: string; progress: number }[]>([]);
   const [dragging, setDragging] = useState(false);
   const [matching, setMatching] = useState<AttachmentSummary | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, startDelete] = useTransition();
 
   useEffect(() => setFiles(initial), [initial]);
+  // Forget ticks on files that are gone (attached, deleted, refreshed away).
+  useEffect(
+    () => setPicked((p) => new Set([...p].filter((id) => files.some((f) => f.id === id)))),
+    [files],
+  );
+
+  const togglePicked = (id: string) =>
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allPicked = files.length > 0 && files.every((f) => picked.has(f.id));
+
+  const deletePicked = () =>
+    startDelete(async () => {
+      const ids = [...picked];
+      const result = await deleteAttachmentsAction(slug, ids);
+      if (!result.ok) return void toast.error(result.message);
+      const { deleted, kept } = result.data;
+      const label = `${deleted} ${deleted === 1 ? "receipt" : "receipts"} deleted`;
+      if (kept) {
+        toast.warning(deleted ? label : "Nothing deleted", {
+          description: `${kept} ${kept === 1 ? "is" : "are"} attached to a transaction. Remove ${kept === 1 ? "it" : "them"} from there first.`,
+        });
+      } else toast.success(label);
+      setFiles((f) => f.filter((x) => !picked.has(x.id)));
+      setPicked(new Set());
+      setConfirming(false);
+      router.refresh();
+    });
 
   async function addFiles(list: FileList | File[]) {
     const picked = Array.from(list);
@@ -121,34 +159,94 @@ export function ReceiptsInbox({
           </p>
         </div>
       ) : (
-        <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {uploading.map((u) => (
-            <li
-              key={u.key}
-              className="flex aspect-[4/5] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-4 text-center"
-            >
-              <Spinner className="text-primary" />
-              <p className="w-full truncate text-xs">{u.name}</p>
-              <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary transition-[width]"
-                  style={{ width: `${Math.round(u.progress * 100)}%` }}
-                />
-              </div>
-            </li>
-          ))}
-          {files.map((file) => (
-            <InboxCard
-              key={file.id}
-              slug={slug}
-              file={file}
-              locale={locale}
-              onMatch={() => setMatching(file)}
-              onDeleted={() => setFiles((f) => f.filter((x) => x.id !== file.id))}
-            />
-          ))}
-        </ul>
+        <>
+          {files.length ? (
+            <div className="flex items-center gap-3 text-sm">
+              <Checkbox
+                checked={allPicked}
+                onChange={() => setPicked(allPicked ? new Set() : new Set(files.map((f) => f.id)))}
+                label={allPicked ? "Clear selection" : "Select all receipts"}
+              />
+              <span className="text-muted-foreground">
+                {picked.size
+                  ? `${picked.size} of ${files.length} selected`
+                  : `Select all (${files.length})`}
+              </span>
+            </div>
+          ) : null}
+          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {uploading.map((u) => (
+              <li
+                key={u.key}
+                className="flex aspect-[4/5] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-4 text-center"
+              >
+                <Spinner className="text-primary" />
+                <p className="w-full truncate text-xs">{u.name}</p>
+                <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-[width]"
+                    style={{ width: `${Math.round(u.progress * 100)}%` }}
+                  />
+                </div>
+              </li>
+            ))}
+            {files.map((file) => (
+              <InboxCard
+                key={file.id}
+                slug={slug}
+                file={file}
+                locale={locale}
+                picked={picked.has(file.id)}
+                onPick={() => togglePicked(file.id)}
+                onMatch={() => setMatching(file)}
+                onDeleted={() => setFiles((f) => f.filter((x) => x.id !== file.id))}
+              />
+            ))}
+          </ul>
+        </>
       )}
+
+      {picked.size ? (
+        <div className="fade-in-0 slide-in-from-bottom-4 fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-md animate-in items-center gap-3 rounded-2xl border bg-card px-4 py-3 shadow-lg sm:px-5">
+          <p className="min-w-0 flex-1 font-medium text-sm">{picked.size} selected</p>
+          <Button type="button" variant="destructive" onClick={() => setConfirming(true)}>
+            <Trash2 />
+            Delete {picked.size}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setPicked(new Set())}
+            aria-label="Clear selection"
+          >
+            <X />
+          </Button>
+        </div>
+      ) : null}
+
+      <Dialog open={confirming} onOpenChange={setConfirming}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Delete {picked.size} {picked.size === 1 ? "receipt" : "receipts"}?
+            </DialogTitle>
+            <DialogDescription>
+              The files are removed for good. Receipts already attached to a transaction aren't in
+              this inbox, so they stay.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfirming(false)}>
+              Keep them
+            </Button>
+            <Button type="button" variant="destructive" onClick={deletePicked} disabled={deleting}>
+              {deleting ? <Spinner /> : <Trash2 />}
+              Delete {picked.size}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <MatchDialog
         slug={slug}
@@ -169,12 +267,16 @@ function InboxCard({
   slug,
   file,
   locale,
+  picked,
+  onPick,
   onMatch,
   onDeleted,
 }: {
   slug: string;
   file: AttachmentSummary;
   locale: string;
+  picked: boolean;
+  onPick: () => void;
   onMatch: () => void;
   onDeleted: () => void;
 }) {
@@ -187,7 +289,18 @@ function InboxCard({
   }, [armed]);
 
   return (
-    <li className="zoom-in-95 fade-in-0 flex animate-in flex-col overflow-hidden rounded-2xl border bg-card shadow-xs duration-200">
+    <li
+      className={cn(
+        "zoom-in-95 fade-in-0 relative flex animate-in flex-col overflow-hidden rounded-2xl border bg-card shadow-xs duration-200",
+        picked && "border-primary ring-2 ring-primary/30",
+      )}
+    >
+      <Checkbox
+        checked={picked}
+        onChange={onPick}
+        label={`Select ${file.fileName}`}
+        className="absolute start-2.5 top-2.5 z-10 shadow-xs"
+      />
       <a href={file.url} target="_blank" rel="noreferrer" title={`Open ${file.fileName}`}>
         <FileThumbnail file={file} />
       </a>
