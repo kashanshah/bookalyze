@@ -135,8 +135,12 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     phase: "2",
     requires: [],
     features: ["entity.profile", "entity.documents", "entity.compliance"],
-    nav: [{ label: "Company", href: "/company" }],
-    status: "coming_soon",
+    nav: [
+      { label: "Profile", href: "/company" },
+      { label: "Documents", href: "/company/documents" },
+      { label: "Compliance calendar", href: "/company/calendar" },
+    ],
+    status: "available",
   },
 };
 

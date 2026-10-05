@@ -1,4 +1,5 @@
 import { syncAllConnections } from "@/server/banking";
+import { sendComplianceReminders } from "@/server/compliance";
 import { env } from "@/server/env";
 import { syncBankOfCanada } from "@/server/fx";
 
@@ -6,7 +7,7 @@ import { syncBankOfCanada } from "@/server/fx";
  * The daily job (scheduled in vercel.json). Vercel Cron calls this with
  * "Authorization: Bearer $CRON_SECRET"; anything else is refused. It re-fetches the last ten
  * days of exchange rates (late corrections, missed runs), then syncs every bank connection, so
- * foreign-currency bank lines find their rate.
+ * foreign-currency bank lines find their rate. Last, it emails compliance reminders.
  */
 export async function GET(request: Request) {
   const secret = env().CRON_SECRET;
@@ -18,5 +19,8 @@ export async function GET(request: Request) {
   startDate.setUTCDate(startDate.getUTCDate() - 10);
   const stored = await syncBankOfCanada(startDate.toISOString().slice(0, 10), end).catch(() => 0);
   const banking = await syncAllConnections();
-  return Response.json({ stored, banking });
+  const compliance = await sendComplianceReminders().catch((error: unknown) => ({
+    error: (error as Error).message,
+  }));
+  return Response.json({ stored, banking, compliance });
 }

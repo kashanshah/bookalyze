@@ -15,7 +15,7 @@ import { organization, user } from "./auth";
 import { tenantIsolationPolicy } from "./tenancy";
 
 export const ATTACHMENT_STATUSES = ["pending", "ready"] as const;
-export const ATTACHMENT_ENTITY_TYPES = ["journal_entry"] as const;
+export const ATTACHMENT_ENTITY_TYPES = ["journal_entry", "entity_document"] as const;
 export type AttachmentEntityType = (typeof ATTACHMENT_ENTITY_TYPES)[number];
 
 /**
@@ -72,7 +72,10 @@ export const attachmentLinks = pgTable(
       foreignColumns: [attachments.organizationId, attachments.id],
     }).onDelete("cascade"),
     index("attachment_links_entity_idx").on(t.organizationId, t.entityType, t.entityId),
-    check("attachment_links_entity_type_valid", sql`${t.entityType} in ('journal_entry')`),
+    check(
+      "attachment_links_entity_type_valid",
+      sql`${t.entityType} in ('journal_entry', 'entity_document')`,
+    ),
     tenantIsolationPolicy("attachment_links", t.organizationId),
   ],
 );

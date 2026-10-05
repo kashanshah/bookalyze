@@ -1113,6 +1113,80 @@ test("rule suggestions: a payee categorized three times by hand becomes a rule",
   await expect(page.getByText("“netflix.com”")).toBeVisible();
 });
 
+test("company: profile, registration numbers, people, documents and the compliance calendar", async ({
+  page,
+}) => {
+  const inDays = (n: number) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+      new Date(Date.now() + n * 86_400_000),
+    );
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Profile", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+
+  // Where and when it was incorporated sets the annual return.
+  await page.getByRole("button", { name: "Edit" }).click();
+  let dialog = page.getByRole("dialog");
+  await choose(dialog.locator("#jurisdiction"), "Ontario (OBCA)");
+  await dialog.getByLabel("Registered address").fill("1 King St W\nToronto ON");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Company details saved")).toBeVisible();
+  await expect(page.getByText("Ontario (OBCA)")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add number" }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Number").fill("123456789");
+  await dialog.getByRole("button", { name: "Add number" }).click();
+  await expect(page.getByText("Number added")).toBeVisible();
+  await expect(page.getByText("123456789")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add person" }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name").fill("Sam Director");
+  await dialog.getByLabel("Ownership (optional)").fill("100");
+  await dialog.getByRole("button", { name: "Add person" }).click();
+  await expect(page.getByText("Person added")).toBeVisible();
+  await expect(page.getByText("100%")).toBeVisible();
+
+  // A document with an expiry date goes on the calendar.
+  await page.getByRole("link", { name: "Documents", exact: true }).click();
+  await page.getByRole("button", { name: "Add a document" }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Document file").setInputFiles({
+    name: "insurance.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"),
+  });
+  await dialog.getByLabel("Name").fill("Insurance certificate");
+  await dialog.getByLabel("Expires on (optional)").fill(inDays(20));
+  await dialog.getByRole("button", { name: "Add document" }).click();
+  await expect(page.getByText("Document added")).toBeVisible();
+  await expect(page.getByText("Expires in 20 days")).toBeVisible();
+
+  await page.getByRole("link", { name: "Compliance calendar", exact: true }).click();
+  await expect(page.getByText("File the T2 corporate income tax return").first()).toBeVisible();
+  await expect(page.getByText("File the annual return").first()).toBeVisible();
+  await expect(page.getByText("Insurance certificate expires")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add an item" }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("What's due?").fill("Renew business licence");
+  await dialog.getByLabel("Due on", { exact: false }).fill(inDays(10));
+  await choose(dialog.locator("#item-recurrence"), "Once");
+  await dialog.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByText("Added to the calendar")).toBeVisible();
+  const licence = page.getByRole("listitem").filter({ hasText: "Renew business licence" });
+  await expect(licence).toContainText("In 10 days");
+  await licence.getByRole("button", { name: /as done$/ }).click();
+  await expect(page.getByText("Marked as done")).toBeVisible();
+
+  // Home shows what's coming up, without the done item.
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  const comingUp = page.locator("section", { hasText: "Coming up" });
+  await expect(comingUp.getByText("Insurance certificate expires")).toBeVisible();
+  await expect(comingUp.getByText("Renew business licence")).toHaveCount(0);
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();
