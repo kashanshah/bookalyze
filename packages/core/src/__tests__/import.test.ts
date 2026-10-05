@@ -122,6 +122,7 @@ describe("account types", () => {
   it("maps types from Wave, QuickBooks and Xero, then names", () => {
     expect(guessSubtype("Cash and Bank", "RBC")).toBe("cash_bank");
     expect(guessSubtype("Expected Payments from Customers", "AR")).toBe("accounts_receivable");
+    expect(guessSubtype("Unknown Account", "Unknown Account")).toBe("other_current_asset");
     expect(guessSubtype("Customer Prepayments and Customer Credits", "x")).toBe(
       "customer_prepayments",
     );

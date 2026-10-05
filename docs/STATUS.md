@@ -487,6 +487,11 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     ID on the replacement (`replaceJournalEntry`), so it's still skipped; edits made before this
     are recognised by their reversal and replacement being posted together (same moment, next
     entry number).
+  - Wave's "Unknown Account" (an asset) now defaults to "Other current asset" instead of needing
+    a choice (it had been sent to Uncategorized income, which turned its transactions into
+    income/expense entries with no bank side).
+- **Chart of accounts:** accounts held in another currency show their balance in that currency
+  (sum of line amounts as recorded), with the main-currency value underneath.
 
 ---
 

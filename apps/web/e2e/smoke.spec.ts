@@ -521,6 +521,10 @@ test("exchange rates: suggested rate, USD income and a USD → CAD transfer", as
   await expect(
     page.locator("li", { hasText: "Convert to CAD" }).getByText("+$680.00"),
   ).toBeVisible();
+
+  // The chart of accounts shows the USD account's balance in USD (1,000 in, 500 out).
+  await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
+  await expect(page.locator("li", { hasText: "Wise USD" })).toContainText("US$500.00");
 });
 
 test("sales tax: Ontario setup, HST on transactions and the filing report", async ({ page }) => {

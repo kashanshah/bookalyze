@@ -10,6 +10,7 @@ import {
 } from "@bookalyze/core";
 import { currencies } from "@bookalyze/core/reference-data";
 import { accountBalances, schema } from "@bookalyze/db";
+import { eq, isNotNull, sql } from "drizzle-orm";
 import { Lock, Pencil, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -36,15 +37,26 @@ export default async function AccountsPage({
   const { type: typeParam } = await searchParams;
   const type: AccountType = typeParam && isAccountType(typeParam) ? typeParam : "asset";
   const ctx = await getAccountingContext(slug);
-  const { accounts, balances, used } = await inOrg(ctx, async (tx) => {
+  const { accounts, balances, native, used } = await inOrg(ctx, async (tx) => {
     const accounts = await tx.select().from(schema.accounts);
     const balances = await accountBalances(tx);
     const used = await tx
       .selectDistinct({ id: schema.journalLines.accountId })
       .from(schema.journalLines);
-    return { accounts, balances, used: new Set(used.map((u) => u.id)) };
+    // Balances in each account's own currency, for accounts held in one (bank, card, cash).
+    const native = await tx
+      .select({
+        accountId: schema.journalLines.accountId,
+        balance: sql<string>`sum(${schema.journalLines.amount})::numeric(20,4)::text`,
+      })
+      .from(schema.journalLines)
+      .innerJoin(schema.accounts, eq(schema.accounts.id, schema.journalLines.accountId))
+      .where(isNotNull(schema.accounts.currency))
+      .groupBy(schema.journalLines.accountId);
+    return { accounts, balances, native, used: new Set(used.map((u) => u.id)) };
   });
   const balanceOf = new Map(balances.map((b) => [b.accountId, parseDecimal(b.balance)]));
+  const nativeOf = new Map(native.map((b) => [b.accountId, parseDecimal(b.balance)]));
   const currencyOptions = currencies.map((c) => ({ code: c.code, name: c.name }));
   const base = ctx.profile.baseCurrency;
   const locale = ctx.profile.locale;
@@ -98,10 +110,32 @@ export default async function AccountsPage({
     );
   const active = ofType.filter((a) => !a.isArchived);
   const archived = ofType.filter((a) => a.isArchived);
-  const natural = (a: AccountRow) => {
-    const units = balanceOf.get(a.id) ?? 0n;
+  const natural = (a: AccountRow, from = balanceOf) => {
+    const units = from.get(a.id) ?? 0n;
     return formatDecimal(accountTypes[a.type].normalBalance === "debit" ? units : -units);
   };
+  /** In the account's own currency, with what it's worth in the main currency underneath. */
+  const balance = (a: AccountRow) =>
+    a.currency && a.currency !== base ? (
+      <span className="flex flex-col items-end">
+        <Amount
+          value={natural(a, nativeOf)}
+          currency={a.currency}
+          locale={locale}
+          muteZero
+          className="text-sm"
+        />
+        <Amount
+          value={natural(a)}
+          currency={base}
+          locale={locale}
+          muteZero
+          className="text-muted-foreground text-xs"
+        />
+      </span>
+    ) : (
+      <Amount value={natural(a)} currency={base} locale={locale} muteZero className="text-sm" />
+    );
 
   const row = (a: AccountRow) => (
     <li
@@ -134,7 +168,7 @@ export default async function AccountsPage({
           <p className="mt-0.5 truncate text-muted-foreground text-xs">{a.description}</p>
         ) : null}
       </div>
-      <Amount value={natural(a)} currency={base} locale={locale} muteZero className="text-sm" />
+      {balance(a)}
       <div className="flex shrink-0 items-center opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         <AccountDialog
           slug={slug}
@@ -161,7 +195,7 @@ export default async function AccountsPage({
       <PageHeader
         eyebrow="Accounting"
         title="Chart of accounts"
-        description="The categories every transaction is sorted into. Balances are in your main currency and include every entry to date."
+        description="The categories every transaction is sorted into, with balances to date. Accounts held in another currency show their own balance, with its value in your main currency below."
         actions={addButton}
       />
 
