@@ -3,10 +3,12 @@ import {
   convertUnits,
   decimalPlaces,
   divideDecimals,
+  divRound,
   formatDecimal,
   isDecimal,
   parseDecimal,
   RATE_SCALE,
+  roundUnits,
 } from "../money";
 import {
   type JournalErrors,
@@ -128,6 +130,8 @@ export function transactionLines(
 export type LedgerLine = {
   accountId: string;
   amount: string;
+  /** In the main currency; lets category lines kept in another currency be shown in the account's. */
+  baseAmount?: string;
   description?: string | null;
   /** The line's currency, when known (needed to describe cross-currency transfers). */
   currency?: string;
@@ -199,7 +203,7 @@ export function describeTransaction(
     kind,
     amount: formatDecimal(abs(net)),
     moneyAccountIds: [...new Set(money.map((l) => l.accountId))],
-    splits: mergeTaxLines(others).map((l) => ({
+    splits: mergeTaxLines(inMoneyCurrency(money, others, net)).map((l) => ({
       accountId: l.accountId,
       // Category amounts are shown in the transaction's direction (positive normally).
       amount: formatDecimal(kind === "deposit" ? -l.units : l.units),
@@ -207,6 +211,61 @@ export function describeTransaction(
       ...(l.taxRateId ? { taxRateId: l.taxRateId } : {}),
     })),
   };
+}
+
+/**
+ * Category lines in the money account's currency. They normally are; an entry whose money line
+ * was re-recorded in the account's currency while its categories kept the main-currency amounts
+ * (e.g. a Wave import corrected from Wise) has them restated at the money line's own rate, so a
+ * US$200 payment reads as US$200 of expense, not the CA$283.27 it's worth.
+ */
+function inMoneyCurrency(
+  money: readonly LedgerLine[],
+  others: readonly LedgerLine[],
+  net: bigint,
+): LedgerLine[] {
+  const currency = money[0]?.currency;
+  if (!currency || money.some((l) => l.currency !== currency)) return [...others];
+  const foreign = others.filter((l) => l.currency && l.currency !== currency);
+  if (!foreign.length || foreign.length !== others.length) return [...others];
+  if (
+    money.some((l) => l.baseAmount === undefined) ||
+    others.some((l) => l.baseAmount === undefined)
+  )
+    return [...others];
+  const moneyBase = money.reduce((t, l) => t + parseDecimal(l.baseAmount ?? "0"), 0n);
+  if (moneyBase === 0n || net === 0n) return [...others];
+  const restated = restateAmounts(
+    others.map((l) => l.baseAmount ?? "0"),
+    { amount: formatDecimal(net), baseAmount: formatDecimal(moneyBase) },
+    currency,
+    formatDecimal(-net),
+  );
+  return others.map((l, i) => ({ ...l, amount: restated[i] ?? l.amount, currency }));
+}
+
+/**
+ * Main-currency amounts restated in another currency at the rate a reference line implies
+ * (its `amount` per `baseAmount`), rounded to the currency's cents. The rounding difference goes
+ * on the largest line, so they add up to `total` exactly.
+ */
+export function restateAmounts(
+  baseAmounts: readonly string[],
+  reference: { amount: string; baseAmount: string },
+  currency: string,
+  total: string,
+): string[] {
+  const amount = parseDecimal(reference.amount);
+  const base = parseDecimal(reference.baseAmount);
+  const decimals = minorUnits(currency);
+  const units = baseAmounts.map((b) =>
+    roundUnits(divRound(parseDecimal(b) * amount, base), decimals),
+  );
+  const size = (v: bigint | undefined) => (v === undefined ? -1n : v < 0n ? -v : v);
+  const largest = units.reduce((best, u, i) => (size(u) > size(units[best]) ? i : best), 0);
+  const residual = parseDecimal(total) - units.reduce((t, u) => t + u, 0n);
+  if (units.length) units[largest] = (units[largest] ?? 0n) + residual;
+  return units.map((u) => formatDecimal(u));
 }
 
 /**

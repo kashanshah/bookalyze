@@ -5,6 +5,7 @@ import { applyAmountCorrections, misrecordedAccounts, misrecordedLines } from ".
 import { createDb, type Transaction, withOrg } from "../client";
 import { createDefaultChart, postJournalEntry } from "../ledger";
 import * as schema from "../schema";
+import { listTransactions } from "../transactions";
 
 const ownerUrl =
   process.env.TEST_DATABASE_URL_MIGRATOR ??
@@ -174,5 +175,27 @@ describe("correcting foreign-currency amounts", () => {
       now.find((r) => r.journal_entries.id === sent)?.journal_entries.reversedByEntryId,
     ).not.toBeNull();
     expect((await scoped((tx) => misrecordedAccounts(tx)))[0]?.count).toBe(1);
+
+    // The whole transaction is now in USD: the category too, keeping its CAD value.
+    const fixed = live.find((r) => r.journal_lines.currency === "USD");
+    const entryLines = await scoped((tx) =>
+      tx
+        .select()
+        .from(schema.journalLines)
+        .where(eq(schema.journalLines.journalEntryId, fixed?.journal_entries.id ?? "")),
+    );
+    expect(entryLines.map((l) => [l.currency, l.amount, l.baseAmount]).sort()).toEqual([
+      ["USD", "-123.0000", "-173.6200"],
+      ["USD", "123.0000", "173.6200"],
+    ]);
+    expect(fixed?.journal_entries.currency).toBe("USD");
+
+    // On Transactions it reads US$123 of expense, at the rate the two values imply.
+    const { rows } = await scoped((tx) =>
+      listTransactions(tx, { entryIds: [fixed?.journal_entries.id ?? ""], limit: 5, offset: 0 }),
+    );
+    expect(rows[0]).toMatchObject({ currency: "USD", fxRate: "1.4115447154" });
+    expect(rows[0]?.view.amount).toBe("123.0000");
+    expect(rows[0]?.view.splits.map((x) => x.amount)).toEqual(["123.0000"]);
   });
 });
