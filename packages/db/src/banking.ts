@@ -9,7 +9,7 @@ import {
   prepareTransfer,
   transactionLines,
 } from "@bookalyze/core";
-import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { findDuplicateOf, suggestDuplicate } from "./duplicates";
 import { fxRateOn } from "./fx";
@@ -90,6 +90,8 @@ export async function listConnections(tx: Transaction) {
       syncFrom: bankFeeds.syncFrom,
       syncedThrough: bankFeeds.syncedThrough,
       isActive: bankFeeds.isActive,
+      bankBalance: bankFeeds.bankBalance,
+      bankBalanceOn: bankFeeds.bankBalanceOn,
     })
     .from(bankFeeds)
     .innerJoin(accounts, eq(accounts.id, bankFeeds.accountId))
@@ -538,3 +540,69 @@ async function postBankLines(
 }
 
 class SkipLine extends Error {}
+
+/**
+ * Keeps what the bank says a feed's account holds (Wise's balance, a statement's closing
+ * balance). An older figure never replaces a newer one, so uploading last year's statement
+ * doesn't hide this month's.
+ */
+export async function recordFeedBalance(
+  tx: Transaction,
+  feedId: string,
+  balance: { amount: string; on: string },
+) {
+  await tx
+    .update(bankFeeds)
+    .set({ bankBalance: balance.amount, bankBalanceOn: balance.on })
+    .where(
+      and(
+        eq(bankFeeds.id, feedId),
+        sql`(${bankFeeds.bankBalanceOn} is null or ${bankFeeds.bankBalanceOn} <= ${balance.on}::date)`,
+      ),
+    );
+}
+
+/**
+ * Each bank, card and cash account's balance in Bookalyze, in its own currency: everything
+ * posted to it, and (for accounts a bank reports on) up to the day of the bank's figure, so the
+ * two can be compared. Lines in another currency (imported before the account was switched to
+ * it) can't be added in and are counted instead.
+ */
+export async function moneyAccountBalances(tx: Transaction) {
+  const rows = await tx.execute<{
+    account_id: string;
+    currency: string | null;
+    balance: string;
+    other_currency: string;
+  }>(sql`
+    select a.id as account_id, a.currency,
+      -- An account without a currency of its own is shown in the main currency.
+      coalesce(sum(case when a.currency is null then l.base_amount
+        when l.currency = a.currency then l.amount end), 0)::text as balance,
+      -- Only current entries: a corrected line and its reversal cancel out.
+      count(l.id) filter (where l.currency <> a.currency
+        and e.reversed_by_entry_id is null and e.reverses_entry_id is null)::text as other_currency
+    from accounts a
+    left join journal_lines l on l.account_id = a.id
+    left join journal_entries e on e.id = l.journal_entry_id
+    where a.subtype in ('cash_bank', 'credit_card', 'money_in_transit') and not a.is_archived
+    group by a.id, a.currency`);
+  const asOf = await tx.execute<{ feed_id: string; balance: string }>(sql`
+    select f.id as feed_id,
+      coalesce(sum(l.amount) filter (where e.date <= f.bank_balance_on and l.currency = f.currency), 0)::text as balance
+    from bank_feeds f
+    left join journal_lines l on l.account_id = f.account_id
+    left join journal_entries e on e.id = l.journal_entry_id
+    where f.bank_balance_on is not null
+    group by f.id`);
+  return {
+    accounts: rows.rows.map((r) => ({
+      accountId: r.account_id,
+      currency: r.currency,
+      balance: r.balance,
+      otherCurrency: Number(r.other_currency),
+    })),
+    /** By feed: the account's balance on the day of the bank's figure. */
+    onBankDay: new Map(asOf.rows.map((r) => [r.feed_id, r.balance])),
+  };
+}

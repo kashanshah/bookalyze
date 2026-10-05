@@ -187,6 +187,7 @@ export function StatementUploadDialog({
         accountId: account.id,
         settings,
         lines,
+        closingBalance: read.closingBalance,
       }).catch(() => null);
       if (!result?.ok) {
         setStep("columns");
@@ -409,6 +410,11 @@ export function StatementUploadDialog({
                   column("amount", "Amount")
                 )}
                 {column("reference", "Reference (optional)")}
+                {column(
+                  "balance",
+                  "Balance column (optional)",
+                  "The bank's running balance. Its last figure is shown beside the balance in Bookalyze, so you can see they agree.",
+                )}
                 {column(
                   "account",
                   "Account number column (optional)",

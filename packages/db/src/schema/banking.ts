@@ -93,6 +93,9 @@ export const bankFeeds = pgTable(
     syncFrom: date("sync_from").notNull(),
     /** Everything up to this moment has been fetched. */
     syncedThrough: timestamp("synced_through", { withTimezone: true }),
+    /** What the bank last said the account held (in its currency), and on which day. */
+    bankBalance: numeric("bank_balance", { precision: 20, scale: 4 }),
+    bankBalanceOn: date("bank_balance_on"),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

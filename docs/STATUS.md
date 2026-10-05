@@ -614,6 +614,21 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   unset in production.
 
 
+### Bank balances beside the books (Banking → Bank accounts)
+
+- Each synced or uploaded account shows **what the bank says** (Wise's balance, refreshed on every
+  sync via `wiseBalances`; or the closing balance of the last uploaded statement that has a
+  balance column) and **its balance in Bookalyze**, in the account's own currency. Compared on
+  the bank's day: "Matches", or "The bank has X more/less" (reconcile to find it). An account
+  with lines still in another currency says how many instead.
+- Accounts no bank feeds are listed under "Other accounts" with their Bookalyze balance.
+- Statement upload: new optional **Balance column** (guessed from "Balance", "Running balance"…).
+  `readStatement` returns `closingBalance`: the latest day's last row in time, whichever way the
+  file runs; a card statement's balance is negated like its amounts (debt is negative).
+- `bank_feeds.bank_balance` / `bank_balance_on` (migration `0027_bank_balances`), written by
+  `recordFeedBalance` (an older figure never replaces a newer one). Balances:
+  `moneyAccountBalances` (db `banking.ts`).
+
 ### Phase 3, slice 2: Amazon orders
 
 - **Orders screen** (`/commerce/orders`, sidebar Commerce → Orders; `/commerce` opens it): tabs

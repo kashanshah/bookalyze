@@ -1,5 +1,15 @@
-import { isMoneyAccountSubtype, type StatementSettings } from "@bookalyze/core";
-import { countOpenDuplicates, listConnections, misrecordedAccounts } from "@bookalyze/db";
+import {
+  formatDecimal,
+  isMoneyAccountSubtype,
+  parseDecimal,
+  type StatementSettings,
+} from "@bookalyze/core";
+import {
+  countOpenDuplicates,
+  listConnections,
+  misrecordedAccounts,
+  moneyAccountBalances,
+} from "@bookalyze/db";
 import {
   AlertTriangle,
   ArrowRight,
@@ -11,6 +21,7 @@ import {
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/dates";
@@ -37,9 +48,15 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
   const { slug } = await params;
   const ctx = await getBankingContext(slug);
   const { locale, timezone } = ctx.profile;
-  const [allConnections, duplicates, misrecorded] = await inOrg(ctx, (tx) =>
-    Promise.all([listConnections(tx), countOpenDuplicates(tx), misrecordedAccounts(tx)]),
+  const [allConnections, duplicates, misrecorded, balances] = await inOrg(ctx, (tx) =>
+    Promise.all([
+      listConnections(tx),
+      countOpenDuplicates(tx),
+      misrecordedAccounts(tx),
+      moneyAccountBalances(tx),
+    ]),
   );
+  const ledgerOf = new Map(balances.accounts.map((b) => [b.accountId, b]));
   // Accounts a Wise balance fills: their misrecorded amounts can be corrected from Wise.
   const wiseFed = new Set(
     allConnections
@@ -56,15 +73,21 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
       for (const f of c.feeds) saved.set(f.accountId, settings);
     }
   }
-  const statementAccounts: StatementAccount[] = (await listAccounts(ctx))
-    .filter((a) => isMoneyAccountSubtype(a.subtype) && !a.isArchived)
-    .map((a) => ({
-      id: a.id,
-      label: a.code ? `${a.code} · ${a.name}` : a.name,
-      currency: a.currency ?? ctx.profile.baseCurrency,
-      isCard: a.subtype === "credit_card",
-      ...(saved.get(a.id) ? { settings: saved.get(a.id) } : {}),
-    }));
+  const moneyAccounts = (await listAccounts(ctx)).filter(
+    (a) => isMoneyAccountSubtype(a.subtype) && !a.isArchived,
+  );
+  // Accounts no bank feeds: only their balance in Bookalyze is known.
+  const fed = new Set(
+    connections.flatMap((c) => c.feeds.filter((f) => f.isActive).map((f) => f.accountId)),
+  );
+  const unfed = moneyAccounts.filter((a) => !fed.has(a.id));
+  const statementAccounts: StatementAccount[] = moneyAccounts.map((a) => ({
+    id: a.id,
+    label: a.code ? `${a.code} · ${a.name}` : a.name,
+    currency: a.currency ?? ctx.profile.baseCurrency,
+    isCard: a.subtype === "credit_card",
+    ...(saved.get(a.id) ? { settings: saved.get(a.id) } : {}),
+  }));
 
   return (
     <div className="grid gap-8">
@@ -268,9 +291,23 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
                             </span>
                           </span>
                         </span>
-                        <span className="inline-flex shrink-0 items-center gap-1 text-primary">
-                          Transactions
-                          <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
+                        <span className="flex shrink-0 items-center gap-3">
+                          <Balances
+                            currency={f.currency}
+                            locale={locale}
+                            bank={
+                              f.bankBalance !== null && f.bankBalanceOn
+                                ? {
+                                    amount: f.bankBalance,
+                                    on: f.bankBalanceOn,
+                                    books: balances.onBankDay.get(f.id) ?? "0",
+                                  }
+                                : null
+                            }
+                            books={ledgerOf.get(f.accountId)}
+                            source={c.provider === "csv" ? "statement" : "bank"}
+                          />
+                          <ArrowRight className="size-4 text-primary transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
                         </span>
                       </Link>
                     </li>
@@ -280,6 +317,112 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
           ))}
         </div>
       )}
+
+      {unfed.length ? (
+        <section className="overflow-hidden rounded-2xl border bg-card shadow-xs">
+          <div className="border-b px-5 py-4 sm:px-6">
+            <h2 className="font-semibold">Other accounts</h2>
+            <p className="text-muted-foreground text-sm">
+              No bank sync or statement fills these, so only their balance in Bookalyze is known.
+            </p>
+          </div>
+          <ul className="divide-y">
+            {unfed.map((a) => {
+              const currency = a.currency ?? ctx.profile.baseCurrency;
+              return (
+                <li key={a.id}>
+                  <Link
+                    href={`/o/${slug}/accounting/transactions?account=${a.id}`}
+                    className="group flex items-center justify-between gap-4 px-5 py-3 text-sm transition-colors hover:bg-muted/40 sm:px-6"
+                  >
+                    <span className="flex min-w-0 items-center gap-3">
+                      <Badge variant="outline" className="font-mono">
+                        {currency}
+                      </Badge>
+                      <span className="truncate font-medium">
+                        {a.code ? `${a.code} · ` : ""}
+                        {a.name}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-3">
+                      <Balances
+                        currency={currency}
+                        locale={locale}
+                        bank={null}
+                        books={ledgerOf.get(a.id)}
+                        source={null}
+                      />
+                      <ArrowRight className="size-4 text-primary transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * An account's balance in Bookalyze beside what the bank says (Wise's balance, or a statement's
+ * closing balance). They're compared on the bank's day: a difference means something is missing
+ * or extra in the books (or not in the bank yet), and reconciling finds it.
+ */
+function Balances({
+  currency,
+  locale,
+  bank,
+  books,
+  source,
+}: {
+  currency: string;
+  locale: string;
+  bank: { amount: string; on: string; books: string } | null;
+  books: { balance: string; otherCurrency: number } | undefined;
+  source: "bank" | "statement" | null;
+}) {
+  const difference = bank ? parseDecimal(bank.amount) - parseDecimal(bank.books) : 0n;
+  return (
+    <span className="grid gap-0.5 text-end">
+      {bank ? (
+        <span className="text-xs">
+          <span className="text-muted-foreground">
+            {source === "statement" ? "Statement" : "Bank"}, {formatDate(bank.on, locale)}{" "}
+          </span>
+          <Amount value={bank.amount} currency={currency} locale={locale} className="font-medium" />
+        </span>
+      ) : null}
+      <span className="text-xs">
+        <span className="text-muted-foreground">In Bookalyze </span>
+        <Amount
+          value={books?.balance ?? "0"}
+          currency={currency}
+          locale={locale}
+          className="font-medium"
+        />
+      </span>
+      {books?.otherCurrency ? (
+        <span className="text-[11px] text-warning">
+          {books.otherCurrency} not in {currency} yet
+        </span>
+      ) : bank && difference !== 0n ? (
+        <span className="text-[11px] text-warning">
+          The bank has{" "}
+          <Amount
+            value={formatDecimal(difference < 0n ? -difference : difference)}
+            currency={currency}
+            locale={locale}
+          />{" "}
+          {difference > 0n ? "more" : "less"}
+        </span>
+      ) : bank ? (
+        <span className="inline-flex items-center justify-end gap-1 text-[11px] text-success">
+          <CircleCheck className="size-3" />
+          Matches
+        </span>
+      ) : null}
+    </span>
   );
 }
