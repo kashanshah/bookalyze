@@ -729,8 +729,19 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   `describeTransaction` restates the categories at the money line's own rate, and
   `listTransactions` reports the row in the money account's currency with that implied rate, so
   the edit form shows US$200 (not the CA$283.27 it's worth) and saving keeps the CAD value.
-- Not covered: accounts no Wise balance fills (e.g. Cash in Hand USD), and the 7 rows the import
-  skipped for it; next step there is a statement upload or typed amounts on the same screen.
+- **Correct from statements** (accounts no Wise balance fills, e.g. a bank's USD account): the
+  person adds the bank's PDF statements; they're read **in the browser** (`unpdf`, i.e. pdf.js,
+  in `lib/pdf-statement.ts`; the file isn't uploaded) and core `readPdfStatement`
+  (`banking/pdf-statement.ts`) rebuilds the rows from positioned text: a header row names the
+  columns (date, description, money out / in or one amount, balance), amounts belong to the
+  column whose right edge they line up with (±40 pt), descriptions can span lines, dates carry
+  down and get their year from the statement period, bold text drawn twice is de-duplicated,
+  pages repeat their header. The **running balance** checks the reading (opening + rows = every
+  printed balance and the closing balance): "Balances check out", or "Check the matches". The
+  rows go to `previewAmountFixAction(slug, accountId, statement)` and the same matching and
+  apply as Wise (no bank line is recorded, as there's no feed).
+- Not covered: Cash in Hand USD and the 7 rows the import skipped for it (no statement exists:
+  type the amounts on the same screen), and scanned (image) PDFs.
 
 ---
 

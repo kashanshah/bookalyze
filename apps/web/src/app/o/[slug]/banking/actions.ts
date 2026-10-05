@@ -435,17 +435,42 @@ export async function uploadStatementAction(
 }
 
 /** Reads the account's Wise statement and matches each misrecorded line to it. Nothing changes. */
+/** Statement rows the person added (read from their PDF statements in the browser). */
+const statementRowsSchema = z
+  .array(
+    z.object({
+      externalId: z.string().max(200),
+      date: z.string().refine(isIsoDate, "Not a date."),
+      amount: z.string().regex(/^-?\d{1,15}(\.\d{1,4})?$/, "Not an amount."),
+      text: z.string().max(500),
+    }),
+  )
+  .min(1, "Add at least one statement.")
+  .max(10_000, "That's a lot of statements: add a year or two at a time.");
+
+/**
+ * Matches the account's misrecorded lines to their real transactions: on Wise, or on statements
+ * the person added (`statement`). Nothing is changed yet.
+ */
 export async function previewAmountFixAction(
   slug: string,
   accountId: string,
+  statement?: z.input<typeof statementRowsSchema>,
 ): Promise<{ ok: true; preview: AmountFixPreview } | Failure> {
   const { ctx, denied } = await adminContext(slug);
   if (denied) return denied;
   if (!z.string().uuid().safeParse(accountId).success) {
     return { ok: false, message: "Unknown account." };
   }
+  const rows = statement === undefined ? null : statementRowsSchema.safeParse(statement);
+  if (rows && !rows.success) {
+    return { ok: false, message: rows.error.issues[0]?.message ?? "Check the statements." };
+  }
   try {
-    return { ok: true, preview: await previewAmountFix(ctx, accountId) };
+    const source = rows?.success
+      ? ({ kind: "statement", lines: rows.data } as const)
+      : ({ kind: "wise" } as const);
+    return { ok: true, preview: await previewAmountFix(ctx, accountId, source) };
   } catch (error) {
     if (error instanceof AmountFixError || error instanceof VaultError) {
       return { ok: false, message: error.message };

@@ -147,10 +147,10 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
               {ctx.profile.baseCurrency} reports are right.
               {wiseFed.has(m.accountId)
                 ? ""
-                : ` Connect Wise and link its ${m.currency} balance to ${m.name} to correct ${m.count === 1 ? "it" : "them"} automatically.`}
+                : ` Add the bank's ${m.currency} statements (PDF) to correct ${m.count === 1 ? "it" : "them"} automatically, or link a Wise balance.`}
             </span>
           </span>
-          {admin && wiseFed.has(m.accountId) ? (
+          {admin ? (
             <AmountFixDialog
               slug={slug}
               accountId={m.accountId}
@@ -159,6 +159,7 @@ export default async function BankAccountsPage({ params }: { params: Promise<{ s
               baseCurrency={ctx.profile.baseCurrency}
               count={m.count}
               locale={locale}
+              source={wiseFed.has(m.accountId) ? "wise" : "statement"}
             />
           ) : null}
         </div>
