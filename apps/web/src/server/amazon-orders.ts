@@ -21,9 +21,9 @@ import { openAmazonCredentials } from "./commerce";
 
 /**
  * Bringing Amazon orders in, one sales channel (marketplace) at a time, within a time budget:
- * first the orders changed since the last sync (Amazon's pages, 100 at a time), then the items of
- * orders that don't have them yet, then the refunds posted since the last sync (Finances API). Amazon rations both calls, so a large first sync takes several
- * runs; each run carries on where the last stopped (the page token is kept on the channel).
+ * first the orders changed since the last sync (Amazon's pages, 100 at a time), then the refunds
+ * posted since the last sync (Finances API), then the items of orders that don't have them yet.
+ * Amazon rations every call, so a large first sync takes several runs; each run carries on where the last stopped (the page token is kept on the channel).
  * Nothing here posts to the books.
  */
 
@@ -151,34 +151,9 @@ export async function syncChannelOrders(
     }
     if (!ordersDone) result.more = true;
 
-    // 2. Items of orders that don't have them yet.
-    items: while (Date.now() < deadline) {
-      const batch = await withOrg(db, ctx, (tx) => ordersNeedingItems(tx, channelId, 10));
-      if (!batch.length) break;
-      for (const order of batch) {
-        if (Date.now() >= deadline) break items;
-        let fetched: Awaited<ReturnType<typeof orderItems>> | null = null;
-        while (!fetched) {
-          try {
-            fetched = await orderItems(creds, region, order.externalId);
-          } catch (error) {
-            // An order Amazon won't list items for (e.g. not found) is left without them, so it
-            // doesn't block the rest on every run.
-            if (error instanceof AmazonError && error.code === "unexpected") fetched = [];
-            else if (!(error instanceof AmazonError && error.code === "throttled")) throw error;
-            else if (!(await backOff(2_100))) break items;
-          }
-        }
-        const items = fetched;
-        await withOrg(db, ctx, (tx) =>
-          saveOrderItems(tx, { orgId: ctx.orgId, orderId: order.id, items }),
-        );
-        result.items++;
-      }
-    }
-
-    // 3. Refunds posted since the last sync (window by window for a long history), once the
-    // orders are all in: a refund is kept only against an order already here.
+    // 2. Refunds posted since the last sync (window by window for a long history), once the
+    // orders are all in: a refund is kept only against an order already here. Before items, so a
+    // backlog of item details never holds refunds up.
     let refundToken = channel.refundsNextToken;
     let refundEnd = channel.refundsWindowEnd;
     let refundsThrough = channel.refundsSyncedThrough;
@@ -240,6 +215,32 @@ export async function syncChannelOrders(
       }
     }
     if (!refundsDone) result.more = true;
+
+    // 3. Items of orders that don't have them yet.
+    items: while (Date.now() < deadline) {
+      const batch = await withOrg(db, ctx, (tx) => ordersNeedingItems(tx, channelId, 10));
+      if (!batch.length) break;
+      for (const order of batch) {
+        if (Date.now() >= deadline) break items;
+        let fetched: Awaited<ReturnType<typeof orderItems>> | null = null;
+        while (!fetched) {
+          try {
+            fetched = await orderItems(creds, region, order.externalId);
+          } catch (error) {
+            // An order Amazon won't list items for (e.g. not found) is left without them, so it
+            // doesn't block the rest on every run.
+            if (error instanceof AmazonError && error.code === "unexpected") fetched = [];
+            else if (!(error instanceof AmazonError && error.code === "throttled")) throw error;
+            else if (!(await backOff(2_100))) break items;
+          }
+        }
+        const items = fetched;
+        await withOrg(db, ctx, (tx) =>
+          saveOrderItems(tx, { orgId: ctx.orgId, orderId: order.id, items }),
+        );
+        result.items++;
+      }
+    }
 
     result.waiting = await withOrg(db, ctx, (tx) => countOrdersNeedingItems(tx, [channelId]));
     if (result.waiting) result.more = true;

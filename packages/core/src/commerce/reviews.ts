@@ -270,6 +270,20 @@ export function refundReason(json: unknown): string | null {
   return null;
 }
 
+export const BUYER_CLAIMS = {
+  a_to_z: { label: "A-to-z claim", hint: "The buyer filed an A-to-z Guarantee claim." },
+  chargeback: { label: "Chargeback", hint: "The buyer's bank reversed the payment." },
+} as const;
+export type BuyerClaim = keyof typeof BUYER_CLAIMS;
+
+/** GET /finances/v0/orders/{id}/financialEvents: an A-to-z claim or a chargeback, if any. */
+export function buyerClaim(json: unknown): BuyerClaim | null {
+  const events = record(record(record(json).payload).FinancialEvents);
+  if (list(events.GuaranteeClaimEventList).length) return "a_to_z";
+  if (list(events.ChargebackEventList).length) return "chargeback";
+  return null;
+}
+
 /** Whether any item carried a promotion discount (for "skip promotions"). */
 export const hasPromotion = (discounts: readonly (string | null)[]) =>
   discounts.some((d) => d !== null && parseDecimal(d) !== 0n);

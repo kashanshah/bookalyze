@@ -168,6 +168,7 @@ const sendable = {
   latestDelivery: orders.latestDelivery,
   purchasedOn,
   refunded: orders.refunded,
+  financeCheckedAt: orders.financeCheckedAt,
   channelId: salesChannels.id,
   marketplaceId: salesChannels.marketplaceId,
 };

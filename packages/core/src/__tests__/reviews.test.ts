@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buyerClaim,
   DEFAULT_REVIEW_SETTINGS,
   hasPromotion,
   parseSolicitationActions,
@@ -144,6 +145,10 @@ describe("Amazon's answers", () => {
     expect(refundReason(events({ GuaranteeClaimEventList: [{}] }))).toMatch(/A-to-z/);
     expect(refundReason(events({ ChargebackEventList: [{}] }))).toMatch(/bank/);
     expect(refundReason({})).toBeNull();
+    // Kept on the order for its badge.
+    expect(buyerClaim(events({ GuaranteeClaimEventList: [{}] }))).toBe("a_to_z");
+    expect(buyerClaim(events({ ChargebackEventList: [{}] }))).toBe("chargeback");
+    expect(buyerClaim(events({ RefundEventList: [{}] }))).toBeNull();
   });
 
   it("spots promotions", () => {

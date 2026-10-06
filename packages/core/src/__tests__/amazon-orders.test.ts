@@ -30,6 +30,8 @@ describe("parseOrdersPage", () => {
           },
           {
             AmazonOrderId: "702-0000002-0000002",
+            IsReplacementOrder: "true",
+            ReplacedOrderId: "702-0000001-0000001",
             PurchaseDate: "2026-09-03T09:00:00Z",
             OrderStatus: "Pending",
             FulfillmentChannel: "MFN",
@@ -53,7 +55,10 @@ describe("parseOrdersPage", () => {
       earliestDelivery: "2026-09-03",
       latestDelivery: "2026-09-05",
     });
+    expect(page.orders[0]?.replacedOrderId).toBeNull();
     expect(page.orders[1]).toMatchObject({
+      isReplacement: true,
+      replacedOrderId: "702-0000001-0000001",
       fulfillment: "merchant",
       total: null,
       currency: null,

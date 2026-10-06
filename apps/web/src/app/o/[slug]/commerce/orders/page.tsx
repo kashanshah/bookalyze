@@ -1,4 +1,6 @@
 import {
+  BUYER_CLAIMS,
+  type BuyerClaim,
   can,
   fiscalYearFor,
   ORDER_STATUS_GROUPS,
@@ -424,6 +426,26 @@ export default async function OrdersPage({
                       {refund ? (
                         <Badge variant="destructive" title={refund.hint}>
                           {refund.label}
+                        </Badge>
+                      ) : null}
+                      {o.buyerClaim ? (
+                        <Badge
+                          variant="destructive"
+                          title={BUYER_CLAIMS[o.buyerClaim as BuyerClaim]?.hint}
+                        >
+                          {BUYER_CLAIMS[o.buyerClaim as BuyerClaim]?.label ?? "Claim"}
+                        </Badge>
+                      ) : null}
+                      {o.replaced ? (
+                        <Badge
+                          variant="warning"
+                          title="Amazon sent the buyer a replacement for this order"
+                        >
+                          Replaced
+                        </Badge>
+                      ) : o.isReplacement ? (
+                        <Badge variant="warning" title="Sent to replace another order">
+                          Replacement
                         </Badge>
                       ) : null}
                       {reviewsOn && o.reviewStatus === "sent" ? (

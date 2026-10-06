@@ -2,6 +2,7 @@ import type {
   AmazonOrder,
   AmazonOrderItem,
   AmazonRefund,
+  BuyerClaim,
   MarketplaceParticipation,
 } from "@bookalyze/core";
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
@@ -198,6 +199,7 @@ export async function upsertOrders(
         isBusiness: o.isBusiness,
         isPrime: o.isPrime,
         isReplacement: o.isReplacement,
+        replacedOrderId: o.replacedOrderId ?? null,
         earliestDelivery: o.earliestDelivery,
         latestDelivery: o.latestDelivery,
       })),
@@ -217,12 +219,14 @@ export async function upsertOrders(
         isBusiness: sql`excluded.is_business`,
         isPrime: sql`excluded.is_prime`,
         isReplacement: sql`excluded.is_replacement`,
+        replacedOrderId: sql`excluded.replaced_order_id`,
         earliestDelivery: sql`excluded.earliest_delivery`,
         latestDelivery: sql`excluded.latest_delivery`,
         itemsSyncedAt: sql`case when ${orders.status} is distinct from excluded.status or ${orders.total} is distinct from excluded.total then null else ${orders.itemsSyncedAt} end`,
         updatedAt: sql`now()`,
       },
-      setWhere: sql`${orders.lastUpdatedAt} < excluded.last_updated_at`,
+      // A newer copy, or the same one carrying the replaced order's number (read before it was kept).
+      setWhere: sql`${orders.lastUpdatedAt} < excluded.last_updated_at or (${orders.replacedOrderId} is null and excluded.replaced_order_id is not null)`,
     })
     .returning({ id: orders.id });
   return saved.length;
@@ -296,6 +300,27 @@ export async function saveRefunds(
     })
     .where(inArray(orders.id, touched));
   return added.length;
+}
+
+/**
+ * Keeps what one order's own financial events say (read when it's looked at, or before a review
+ * request): its refunds (as `saveRefunds`) and any A-to-z claim or chargeback.
+ */
+export async function saveOrderFinance(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    channelId: string;
+    orderId: string;
+    refunds: readonly AmazonRefund[];
+    claim: BuyerClaim | null;
+  },
+) {
+  await saveRefunds(tx, { orgId: input.orgId, channelId: input.channelId, refunds: input.refunds });
+  await tx
+    .update(orders)
+    .set({ buyerClaim: input.claim, financeCheckedAt: new Date() })
+    .where(eq(orders.id, input.orderId));
 }
 
 const pricedFilter = sql`${orders.status} not in ('Pending', 'PendingAvailability')`;
@@ -404,6 +429,10 @@ export async function listOrders(
       total: orders.total,
       refunded: orders.refunded,
       reviewEligible: orders.reviewEligible,
+      buyerClaim: orders.buyerClaim,
+      isReplacement: orders.isReplacement,
+      /** Another order (a replacement) was sent for this one. */
+      replaced: sql<boolean>`exists (select 1 from ${orders} r where r.channel_id = ${orders.channelId} and r.replaced_order_id = ${orders.externalId})`,
       reviewStatus: sql<
         string | null
       >`(select r.status from review_requests r where r.order_id = ${orders.id})`,
@@ -466,7 +495,31 @@ export async function getOrder(tx: Transaction, orderId: string) {
     .from(orderRefunds)
     .where(eq(orderRefunds.orderId, orderId))
     .orderBy(asc(orderRefunds.postedAt), asc(orderRefunds.externalId));
-  return { ...row, items, refunds };
+  // Replacements both ways: the order this one replaces, and replacements sent for it.
+  const replaces = row.order.replacedOrderId
+    ? ((
+        await tx
+          .select({ id: orders.id, externalId: orders.externalId })
+          .from(orders)
+          .where(
+            and(
+              eq(orders.channelId, row.order.channelId),
+              eq(orders.externalId, row.order.replacedOrderId),
+            ),
+          )
+      )[0] ?? { id: null, externalId: row.order.replacedOrderId })
+    : null;
+  const replacedBy = await tx
+    .select({ id: orders.id, externalId: orders.externalId })
+    .from(orders)
+    .where(
+      and(
+        eq(orders.channelId, row.order.channelId),
+        eq(orders.replacedOrderId, row.order.externalId),
+      ),
+    )
+    .orderBy(asc(orders.purchasedAt));
+  return { ...row, items, refunds, replaces, replacedBy };
 }
 
 /** Whether the company has any orders at all (for the empty state). */

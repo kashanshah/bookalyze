@@ -54,6 +54,8 @@ export type AmazonOrder = {
   isBusiness: boolean;
   isPrime: boolean;
   isReplacement: boolean;
+  /** For a replacement order: the order number it replaces. */
+  replacedOrderId?: string | null;
   /** Promised delivery dates (YYYY-MM-DD): Amazon's review request window hangs off them. */
   earliestDelivery: string | null;
   latestDelivery: string | null;
@@ -126,6 +128,7 @@ export function parseOrdersPage(json: unknown): {
         isBusiness: o.IsBusinessOrder === true,
         isPrime: o.IsPrime === true,
         isReplacement: o.IsReplacementOrder === true || o.IsReplacementOrder === "true",
+        replacedOrderId: text(o.ReplacedOrderId) || null,
         earliestDelivery: day(earliest),
         latestDelivery: day(latest),
       },
