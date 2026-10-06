@@ -1,5 +1,6 @@
+import { minorUnits } from "../currency";
 import { addDaysIso } from "../entity/compliance";
-import { formatDecimal, parseDecimal } from "../money";
+import { convertUnits, divideDecimals, formatDecimal, parseDecimal } from "../money";
 
 /**
  * Amazon settlements: every ~14 days Amazon closes a period and pays the net (sales, shipping
@@ -383,4 +384,177 @@ export function settlementDepositWindow(input: { depositDate: string | null; end
     from: addDaysIso(anchor, input.depositDate ? -SETTLEMENT_DEPOSIT_DAYS_BEFORE : 0),
     to: addDaysIso(anchor, SETTLEMENT_DEPOSIT_DAYS_AFTER),
   };
+}
+
+// --- Other currencies ---------------------------------------------------------------------
+
+/** A journal line with its main-currency value (like core `PreparedLine`, without tax). */
+export type ConvertedLine = {
+  accountId: string;
+  description: string | null;
+  currency: string;
+  amount: string;
+  baseAmount: string;
+};
+
+/**
+ * The currency the clearing line is kept in: the settlement's own, unless the clearing account
+ * holds only the main currency (then its main-currency value). Null when it holds a third one.
+ */
+export function clearingLineCurrency(input: {
+  clearingCurrency: string | null;
+  currency: string;
+  baseCurrency: string;
+}): string | null {
+  const c = input.clearingCurrency;
+  if (!c || c === input.currency) return input.currency;
+  return c === input.baseCurrency ? input.baseCurrency : null;
+}
+
+/**
+ * A settlement entry's lines (from `buildSettlementEntry`, in the settlement's currency) with
+ * their main-currency values at `rate` (main-currency units per one settlement unit). Each line
+ * is converted and rounded on its own; the cent or so rounding leaves goes to the largest line
+ * that isn't the clearing account, so the entry balances. `payoutBase` is the payout's own
+ * main-currency value: what its bank deposit has to clear.
+ */
+export function convertSettlementEntry(input: {
+  lines: readonly SettlementEntryLine[];
+  total: string;
+  clearingAccountId: string;
+  clearingCurrency: string | null;
+  currency: string;
+  baseCurrency: string;
+  rate: string;
+}): { ok: true; lines: ConvertedLine[]; payoutBase: string } | { ok: false; error: string } {
+  const decimals = minorUnits(input.baseCurrency);
+  const same = input.currency === input.baseCurrency;
+  const convert = (amount: string) =>
+    same ? parseDecimal(amount) : convertUnits(parseDecimal(amount), input.rate, decimals);
+  const clearingIn = clearingLineCurrency(input);
+  if (!clearingIn) {
+    return {
+      ok: false,
+      error: `The clearing account holds only ${input.clearingCurrency}. Choose one in ${input.currency} or ${input.baseCurrency}, or one without a fixed currency.`,
+    };
+  }
+  const lines = input.lines.map((l) => {
+    const base = convert(l.amount);
+    const onClearing = l.accountId === input.clearingAccountId;
+    const currency = onClearing ? clearingIn : input.currency;
+    return {
+      accountId: l.accountId,
+      description: l.description,
+      currency,
+      units: currency === input.currency ? parseDecimal(l.amount) : base,
+      base,
+      onClearing,
+    };
+  });
+  const residual = lines.reduce((t, l) => t + l.base, 0n);
+  if (residual !== 0n) {
+    const others = lines.filter((l) => !l.onClearing);
+    const target = (others.length ? others : lines).reduce((a, b) =>
+      (b.base < 0n ? -b.base : b.base) > (a.base < 0n ? -a.base : a.base) ? b : a,
+    );
+    target.base -= residual;
+    if (target.currency === input.baseCurrency) target.units = target.base;
+  }
+  return {
+    ok: true,
+    payoutBase: formatDecimal(convert(input.total)),
+    lines: lines.map((l) => ({
+      accountId: l.accountId,
+      description: l.description,
+      currency: l.currency,
+      amount: formatDecimal(l.units),
+      baseAmount: formatDecimal(l.base),
+    })),
+  };
+}
+
+/** A deposit in another currency than the payout may differ this much from the market rate. */
+export const SETTLEMENT_FX_TOLERANCE_BP = 500;
+
+export type DepositFit =
+  | { kind: "exact" }
+  | {
+      kind: "converted";
+      /** Deposit units per one payout unit, as the bank converted it. */
+      impliedRate: string;
+      /** The market rate that day (deposit units per payout unit). */
+      marketRate: string;
+      /** How far the bank's rate is from the market's, in basis points (negative: less). */
+      differenceBp: number;
+    };
+
+/**
+ * Whether a deposit can be a payout: the same amount in the same currency (exact), or, in
+ * another currency, close to the payout at the market rate (`rate`: deposit units per payout
+ * unit), within `SETTLEMENT_FX_TOLERANCE_BP`. Null when it can't.
+ */
+export function depositFit(input: {
+  total: string;
+  currency: string;
+  depositAmount: string;
+  depositCurrency: string;
+  rate: string | null;
+}): DepositFit | null {
+  const total = parseDecimal(input.total);
+  const amount = parseDecimal(input.depositAmount);
+  if (total <= 0n || amount <= 0n) return null;
+  if (input.depositCurrency === input.currency) return amount === total ? { kind: "exact" } : null;
+  if (!input.rate || parseDecimal(input.rate, 10) <= 0n) return null;
+  const impliedRate = divideDecimals(input.depositAmount, input.total);
+  const implied = parseDecimal(impliedRate, 10);
+  const market = parseDecimal(input.rate, 10);
+  const differenceBp = Number(((implied - market) * 10_000n) / market);
+  if (Math.abs(differenceBp) > SETTLEMENT_FX_TOLERANCE_BP) return null;
+  return { kind: "converted", impliedRate, marketRate: input.rate, differenceBp };
+}
+
+/**
+ * The matched deposit's lines: its money line as it is, the payout taken out of the clearing
+ * account (in the line currency `clearingLineCurrency` gives, at its value when posted), and
+ * the difference in main-currency value, if any, to exchange gain or loss.
+ */
+export function depositMatchLines(input: {
+  money: ConvertedLine;
+  clearingAccountId: string;
+  clearingCurrency: string | null;
+  currency: string;
+  baseCurrency: string;
+  total: string;
+  payoutBase: string;
+  fxGainAccountId: string | null;
+  fxLossAccountId: string | null;
+  description: string;
+}): { ok: true; lines: ConvertedLine[] } | { ok: false; error: string } {
+  const clearingIn = clearingLineCurrency(input);
+  if (!clearingIn) {
+    return { ok: false, error: `The clearing account holds only ${input.clearingCurrency}.` };
+  }
+  const base = parseDecimal(input.payoutBase);
+  const clearing: ConvertedLine = {
+    accountId: input.clearingAccountId,
+    description: input.description,
+    currency: clearingIn,
+    amount: formatDecimal(-(clearingIn === input.currency ? parseDecimal(input.total) : base)),
+    baseAmount: formatDecimal(-base),
+  };
+  const lines = [input.money, clearing];
+  // Debit when the deposit is worth less than the payout was (a loss), credit when more.
+  const difference = base - parseDecimal(input.money.baseAmount);
+  if (difference !== 0n) {
+    const account = difference > 0n ? input.fxLossAccountId : input.fxGainAccountId;
+    if (!account) return { ok: false, error: "The exchange gain and loss accounts are missing." };
+    lines.push({
+      accountId: account,
+      description: difference > 0n ? "Exchange loss on the payout" : "Exchange gain on the payout",
+      currency: input.baseCurrency,
+      amount: formatDecimal(difference),
+      baseAmount: formatDecimal(difference),
+    });
+  }
+  return { ok: true, lines };
 }

@@ -14,6 +14,7 @@ import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import { formatDate } from "@/lib/dates";
 import { saveSettlementSetupAction } from "../actions";
 
@@ -27,6 +28,7 @@ export function SettlementAccountsForm({
   keys,
   initial,
   postFrom: initialFrom,
+  autoPost: initialAuto,
   options,
   suggested,
   canManage,
@@ -36,6 +38,7 @@ export function SettlementAccountsForm({
   keys: SettlementAccountKey[];
   initial: Record<string, string>;
   postFrom: string;
+  autoPost: boolean;
   options: (ComboboxOption & { type: string })[];
   suggested: boolean;
   canManage: boolean;
@@ -44,6 +47,7 @@ export function SettlementAccountsForm({
   const router = useRouter();
   const [values, setValues] = useState(initial);
   const [postFrom, setPostFrom] = useState(initialFrom);
+  const [autoPost, setAutoPost] = useState(initialAuto);
   const [pending, start] = useTransition();
   // The clearing account holds money in transit: assets only.
   const optionsFor = (key: SettlementAccountKey) =>
@@ -51,7 +55,11 @@ export function SettlementAccountsForm({
 
   const save = () =>
     start(async () => {
-      const result = await saveSettlementSetupAction(slug, { accounts: values, postFrom });
+      const result = await saveSettlementSetupAction(slug, {
+        accounts: values,
+        postFrom,
+        autoPost,
+      });
       if (!result.ok) return void toast.error(result.message);
       toast.success("Saved", { description: "Settlements post with these accounts from now on." });
       router.push(`/o/${slug}/commerce/settlements`);
@@ -110,6 +118,24 @@ export function SettlementAccountsForm({
           From {postFrom ? formatDate(postFrom, locale, "long") : "the date above"}. You choose when
           each one posts, and can take it back out.
         </p>
+        <div className="grid gap-1.5 border-t pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <label htmlFor="settlements-auto" className="font-medium text-sm">
+              Post new settlements automatically
+            </label>
+            <Switch
+              id="settlements-auto"
+              checked={autoPost}
+              onCheckedChange={setAutoPost}
+              disabled={!canManage || pending}
+            />
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Every evening, new settlements post, and a deposit of exactly the payout (same amount,
+            same currency) is matched when it's uncategorized or in your sales account. Deposits in
+            another currency always wait for you to check the rate.
+          </p>
+        </div>
         {canManage ? (
           <Button onClick={save} disabled={pending}>
             {pending ? <Spinner /> : null}

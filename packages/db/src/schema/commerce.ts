@@ -325,6 +325,12 @@ export const settlements = pgTable(
      */
     depositEntryId: uuid("deposit_entry_id"),
     depositOriginalEntryId: uuid("deposit_original_entry_id"),
+    /**
+     * Set when posted: the main-currency units per settlement unit it posted at ("1" in the
+     * main currency), and the payout's main-currency value, which its deposit has to clear.
+     */
+    postedFxRate: numeric("posted_fx_rate", { precision: 20, scale: 10 }),
+    payoutBaseAmount: numeric("payout_base_amount", { precision: 20, scale: 4 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -429,6 +435,8 @@ export const settlementSettings = pgTable(
       .primaryKey()
       .references(() => organization.id, { onDelete: "cascade" }),
     postFrom: date("post_from").notNull(),
+    /** The daily job posts new settlements and matches deposits that fit exactly. */
+    autoPost: boolean("auto_post").notNull().default(false),
     updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

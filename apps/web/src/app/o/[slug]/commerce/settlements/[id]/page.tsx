@@ -2,6 +2,7 @@ import {
   buildSettlementEntry,
   can,
   formatDecimal,
+  localDate,
   parseDecimal,
   SETTLEMENT_GROUPS,
   type SettlementGroup,
@@ -27,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
+import { suggestRate } from "@/server/fx";
 import { isOrgAdmin } from "@/server/org";
 import { DepositChoice, UnmatchDepositButton } from "../deposit-buttons";
 import { PostSettlementButton, UnpostSettlementButton } from "../posting-buttons";
@@ -69,8 +71,13 @@ export default async function SettlementPage({
   const posted = Boolean(s.entryId);
   const before = settings.postFrom ? s.endAt.toISOString().slice(0, 10) < settings.postFrom : false;
   const preview = buildSettlementEntry({ total: s.total, lines: s.lines, accounts });
-  const foreign = s.currency !== ctx.profile.baseCurrency;
-  const { locale, timezone } = ctx.profile;
+  const { locale, timezone, baseCurrency } = ctx.profile;
+  const foreign = s.currency !== baseCurrency;
+  const entryDate = localDate(s.endAt.toISOString(), timezone);
+  // A settlement in another currency posts at that day's rate (fetched now if missing).
+  const quote = foreign && !posted ? await suggestRate(baseCurrency, s.currency, entryDate) : null;
+  const rateLabel = (rate: string) =>
+    `1 ${s.currency} = ${Number(rate).toLocaleString(locale, { maximumFractionDigits: 6 })} ${baseCurrency}`;
   const day = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
   const negative = parseDecimal(s.total) < 0n;
   const clearingName = accounts.clearing ? names.get(accounts.clearing) : null;
@@ -206,6 +213,12 @@ export default async function SettlementPage({
                     ? "Its deposit is matched below."
                     : "The payout waits in the clearing account until its deposit is matched."}
                 </p>
+                {foreign && s.postedFxRate && s.payoutBaseAmount ? (
+                  <p className="text-muted-foreground text-xs">
+                    In {s.currency}, valued at {rateLabel(s.postedFxRate)}: the payout is worth{" "}
+                    <Amount value={s.payoutBaseAmount} currency={baseCurrency} locale={locale} />.
+                  </p>
+                ) : null}
                 {canPost ? <UnpostSettlementButton slug={slug} id={s.id} /> : null}
               </div>
             ) : !settings.postFrom ? (
@@ -220,11 +233,6 @@ export default async function SettlementPage({
                   </Link>
                 </Button>
               </div>
-            ) : foreign ? (
-              <p className="mt-2 text-muted-foreground text-sm">
-                This settlement is in {s.currency}. Posting settlements in another currency than{" "}
-                {ctx.profile.baseCurrency} comes later.
-              </p>
             ) : !preview.ok ? (
               <div className="mt-2 grid gap-3 text-sm">
                 <p className="text-muted-foreground">{preview.error}</p>
@@ -277,7 +285,16 @@ export default async function SettlementPage({
                     })}
                   </tbody>
                 </table>
-                {canPost && !before ? <PostSettlementButton slug={slug} id={s.id} /> : null}
+                {foreign ? (
+                  <p className="text-muted-foreground text-xs">
+                    {quote
+                      ? `In ${s.currency}, each line valued in ${baseCurrency} at ${rateLabel(quote.rate)} (${quote.source}${quote.asOf ? `, ${formatDate(quote.asOf, locale)}` : ""}).`
+                      : `There's no ${s.currency} to ${baseCurrency} exchange rate for ${formatDate(entryDate, locale)} yet. It can post once there is one (rates come in every weekday evening).`}
+                  </p>
+                ) : null}
+                {canPost && !before && (!foreign || quote) ? (
+                  <PostSettlementButton slug={slug} id={s.id} />
+                ) : null}
                 <Link
                   href={`/o/${slug}/commerce/settlements/accounts`}
                   className="text-primary text-xs underline-offset-4 hover:underline"
@@ -329,15 +346,49 @@ export default async function SettlementPage({
                               </span>
                             ) : null}
                           </span>
-                          <Amount value={s.total} currency={s.currency} locale={locale} />
+                          <Amount value={c.amount} currency={c.currency} locale={locale} />
                         </div>
+                        {c.fit.kind === "converted" ? (
+                          <p className="rounded-lg bg-warning/10 px-3 py-2 text-xs">
+                            Paid in {c.currency}: the bank converted{" "}
+                            <Amount value={s.total} currency={s.currency} locale={locale} /> at 1{" "}
+                            {s.currency} = {Number(c.fit.impliedRate).toFixed(4)} {c.currency},{" "}
+                            {Math.abs(c.fit.differenceBp / 100).toFixed(1)}%{" "}
+                            {c.fit.differenceBp < 0 ? "under" : "over"} that day's rate (
+                            {Number(c.fit.marketRate).toFixed(4)}). Check it's this payout before
+                            matching.
+                            {(() => {
+                              if (!s.payoutBaseAmount) return null;
+                              const diff =
+                                parseDecimal(s.payoutBaseAmount) - parseDecimal(c.baseAmount);
+                              if (diff === 0n) return null;
+                              return (
+                                <>
+                                  {" "}
+                                  The difference,{" "}
+                                  <Amount
+                                    value={formatDecimal(diff < 0n ? -diff : diff)}
+                                    currency={baseCurrency}
+                                    locale={locale}
+                                  />
+                                  , goes to exchange {diff > 0n ? "loss" : "gain"}.
+                                </>
+                              );
+                            })()}
+                          </p>
+                        ) : null}
                         <p className="text-muted-foreground text-xs">
                           {c.uncategorized
                             ? `Not categorized yet. Matching puts it in ${clearingName ?? "the clearing account"}.`
                             : `Now in ${c.categories.join(", ")}. Matching moves it to ${clearingName ?? "the clearing account"}, so these sales aren't counted twice.`}
                         </p>
                         {canPost ? (
-                          <DepositChoice slug={slug} settlementId={s.id} entryId={c.entryId} />
+                          <DepositChoice
+                            slug={slug}
+                            settlementId={s.id}
+                            entryId={c.entryId}
+                            converted={c.fit.kind === "converted"}
+                          />
                         ) : null}
                       </li>
                     ))}
@@ -347,7 +398,8 @@ export default async function SettlementPage({
                 <p className="mt-2 text-muted-foreground text-sm">
                   No deposit of <Amount value={s.total} currency={s.currency} locale={locale} />{" "}
                   found in your bank accounts between {formatDate(depositWindow.from, locale)} and{" "}
-                  {formatDate(depositWindow.to, locale)}. It shows here once your bank brings it in.
+                  {formatDate(depositWindow.to, locale)}, in {s.currency} or converted into another
+                  currency. It shows here once your bank brings it in.
                 </p>
               )}
             </div>
