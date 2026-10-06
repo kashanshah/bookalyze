@@ -154,7 +154,7 @@ export default async function SettlementPage({
           </div>
         </section>
 
-        <aside className="grid h-fit gap-4">
+        <aside className="grid h-fit min-w-0 gap-4">
           <div className="rounded-2xl border bg-card p-5 shadow-xs">
             <p className="text-muted-foreground text-xs">
               {negative ? "Owed to Amazon" : "Payout"}
@@ -315,16 +315,16 @@ export default async function SettlementPage({
                       ? "This deposit matches the payout:"
                       : "These deposits match the payout. Choose the right one:"}
                   </p>
-                  <ul className="grid gap-3">
+                  <ul className="grid min-w-0 gap-3">
                     {candidates.map((c) => (
-                      <li key={c.entryId} className="grid gap-2 rounded-xl border p-3">
+                      <li key={c.entryId} className="grid min-w-0 gap-2 rounded-xl border p-3">
                         <div className="flex items-start justify-between gap-3">
-                          <span className="min-w-0">
+                          <span className="min-w-0 flex-1">
                             <span className="block font-medium">
                               {formatDate(c.date, locale)} · {c.accountName}
                             </span>
                             {c.description ? (
-                              <span className="block truncate text-muted-foreground text-xs">
+                              <span className="block text-muted-foreground text-xs [overflow-wrap:anywhere]">
                                 {c.description}
                               </span>
                             ) : null}
