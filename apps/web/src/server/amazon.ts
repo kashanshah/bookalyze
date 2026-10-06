@@ -7,6 +7,7 @@ import {
   type AmazonOrderItem,
   type AmazonRefund,
   type AmazonRegion,
+  amazonErrorDetail,
   type MarketplaceParticipation,
   parseMarketplaceParticipations,
   parseOrderItemsPage,
@@ -132,7 +133,12 @@ async function send(
     throw new AmazonError("Amazon is busy right now. We'll try again shortly.", "unavailable");
   }
   if (!response.ok) {
-    throw new AmazonError(`Amazon answered with an error (${response.status}).`, "unexpected");
+    // Amazon says what it didn't like (a date, a marketplace…): keep its words.
+    const detail = amazonErrorDetail(await response.json().catch(() => null));
+    throw new AmazonError(
+      `Amazon answered with an error (${response.status})${detail ? `: ${detail}` : "."}`,
+      "unexpected",
+    );
   }
   return response;
 }

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { defaultAmazonRegion, parseMarketplaceParticipations } from "../commerce/amazon";
+import {
+  amazonErrorDetail,
+  defaultAmazonRegion,
+  parseMarketplaceParticipations,
+} from "../commerce/amazon";
 
 describe("parseMarketplaceParticipations", () => {
   it("reads Amazon's list, keeping retail marketplaces only", () => {
@@ -52,5 +56,25 @@ describe("parseMarketplaceParticipations", () => {
     expect(defaultAmazonRegion("CA")).toBe("na");
     expect(defaultAmazonRegion("AE")).toBe("eu");
     expect(defaultAmazonRegion("PK")).toBe("na");
+  });
+});
+
+describe("amazonErrorDetail", () => {
+  it("reads Amazon's explanation of a failed call", () => {
+    expect(
+      amazonErrorDetail({
+        errors: [
+          { code: "InvalidInput", message: "Invalid Input", details: "MarketplaceId is invalid." },
+        ],
+      }),
+    ).toBe("Invalid Input MarketplaceId is invalid.");
+    expect(amazonErrorDetail({ errors: [{ code: "x", message: "  a\n b " }] })).toBe("a b");
+    expect(amazonErrorDetail({ errors: [{ message: "x".repeat(300) }] })).toHaveLength(240);
+  });
+
+  it("is null when there's no explanation", () => {
+    expect(amazonErrorDetail({})).toBeNull();
+    expect(amazonErrorDetail(null)).toBeNull();
+    expect(amazonErrorDetail({ errors: [] })).toBeNull();
   });
 });

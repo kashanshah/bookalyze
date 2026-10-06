@@ -117,3 +117,18 @@ export function parseMarketplaceParticipations(json: unknown): MarketplacePartic
     ];
   });
 }
+
+/**
+ * Amazon's own explanation of a failed call ({"errors":[{"code","message","details"}]}), as one
+ * short line, or null when the answer doesn't carry one.
+ */
+export function amazonErrorDetail(json: unknown): string | null {
+  const errors = record(json).errors;
+  const first = record(Array.isArray(errors) ? errors[0] : null);
+  const parts = [text(first.message), text(first.details)]
+    .map((s) => s.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (!parts.length) return null;
+  const line = parts.join(" ");
+  return line.length > 240 ? `${line.slice(0, 239)}…` : line;
+}

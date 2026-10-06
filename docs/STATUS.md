@@ -1153,6 +1153,11 @@ screenshots work well).
 
 ## 6. Gotchas
 
+- **Amazon's 4xx answers carry the reason.** SP-API errors come as
+  `{"errors":[{"code","message","details"}]}`; `send()` in `server/amazon.ts` keeps that line
+  (`amazonErrorDetail` in core), and the order sync adds the marketplace and step ("Amazon.ae,
+  refunds: …"). A bare "error (400)" told nobody what to fix.
+
 - **pnpm only: no `package-lock.json`.** With an npm lockfile at the root, Vercel installs with
   `npm install` (only the root's few dev packages) and the build uses stale cached modules, so a
   newly added dependency is "Module not found" (this broke production builds once). It's in

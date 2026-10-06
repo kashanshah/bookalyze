@@ -86,6 +86,8 @@ export async function syncChannelOrders(
     return true;
   };
 
+  /** What the sync was doing, to say where an unexpected answer came from. */
+  let step = "orders";
   try {
     const creds = openAmazonCredentials(ctx.orgId, connection.id, connection.secret);
 
@@ -157,6 +159,7 @@ export async function syncChannelOrders(
     let refundToken = channel.refundsNextToken;
     let refundEnd = channel.refundsWindowEnd;
     let refundsThrough = channel.refundsSyncedThrough;
+    step = "refunds";
     let refundsDone = Boolean(
       !refundToken && refundsThrough && Date.now() - refundsThrough.getTime() < FRESH_MS,
     );
@@ -217,6 +220,7 @@ export async function syncChannelOrders(
     if (!refundsDone) result.more = true;
 
     // 3. Items of orders that don't have them yet.
+    step = "order items";
     items: while (Date.now() < deadline) {
       const batch = await withOrg(db, ctx, (tx) => ordersNeedingItems(tx, channelId, 10));
       if (!batch.length) break;
@@ -249,10 +253,15 @@ export async function syncChannelOrders(
     );
   } catch (error) {
     if (!(error instanceof AmazonError) && !(error instanceof VaultError)) throw error;
-    result.error = error.message;
+    // Amazon's own words don't say which marketplace or call: add it.
+    const message =
+      error instanceof AmazonError && error.code === "unexpected"
+        ? `${channel.name}, ${step}: ${error.message}`
+        : error.message;
+    result.error = message;
     result.more = false;
     await withOrg(db, ctx, (tx) =>
-      recordConnectionSync(tx, connection.id, { at: new Date(), error: error.message }),
+      recordConnectionSync(tx, connection.id, { at: new Date(), error: message }),
     );
   }
   return result;
