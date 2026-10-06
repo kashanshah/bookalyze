@@ -1166,6 +1166,9 @@ screenshots work well).
   `{"errors":[{"code","message","details"}]}`; `send()` in `server/amazon.ts` keeps that line
   (`amazonErrorDetail` in core), and the order sync adds the marketplace and step ("Amazon.ae,
   refunds: …"). A bare "error (400)" told nobody what to fix.
+- **Amazon keeps financial events 730 days.** A refunds query starting earlier is a 400 ("not
+  valid, given the retention period: 730"), so `refundSyncWindow` starts at most 729 days back,
+  whatever the orders' start date.
 
 - **pnpm only: no `package-lock.json`.** With an npm lockfile at the root, Vercel installs with
   `npm install` (only the root's few dev packages) and the build uses stale cached modules, so a
