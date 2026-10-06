@@ -474,7 +474,7 @@ export function convertSettlementEntry(input: {
 }
 
 /** A deposit in another currency than the payout may differ this much from the market rate. */
-export const SETTLEMENT_FX_TOLERANCE_BP = 500;
+export const SETTLEMENT_FX_TOLERANCE_BP = 1000;
 
 export type DepositFit =
   | { kind: "exact" }

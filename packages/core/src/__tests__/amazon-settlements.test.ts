@@ -317,7 +317,7 @@ describe("depositFit", () => {
     expect(depositFit({ ...base, depositAmount: "2163.46" })).toBeNull();
   });
 
-  it("is close in another currency, within 5% of the market rate", () => {
+  it("is close in another currency, within 10% of the market rate", () => {
     const base = { total: "1000", currency: "AED", depositCurrency: "CAD", rate: "0.3720" };
     expect(depositFit({ ...base, depositAmount: "365.00" })).toEqual({
       kind: "converted",
@@ -325,6 +325,8 @@ describe("depositFit", () => {
       marketRate: "0.3720",
       differenceBp: -188,
     });
+    // 8% under the market rate is still offered; 19% isn't.
+    expect(depositFit({ ...base, depositAmount: "342.00" })).toMatchObject({ differenceBp: -806 });
     expect(depositFit({ ...base, depositAmount: "300.00" })).toBeNull();
     expect(depositFit({ ...base, depositAmount: "365.00", rate: null })).toBeNull();
     // Market rates come with up to 10 decimal places.
