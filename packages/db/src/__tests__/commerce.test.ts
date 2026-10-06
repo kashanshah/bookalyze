@@ -48,6 +48,7 @@ const order = (id: string, over: Partial<AmazonOrder> = {}): AmazonOrder => ({
   isBusiness: false,
   isPrime: false,
   isReplacement: false,
+  earliestDelivery: null,
   latestDelivery: null,
   ...over,
 });
@@ -187,7 +188,16 @@ describe("orders", () => {
       channelName: "Amazon.ca",
     });
     expect(all.totals).toEqual([
-      { currency: "CAD", orders: 2, sold: 2, units: 2, sales: "65.0000", refunded: "0" },
+      {
+        channelId: expect.any(String),
+        channelName: "Amazon.ca",
+        currency: "CAD",
+        orders: 2,
+        sold: 2,
+        units: 2,
+        sales: "65.0000",
+        refunded: "0",
+      },
     ]);
 
     const bySku = await scoped((tx) =>

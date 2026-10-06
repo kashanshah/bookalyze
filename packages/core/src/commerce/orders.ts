@@ -54,7 +54,8 @@ export type AmazonOrder = {
   isBusiness: boolean;
   isPrime: boolean;
   isReplacement: boolean;
-  /** Latest promised delivery date (YYYY-MM-DD), for review timing later. */
+  /** Promised delivery dates (YYYY-MM-DD): Amazon's review request window hangs off them. */
+  earliestDelivery: string | null;
   latestDelivery: string | null;
 };
 
@@ -106,6 +107,8 @@ export function parseOrdersPage(json: unknown): {
     const total = record(o.OrderTotal);
     const address = record(o.ShippingAddress);
     const latest = text(o.LatestDeliveryDate);
+    const earliest = text(o.EarliestDeliveryDate);
+    const day = (v: string) => (/^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null);
     return [
       {
         orderId,
@@ -123,7 +126,8 @@ export function parseOrdersPage(json: unknown): {
         isBusiness: o.IsBusinessOrder === true,
         isPrime: o.IsPrime === true,
         isReplacement: o.IsReplacementOrder === true || o.IsReplacementOrder === "true",
-        latestDelivery: /^\d{4}-\d{2}-\d{2}/.test(latest) ? latest.slice(0, 10) : null,
+        earliestDelivery: day(earliest),
+        latestDelivery: day(latest),
       },
     ];
   });

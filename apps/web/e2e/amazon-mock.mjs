@@ -37,7 +37,7 @@ const orders = [
   {
     AmazonOrderId: "702-1000001-0000001",
     MarketplaceId: "A2EUQ1WTGCTBG2",
-    PurchaseDate: daysAgo(3),
+    PurchaseDate: daysAgo(12),
     LastUpdateDate: daysAgo(2),
     OrderStatus: "Shipped",
     FulfillmentChannel: "AFN",
@@ -46,6 +46,9 @@ const orders = [
     NumberOfItemsUnshipped: 0,
     ShippingAddress: { StateOrRegion: "ON", CountryCode: "CA" },
     IsPrime: true,
+    // Delivered a week ago, so Amazon takes a review request for it.
+    EarliestDeliveryDate: daysAgo(9),
+    LatestDeliveryDate: daysAgo(7),
   },
   {
     AmazonOrderId: "702-1000002-0000002",
@@ -97,6 +100,9 @@ const items = {
   ],
   "702-1000003-0000003": [],
 };
+
+/** Orders asked for a review. */
+const asked = new Set();
 
 // One mug of the first order refunded (price and tax), less a promotion clawed back: partly.
 const refundEvents = [
@@ -183,6 +189,30 @@ createServer((req, res) => {
     const id = decodeURIComponent(itemsPath[1]);
     if (!(id in items)) return json(res, 404, { errors: [{ code: "NotFound" }] });
     return json(res, 200, { payload: { AmazonOrderId: id, OrderItems: items[id] } });
+  }
+  // Review requests: Amazon offers one per shipped order, then refuses (403) once asked.
+  const solicitation =
+    /^\/solicitations\/v1\/orders\/([^/]+)(\/solicitations\/productReviewAndSellerFeedback)?$/.exec(
+      url.pathname,
+    );
+  if (solicitation) {
+    const id = decodeURIComponent(solicitation[1]);
+    const order = orders.find((o) => o.AmazonOrderId === id);
+    if (!order || !url.searchParams.get("marketplaceIds")) {
+      return json(res, 400, { errors: [{ code: "InvalidInput" }] });
+    }
+    const offered = order.OrderStatus === "Shipped" && !asked.has(id);
+    if (solicitation[2] && req.method === "POST") {
+      if (!offered) return json(res, 403, { errors: [{ code: "Unauthorized" }] });
+      asked.add(id);
+      return json(res, 201, {});
+    }
+    const self = { href: url.pathname, name: "productReviewAndSellerFeedback" };
+    return json(res, 200, { _links: { actions: offered ? [self] : [] } });
+  }
+  const finances = /^\/finances\/v0\/orders\/([^/]+)\/financialEvents$/.exec(url.pathname);
+  if (finances) {
+    return json(res, 200, { payload: { FinancialEvents: { ShipmentEventList: [{}] } } });
   }
   json(res, 404, { errors: [{ code: "NotFound" }] });
 }).listen(port);

@@ -12,8 +12,9 @@ import {
   listOrders,
   orderSyncChannels,
 } from "@bookalyze/db";
-import { ArrowLeft, ArrowRight, ChevronRight, PackageSearch, Search, Store } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, PackageSearch, Search, Store, X } from "lucide-react";
 import type { Metadata } from "next";
+import Form from "next/form";
 import Link from "next/link";
 import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
@@ -25,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { fiscalConfigOf, isOrgAdmin } from "@/server/org";
+import { MarketplaceFilter } from "./order-filters";
 import { IncludeChannels, StartOrders, SyncOrdersButton } from "./order-sync";
 import { refundBadge, statusVariant } from "./status";
 
@@ -111,6 +113,9 @@ export default async function OrdersPage({
     return `${base}${p.size ? `?${p}` : ""}`;
   };
   const filtered = Boolean(status || channel || q || from || to);
+  /** Filters beyond the status tab, which "Clear filters" resets. */
+  const narrowed = Boolean(channel || q || from || to);
+  const clearHref = href({ channel: "", q: "", from: "", to: "" });
   const day = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
   const lastSynced = syncing
     .map((s) => s.ordersSyncedThrough)
@@ -121,7 +126,7 @@ export default async function OrdersPage({
     <PageHeader
       eyebrow="Commerce"
       title="Orders"
-      description="Every order from your marketplaces, kept up to date every day. Orders don't change your books: Amazon's settlements do."
+      description="Every order from your marketplaces, kept up to date every few minutes. Orders don't change your books: Amazon's settlements do."
       actions={syncing.length ? <SyncOrdersButton slug={slug} /> : null}
     />
   );
@@ -179,7 +184,7 @@ export default async function OrdersPage({
             ? `Up to date as of ${new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: timezone }).format(lastSynced)}`
             : "The first orders are on their way",
           waiting
-            ? `item details still coming for ${waiting} ${waiting === 1 ? "order" : "orders"}`
+            ? `item details still coming for ${waiting} ${waiting === 1 ? "order" : "orders"}, on their own (Amazon allows about 30 a minute)`
             : null,
         ]
           .filter(Boolean)
@@ -228,25 +233,18 @@ export default async function OrdersPage({
             </Link>
           ))}
         </nav>
-        <form
+        <Form
+          key={`${channel}|${q}|${from}|${to}`}
           className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto sm:flex-wrap"
           action={base}
+          scroll={false}
         >
           {status ? <input type="hidden" name="status" value={status} /> : null}
           {channels.length > 1 ? (
-            <select
-              name="channel"
-              defaultValue={channel}
-              aria-label="Marketplace"
-              className="col-span-2 h-9 rounded-lg border bg-background px-2 text-sm"
-            >
-              <option value="">All marketplaces</option>
-              {channels.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <MarketplaceFilter
+              channels={channels.map((c) => ({ id: c.id, name: c.name }))}
+              value={channel}
+            />
           ) : null}
           <Input
             type="date"
@@ -276,33 +274,72 @@ export default async function OrdersPage({
           <Button type="submit" variant="outline" size="sm" className="col-span-2 h-9">
             Show
           </Button>
-        </form>
+          {narrowed ? (
+            <Button asChild variant="ghost" size="sm" className="col-span-2 h-9">
+              <Link href={clearHref} scroll={false}>
+                <X />
+                Clear filters
+              </Link>
+            </Button>
+          ) : null}
+        </Form>
       </div>
 
       {list.totals.length ? (
-        <div className="grid gap-3 sm:grid-cols-3">
-          {list.totals.slice(0, 3).map((t) => (
-            <div key={t.currency} className="rounded-2xl border bg-card px-5 py-4 shadow-xs">
-              <p className="text-muted-foreground text-xs">
-                Sales{list.totals.length > 1 ? ` in ${t.currency}` : ""}, not counting cancelled
-              </p>
-              <p className="mt-1 font-semibold text-xl tracking-tight">
-                <Amount value={t.sales} currency={t.currency} locale={locale} />
-              </p>
-              <p className="mt-0.5 text-muted-foreground text-xs">
-                {t.sold} {t.sold === 1 ? "order" : "orders"} · {t.units}{" "}
-                {t.units === 1 ? "unit" : "units"}
-                {parseDecimal(t.refunded) > 0n ? (
-                  <>
-                    {" · "}
-                    <span className="text-destructive">
-                      <Amount value={t.refunded} currency={t.currency} locale={locale} /> refunded
-                    </span>
-                  </>
-                ) : null}
-              </p>
-            </div>
-          ))}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {list.totals.map((t) => {
+            const active = channel === t.channelId;
+            const clickable = channels.length > 1;
+            const body = (
+              <>
+                <p className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
+                  <span>
+                    {t.channelName} sales, not counting cancelled
+                    {list.totals.some((o) => o.channelId === t.channelId && o !== t)
+                      ? ` (${t.currency})`
+                      : ""}
+                  </span>
+                  {active ? <X className="size-3.5 shrink-0" aria-hidden /> : null}
+                </p>
+                <p className="mt-1 font-semibold text-xl tracking-tight">
+                  <Amount value={t.sales} currency={t.currency} locale={locale} />
+                </p>
+                <p className="mt-0.5 text-muted-foreground text-xs">
+                  {t.sold} {t.sold === 1 ? "order" : "orders"} · {t.units}{" "}
+                  {t.units === 1 ? "unit" : "units"}
+                  {parseDecimal(t.refunded) > 0n ? (
+                    <>
+                      {" · "}
+                      <span className="text-destructive">
+                        <Amount value={t.refunded} currency={t.currency} locale={locale} /> refunded
+                      </span>
+                    </>
+                  ) : null}
+                </p>
+              </>
+            );
+            const card = "rounded-2xl border bg-card px-5 py-4 shadow-xs";
+            return clickable ? (
+              <Link
+                key={`${t.channelId}:${t.currency}`}
+                href={href({ channel: active ? "" : t.channelId })}
+                scroll={false}
+                aria-current={active ? "true" : undefined}
+                title={active ? "Show every marketplace" : `Show only ${t.channelName}`}
+                className={cn(
+                  card,
+                  "transition-[border-color,box-shadow] hover:border-primary/30 hover:shadow-md",
+                  active && "border-primary/50 ring-2 ring-primary/15",
+                )}
+              >
+                {body}
+              </Link>
+            ) : (
+              <div key={`${t.channelId}:${t.currency}`} className={card}>
+                {body}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 
@@ -317,6 +354,13 @@ export default async function OrdersPage({
               ? "Try another search, dates or tab."
               : "Orders placed since the start date show up here as they come in."}
           </p>
+          {narrowed && any ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={clearHref} scroll={false}>
+                Clear filters
+              </Link>
+            </Button>
+          ) : null}
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">

@@ -11,7 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/dates";
 import { startOrdersAction, syncOrdersAction } from "../actions";
 
-/** At most this many calls per click: a huge first sync carries on with the daily job. */
+/** At most this many calls per click: a huge first sync carries on with the background job. */
 const MAX_ROUNDS = 30;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -66,7 +66,9 @@ function useOrderSync(slug: string) {
             : `Bringing in orders… ${orders} so far`,
         );
         if (round === MAX_ROUNDS - 1) {
-          toast.info("Still going: the rest comes in with the daily sync, or click again.");
+          toast.info(
+            "Still going: the rest keeps coming in on its own, even if you close this page.",
+          );
         }
         await pause(1_500);
       }
@@ -136,8 +138,8 @@ export function StartOrders({
           <div>
             <h2 className="font-semibold text-lg tracking-tight">Bring in your orders</h2>
             <p className="mt-1.5 text-muted-foreground text-sm leading-relaxed">
-              From {channels.join(", ")}. After this, new orders come in every day on their own.
-              Orders don't change your books: Amazon's settlements will.
+              From {channels.join(", ")}. After this, new orders come in every few minutes on their
+              own. Orders don't change your books: Amazon's settlements will.
             </p>
           </div>
         </div>

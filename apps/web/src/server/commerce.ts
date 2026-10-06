@@ -15,6 +15,13 @@ export async function getCommerceContext(slug: string): Promise<CommerceContext>
   return ctx as CommerceContext;
 }
 
+/** The context for Review requests pages and actions: the Review requests module must be on. */
+export async function getReviewsContext(slug: string): Promise<CommerceContext> {
+  const ctx = await getOrgContext(slug);
+  if (!can(ctx.plan, ctx.enabledModules, "reviews.manual") || !ctx.profile) notFound();
+  return ctx as CommerceContext;
+}
+
 /** Amazon credentials are kept sealed in the vault as one JSON value. */
 export function sealAmazonCredentials(
   orgId: string,

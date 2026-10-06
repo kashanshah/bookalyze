@@ -1,11 +1,16 @@
 import {
+  addDaysIso,
+  can,
   formatDecimal,
+  ORDER_STATUS_GROUPS,
   orderStatusLabel,
   parseDecimal,
+  REVIEW_STATUS_LABELS,
+  reviewWindow,
   sellerCentralOrderUrl,
 } from "@bookalyze/core";
-import { getOrder } from "@bookalyze/db";
-import { ArrowLeft, ExternalLink, Package, Undo2 } from "lucide-react";
+import { getOrder, getReviewRequest } from "@bookalyze/db";
+import { ArrowLeft, ExternalLink, Package, Star, Undo2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -13,10 +18,15 @@ import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/lib/dates";
+import { formatDate, nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
+import { isOrgAdmin } from "@/server/org";
+import { AskOneButton } from "../../../reviews/review-rows";
 import { refundBadge, statusVariant } from "../status";
+
+/** "Ask for a review now" runs inside this page's server actions. */
+export const maxDuration = 60;
 
 export const metadata: Metadata = { title: "Order" };
 
@@ -32,11 +42,17 @@ export default async function OrderPage({
   const { slug, id } = await params;
   if (!UUID.test(id)) notFound();
   const ctx = await getCommerceContext(slug);
-  const found = await inOrg(ctx, (tx) => getOrder(tx, id));
+  const reviewsOn = can(ctx.plan, ctx.enabledModules, "reviews.manual");
+  const found = await inOrg(ctx, async (tx) => {
+    const row = await getOrder(tx, id);
+    return row && { ...row, request: reviewsOn ? await getReviewRequest(tx, id) : null };
+  });
   if (!found) notFound();
-  const { order, channel, items, refunds } = found;
+  const { order, channel, items, refunds, request } = found;
   const refund = refundBadge(order.total, order.refunded);
   const { locale, timezone } = ctx.profile;
+  const today = nowIn(timezone).date;
+  const reviewDays = reviewWindow(order);
   const currency = order.currency ?? channel.currency;
   const status = orderStatusLabel(order.status);
   const link = sellerCentralOrderUrl(channel.name, order.externalId);
@@ -74,6 +90,62 @@ export default async function OrderPage({
     order.isBusiness && "Business order",
     order.isReplacement && "Replacement",
   ].filter((f): f is string => Boolean(f));
+
+  const review = reviewsOn ? reviewSummary() : null;
+  function reviewSummary() {
+    const moment = new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: timezone,
+    });
+    if (request) {
+      const label = REVIEW_STATUS_LABELS[request.status].label;
+      if (request.status === "sent" && request.sentAt) {
+        return { badge: label, text: moment.format(request.sentAt), reason: null, canAsk: false };
+      }
+      if (request.status === "scheduled" && request.dueAt) {
+        return {
+          badge: label,
+          text: `Goes out ${moment.format(request.dueAt)}`,
+          reason: request.reason,
+          canAsk: Boolean(reviewDays && reviewDays.opens <= today),
+        };
+      }
+      return { badge: label, text: "", reason: request.reason, canAsk: false };
+    }
+    const shipped = (ORDER_STATUS_GROUPS.shipped as readonly string[]).includes(order.status);
+    if (!shipped || !reviewDays) {
+      return {
+        badge: null,
+        text: "Can be asked once Amazon has shipped it and given a delivery date.",
+        reason: null,
+        canAsk: false,
+      };
+    }
+    const last = addDaysIso(reviewDays.closes, -1);
+    if (today > last) {
+      return {
+        badge: null,
+        text: `Amazon's window closed on ${formatDate(last, locale)}.`,
+        reason: null,
+        canAsk: false,
+      };
+    }
+    if (today < reviewDays.opens) {
+      return {
+        badge: null,
+        text: `Can be asked from ${formatDate(reviewDays.opens, locale)} to ${formatDate(last, locale)}.`,
+        reason: null,
+        canAsk: false,
+      };
+    }
+    return {
+      badge: null,
+      text: `Not asked yet. Amazon takes a request until ${formatDate(last, locale)}.`,
+      reason: null,
+      canAsk: true,
+    };
+  }
 
   const totals = [
     { label: "Items", value: sum(items.map((i) => i.itemPrice)) },
@@ -210,28 +282,64 @@ export default async function OrderPage({
           ) : null}
         </section>
 
-        <aside className="h-fit rounded-2xl border bg-card p-5 shadow-xs">
-          <dl className="grid gap-3.5 text-sm">
-            {facts.map((f) => (
-              <div key={f.label}>
-                <dt className="text-muted-foreground text-xs">{f.label}</dt>
-                <dd className="mt-0.5">{f.value}</dd>
-              </div>
-            ))}
-          </dl>
-          {flags.length ? (
-            <div className="mt-4 flex flex-wrap gap-1.5">
-              {flags.map((f) => (
-                <Badge key={f} variant="primary">
-                  {f}
-                </Badge>
+        <div className="grid h-fit gap-6">
+          <aside className="rounded-2xl border bg-card p-5 shadow-xs">
+            <dl className="grid gap-3.5 text-sm">
+              {facts.map((f) => (
+                <div key={f.label}>
+                  <dt className="text-muted-foreground text-xs">{f.label}</dt>
+                  <dd className="mt-0.5">{f.value}</dd>
+                </div>
               ))}
-            </div>
+            </dl>
+            {flags.length ? (
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {flags.map((f) => (
+                  <Badge key={f} variant="primary">
+                    {f}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+            <p className="mt-5 border-t pt-4 text-muted-foreground text-xs leading-relaxed">
+              Buyer names and addresses stay in Seller Central: Bookalyze doesn't ask Amazon for
+              them.
+            </p>
+          </aside>
+          {review ? (
+            <section className="rounded-2xl border bg-card p-5 shadow-xs">
+              <h2 className="flex items-center gap-2 font-medium text-sm">
+                <Star className="size-4 text-primary" />
+                Review request
+              </h2>
+              <p className="mt-2 text-sm">
+                {review.badge ? (
+                  <Badge
+                    variant={review.badge === "Requested" ? "success" : "outline"}
+                    className="me-2"
+                  >
+                    {review.badge}
+                  </Badge>
+                ) : null}
+                {review.text}
+              </p>
+              {review.reason ? (
+                <p className="mt-1 text-muted-foreground text-xs">{review.reason}</p>
+              ) : null}
+              {review.canAsk && isOrgAdmin(ctx) ? (
+                <div className="mt-4">
+                  <AskOneButton slug={slug} orderId={order.id} />
+                </div>
+              ) : null}
+              <Link
+                href={`/o/${slug}/reviews`}
+                className="mt-4 block text-primary text-xs underline-offset-4 hover:underline"
+              >
+                All review requests
+              </Link>
+            </section>
           ) : null}
-          <p className="mt-5 border-t pt-4 text-muted-foreground text-xs leading-relaxed">
-            Buyer names and addresses stay in Seller Central: Bookalyze doesn't ask Amazon for them.
-          </p>
-        </aside>
+        </div>
       </div>
     </div>
   );

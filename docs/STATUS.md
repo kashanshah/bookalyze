@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-04, phase 1b (importing from other software)._
+_Last updated: 2026-10-05, phase 3 slice 3 (Amazon review requests)._
 
 ---
 
@@ -25,7 +25,7 @@ _Last updated: 2026-10-04, phase 1b (importing from other software)._
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
-| 3. Commerce connections, orders & review requests | **In progress.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen) and refunds on orders done. Next: review requests |
+| 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen), slice 3 (review requests: manual, bulk, automatic) and refunds on orders (red badge, Refunded tab) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation and Finance and Accounting roles) |
 | 4+. Settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -690,17 +690,74 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   - Amazon's 429 is `AmazonError` code `throttled`: the sync waits (5 s orders, 2.1 s items)
     while the budget lasts, then stops with `more: true`.
 - **Runs:** "Bring in new orders" (`syncOrdersAction`, any member, 20 s per call; the button
-  calls again while `more`, up to 30 rounds, refreshing the list) and the daily job
-  (`/api/cron/fx-rates` → `syncAllOrders`, 150 s total, at most 60 s per channel, over
-  `syncable_sales_channels()`; route `maxDuration = 300`).
+  calls again while `more`, up to 30 rounds, refreshing the list) and the order job
+  `/api/cron/orders`, every 5 minutes, every day (`syncAllOrders`, 240 s so a run ends before
+  the next; passes of at most 60 s per channel, then leftover time to channels still with more;
+  over `syncable_sales_channels()`; route `maxDuration = 300`). Amazon allows about one order's
+  items every 2 s, so a first sync of thousands of orders takes a few hours, on its own. Orders
+  aren't listed again within 10 minutes of the last listing (`FRESH_MS`); items carry on.
 - **Schema** (migration `0026_amazon_orders`): `orders` (unique per channel + order number;
   Amazon's own status text, mapped to words by `orderStatusLabel`), `order_items` (prices for
   the whole quantity), four `orders_*` columns on `sales_channels`, and the security-definer
-  `syncable_sales_channels()` for the daily job.
+  `syncable_sales_channels()` for the order job.
 - Reconnecting a disconnected Amazon account puts the marketplaces back as Amazon reports them
   (disconnect had switched them all off).
 - Tests: core `amazon-orders.test.ts`, db `commerce.test.ts`, e2e "bring in Amazon orders" (the
   mock answers three orders in two pages, with items).
+- **Sales cards per marketplace:** one card per marketplace (and currency). With more than one
+  marketplace, a card filters the list to it (`?channel=`); clicking the active card clears it.
+  The filter form is keyed by the filters in the URL, so its fields (the marketplace `Combobox`,
+  which applies on choice, dates, search) always show what's applied. "Clear filters" keeps the
+  status tab.
+
+### Phase 3, slice 3: Amazon review requests
+
+- **Review requests module is live** (Features → Review requests, needs Commerce). Sidebar:
+  Review requests → Requests (`/reviews`), Automatic requests (`/reviews/automatic`).
+- **Amazon's own "Request a Review" only** (Solicitations API): one standard message per order,
+  in the buyer's language, from 5 days after the earliest delivery date to 30 days after the
+  latest (core `reviewWindow`; the last day is kept free). Custom emails aren't possible (see
+  PLAN §3.5). Amazon's GET of the order's actions is the source of truth; its 403 on the POST
+  means the order was already asked (in Seller Central, say).
+- **Amazon app roles:** Buyer Solicitation (requests) and Finance and Accounting (refund check).
+  A missing role is a 403 with a plain message naming it (`roleMissing`, `server/amazon.ts`); the
+  run stops for that company. Amazon's role changes need the app authorized again (new
+  refresh token in Commerce → Channels).
+- **Requests page:** cards (ready to ask now, scheduled, requested lately), tabs To ask /
+  Scheduled / Requested / Left out with counts, marketplace chips, 50 per page. "Ask now" and
+  "Don't ask" (with Undo) per order; select several to ask or leave out together; "Ask all N
+  ready" asks every order whose window is open, 30 per call. "Put back" returns a left-out
+  order to To ask. The order page has a "Review request" box with its status and "Ask for a
+  review now". Owners and admins send and change settings; members see the lists.
+- **Automatic requests** (`review_settings`, one row per company; core `ReviewSettings`): on/off,
+  5–25 days after the latest delivery date, an hour in the company's timezone, weekdays, which
+  marketplaces, shipped by any / Amazon / you, skip refunded (Finances API
+  `GET /finances/v0/orders/{id}/financialEvents`: refunds, A-to-z claims, chargebacks; core
+  `refundReason`), replacements, business orders, orders with a promotion, excluded SKUs, and a
+  start (`starts_from`: delivered from a day on, or every order still in the window). Saving
+  clears the automation's scheduled and auto-skipped rows and plans again straight away
+  (`planOrgReviewRequests`, nothing is sent from the form).
+- **Planner** (`server/reviews.ts`, `planReviews`): shipped orders with a delivery date, no
+  request yet and an open window (`reviewCandidates`) get `reviewHold` (a reason → skipped) or
+  `reviewSendDay` (the delay, no earlier than the window, moved to an allowed weekday) at
+  `zonedInstant(day, hour, timezone)`. Orders need their items in when SKUs or promotions are
+  filtered on.
+- **Sender** (`reviewSender`): paces Amazon calls 1.1 s apart, waits out 429s while the budget
+  lasts, then refund check → GET actions → POST. Not offered yet: tried again a day later, up to
+  5 tries; errors retry an hour later. One request row per order (`review_requests`, unique
+  `order_id`); a sent row is never overwritten (`recordReviewOutcome`).
+- **Runs:** the hourly job `/api/cron/review-requests` ("5 * * * *" in `apps/web/vercel.json`,
+  `CRON_SECRET`, 240 s, at most 60 s per company, over the security-definer
+  `review_request_orgs()`), and the buttons (`askReviewsAction`, 45 s per call; the client calls
+  again while `more`, up to 20 rounds). Orders still come in daily, so new deliveries are
+  planned within a day.
+- **Schema** (migration `0028_review_requests`): `orders.earliest_delivery` (Amazon's
+  `EarliestDeliveryDate`), `review_settings`, `review_requests` (status scheduled / sent /
+  skipped / not_eligible / failed; source auto / manual / bulk; due and sent times, reason,
+  attempts) and `review_request_orgs()`.
+- Tests: core `reviews.test.ts` (window, holds, send day, timezones, Amazon's answers), db
+  `reviews.test.ts`, e2e "reviews: ask for a review by hand, then turn on automatic requests"
+  (the mock offers one request per shipped order, then answers 403).
 
 ### Refunds on orders
 
@@ -721,7 +778,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Amount refunded** = −(item charge adjustments + promotion adjustments): price, shipping,
   tax and gift wrap given back, less promotions clawed back and restocking fees. Amazon's own
   fee refunds to the seller aren't counted. Compared with the order total for full or partial.
-- **Schema** (migration `0028_order_refunds`): `order_refunds` (one row per refunded item,
+- **Schema** (migration `0029_order_refunds`): `order_refunds` (one row per refunded item,
   unique per order + Amazon's `OrderAdjustmentItemId`, so re-reading changes nothing) and
   `orders.refunded` / `orders.last_refund_at`, recomputed by `saveRefunds`.
 - Financial events are per seller account, not per marketplace, so each channel of one
@@ -842,6 +899,13 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 - [ ] Run the importer on the owner's real Wave export. The column names came from Wave's
   export format and were tested with synthetic files. Fix any differences in `IMPORT_SOURCES`.
 - [ ] Foreign-currency lines: a currency column plus a main-currency amount column.
+
+### Phase 3: review requests, remaining
+- [x] Manual, bulk and automatic review requests. Done in slice 3.
+- [ ] Add the Buyer Solicitation and Finance and Accounting roles to Kazomo's Amazon app,
+  authorize it again, paste the new refresh token, and turn automatic requests on.
+- [ ] Custom review emails: not possible with the official API today (PLAN §3.5). Revisit if
+  Amazon opens a route that doesn't need buyer data.
 
 ---
 
@@ -976,6 +1040,9 @@ screenshots work well).
   Kill it before running e2e.
 - **TypeScript is pinned to 6.0.3.** TS 7 native breaks the toolchain here.
 - **Better Auth rate limiting** can trip in e2e. The tests wait where needed.
+- **Clicks right after `page.reload()`** can land before the page hydrates and do nothing on CI
+  (the Transactions list is heavy). Retry the click until the URL changes:
+  `expect(async () => { await link.click(); await expect(page).toHaveURL(…, { timeout: 2_000 }); }).toPass()`.
 - **Server-only modules** (`@/server/*`) import `"server-only"`. Client components may only
   `import type` from them.
 - **Client bundle size:** `@bookalyze/core` re-exports reference data, so client components that
@@ -1025,6 +1092,11 @@ screenshots work well).
   reports `column reference "id" is ambiguous`.
 - **Root `.env` loading:** `apps/web/next.config.ts` loads the root `.env` with dotenv.
   `packages/db/scripts/load-env.ts` does the same for scripts.
+- **Local e2e and migrations follow `.env`**, which may point at the live database. Shell
+  variables win over `.env`, so export `DATABASE_URL`, `DATABASE_URL_MIGRATOR` and
+  `DATABASE_URL_UNPOOLED` for the local Docker database (as in CI) before `pnpm db:setup`,
+  `pnpm build` or `pnpm e2e`. To migrate the test database, also set `DATABASE_URL` to its app
+  role, so `migrate.ts` grants it `app_runtime`.
 
 ---
 

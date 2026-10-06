@@ -198,6 +198,7 @@ export async function upsertOrders(
         isBusiness: o.isBusiness,
         isPrime: o.isPrime,
         isReplacement: o.isReplacement,
+        earliestDelivery: o.earliestDelivery,
         latestDelivery: o.latestDelivery,
       })),
     )
@@ -216,6 +217,7 @@ export async function upsertOrders(
         isBusiness: sql`excluded.is_business`,
         isPrime: sql`excluded.is_prime`,
         isReplacement: sql`excluded.is_replacement`,
+        earliestDelivery: sql`excluded.earliest_delivery`,
         latestDelivery: sql`excluded.latest_delivery`,
         itemsSyncedAt: sql`case when ${orders.status} is distinct from excluded.status or ${orders.total} is distinct from excluded.total then null else ${orders.itemsSyncedAt} end`,
         updatedAt: sql`now()`,
@@ -411,8 +413,11 @@ export async function listOrders(
     .orderBy(desc(orders.purchasedAt), desc(orders.externalId))
     .limit(filters.limit)
     .offset(filters.offset);
+  // Per marketplace (and currency, should a marketplace ever mix them), biggest first.
   const totals = await tx
     .select({
+      channelId: salesChannels.id,
+      channelName: salesChannels.name,
       currency: sql<string>`coalesce(${orders.currency}, ${salesChannels.currency})`,
       orders: sql<number>`count(*)::int`,
       sold: sql<number>`(count(*) filter (where ${orders.status} not in ('Canceled', 'Unfulfillable')))::int`,
@@ -423,8 +428,8 @@ export async function listOrders(
     .from(orders)
     .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
     .where(where)
-    .groupBy(sql`1`)
-    .orderBy(sql`2 desc`);
+    .groupBy(salesChannels.id, salesChannels.name, sql`3`)
+    .orderBy(sql`4 desc`, salesChannels.name);
   return {
     rows: rows.map((r) => ({
       ...r,

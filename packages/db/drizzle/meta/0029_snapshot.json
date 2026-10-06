@@ -1,6 +1,6 @@
 {
-  "id": "b7a7e4e9-b9e7-4f8f-a298-12ba9faf19f1",
-  "prevId": "5c0ed507-6108-439f-9248-91e37fc2073b",
+  "id": "39156ee7-a757-4ad2-a7e5-608dc2444191",
+  "prevId": "b7a7e4e9-b9e7-4f8f-a298-12ba9faf19f1",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3407,6 +3407,124 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.order_refunds": {
+      "name": "order_refunds",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "posted_at": {
+          "name": "posted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(20, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "char(3)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "order_refunds_organization_id_organization_id_fk": {
+          "name": "order_refunds_organization_id_organization_id_fk",
+          "tableFrom": "order_refunds",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "order_refunds_order_fk": {
+          "name": "order_refunds_order_fk",
+          "tableFrom": "order_refunds",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "organization_id",
+            "order_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "order_refunds_order_external_key": {
+          "name": "order_refunds_order_external_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "order_id",
+            "external_id"
+          ]
+        }
+      },
+      "policies": {
+        "order_refunds_tenant_isolation": {
+          "name": "order_refunds_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "\"order_refunds\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid",
+          "withCheck": "\"order_refunds\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.orders": {
       "name": "orders",
       "schema": "",
@@ -3533,6 +3651,18 @@
         },
         "items_synced_at": {
           "name": "items_synced_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refunded": {
+          "name": "refunded",
+          "type": "numeric(20, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_refund_at": {
+          "name": "last_refund_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -4091,6 +4221,24 @@
         },
         "orders_window_end": {
           "name": "orders_window_end",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refunds_synced_through": {
+          "name": "refunds_synced_through",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refunds_next_token": {
+          "name": "refunds_next_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refunds_window_end": {
+          "name": "refunds_window_end",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

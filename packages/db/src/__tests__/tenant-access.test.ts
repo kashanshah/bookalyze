@@ -21,6 +21,7 @@ const REVIEWED_DIRECT_USE = [
   "server/fx.ts", // fx_rates (reference data)
   "server/org.ts", // member, organization
   "server/organizations.ts", // organization
+  "server/reviews.ts", // review_request_orgs() for the hourly job; the rest in withOrg()
 ];
 
 const webSrc = fileURLToPath(new URL("../../../../apps/web/src", import.meta.url));

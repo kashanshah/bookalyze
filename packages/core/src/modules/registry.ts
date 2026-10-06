@@ -113,8 +113,11 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     phase: "3",
     requires: ["commerce"],
     features: ["reviews.manual", "reviews.bulk", "reviews.auto_rules"],
-    nav: [{ label: "Review requests", href: "/reviews" }],
-    status: "coming_soon",
+    nav: [
+      { label: "Requests", href: "/reviews" },
+      { label: "Automatic requests", href: "/reviews/automatic" },
+    ],
+    status: "available",
   },
   analytics: {
     key: "analytics",

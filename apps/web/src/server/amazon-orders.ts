@@ -284,24 +284,39 @@ export async function syncOrgOrders(
   return { ...total, channels: channelIds.length };
 }
 
-/** The daily job: every channel orders are brought in for, within the budget. */
+/**
+ * The every-few-minutes job: every channel orders are brought in for, within the budget. Each
+ * pass gives a channel at most a minute, so one large first sync doesn't starve the rest; time
+ * left over goes to channels that still have more, pass after pass.
+ */
 export async function syncAllOrders(budgetMs: number) {
   const deadline = Date.now() + budgetMs;
   const rows = await getDb().execute<{ organization_id: string; channel_id: string }>(
     sql`select organization_id, channel_id from syncable_sales_channels()`,
   );
   let orders = 0;
-  let failed = 0;
-  for (const row of rows.rows) {
-    if (Date.now() >= deadline) break;
-    // No channel takes more than a minute, so one large first sync doesn't starve the rest.
-    const r = await syncChannelOrders(
-      { orgId: row.organization_id, userId: null },
-      row.channel_id,
-      Math.min(deadline, Date.now() + MINUTE),
-    ).catch(() => ({ orders: 0, error: "failed" }));
-    orders += r.orders;
-    if (r.error) failed++;
+  let items = 0;
+  let waiting = 0;
+  const failed = new Set<string>();
+  let pending = rows.rows;
+  while (pending.length && Date.now() < deadline) {
+    const again: typeof pending = [];
+    waiting = 0;
+    for (const row of pending) {
+      if (Date.now() >= deadline) break;
+      const r = await syncChannelOrders(
+        { orgId: row.organization_id, userId: null },
+        row.channel_id,
+        Math.min(deadline, Date.now() + MINUTE),
+      ).catch(() => ({ orders: 0, items: 0, waiting: 0, more: false, error: "failed" }));
+      orders += r.orders;
+      items += r.items;
+      waiting += r.waiting;
+      if (r.error) failed.add(row.channel_id);
+      // Only channels that got somewhere go round again, so a stuck one can't spin.
+      else if (r.more && (r.orders || r.items)) again.push(row);
+    }
+    pending = again;
   }
-  return { channels: rows.rows.length, orders, failed };
+  return { channels: rows.rows.length, orders, items, waiting, failed: failed.size };
 }
