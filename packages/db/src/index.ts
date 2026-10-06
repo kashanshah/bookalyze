@@ -14,6 +14,7 @@ export * from "./reports";
 export * from "./reviews";
 export * from "./rules";
 export * as schema from "./schema";
+export * from "./settlements";
 export * from "./tax";
 export * from "./transactions";
 export * from "./transfers";

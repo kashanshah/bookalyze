@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-06, review eligibility for FBA orders._
+_Last updated: 2026-10-06, phase 4 slice 1 (Amazon settlements)._
 
 ---
 
@@ -26,7 +26,7 @@ _Last updated: 2026-10-06, review eligibility for FBA orders._
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen), slice 3 (review requests: manual, bulk, automatic) and refunds on orders (red badge, Refunded tab) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation and Finance and Accounting roles) |
-| 4+. Settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
+| 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slice 1 (bring in Amazon settlements, Settlements screen) done. Next: account mapping, posting each settlement as one entry, matching payouts to bank deposits |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -758,6 +758,43 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `reviews.test.ts` (window, holds, send day, timezones, Amazon's answers), db
   `reviews.test.ts`, e2e "reviews: ask for a review by hand, then turn on automatic requests"
   (the mock offers one request per shipped order, then answers 403).
+
+### Phase 4, slice 1: Amazon settlements (brought in, not posted)
+
+- **Settlements screen** (`/commerce/settlements`, sidebar Commerce → Settlements; feature
+  `commerce.settlements`): each payout's period, marketplace, deposit date and amount (negative:
+  "No payout", the balance is carried or charged). The settlement page groups the amounts
+  (core `settlementGroup`: sales, refunds, promotions, Amazon fees, advertising, tax Amazon
+  collects and pays, reimbursements, held back and released, other) with plain names
+  (`settlementLineLabel`: "Referral fee" for `Commission`…) and subtotals. Nothing posts yet.
+- **How payouts work:** each settlement's total is what Amazon deposits (into RBC for
+  Amazon.ca), 1–5 business days after the period. The report's own deposit date and total make
+  the later bank match exact. Reserves are inside the total (their own lines).
+- **From Amazon** (`server/amazon-settlements.ts`): the Reports API
+  (`GET /reports/2021-06-30/reports?reportTypes=GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2`,
+  then `/documents/{id}` → a signed link, gzipped). Amazon makes these on its own and lists the
+  last ~90 days, so the first look goes back 89 days, later ones from the last look less 3 days
+  (`connections.settlements_synced_at`; a connection looked at in the last 6 hours isn't asked
+  again by the daily job). Reports already in (by report ID) aren't downloaded again. Amazon
+  rations both calls hard (a listing about once a minute): throttled → wait 5 s while the
+  budget lasts, else `more: true`. Needs the Finance and Accounting role.
+- **Runs:** "Bring in settlements" (`syncSettlementsAction`, 40 s per call, up to 6 calls) and
+  the daily job (`/api/cron/fx-rates` → `syncAllSettlements`, 90 s, at most 60 s per connection,
+  over `syncable_amazon_connections()`).
+- **Older periods by upload:** "Upload settlement files" (admins) takes Seller Central →
+  Payments → All statements → "Flat File V2". The file is read in the browser
+  (`parseSettlementReport`); only the summed settlement goes to `uploadSettlementAction` (zod).
+- **Parser** (core `commerce/settlements.ts`): columns by header name; amounts in `1,234.56`,
+  `1.234,56` or `12,30`; dates `2026-09-01 07:08:16 UTC`, ISO, or `01.09.2026 …` (EU / AE).
+  Rows are summed by transaction type + amount type + description; `balanced` says the lines
+  add up to the total (shown as "Check" when not). Built without Amazon's docs at hand (the
+  SP-API knowledge connector was down): check it against a real Kazomo file.
+- **Schema** (migration `0032_settlements`): `settlements` (unique per company + Amazon's
+  settlement ID: the same settlement again replaces its lines; channel matched by marketplace
+  name, else the only channel in its currency), `settlement_lines` (summed),
+  `connections.settlements_synced_at`, and `syncable_amazon_connections()`.
+- Tests: core `amazon-settlements.test.ts`, db `settlements.test.ts`, e2e "settlements: bring in
+  Amazon's settlement report…" (the mock serves one gzipped report; a second is uploaded).
 
 ### Order badges: refunded, A-to-z claim, chargeback, replaced
 

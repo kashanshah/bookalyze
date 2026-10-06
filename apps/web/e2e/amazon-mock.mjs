@@ -1,6 +1,7 @@
 // A stand-in for Login with Amazon and the Selling Partner API, for end-to-end tests only.
 // Synthetic data.
 import { createServer } from "node:http";
+import { gzipSync } from "node:zlib";
 
 const port = Number(process.env.AMAZON_MOCK_PORT ?? 4011);
 const CLIENT_ID = "amzn1.application-oa2-client.e2e0000000000000000000000000000";
@@ -152,6 +153,98 @@ const refundEvents = [
   },
 ];
 
+// One synthetic settlement report (flat file V2) for the last two weeks, served gzipped.
+const SETTLEMENT_HEADER = [
+  "settlement-id",
+  "settlement-start-date",
+  "settlement-end-date",
+  "deposit-date",
+  "total-amount",
+  "currency",
+  "transaction-type",
+  "order-id",
+  "marketplace-name",
+  "amount-type",
+  "amount-description",
+  "amount",
+];
+function settlementReport() {
+  const day = (n) => daysAgo(n).replace("T", " ").replace("Z", " UTC");
+  const line = (type, order, amountType, description, amount) => [
+    "10000000001",
+    "",
+    "",
+    "",
+    "",
+    "",
+    type,
+    order,
+    "Amazon.ca",
+    amountType,
+    description,
+    amount,
+  ];
+  return [
+    SETTLEMENT_HEADER,
+    ["10000000001", day(15), day(1), day(0), "26.03", "CAD"],
+    line("Order", "702-1000001-0000001", "ItemPrice", "Principal", "39.98"),
+    line("Order", "702-1000001-0000001", "ItemPrice", "Tax", "5.21"),
+    line("Order", "702-1000001-0000001", "ItemFees", "Commission", "-6.00"),
+    line("Order", "702-1000001-0000001", "ItemFees", "FBAPerUnitFulfillmentFee", "-8.24"),
+    line("Refund", "702-1000001-0000001", "ItemPrice", "Principal", "-19.99"),
+    line("Refund", "702-1000001-0000001", "ItemPrice", "Tax", "-2.60"),
+    line("Refund", "702-1000001-0000001", "ItemFees", "Commission", "3.00"),
+    [
+      "10000000001",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "ServiceFee",
+      "",
+      "",
+      "Cost of Advertising",
+      "TransactionTotalAmount",
+      "-12.00",
+    ],
+    line("Order", "702-1000004-0000004", "ItemPrice", "Principal", "24.77"),
+    line("Order", "702-1000004-0000004", "ItemPrice", "Tax", "3.22"),
+    line("Order", "702-1000004-0000004", "ItemFees", "Commission", "-3.72"),
+    line("Order", "702-1000004-0000004", "ItemFees", "FBAPerUnitFulfillmentFee", "-6.10"),
+    [
+      "10000000001",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "other-transaction",
+      "",
+      "",
+      "other-transaction",
+      "Current Reserve Amount",
+      "-5.00",
+    ],
+    [
+      "10000000001",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "other-transaction",
+      "",
+      "",
+      "other-transaction",
+      "Previous Reserve Amount Balance",
+      "13.50",
+    ],
+  ]
+    .map((r) => r.join("\t"))
+    .join("\n");
+}
+
 function daysAgo(n) {
   return new Date(Date.now() - n * 86_400_000).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
@@ -164,6 +257,11 @@ function json(res, status, body) {
 createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${port}`);
   if (url.pathname === "/health") return json(res, 200, { ok: true });
+  // The signed download link of a report document (no Amazon token goes with it).
+  if (url.pathname === "/report-files/settlement-1") {
+    res.writeHead(200, { "Content-Type": "application/octet-stream" });
+    return res.end(gzipSync(settlementReport()));
+  }
   if (req.method === "POST" && url.pathname === "/auth/o2/token") {
     let body = "";
     req.on("data", (chunk) => {
@@ -208,6 +306,33 @@ createServer((req, res) => {
       (e) => !after || (e.PostedDate >= after && e.PostedDate < before),
     );
     return json(res, 200, { payload: { FinancialEvents: { RefundEventList: matching } } });
+  }
+  if (url.pathname === "/reports/2021-06-30/reports") {
+    const types = url.searchParams.get("reportTypes");
+    if (
+      !url.searchParams.get("nextToken") &&
+      types !== "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2"
+    ) {
+      return json(res, 400, { errors: [{ code: "InvalidInput" }] });
+    }
+    return json(res, 200, {
+      reports: [
+        {
+          reportId: "50001",
+          reportType: "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2",
+          processingStatus: "DONE",
+          createdTime: daysAgo(0),
+          reportDocumentId: "settlement-doc-1",
+        },
+      ],
+    });
+  }
+  if (url.pathname === "/reports/2021-06-30/documents/settlement-doc-1") {
+    return json(res, 200, {
+      reportDocumentId: "settlement-doc-1",
+      url: `http://localhost:${port}/report-files/settlement-1`,
+      compressionAlgorithm: "GZIP",
+    });
   }
   const itemsPath = /^\/orders\/v0\/orders\/([^/]+)\/orderItems$/.exec(url.pathname);
   if (itemsPath) {

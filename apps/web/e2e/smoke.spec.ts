@@ -1445,6 +1445,46 @@ test("reviews: ask for a review by hand, then turn on automatic requests", async
   await expect(page.getByText("Requested", { exact: true })).toBeVisible();
 });
 
+test("settlements: bring in Amazon's settlement report, see the payout, and upload an older one", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Settlements", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Settlements" })).toBeVisible();
+  await page.getByRole("button", { name: "Bring in settlements" }).click();
+  await expect(page.getByText("1 settlement brought in")).toBeVisible({ timeout: 30_000 });
+
+  // The payout and what makes it up, in plain words.
+  await page
+    .getByRole("link", { name: /Amazon\.ca/ })
+    .first()
+    .click();
+  await expect(page.getByText("What makes up the payout")).toBeVisible();
+  await expect(page.getByText("Paid to you")).toBeVisible();
+  await expect(page.getByText("$26.03").first()).toBeVisible();
+  await expect(page.getByText("Referral fee").first()).toBeVisible();
+  await expect(page.getByText("Sponsored ads")).toBeVisible();
+  await expect(page.getByText("Held back this period")).toBeVisible();
+
+  // An older settlement, uploaded as Amazon's flat file (read in the browser).
+  await page.getByRole("link", { name: "Settlements", exact: true }).first().click();
+  const header =
+    "settlement-id\tsettlement-start-date\tsettlement-end-date\tdeposit-date\ttotal-amount\tcurrency\ttransaction-type\torder-id\tmarketplace-name\tamount-type\tamount-description\tamount";
+  const file = [
+    header,
+    "10000000000\t2026-08-01 07:00:00 UTC\t2026-08-15 07:00:00 UTC\t2026-08-17 07:00:00 UTC\t10.00\tCAD",
+    "10000000000\t\t\t\t\t\tOrder\t702-0000009-0000009\tAmazon.ca\tItemPrice\tPrincipal\t15.00",
+    "10000000000\t\t\t\t\t\tOrder\t702-0000009-0000009\tAmazon.ca\tItemFees\tCommission\t-5.00",
+  ].join("\n");
+  await page.getByLabel("Settlement files").setInputFiles({
+    name: "settlement-august.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from(file),
+  });
+  await expect(page.getByText("1 settlement added")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Aug 1, 2026/ })).toBeVisible();
+});
+
 test("amounts recorded in CAD on a USD account are flagged and corrected from Wise", async ({
   page,
 }) => {
