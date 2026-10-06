@@ -14,7 +14,7 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
-import { organization } from "./auth";
+import { organization, user } from "./auth";
 import { connections } from "./banking";
 import { tenantIsolationPolicy } from "./tenancy";
 
@@ -95,6 +95,8 @@ export const orders = pgTable(
     isBusiness: boolean("is_business").notNull().default(false),
     isPrime: boolean("is_prime").notNull().default(false),
     isReplacement: boolean("is_replacement").notNull().default(false),
+    /** Promised delivery dates: Amazon's review request window hangs off them. */
+    earliestDelivery: date("earliest_delivery"),
     latestDelivery: date("latest_delivery"),
     /** When its items were last fetched; cleared when the order changes. */
     itemsSyncedAt: timestamp("items_synced_at", { withTimezone: true }),
@@ -149,5 +151,91 @@ export const orderItems = pgTable(
       foreignColumns: [orders.organizationId, orders.id],
     }).onDelete("cascade"),
     tenantIsolationPolicy("order_items", t.organizationId),
+  ],
+);
+
+/**
+ * Automatic review requests: one row per company (see core `ReviewSettings`). No row means
+ * they're off.
+ */
+export const reviewSettings = pgTable(
+  "review_settings",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull().default(false),
+    daysAfterDelivery: integer("days_after_delivery").notNull().default(7),
+    sendHour: integer("send_hour").notNull().default(10),
+    sendDays: integer("send_days").array().notNull().default(sql`'{0,1,2,3,4,5,6}'`),
+    /** Only these marketplaces; null means all. */
+    channelIds: uuid("channel_ids").array(),
+    fulfillment: text("fulfillment", { enum: ["all", "amazon", "merchant"] })
+      .notNull()
+      .default("all"),
+    skipRefunded: boolean("skip_refunded").notNull().default(true),
+    skipReplacements: boolean("skip_replacements").notNull().default(true),
+    skipBusiness: boolean("skip_business").notNull().default(false),
+    skipPromotions: boolean("skip_promotions").notNull().default(false),
+    excludedSkus: text("excluded_skus").array().notNull().default(sql`'{}'`),
+    startsFrom: date("starts_from"),
+    updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("review_settings_days_valid", sql`${t.daysAfterDelivery} between 5 and 25`),
+    check("review_settings_hour_valid", sql`${t.sendHour} between 0 and 23`),
+    check(
+      "review_settings_fulfillment_valid",
+      sql`${t.fulfillment} in ('all', 'amazon', 'merchant')`,
+    ),
+    tenantIsolationPolicy("review_settings", t.organizationId),
+  ],
+);
+
+/**
+ * A review request for an order: scheduled, sent, skipped (refunded, or someone chose not to),
+ * not eligible (Amazon said no) or failed. One per order, as Amazon allows one per order.
+ */
+export const reviewRequests = pgTable(
+  "review_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id").notNull(),
+    status: text("status", {
+      enum: ["scheduled", "sent", "skipped", "not_eligible", "failed"],
+    }).notNull(),
+    source: text("source", { enum: ["auto", "manual", "bulk"] }).notNull(),
+    /** When a scheduled request goes out. */
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    /** Why it was skipped, not eligible or failed, in plain words. */
+    reason: text("reason"),
+    attempts: integer("attempts").notNull().default(0),
+    requestedBy: uuid("requested_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    unique("review_requests_order_key").on(t.orderId),
+    index("review_requests_due_idx").on(t.status, t.dueAt),
+    index("review_requests_org_status_idx").on(t.organizationId, t.status),
+    foreignKey({
+      name: "review_requests_order_fk",
+      columns: [t.organizationId, t.orderId],
+      foreignColumns: [orders.organizationId, orders.id],
+    }).onDelete("cascade"),
+    check(
+      "review_requests_status_valid",
+      sql`${t.status} in ('scheduled', 'sent', 'skipped', 'not_eligible', 'failed')`,
+    ),
+    check("review_requests_source_valid", sql`${t.source} in ('auto', 'manual', 'bulk')`),
+    tenantIsolationPolicy("review_requests", t.organizationId),
   ],
 );

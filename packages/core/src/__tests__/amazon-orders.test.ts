@@ -25,6 +25,7 @@ describe("parseOrdersPage", () => {
             NumberOfItemsUnshipped: 0,
             ShippingAddress: { StateOrRegion: "ON", CountryCode: "CA" },
             IsPrime: true,
+            EarliestDeliveryDate: "2026-09-03T07:00:00Z",
             LatestDeliveryDate: "2026-09-05T06:59:59Z",
           },
           {
@@ -49,6 +50,7 @@ describe("parseOrdersPage", () => {
       shipCountry: "CA",
       shipRegion: "ON",
       isPrime: true,
+      earliestDelivery: "2026-09-03",
       latestDelivery: "2026-09-05",
     });
     expect(page.orders[1]).toMatchObject({

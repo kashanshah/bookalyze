@@ -47,6 +47,7 @@ const order = (id: string, over: Partial<AmazonOrder> = {}): AmazonOrder => ({
   isBusiness: false,
   isPrime: false,
   isReplacement: false,
+  earliestDelivery: null,
   latestDelivery: null,
   ...over,
 });

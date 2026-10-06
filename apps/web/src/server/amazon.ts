@@ -9,6 +9,9 @@ import {
   parseMarketplaceParticipations,
   parseOrderItemsPage,
   parseOrdersPage,
+  parseSolicitationActions,
+  REVIEW_ACTION,
+  refundReason,
 } from "@bookalyze/core";
 import { env } from "./env";
 
@@ -78,12 +81,26 @@ async function accessToken(creds: AmazonCredentials): Promise<string> {
   return body.access_token;
 }
 
-async function call(
+const FORBIDDEN =
+  "Amazon refused the request. Check the app is authorized for this seller account and region, and has the roles it needs (Selling Partner Insights, Inventory and Order Tracking, Buyer Communication).";
+const roleMissing = (role: string) =>
+  `Amazon refused the request. In Seller Central → Develop Apps, give the app the ${role} role, then authorize it again and paste the new refresh token in Commerce → Channels.`;
+
+type CallOptions = {
+  method?: "GET" | "POST";
+  /** What to say when Amazon refuses (401 or 403). */
+  forbidden?: string;
+  /** Answer these statuses instead of throwing. */
+  allow?: readonly number[];
+};
+
+async function send(
   creds: AmazonCredentials,
   region: AmazonRegion,
   path: string,
-  query?: Record<string, string>,
-): Promise<unknown> {
+  query: Record<string, string> | undefined,
+  options: CallOptions,
+): Promise<Response> {
   const token = await accessToken(creds);
   const base =
     env().AMAZON_SPAPI_URL ?? AMAZON_REGIONS.find((r) => r.key === region)?.endpoint ?? "";
@@ -91,6 +108,7 @@ async function call(
   try {
     const search = query ? `?${new URLSearchParams(query)}` : "";
     response = await fetch(`${base}${path}${search}`, {
+      method: options.method ?? "GET",
       headers: { "x-amz-access-token": token, Accept: "application/json" },
       cache: "no-store",
       signal: AbortSignal.timeout(30_000),
@@ -98,11 +116,9 @@ async function call(
   } catch {
     throw new AmazonError("Amazon couldn't be reached. Try again in a minute.", "unavailable");
   }
+  if (options.allow?.includes(response.status)) return response;
   if (response.status === 401 || response.status === 403) {
-    throw new AmazonError(
-      "Amazon refused the request. Check the app is authorized for this seller account and region, and has the roles it needs (Selling Partner Insights, Inventory and Order Tracking, Buyer Communication).",
-      "forbidden",
-    );
+    throw new AmazonError(options.forbidden ?? FORBIDDEN, "forbidden");
   }
   if (response.status === 429) {
     throw new AmazonError("Amazon asked us to slow down. We'll carry on shortly.", "throttled");
@@ -113,7 +129,17 @@ async function call(
   if (!response.ok) {
     throw new AmazonError(`Amazon answered with an error (${response.status}).`, "unexpected");
   }
-  return response.json();
+  return response;
+}
+
+async function call(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  path: string,
+  query?: Record<string, string>,
+  options: CallOptions = {},
+): Promise<unknown> {
+  return (await send(creds, region, path, query, options)).json();
 }
 
 /** The marketplaces the seller account is registered in, and whether it can sell there. */
@@ -164,4 +190,58 @@ export async function orderItems(
     nextToken = page.nextToken;
   } while (nextToken);
   return items;
+}
+
+const SOLICITATIONS = roleMissing("Buyer Solicitation");
+
+/** Whether Amazon offers its "Request a Review" for the order right now. */
+export async function canRequestReview(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  order: { externalId: string; marketplaceId: string },
+): Promise<boolean> {
+  const response = await send(
+    creds,
+    region,
+    `/solicitations/v1/orders/${encodeURIComponent(order.externalId)}`,
+    { marketplaceIds: order.marketplaceId },
+    { forbidden: SOLICITATIONS },
+  );
+  return parseSolicitationActions(await response.json().catch(() => null));
+}
+
+/**
+ * Sends Amazon's "Request a Review" for the order. "refused" when Amazon won't (it answers 403
+ * once the order has been asked, by us or from Seller Central).
+ */
+export async function requestReview(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  order: { externalId: string; marketplaceId: string },
+): Promise<"sent" | "refused"> {
+  const response = await send(
+    creds,
+    region,
+    `/solicitations/v1/orders/${encodeURIComponent(order.externalId)}/solicitations/${REVIEW_ACTION}`,
+    { marketplaceIds: order.marketplaceId },
+    { method: "POST", forbidden: SOLICITATIONS, allow: [403] },
+  );
+  return response.status === 403 ? "refused" : "sent";
+}
+
+/** Why the order shouldn't be asked for a review (refunded, A-to-z claim, chargeback), or null. */
+export async function orderRefundReason(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  externalId: string,
+): Promise<string | null> {
+  return refundReason(
+    await call(
+      creds,
+      region,
+      `/finances/v0/orders/${encodeURIComponent(externalId)}/financialEvents`,
+      undefined,
+      { forbidden: roleMissing("Finance and Accounting") },
+    ),
+  );
 }

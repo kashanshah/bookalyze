@@ -307,10 +307,11 @@ Taxes collected, reimbursements, reserves and other adjustments each map to thei
 ### 3.5 Review requests (Amazon Solicitations API)
 
 - **Eligibility:** Amazon allows one request per order, sent 5–30 days after delivery. The API (`getSolicitationActionsForOrder`) is the source of truth, and orders already requested in Seller Central come back ineligible.
-- **Manual:** request from an order row, or **bulk-select** in the order table, for example "all eligible orders from last week."
-- **Auto rules:** for example "request on day 7 after delivery, all channels, exclude refunded/returned orders, exclude SKUs [...]", run as a daily workflow.
-- **Queue:** a durable workflow per connection sends requests in rate-limited batches (~1 req/s) and tracks status per order: eligible → queued → sent / not eligible / expired / failed.
+- **Manual:** "Ask now" on an order (Review requests list or order page), or **bulk**: select orders, or "Ask all ready" for every order whose window is open.
+- **Auto rules** (built; the options competitors such as Sellerboard offer): N days after delivery (5–25), an hour in the company's timezone, allowed weekdays, marketplaces, FBA / FBM, skip refunded (checked with the Finances API just before sending; also A-to-z claims and chargebacks), replacement, business and promotion orders, excluded SKUs, and a start (new deliveries only, or every order still in the window). An hourly Vercel Cron plans and sends; "Don't ask" leaves an order out.
+- **Status per order:** to ask → scheduled → requested / skipped / not eligible / didn't go through (Amazon ~1 req/s; each run works within a time budget).
 - **Constraints to know:** Amazon sends its own standard template, so the message cannot be customized. Filtering by sentiment (review gating) would violate policy and is deliberately not offered.
+- **Custom emails: not possible yet.** Competitors' custom templates go through Buyer-Seller Messaging, which needs buyer contact data (Restricted Data, which we don't request), is restricted for FBA orders, and uses up the one request Amazon allows per order. Revisit if Amazon opens a compliant custom-message route.
 
 ### 3.6 Inventory & COGS (FIFO)
 
@@ -532,6 +533,7 @@ A domain like 3dboxstudio.com works well because it is *both* a memorable brand 
 | 2026-10-04 | Name: **Bookalyze** (`bookalyze.com`). |
 | 2026-10-04 | Kazomo For Online Selling is a **Dubai** sole establishment (DET e-Trader license), **not VAT-registered**. Kazomo Inc. is a federal (CBCA) corporation with a short first fiscal year (Jun–Dec 2026); Teknoffice is an Ontario corporation. Entity type and first fiscal year start become org settings, and an Entity & compliance module is added. |
 | 2026-10-04 | Sign-in: **email + password and Google**, with account linking, and Google users can set a password. |
+| 2026-10-05 | Review requests: **Amazon's official "Request a Review" only** (no custom emails for now); **refunds checked with the Finances API** before each request (the Amazon app needs the Buyer Solicitation and Finance and Accounting roles); an **hourly** Vercel Cron (Pro plan) so requests go out at the chosen time. |
 
 ### Still open
 

@@ -190,6 +190,7 @@ export async function upsertOrders(
         isBusiness: o.isBusiness,
         isPrime: o.isPrime,
         isReplacement: o.isReplacement,
+        earliestDelivery: o.earliestDelivery,
         latestDelivery: o.latestDelivery,
       })),
     )
@@ -208,6 +209,7 @@ export async function upsertOrders(
         isBusiness: sql`excluded.is_business`,
         isPrime: sql`excluded.is_prime`,
         isReplacement: sql`excluded.is_replacement`,
+        earliestDelivery: sql`excluded.earliest_delivery`,
         latestDelivery: sql`excluded.latest_delivery`,
         itemsSyncedAt: sql`case when ${orders.status} is distinct from excluded.status or ${orders.total} is distinct from excluded.total then null else ${orders.itemsSyncedAt} end`,
         updatedAt: sql`now()`,

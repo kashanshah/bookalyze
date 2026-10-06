@@ -1384,6 +1384,37 @@ test("commerce: bring in Amazon orders, find one by SKU and open it", async ({ p
   await expect(page.getByText("Your orders are up to date")).toBeVisible({ timeout: 30_000 });
 });
 
+test("reviews: ask for a review by hand, then turn on automatic requests", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Features", exact: true }).click();
+  await page.locator("#module-reviews").click();
+  await expect(page.getByText("Review requests switched on")).toBeVisible();
+
+  // The shipped order was delivered a week ago: it can be asked now.
+  await page.getByRole("link", { name: "Requests", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Review requests" })).toBeVisible();
+  const row = page.getByRole("listitem").filter({ hasText: "Maple leaf ceramic mug" });
+  await expect(row.getByText(/^Can be asked until/)).toBeVisible();
+  await row.getByRole("button", { name: "Ask now" }).click();
+  await expect(page.getByText("Review request sent")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("link", { name: /^Requested/ }).click();
+  await expect(page.getByText(/Requested .* · By hand/)).toBeVisible();
+
+  // Automatic requests: on, from today, leaving out business orders.
+  await page.getByRole("link", { name: "Automatic requests", exact: true }).first().click();
+  await page.getByLabel("Ask every buyer automatically").click();
+  await expect(page.getByText(/^On: 7 days after delivery/)).toBeVisible();
+  await page.getByLabel("Skip business orders").click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Automatic requests are on")).toBeVisible();
+
+  // The order shows its request.
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  await page.getByText("Maple leaf ceramic mug").click();
+  await expect(page.getByRole("heading", { name: "Review request" })).toBeVisible();
+  await expect(page.getByText("Requested", { exact: true })).toBeVisible();
+});
+
 test("amounts recorded in CAD on a USD account are flagged and corrected from Wise", async ({
   page,
 }) => {
