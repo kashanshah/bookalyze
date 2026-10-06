@@ -7,6 +7,7 @@ import {
   isModuleKey,
   localDate,
   type ModuleKey,
+  parseDecimal,
   type ReviewSettings,
   type ReviewSource,
   reviewHold,
@@ -19,12 +20,14 @@ import {
   getChannelForSync,
   getDb,
   getReviewSettings,
+  ordersToCheckEligibility,
   type PlannedReview,
   planReviewRequests,
   readyToAsk,
   recordReviewOutcome,
   reviewCandidates,
   reviewTargets,
+  saveReviewEligibility,
   schema,
   VaultError,
   withOrg,
@@ -62,6 +65,8 @@ const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 /** Amazon allows one solicitations call a second (burst of 5). */
 const PACE_MS = 1_100;
+/** Amazon's answer on eligibility is asked again after this long. */
+const ELIGIBILITY_FRESH_MS = 12 * HOUR;
 /** How many times an automatic request is tried before it's left as not eligible or failed. */
 const MAX_TRIES = 5;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -95,6 +100,9 @@ type Target = {
   externalId: string;
   earliestDelivery: string | null;
   latestDelivery: string | null;
+  purchasedOn: string | null;
+  /** Refunded so far (kept by the orders sync), if any. */
+  refunded: string | null;
   channelId: string;
   marketplaceId: string | null;
 };
@@ -143,7 +151,18 @@ function reviewSender(ctx: Ctx, deadline: number) {
     }
   };
 
-  /** Asks for one order's review. Nothing is recorded here. */
+  /** Whether Amazon offers "Request a Review" for the order now; the answer is kept on it. */
+  async function eligible(target: Target): Promise<boolean | null> {
+    const found = await channel(target.channelId);
+    if (!found || !target.marketplaceId || !isAmazonRegion(found.region)) return null;
+    const { creds, region } = found;
+    const order = { externalId: target.externalId, marketplaceId: target.marketplaceId };
+    const answer = await amazon(() => canRequestReview(creds, region, order));
+    await withOrg(getDb(), ctx, (tx) => saveReviewEligibility(tx, target.orderId, answer));
+    return answer;
+  }
+
+  /** Asks for one order's review. Only Amazon's eligibility answer is recorded here. */
   async function ask(
     target: Target,
     input: {
@@ -172,10 +191,13 @@ function reviewSender(ctx: Ctx, deadline: number) {
           dueAt: zonedInstant(window.opens, input.hour, input.timezone),
         };
       }
-      return {
-        status: "later",
-        reason: `Amazon takes a request for this order from ${window.opens}`,
-      };
+      // An estimated window (FBA) is only a guide: Amazon has the delivery date and decides.
+      if (!window.estimated) {
+        return {
+          status: "later",
+          reason: `Amazon takes a request for this order from ${window.opens}`,
+        };
+      }
     }
     const found = await channel(target.channelId);
     if (!found || !target.marketplaceId || !isAmazonRegion(found.region)) {
@@ -184,11 +206,24 @@ function reviewSender(ctx: Ctx, deadline: number) {
     const { creds, region } = found;
     const order = { externalId: target.externalId, marketplaceId: target.marketplaceId };
     if (input.checkRefund) {
+      // Refunds the orders sync already found need no call; claims and chargebacks do.
+      if (target.refunded && parseDecimal(target.refunded) > 0n) {
+        return { status: "skipped", reason: "Refunded or returned" };
+      }
       const refunded = await amazon(() => orderRefundReason(creds, region, target.externalId));
       if (refunded) return { status: "skipped", reason: refunded };
     }
-    if (!(await amazon(() => canRequestReview(creds, region, order)))) {
-      if (auto && input.attempts + 1 < MAX_TRIES) {
+    if (!(await eligible(target))) {
+      if (!auto) {
+        // Nothing recorded: Amazon may take it in a few days (delivery is later than estimated).
+        return {
+          status: "later",
+          reason: window.estimated
+            ? "Amazon isn't taking a review request for this order yet. It opens 5 days after delivery, so try again in a few days (or it was already asked from Seller Central)."
+            : "Amazon isn't taking a review request for this order right now (it may have been asked from Seller Central).",
+        };
+      }
+      if (input.attempts + 1 < MAX_TRIES) {
         return {
           status: "scheduled",
           reason: "Amazon wasn't taking a request yet; trying again tomorrow",
@@ -263,7 +298,7 @@ function reviewSender(ctx: Ctx, deadline: number) {
     return { stop, status, reason: outcome.reason };
   }
 
-  return { handle };
+  return { handle, eligible };
 }
 
 /** Gives each eligible order a send time (or a reason it's left out). */
@@ -318,11 +353,71 @@ export async function planOrgReviewRequests(ctx: Ctx, budgetMs: number) {
   });
 }
 
-/** One company's run: plan, then send what's due, within the deadline. */
+/**
+ * Asks Amazon which shipped orders it takes a review request for now (one call each, paced), so
+ * every order shows whether it can be asked. Orders not checked for 12 hours, never-checked first.
+ */
+async function checkEligibility(ctx: Ctx, timezone: string, deadline: number) {
+  const sender = reviewSender(ctx, deadline);
+  const today = localDate(new Date().toISOString(), timezone);
+  let checked = 0;
+  while (Date.now() < deadline - 2_000) {
+    const batch = await withOrg(getDb(), ctx, (tx) =>
+      ordersToCheckEligibility(tx, {
+        today,
+        checkedBefore: new Date(Date.now() - ELIGIBILITY_FRESH_MS),
+        limit: 20,
+      }),
+    );
+    if (!batch.length) break;
+    for (const target of batch) {
+      if (Date.now() >= deadline - 2_000) return { checked, error: null };
+      try {
+        // No connection to ask with: note the check, so it doesn't hold up the others.
+        if ((await sender.eligible(target)) === null) {
+          await withOrg(getDb(), ctx, (tx) => saveReviewEligibility(tx, target.orderId, null));
+        }
+        checked++;
+      } catch (error) {
+        if (!(error instanceof AmazonError) && !(error instanceof VaultError)) throw error;
+        return { checked, error: error.message };
+      }
+    }
+  }
+  return { checked, error: null };
+}
+
+/** Checks one order with Amazon now (the order page), unless it was checked in the last minute. */
+export async function checkOrderEligibility(
+  ctx: Ctx,
+  orderId: string,
+): Promise<{ eligible: boolean | null; error: string | null }> {
+  const access = await reviewAccess(ctx);
+  if (!access.manual) return { eligible: null, error: null };
+  const [target] = await withOrg(getDb(), ctx, (tx) => reviewTargets(tx, [orderId]));
+  if (!target || !["Shipped", "InvoiceUnconfirmed"].includes(target.status)) {
+    return { eligible: null, error: null };
+  }
+  try {
+    return { eligible: await reviewSender(ctx, Date.now() + 15_000).eligible(target), error: null };
+  } catch (error) {
+    if (!(error instanceof AmazonError) && !(error instanceof VaultError)) throw error;
+    return { eligible: null, error: error.message };
+  }
+}
+
+/**
+ * One company's run within the deadline: plan and send automatic requests (when they're on),
+ * then check eligibility with Amazon for orders that can be asked by hand.
+ */
 export async function runOrgReviewRequests(ctx: Ctx, deadline: number) {
   const access = await reviewAccess(ctx);
   const tally = emptyTally();
-  if (!access.auto || !access.settings.enabled) return { planned: 0, ...tally, error: null };
+  if (!access.auto || !access.settings.enabled) {
+    if (!access.manual) return { planned: 0, checked: 0, ...tally, error: null };
+    const check = await checkEligibility(ctx, access.timezone, deadline);
+    return { planned: 0, ...tally, ...check };
+  }
   const planned = await planReviews(ctx, {
     settings: access.settings,
     timezone: access.timezone,
@@ -355,7 +450,9 @@ export async function runOrgReviewRequests(ctx: Ctx, deadline: number) {
       if (error || outcome.status === "later") break sending;
     }
   }
-  return { planned, ...tally, error };
+  if (error) return { planned, checked: 0, ...tally, error };
+  const check = await checkEligibility(ctx, access.timezone, deadline);
+  return { planned, ...tally, ...check };
 }
 
 /** The hourly job: every company with automatic requests on, or requests due. */

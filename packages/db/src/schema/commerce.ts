@@ -107,6 +107,12 @@ export const orders = pgTable(
     /** Given back to the buyer so far (the sum of its refunds); null when never refunded. */
     refunded: numeric("refunded", { precision: 20, scale: 4 }),
     lastRefundAt: timestamp("last_refund_at", { withTimezone: true }),
+    /**
+     * Whether Amazon offered "Request a Review" for the order when last asked (null: not asked
+     * yet). Amazon is the judge of eligibility; FBA orders have no delivery dates to go by.
+     */
+    reviewEligible: boolean("review_eligible"),
+    reviewCheckedAt: timestamp("review_checked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

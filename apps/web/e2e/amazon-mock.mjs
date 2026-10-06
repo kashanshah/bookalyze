@@ -32,7 +32,7 @@ const participations = {
   ],
 };
 
-// Three synthetic orders on Amazon.ca, answered in two pages to exercise the page token.
+// Four synthetic orders on Amazon.ca, answered in two pages to exercise the page token.
 const orders = [
   {
     AmazonOrderId: "702-1000001-0000001",
@@ -72,6 +72,19 @@ const orders = [
     NumberOfItemsShipped: 0,
     NumberOfItemsUnshipped: 0,
   },
+  // Shipped by Amazon (FBA): Amazon gives no delivery dates for these.
+  {
+    AmazonOrderId: "702-1000004-0000004",
+    MarketplaceId: "A2EUQ1WTGCTBG2",
+    PurchaseDate: daysAgo(10),
+    LastUpdateDate: daysAgo(8),
+    OrderStatus: "Shipped",
+    FulfillmentChannel: "AFN",
+    OrderTotal: { CurrencyCode: "CAD", Amount: "27.99" },
+    NumberOfItemsShipped: 1,
+    NumberOfItemsUnshipped: 0,
+    ShippingAddress: { StateOrRegion: "QC", CountryCode: "CA" },
+  },
 ];
 const items = {
   "702-1000001-0000001": [
@@ -99,6 +112,18 @@ const items = {
     },
   ],
   "702-1000003-0000003": [],
+  "702-1000004-0000004": [
+    {
+      OrderItemId: "50004",
+      ASIN: "B0E2E00004",
+      SellerSKU: "BIRCH-COASTER",
+      Title: "Birch bark coaster set",
+      QuantityOrdered: 1,
+      QuantityShipped: 1,
+      ItemPrice: { CurrencyCode: "CAD", Amount: "24.77" },
+      ItemTax: { CurrencyCode: "CAD", Amount: "3.22" },
+    },
+  ],
 };
 
 /** Orders asked for a review. */

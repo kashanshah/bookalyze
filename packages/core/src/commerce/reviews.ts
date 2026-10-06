@@ -6,6 +6,10 @@ import { parseDecimal } from "../money";
  * Requests go through Amazon's own "Request a Review" (the Solicitations API): one standard
  * message asking for a product review and seller feedback, in the buyer's language. Amazon allows
  * one per order, from 5 days after the earliest delivery date to 30 days after the latest.
+ *
+ * Amazon gives delivery dates only for orders the seller ships. For orders it ships itself (FBA)
+ * the dates are estimated from the purchase day, and Amazon's own answer (whether it offers
+ * "Request a Review" for the order now) decides; that answer is kept on the order.
  */
 
 /** Amazon's window, in days after delivery. */
@@ -14,6 +18,12 @@ export const REVIEW_WINDOW_CLOSES_DAYS = 30;
 /** The delay people can choose, in days after the latest delivery date. */
 export const REVIEW_DELAY_MIN = 5;
 export const REVIEW_DELAY_MAX = 25;
+/**
+ * Without Amazon's delivery dates (FBA), delivery is taken as 1 to 7 days after the purchase
+ * day: the window shown is an estimate, and Amazon is asked before anything is sent.
+ */
+export const ESTIMATED_DELIVERY_FROM_DAYS = 1;
+export const ESTIMATED_DELIVERY_TO_DAYS = 7;
 
 export const REVIEW_FULFILLMENT = ["all", "amazon", "merchant"] as const;
 export type ReviewFulfillment = (typeof REVIEW_FULFILLMENT)[number];
@@ -76,6 +86,8 @@ export type ReviewOrder = {
   isReplacement: boolean;
   earliestDelivery: string | null;
   latestDelivery: string | null;
+  /** The purchase day (YYYY-MM-DD, UTC), for estimating delivery when Amazon gives no dates. */
+  purchasedOn: string | null;
   skus: readonly string[];
   /** Any item bought with a promotion. */
   hasPromotion: boolean;
@@ -84,13 +96,43 @@ export type ReviewOrder = {
 const SHIPPED = ["Shipped", "InvoiceUnconfirmed"];
 const CANCELLED = ["Canceled", "Unfulfillable"];
 
-/** First and last day Amazon takes a request for the order, or null without delivery dates. */
-export function reviewWindow(order: Pick<ReviewOrder, "earliestDelivery" | "latestDelivery">) {
-  if (!order.latestDelivery) return null;
-  const earliest = order.earliestDelivery ?? order.latestDelivery;
+export type DeliveryFacts = Pick<ReviewOrder, "earliestDelivery" | "latestDelivery"> & {
+  purchasedOn?: string | null;
+};
+
+/**
+ * When the order arrives: Amazon's delivery dates, or (when Amazon gives none, as for FBA
+ * orders) an estimate from the purchase day. Null when neither is known.
+ */
+export function deliveryDates(
+  order: DeliveryFacts,
+): { earliest: string; latest: string; estimated: boolean } | null {
+  if (order.latestDelivery) {
+    return {
+      earliest: order.earliestDelivery ?? order.latestDelivery,
+      latest: order.latestDelivery,
+      estimated: false,
+    };
+  }
+  if (!order.purchasedOn) return null;
   return {
-    opens: addDaysIso(earliest, REVIEW_WINDOW_OPENS_DAYS),
-    closes: addDaysIso(order.latestDelivery, REVIEW_WINDOW_CLOSES_DAYS),
+    earliest: addDaysIso(order.purchasedOn, ESTIMATED_DELIVERY_FROM_DAYS),
+    latest: addDaysIso(order.purchasedOn, ESTIMATED_DELIVERY_TO_DAYS),
+    estimated: true,
+  };
+}
+
+/**
+ * First and last day Amazon takes a request for the order (`estimated` without Amazon's delivery
+ * dates), or null when nothing is known.
+ */
+export function reviewWindow(order: DeliveryFacts) {
+  const delivery = deliveryDates(order);
+  if (!delivery) return null;
+  return {
+    opens: addDaysIso(delivery.earliest, REVIEW_WINDOW_OPENS_DAYS),
+    closes: addDaysIso(delivery.latest, REVIEW_WINDOW_CLOSES_DAYS),
+    estimated: delivery.estimated,
   };
 }
 
@@ -104,7 +146,8 @@ export function reviewHold(
 ): { reason: string; waiting: boolean } | null {
   if (CANCELLED.includes(order.status)) return { reason: "Cancelled", waiting: false };
   if (!SHIPPED.includes(order.status)) return { reason: "Not shipped yet", waiting: true };
-  if (!order.latestDelivery) {
+  const delivery = deliveryDates(order);
+  if (!delivery) {
     return { reason: "Amazon hasn't given a delivery date yet", waiting: true };
   }
   if (!settings) return null;
@@ -131,26 +174,27 @@ export function reviewHold(
   }
   const excluded = order.skus.find((s) => settings.excludedSkus.includes(s));
   if (excluded) return { reason: `Includes ${excluded}, which is left out`, waiting: false };
-  if (settings.startsFrom && order.latestDelivery < settings.startsFrom) {
+  if (settings.startsFrom && delivery.latest < settings.startsFrom) {
     return { reason: "Delivered before automatic requests started", waiting: false };
   }
   return null;
 }
 
 /**
- * The day to ask: the chosen number of days after the latest delivery date, no earlier than
+ * The day to ask: the chosen number of days after the latest (or latest estimated) delivery date, no earlier than
  * Amazon's window opens, moved on to an allowed weekday. Null once the window has closed (the
  * last day is kept free, so Amazon's clock never sees it late).
  */
 export function reviewSendDay(
-  order: Pick<ReviewOrder, "earliestDelivery" | "latestDelivery">,
+  order: DeliveryFacts,
   settings: Pick<ReviewSettings, "daysAfterDelivery" | "sendDays">,
   today: string,
 ): string | null {
   const window = reviewWindow(order);
-  if (!window || !order.latestDelivery) return null;
+  const delivery = deliveryDates(order);
+  if (!window || !delivery) return null;
   const last = addDaysIso(window.closes, -1);
-  let day = addDaysIso(order.latestDelivery, settings.daysAfterDelivery);
+  let day = addDaysIso(delivery.latest, settings.daysAfterDelivery);
   if (day < window.opens) day = window.opens;
   if (day < today) day = today;
   const days = settings.sendDays.length ? settings.sendDays : [0, 1, 2, 3, 4, 5, 6];

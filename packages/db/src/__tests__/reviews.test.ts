@@ -9,10 +9,12 @@ import {
   dueReviewRequests,
   getReviewSettings,
   listReviewOrders,
+  ordersToCheckEligibility,
   planReviewRequests,
   readyToAsk,
   recordReviewOutcome,
   reviewCandidates,
+  saveReviewEligibility,
   saveReviewSettings,
 } from "../reviews";
 import * as schema from "../schema";
@@ -279,5 +281,60 @@ describe("review requests", () => {
     );
     expect(due.rows.map((r) => r.organization_id)).toContain(orgId);
     expect(due.rows.map((r) => r.organization_id)).not.toContain(otherOrgId);
+  });
+
+  it("estimates the window of orders Amazon gives no delivery dates for (FBA), and keeps Amazon's answer", async () => {
+    await scoped(async (tx) => {
+      const [channel] = await tx.select().from(schema.salesChannels);
+      await upsertOrders(tx, {
+        orgId,
+        channelId: channel?.id ?? "",
+        from: "2026-08-01",
+        orders: [
+          order("701-0000006-0000006", {
+            purchasedAt: "2026-09-05T15:00:00Z",
+            lastUpdatedAt: "2026-09-06T15:00:00Z",
+            earliestDelivery: null,
+            latestDelivery: null,
+          }),
+        ],
+      });
+      const [row] = await tx
+        .select()
+        .from(schema.orders)
+        .where(sql`${schema.orders.externalId} = '701-0000006-0000006'`);
+      ids["701-0000006-0000006"] = row?.id ?? "";
+    });
+    const fba = ids["701-0000006-0000006"] ?? "";
+    // Delivery taken as 1 to 7 days after purchase: opens Sep 11, closes Oct 12.
+    const ask = await scoped((tx) =>
+      listReviewOrders(tx, { tab: "ask", today, limit: 10, offset: 0 }),
+    );
+    expect(ask.rows.find((r) => r.id === fba)).toMatchObject({
+      opens: "2026-09-11",
+      closes: "2026-10-12",
+      estimated: true,
+      ready: true,
+      reviewEligible: null,
+    });
+    expect(await scoped((tx) => readyToAsk(tx, { today, limit: 10 }))).toContain(fba);
+    const checkedBefore = new Date();
+    expect(
+      (await scoped((tx) => ordersToCheckEligibility(tx, { today, checkedBefore, limit: 10 }))).map(
+        (o) => o.orderId,
+      ),
+    ).toContain(fba);
+
+    // Amazon says not yet: not ready, and not checked again until later.
+    await scoped((tx) => saveReviewEligibility(tx, fba, false));
+    expect(await scoped((tx) => readyToAsk(tx, { today, limit: 10 }))).not.toContain(fba);
+    expect(
+      (await scoped((tx) => ordersToCheckEligibility(tx, { today, checkedBefore, limit: 10 }))).map(
+        (o) => o.orderId,
+      ),
+    ).not.toContain(fba);
+    // Amazon says yes: ready, even before the estimated window (delivery was quick).
+    await scoped((tx) => saveReviewEligibility(tx, fba, true));
+    expect(await scoped((tx) => readyToAsk(tx, { today: "2026-09-08", limit: 10 }))).toContain(fba);
   });
 });
