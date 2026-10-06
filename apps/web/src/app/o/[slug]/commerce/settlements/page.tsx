@@ -1,6 +1,11 @@
 import { can, parseDecimal } from "@bookalyze/core";
-import { listAmazonConnections, listSettlements } from "@bookalyze/db";
-import { ArrowLeft, ArrowRight, ChevronRight, Landmark } from "lucide-react";
+import {
+  getSettlementSettings,
+  listAmazonConnections,
+  listSettlements,
+  settlementsToPost,
+} from "@bookalyze/db";
+import { ArrowLeft, ArrowRight, ChevronRight, Landmark, Settings2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -12,6 +17,7 @@ import { formatDate } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { isOrgAdmin } from "@/server/org";
+import { PostAllSettlementsButton } from "./posting-buttons";
 import { SyncSettlementsButton, UploadSettlements } from "./settlement-sync";
 
 export const metadata: Metadata = { title: "Settlements" };
@@ -33,10 +39,17 @@ export default async function SettlementsPage({
   if (!can(ctx.plan, ctx.enabledModules, "commerce.settlements")) notFound();
   const { locale, timezone } = ctx.profile;
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
-  const { connections, list } = await inOrg(ctx, async (tx) => ({
-    connections: (await listAmazonConnections(tx)).filter((c) => c.status !== "disconnected"),
-    list: await listSettlements(tx, { limit: PER_PAGE, offset: (page - 1) * PER_PAGE }),
-  }));
+  const { connections, list, settings, ready } = await inOrg(ctx, async (tx) => {
+    const settings = await getSettlementSettings(tx);
+    return {
+      connections: (await listAmazonConnections(tx)).filter((c) => c.status !== "disconnected"),
+      list: await listSettlements(tx, { limit: PER_PAGE, offset: (page - 1) * PER_PAGE }),
+      settings,
+      ready: settings.postFrom
+        ? (await settlementsToPost(tx, { from: settings.postFrom, limit: 50 })).length
+        : 0,
+    };
+  });
   const canManage = isOrgAdmin(ctx);
   const base = `/o/${slug}/commerce/settlements`;
   const day = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
@@ -45,11 +58,18 @@ export default async function SettlementsPage({
     <PageHeader
       eyebrow="Commerce"
       title="Settlements"
-      description="Every Amazon payout: what sold, what was refunded, and the fees Amazon kept. Each settlement is paid into your bank as one deposit. They don't change your books yet."
+      description="Every Amazon payout: what sold, what was refunded, and the fees Amazon kept. Each one posts to your books as one entry, and is paid into your bank as one deposit."
       actions={
         <div className="flex flex-wrap items-center gap-2">
           {canManage ? <UploadSettlements slug={slug} /> : null}
+          <Button asChild variant="ghost">
+            <Link href={`${base}/accounts`}>
+              <Settings2 />
+              How settlements post
+            </Link>
+          </Button>
           {connections.length ? <SyncSettlementsButton slug={slug} /> : null}
+          {canManage && ready ? <PostAllSettlementsButton slug={slug} count={ready} /> : null}
         </div>
       }
     />
@@ -82,6 +102,19 @@ export default async function SettlementsPage({
   return (
     <div className="grid gap-6">
       {header}
+      {settings.postFrom ? null : (
+        <Link
+          href={`${base}/accounts`}
+          className="-mt-2 flex items-center gap-3 rounded-xl bg-primary/5 px-4 py-3 text-sm transition-colors hover:bg-primary/10"
+        >
+          <Settings2 className="size-4 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">Put settlements in your books.</span> Choose which account
+            sales, fees and the payout go to, and from when.
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" />
+        </Link>
+      )}
       <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
         <div className="hidden grid-cols-[minmax(0,1fr)_9rem_9rem_1.25rem] gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider md:grid">
           <span>Period</span>
@@ -115,6 +148,16 @@ export default async function SettlementsPage({
                           Check
                         </Badge>
                       )}
+                      {s.entryId ? (
+                        <Badge variant="success">In books</Badge>
+                      ) : settings.postFrom &&
+                        s.endAt.toISOString().slice(0, 10) < settings.postFrom ? (
+                        <Badge variant="outline" title="It ends before posting starts">
+                          Before posting starts
+                        </Badge>
+                      ) : settings.postFrom && s.balanced ? (
+                        <Badge variant="secondary">Ready to post</Badge>
+                      ) : null}
                     </span>
                   </span>
                   <span className="col-start-1 text-muted-foreground text-sm md:col-start-auto">

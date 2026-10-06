@@ -1,4 +1,5 @@
 import {
+  buildSettlementEntry,
   can,
   formatDecimal,
   parseDecimal,
@@ -7,17 +8,20 @@ import {
   settlementGroup,
   settlementLineLabel,
 } from "@bookalyze/core";
-import { getSettlement } from "@bookalyze/db";
-import { AlertTriangle, ArrowLeft, Info } from "lucide-react";
+import { getSettlement, getSettlementAccounts, getSettlementSettings, schema } from "@bookalyze/db";
+import { AlertTriangle, ArrowLeft, BookCheck, Settings2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
+import { isOrgAdmin } from "@/server/org";
+import { PostSettlementButton, UnpostSettlementButton } from "../posting-buttons";
 
 export const metadata: Metadata = { title: "Settlement" };
 
@@ -33,8 +37,28 @@ export default async function SettlementPage({
   if (!UUID.test(id)) notFound();
   const ctx = await getCommerceContext(slug);
   if (!can(ctx.plan, ctx.enabledModules, "commerce.settlements")) notFound();
-  const s = await inOrg(ctx, (tx) => getSettlement(tx, id));
-  if (!s) notFound();
+  const found = await inOrg(ctx, async (tx) => {
+    const settlement = await getSettlement(tx, id);
+    if (!settlement) return null;
+    return {
+      settlement,
+      accounts: await getSettlementAccounts(tx),
+      settings: await getSettlementSettings(tx),
+      names: new Map(
+        (await tx.select().from(schema.accounts)).map((a) => [
+          a.id,
+          a.code ? `${a.code} · ${a.name}` : a.name,
+        ]),
+      ),
+    };
+  });
+  if (!found) notFound();
+  const { settlement: s, accounts, settings, names } = found;
+  const canPost = isOrgAdmin(ctx);
+  const posted = Boolean(s.entryId);
+  const before = settings.postFrom ? s.endAt.toISOString().slice(0, 10) < settings.postFrom : false;
+  const preview = buildSettlementEntry({ total: s.total, lines: s.lines, accounts });
+  const foreign = s.currency !== ctx.profile.baseCurrency;
   const { locale, timezone } = ctx.profile;
   const day = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
   const negative = parseDecimal(s.total) < 0n;
@@ -146,11 +170,104 @@ export default async function SettlementPage({
               and upload it.
             </p>
           )}
-          <p className="flex gap-2 rounded-xl bg-primary/5 px-4 py-3 text-muted-foreground text-sm">
-            <Info className="mt-0.5 size-4 shrink-0 text-primary" />
-            Not in your books yet. Next, each settlement will post as one entry (sales, refunds and
-            fees to their own accounts) and be matched to its deposit.
-          </p>
+          <div className="rounded-2xl border bg-card p-5 shadow-xs">
+            <h2 className="flex items-center gap-2 font-medium text-sm">
+              <BookCheck className="size-4 text-primary" />
+              In your books
+            </h2>
+            {posted && s.entryId ? (
+              <div className="mt-2 grid gap-3 text-sm">
+                <p>
+                  Posted as{" "}
+                  <Link
+                    href={`/o/${slug}/accounting/journal/${s.entryId}`}
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    JE-{String(s.entryNumber).padStart(4, "0")}
+                  </Link>
+                  . The payout waits in the clearing account until its deposit is matched.
+                </p>
+                {canPost ? <UnpostSettlementButton slug={slug} id={s.id} /> : null}
+              </div>
+            ) : !settings.postFrom ? (
+              <div className="mt-2 grid gap-3 text-sm">
+                <p className="text-muted-foreground">
+                  Choose which account each kind of amount goes to, and from when settlements post.
+                </p>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/o/${slug}/commerce/settlements/accounts`}>
+                    <Settings2 />
+                    Choose accounts
+                  </Link>
+                </Button>
+              </div>
+            ) : foreign ? (
+              <p className="mt-2 text-muted-foreground text-sm">
+                This settlement is in {s.currency}. Posting settlements in another currency than{" "}
+                {ctx.profile.baseCurrency} comes later.
+              </p>
+            ) : !preview.ok ? (
+              <div className="mt-2 grid gap-3 text-sm">
+                <p className="text-muted-foreground">{preview.error}</p>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/o/${slug}/commerce/settlements/accounts`}>
+                    <Settings2 />
+                    Choose accounts
+                  </Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-3 grid gap-3">
+                <p className="text-muted-foreground text-xs">
+                  {before
+                    ? `It ends before ${formatDate(settings.postFrom, locale)}, when posting starts: your books likely have this payout already.`
+                    : `One entry dated ${formatDate(s.endAt.toISOString().slice(0, 10), locale)}:`}
+                </p>
+                <table className="w-full text-sm">
+                  <thead className="text-muted-foreground text-xs">
+                    <tr>
+                      <th className="pb-1 text-start font-normal">Account</th>
+                      <th className="pb-1 text-end font-normal">Debit</th>
+                      <th className="pb-1 text-end font-normal">Credit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.lines.map((l) => {
+                      const debit = !l.amount.startsWith("-");
+                      const value = debit ? l.amount : l.amount.slice(1);
+                      return (
+                        <tr key={l.accountId} className="border-t align-top">
+                          <td className="py-1.5 pe-2">
+                            <span className="block">{names.get(l.accountId) ?? "Account"}</span>
+                            <span className="block text-muted-foreground text-xs">
+                              {l.description}
+                            </span>
+                          </td>
+                          <td className="py-1.5 text-end">
+                            {debit ? (
+                              <Amount value={value} currency={s.currency} locale={locale} />
+                            ) : null}
+                          </td>
+                          <td className="py-1.5 text-end">
+                            {debit ? null : (
+                              <Amount value={value} currency={s.currency} locale={locale} />
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {canPost && !before ? <PostSettlementButton slug={slug} id={s.id} /> : null}
+                <Link
+                  href={`/o/${slug}/commerce/settlements/accounts`}
+                  className="text-primary text-xs underline-offset-4 hover:underline"
+                >
+                  Change the accounts
+                </Link>
+              </div>
+            )}
+          </div>
         </aside>
       </div>
     </div>

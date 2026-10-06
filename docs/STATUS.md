@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-06, phase 4 slice 1 (Amazon settlements)._
+_Last updated: 2026-10-06, phase 4 slice 2 (settlements post to the books)._
 
 ---
 
@@ -26,7 +26,7 @@ _Last updated: 2026-10-06, phase 4 slice 1 (Amazon settlements)._
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen), slice 3 (review requests: manual, bulk, automatic) and refunds on orders (red badge, Refunded tab) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation and Finance and Accounting roles) |
-| 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slice 1 (bring in Amazon settlements, Settlements screen) done. Next: account mapping, posting each settlement as one entry, matching payouts to bank deposits |
+| 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen) and 2 (accounts for each kind of line, posting each settlement as one entry) done. Next: matching payouts to bank deposits |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -795,6 +795,38 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   `connections.settlements_synced_at`, and `syncable_amazon_connections()`.
 - Tests: core `amazon-settlements.test.ts`, db `settlements.test.ts`, e2e "settlements: bring in
   Amazon's settlement report…" (the mock serves one gzipped report; a second is uploaded).
+
+### Phase 4, slice 2: settlements post to the books
+
+- **How settlements post** (`/commerce/settlements/accounts`, admins): an account for each group
+  (core `SETTLEMENT_ACCOUNT_KEYS`: sales, refunds, promotions, fees, advertising, sales tax,
+  reimbursements, held back and released, other) plus the **clearing account** (an asset,
+  ideally Money in transit) the payout goes to, and "Post settlements from" (default: the start
+  of the financial year). The first time, accounts are suggested from names and types (only a
+  suggestion: posting reads the saved choices, `settlement_accounts`). Saved with
+  `saveSettlementSetupAction` → `saveSettlementSetup`.
+- **One entry per settlement** (core `buildSettlementEntry`, db `postSettlement`): each group's
+  subtotal to its account (money to the seller credits it), the payout debited to clearing, lines
+  for the same account combined; it refuses when the lines don't add up or an account is
+  missing. Dated the period's last day (company time), reference = Amazon's settlement ID, memo
+  "Amazon.ca settlement … · Jun 5 – Jul 17, 2026", `source: "settlement"`, `source_id` = the
+  settlement. `settlements.journal_entry_id` links them; a settlement counts as posted while that
+  entry isn't reversed. Main currency only for now (a USD settlement says so).
+- **Buyer-paid tax isn't income:** `Tax`, `ShippingTax`, `GiftWrapTax` under ItemPrice are in
+  the "Sales tax" group with Amazon's withheld (marketplace facilitator) tax, so they cancel out
+  when Amazon pays it. Map the group to the sales tax liability account.
+- **Screens:** the settlement page shows the entry (debit / credit per account) with "Post to
+  books", or "Posted as JE-…" with "Take out of books" (`unpostSettlement`: reverses on the same
+  day). The list shows In books / Ready to post / Before posting starts, and "Post N ready"
+  (`settlementsToPost`: balanced, not posted, period ends on or after the start date; 50 per
+  click, each in its own transaction). Posting needs an owner or admin.
+- **Not yet:** the bank deposit still sits on its old category (Amazon Sales, for Wave-era
+  ones): matching it to the clearing account is slice 3. Until then, posted settlements and
+  their deposits both count as sales.
+- Schema (migration `0033_settlement_posting`): `settlement_accounts`, `settlement_settings`,
+  `settlements.journal_entry_id`, journal source `settlement`. Tests: core
+  `amazon-settlements.test.ts` (`buildSettlementEntry`), db `settlements.test.ts` (post once,
+  take out, post again), e2e settlements test (choose accounts, post, take out).
 
 ### Order badges: refunded, A-to-z claim, chargeback, replaced
 

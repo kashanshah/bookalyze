@@ -4,13 +4,19 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import { saveAmazonChannels } from "../commerce";
+import { createDefaultChart } from "../ledger";
 import * as schema from "../schema";
 import {
   getSettlement,
+  getSettlementAccounts,
   knownSettlementReports,
   listSettlements,
+  postSettlement,
   saveSettlement,
+  saveSettlementSetup,
   settlementChannel,
+  settlementsToPost,
+  unpostSettlement,
 } from "../settlements";
 
 const ownerUrl =
@@ -58,6 +64,13 @@ const settlement = (over: Partial<Settlement> = {}): Settlement => ({
 });
 
 beforeAll(async () => {
+  await owner.db
+    .insert(schema.currencies)
+    .values([
+      { code: "CAD", name: "Canadian Dollar", minorUnits: 2 },
+      { code: "USD", name: "US Dollar", minorUnits: 2 },
+    ])
+    .onConflictDoNothing();
   const orgs = await owner.db
     .insert(schema.organization)
     .values([
@@ -208,5 +221,67 @@ describe("settlements", () => {
     );
     // The connection has no credentials in this test, so it isn't synced.
     expect(rows.rows.map((r) => r.connection_id)).not.toContain(connectionId);
+  });
+
+  it("posts a settlement as one balanced entry, once, and takes it back out", async () => {
+    await scoped((tx) => createDefaultChart(tx, { orgId, baseCurrency: "CAD" }));
+    const accounts = await scoped((tx) => tx.select().from(schema.accounts));
+    const sales = accounts.find((a) => a.code === "4000")?.id ?? "";
+    const fees = accounts.find((a) => a.type === "expense" && a.systemKey === null)?.id ?? "";
+    const clearing = accounts.find((a) => a.code === "1000")?.id ?? "";
+    const [first] = (
+      await scoped((tx) => listSettlements(tx, { limit: 10, offset: 0 }))
+    ).rows.filter((r) => r.externalId === "11223344556");
+    const id = first?.id ?? "";
+    const post = () =>
+      scoped((tx) =>
+        postSettlement(tx, {
+          orgId,
+          userId: null,
+          settlementId: id,
+          baseCurrency: "CAD",
+          date: "2026-09-15",
+          memo: "Amazon.ca settlement 11223344556",
+        }),
+      );
+    // Accounts not chosen yet.
+    await expect(post()).rejects.toThrow(/clearing account/);
+    await scoped((tx) =>
+      saveSettlementSetup(tx, {
+        orgId,
+        userId: null,
+        accounts: { sales, fees, clearing },
+        postFrom: "2026-09-01",
+      }),
+    );
+    expect(await scoped((tx) => getSettlementAccounts(tx))).toEqual({ sales, fees, clearing });
+    // The unbalanced, uploaded one isn't offered.
+    expect(
+      (await scoped((tx) => settlementsToPost(tx, { from: "2026-09-01", limit: 10 }))).map(
+        (r) => r.id,
+      ),
+    ).toEqual([id]);
+
+    const entry = await post();
+    expect(entry.label).toMatch(/^JE-/);
+    const lines = await scoped((tx) =>
+      tx
+        .select()
+        .from(schema.journalLines)
+        .where(sql`${schema.journalLines.journalEntryId} = ${entry.id}`),
+    );
+    const by = Object.fromEntries(lines.map((l) => [l.accountId, String(l.amount)]));
+    expect(by[sales]).toBe("-47.0500");
+    expect(by[clearing]).toBe("47.0500");
+    expect((await scoped((tx) => getSettlement(tx, id)))?.entryNumber).toBe(entry.entryNumber);
+    await expect(post()).rejects.toThrow(/in the books already/);
+    expect(await scoped((tx) => settlementsToPost(tx, { from: "2026-09-01", limit: 10 }))).toEqual(
+      [],
+    );
+
+    await scoped((tx) => unpostSettlement(tx, { orgId, userId: null, settlementId: id }));
+    expect((await scoped((tx) => getSettlement(tx, id)))?.entryId).toBeNull();
+    // Posts again after being taken out.
+    expect((await post()).entryNumber).toBeGreaterThan(entry.entryNumber);
   });
 });

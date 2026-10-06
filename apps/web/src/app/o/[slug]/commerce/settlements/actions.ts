@@ -1,9 +1,21 @@
 "use server";
 
-import { can } from "@bookalyze/core";
-import { saveSettlement, settlementChannel } from "@bookalyze/db";
+import { can, localDate, SETTLEMENT_ACCOUNT_KEYS, type SettlementAccounts } from "@bookalyze/core";
+import {
+  getSettlementSettings,
+  LedgerError,
+  postSettlement,
+  saveSettlement,
+  saveSettlementSetup,
+  schema,
+  settlementChannel,
+  settlementsToPost,
+  unpostSettlement,
+} from "@bookalyze/db";
+import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { formatDate, isIsoDate } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { type SettlementSyncResult, syncOrgSettlements } from "@/server/amazon-settlements";
 import { audit } from "@/server/audit";
@@ -105,4 +117,166 @@ export async function uploadSettlementAction(
   });
   revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
   return { ok: true, ...saved };
+}
+
+// --- Posting ------------------------------------------------------------------------------
+
+const setupSchema = z.object({
+  accounts: z.record(
+    z.enum(SETTLEMENT_ACCOUNT_KEYS as [string, ...string[]]),
+    z.uuid().or(z.literal("")),
+  ),
+  postFrom: z.string().refine(isIsoDate, "Choose a date."),
+});
+
+/** Saves which account each kind of settlement line posts to, and when posting starts. */
+export async function saveSettlementSetupAction(
+  slug: string,
+  input: z.input<typeof setupSchema>,
+): Promise<SettlementResult> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only owners and admins can change this." };
+  const parsed = setupSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Check the accounts and the date." };
+  const accounts = parsed.data.accounts as SettlementAccounts;
+  if (!accounts.clearing) return { ok: false, message: "Choose the clearing account." };
+  const saved = await inOrg(ctx, async (tx) => {
+    const mine = new Map(
+      (await tx.select().from(schema.accounts).where(eq(schema.accounts.isArchived, false))).map(
+        (a) => [a.id, a],
+      ),
+    );
+    const chosen = Object.values(accounts).filter(Boolean) as string[];
+    if (chosen.some((id) => !mine.has(id))) return false;
+    if (mine.get(accounts.clearing ?? "")?.type !== "asset") return "clearing";
+    await saveSettlementSetup(tx, {
+      orgId: ctx.org.id,
+      userId: ctx.session.user.id,
+      accounts,
+      postFrom: parsed.data.postFrom,
+    });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "settlements.accounts_updated",
+      entityType: "settlement_settings",
+      after: { accounts, postFrom: parsed.data.postFrom },
+    });
+    return true;
+  });
+  if (saved === "clearing") {
+    return { ok: false, message: "The clearing account must be an asset (Money in transit)." };
+  }
+  if (!saved) return { ok: false, message: "Choose accounts from the list." };
+  revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
+  return { ok: true };
+}
+
+function postingError(error: unknown): string {
+  if (error instanceof LedgerError) {
+    if (error.code === "period_locked") {
+      return "Your books are closed for that period. Ask an owner to reopen it, or leave this settlement out.";
+    }
+    return error.message;
+  }
+  throw error;
+}
+
+/** One settlement's entry: dated the period's last day (company time), memo in plain words. */
+function entryFor(
+  ctx: Awaited<ReturnType<typeof settlementsContext>>["ctx"],
+  s: { startAt: Date; endAt: Date; externalId: string; marketplace: string | null },
+) {
+  const { locale, timezone } = ctx.profile;
+  const start = localDate(s.startAt.toISOString(), timezone);
+  const end = localDate(s.endAt.toISOString(), timezone);
+  return {
+    date: end,
+    memo: `${s.marketplace ?? "Amazon"} settlement ${s.externalId} · ${formatDate(start, locale)} – ${formatDate(end, locale)}`,
+  };
+}
+
+/** Posts settlements to the books: one, or (`all`) every one ready from the start date on. */
+export async function postSettlementsAction(
+  slug: string,
+  input: { id: string } | { all: true },
+): Promise<SettlementResult<{ posted: number; failed: number; message: string | null }>> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx))
+    return { ok: false, message: "Only owners and admins can post settlements." };
+  const one = "id" in input ? z.uuid().safeParse(input.id) : null;
+  if (one && !one.success) return { ok: false, message: "Settlement not found." };
+  const ids = await inOrg(ctx, async (tx) => {
+    if (one?.success) return [one.data];
+    const { postFrom } = await getSettlementSettings(tx);
+    if (!postFrom) return null;
+    return (await settlementsToPost(tx, { from: postFrom, limit: 50 })).map((r) => r.id);
+  });
+  if (!ids) return { ok: false, message: "Choose the accounts and when posting starts first." };
+  let posted = 0;
+  let failed = 0;
+  let message: string | null = null;
+  for (const id of ids) {
+    try {
+      // Each settlement in its own transaction: one that can't post doesn't hold up the rest.
+      await inOrg(ctx, async (tx) => {
+        const [s] = await tx.select().from(schema.settlements).where(eq(schema.settlements.id, id));
+        if (!s) throw new LedgerError("This settlement no longer exists.");
+        const entry = await postSettlement(tx, {
+          orgId: ctx.org.id,
+          userId: ctx.session.user.id,
+          settlementId: id,
+          baseCurrency: ctx.profile.baseCurrency,
+          ...entryFor(ctx, s),
+        });
+        await audit(tx, {
+          orgId: ctx.org.id,
+          actorUserId: ctx.session.user.id,
+          action: "settlements.posted",
+          entityType: "settlement",
+          entityId: id,
+          after: { journalEntryId: entry.id, total: String(s.total) },
+        });
+      });
+      posted++;
+    } catch (error) {
+      failed++;
+      message ??= postingError(error);
+    }
+  }
+  revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
+  revalidatePath(`/o/${slug}/accounting`, "layout");
+  if (one && failed) return { ok: false, message: message ?? "It couldn't be posted." };
+  return { ok: true, posted, failed, message };
+}
+
+/** Takes a settlement out of the books (its entry is reversed). */
+export async function unpostSettlementAction(slug: string, id: string): Promise<SettlementResult> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only owners and admins can do this." };
+  if (!z.uuid().safeParse(id).success) return { ok: false, message: "Settlement not found." };
+  try {
+    await inOrg(ctx, async (tx) => {
+      await unpostSettlement(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        settlementId: id,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "settlements.unposted",
+        entityType: "settlement",
+        entityId: id,
+      });
+    });
+  } catch (error) {
+    return { ok: false, message: postingError(error) };
+  }
+  revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
+  revalidatePath(`/o/${slug}/accounting`, "layout");
+  return { ok: true };
 }
