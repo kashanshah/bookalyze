@@ -878,7 +878,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   main-currency value) are kept; the page shows "valued at 1 AED = … CAD".
 - **Deposits in any account and currency** (`settlementDepositCandidates` → core `depositFit`):
   the same currency must be the exact amount; another currency (an AED payout into a CAD
-  account) is offered when within 5% (`SETTLEMENT_FX_TOLERANCE_BP`) of the market rate on
+  account) is offered when within 10% (`SETTLEMENT_FX_TOLERANCE_BP`) of the market rate on
   Amazon's deposit date, showing the bank's rate, how far it is from the market and the exchange
   difference, with "Match at this rate". Converted ones are never matched in bulk or by the job.
 - **Matching** (core `depositMatchLines`): the money line as it is, the payout out of clearing
