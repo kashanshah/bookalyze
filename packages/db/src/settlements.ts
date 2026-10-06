@@ -862,3 +862,66 @@ export async function settlementsWithOneDeposit(tx: Transaction, limit = 50) {
   }
   return found;
 }
+
+// --- Profit by channel --------------------------------------------------------------------
+
+/**
+ * The settlements (shown ones: see `shown`) whose period ends between `from` and `to` in the
+ * company's time zone, with their marketplace, the rate they posted at (if posted), and their
+ * lines: what the channel profit report adds up.
+ */
+export async function settlementsForProfit(
+  tx: Transaction,
+  input: { from: string; to: string; timezone: string },
+) {
+  const rows = await tx
+    .select({
+      id: settlements.id,
+      externalId: settlements.externalId,
+      channelId: settlements.channelId,
+      channelName: salesChannels.name,
+      marketplace: settlements.marketplace,
+      currency: settlements.currency,
+      endAt: settlements.endAt,
+      balanced: settlements.balanced,
+      postedFxRate: settlements.postedFxRate,
+      posted: journalEntries.id,
+    })
+    .from(settlements)
+    .leftJoin(salesChannels, eq(salesChannels.id, settlements.channelId))
+    .leftJoin(journalEntries, postedEntry)
+    .where(
+      and(
+        shown,
+        sql`(${settlements.endAt} at time zone ${input.timezone})::date between ${input.from}::date and ${input.to}::date`,
+      ),
+    )
+    .orderBy(asc(settlements.endAt));
+  if (!rows.length) return [];
+  const lines = await tx
+    .select({
+      settlementId: settlementLines.settlementId,
+      transactionType: settlementLines.transactionType,
+      amountType: settlementLines.amountType,
+      amountDescription: settlementLines.amountDescription,
+      amount: settlementLines.amount,
+    })
+    .from(settlementLines)
+    .where(
+      sql`${settlementLines.settlementId} in (${sql.join(
+        rows.map((r) => sql`${r.id}`),
+        sql`, `,
+      )})`,
+    );
+  const bySettlement = new Map<string, typeof lines>();
+  for (const l of lines) {
+    const list = bySettlement.get(l.settlementId) ?? [];
+    list.push(l);
+    bySettlement.set(l.settlementId, list);
+  }
+  return rows.map((r) => ({
+    ...r,
+    postedFxRate: r.posted && r.postedFxRate !== null ? String(r.postedFxRate) : null,
+    lines: (bySettlement.get(r.id) ?? []).map((l) => ({ ...l, amount: String(l.amount) })),
+  }));
+}

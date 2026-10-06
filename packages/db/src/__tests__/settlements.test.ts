@@ -19,6 +19,7 @@ import {
   saveSettlementSetup,
   settlementChannel,
   settlementDepositCandidates,
+  settlementsForProfit,
   settlementsToPost,
   settlementsWithOneDeposit,
   unmatchSettlementDeposit,
@@ -568,5 +569,22 @@ describe("settlements", () => {
       [code("1150")]: "-37.1700",
       [code("6900")]: "0.6700",
     });
+  });
+
+  it("lists the settlements ending in a period, with their lines, for the profit report", async () => {
+    const rows = await scoped((tx) =>
+      settlementsForProfit(tx, {
+        from: "2026-09-01",
+        to: "2026-09-20",
+        timezone: "America/Toronto",
+      }),
+    );
+    expect(rows.map((r) => [r.externalId, r.currency]).sort()).toEqual([
+      ["11223344556", "CAD"],
+      ["55556666777", "AED"],
+    ]);
+    const aed = rows.find((r) => r.currency === "AED");
+    expect(aed?.postedFxRate).not.toBeNull();
+    expect(aed?.lines.map((l) => l.amount).sort()).toEqual(["-50.0000", "150.0000"]);
   });
 });

@@ -558,3 +558,67 @@ export function depositMatchLines(input: {
   }
   return { ok: true, lines };
 }
+
+// --- Profit by channel --------------------------------------------------------------------
+
+/** What a channel earned, in the order the report shows it; tax and reserves aren't profit. */
+export const PROFIT_GROUPS = [
+  "sales",
+  "refunds",
+  "promotions",
+  "fees",
+  "advertising",
+  "reimbursements",
+  "other",
+] as const satisfies readonly SettlementGroup[];
+
+export type GroupTotals = Record<SettlementGroup, bigint>;
+
+export const emptyGroupTotals = (): GroupTotals => ({
+  sales: 0n,
+  refunds: 0n,
+  promotions: 0n,
+  fees: 0n,
+  advertising: 0n,
+  tax: 0n,
+  reimbursements: 0n,
+  reserve: 0n,
+  other: 0n,
+});
+
+/** Adds a settlement's lines (amount units at AMOUNT_SCALE) to `into`, by group. */
+export function addSettlementLines(
+  into: GroupTotals,
+  lines: readonly Pick<
+    SettlementLine,
+    "transactionType" | "amountType" | "amountDescription" | "amount"
+  >[],
+  convert: (units: bigint) => bigint = (u) => u,
+): GroupTotals {
+  for (const line of lines) {
+    const group = settlementGroup(line);
+    into[group] += convert(parseDecimal(line.amount));
+  }
+  return into;
+}
+
+/**
+ * A channel's profit from its settlements: net (everything but sales tax and amounts held
+ * back, which aren't the seller's to keep or spend yet), the payouts (net plus those), and the
+ * margin (net over sales, before the cost of the goods). Amounts as decimal strings.
+ */
+export function channelProfit(totals: GroupTotals) {
+  const net = PROFIT_GROUPS.reduce((t, g) => t + totals[g], 0n);
+  const payout = net + totals.tax + totals.reserve;
+  const sales = totals.sales + totals.refunds + totals.promotions;
+  return {
+    groups: Object.fromEntries(
+      (Object.keys(totals) as SettlementGroup[]).map((g) => [g, formatDecimal(totals[g])]),
+    ) as Record<SettlementGroup, string>,
+    netSales: formatDecimal(sales),
+    net: formatDecimal(net),
+    payout: formatDecimal(payout),
+    /** Net as a share of net sales (sales less refunds and promotions), or null without sales. */
+    margin: sales > 0n ? Number((net * 10_000n) / sales) / 100 : null,
+  };
+}

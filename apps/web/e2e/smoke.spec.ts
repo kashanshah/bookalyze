@@ -1546,6 +1546,12 @@ test("settlements: bring in Amazon's settlement report, see the payout, and uplo
   await page.getByRole("button", { name: "Take out of books" }).click();
   await expect(page.getByText("Taken out of your books")).toBeVisible();
   await expect(page.getByRole("button", { name: "Post to books" })).toBeVisible();
+
+  // What each marketplace earned, from its settlements.
+  await page.getByRole("link", { name: "Channel profit", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Channel profit" })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "Net from the channel" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: /Amazon\.ca/ })).toBeVisible();
 });
 
 test("commerce: a different seller account's credentials hide the previous account's orders", async ({
