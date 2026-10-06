@@ -154,12 +154,31 @@ const postedEntry = and(
 const depositMatched = sql<boolean>`exists (select 1 from journal_entries d
   where d.id = ${settlements.depositEntryId} and d.reversed_by_entry_id is null)`;
 
+/**
+ * Settlements to show: of marketplaces still connected and switched on (a disconnected
+ * account's, or a switched-off marketplace's, are hidden like its orders), and every one already
+ * in the books, so the books never hold an entry the list doesn't show.
+ */
+const shown = sql`(
+  exists (select 1 from journal_entries p
+    where p.id = ${settlements.journalEntryId} and p.reversed_by_entry_id is null)
+  or (
+    (${settlements.connectionId} is null or exists (select 1 from connections c
+      where c.id = ${settlements.connectionId} and c.status <> 'disconnected'))
+    and (${settlements.channelId} is null or exists (select 1 from sales_channels ch
+      where ch.id = ${settlements.channelId} and ch.is_active))
+  )
+)`;
+
 /** Settlements, newest first, with their marketplace. */
 export async function listSettlements(
   tx: Transaction,
   input: { channelId?: string | null; limit: number; offset: number },
 ) {
-  const where = input.channelId ? eq(settlements.channelId, input.channelId) : undefined;
+  const where = and(
+    shown,
+    input.channelId ? eq(settlements.channelId, input.channelId) : undefined,
+  );
   const rows = await tx
     .select({
       id: settlements.id,
@@ -186,9 +205,15 @@ export async function listSettlements(
     .limit(input.limit)
     .offset(input.offset);
   const [count] = await tx.select({ n: sql<number>`count(*)::int` }).from(settlements).where(where);
+  const [hidden] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(settlements)
+    .where(sql`not ${shown}`);
   return {
     rows: rows.map((r) => ({ ...r, total: String(r.total) })),
     count: count?.n ?? 0,
+    /** Of disconnected accounts or switched-off marketplaces (and not in the books). */
+    hidden: hidden?.n ?? 0,
   };
 }
 
@@ -401,6 +426,7 @@ export async function settlementsToPost(
         eq(settlements.balanced, true),
         // Only the main currency posts for now.
         eq(settlements.currency, input.currency),
+        shown,
         sql`${settlements.endAt} >= ${input.from}::date`,
       ),
     )

@@ -1196,6 +1196,9 @@ screenshots work well).
   `{"errors":[{"code","message","details"}]}`; `send()` in `server/amazon.ts` keeps that line
   (`amazonErrorDetail` in core), and the order sync adds the marketplace and step ("Amazon.ae,
   refunds: …"). A bare "error (400)" told nobody what to fix.
+- **Settlements of a disconnected account or a switched-off marketplace are hidden** (like its
+  orders), with a "n settlements … aren't shown" note on the list; ones in the books always show,
+  so no entry is left without its settlement. They aren't offered for posting either.
 - **Negative settlements** (fees above sales, e.g. a quiet month with the $29.99 plan fee): no
   payout. Posted, they leave clearing negative (what's owed to Amazon) until Amazon charges the
   card on file (that card charge belongs in clearing, by hand for now) or carries the balance into

@@ -218,6 +218,26 @@ describe("settlements", () => {
     ]);
   });
 
+  it("hides settlements of a switched-off marketplace, unless they're in the books", async () => {
+    const ca = (await scoped((tx) => tx.select().from(schema.salesChannels))).find(
+      (c) => c.name === "Amazon.ca",
+    );
+    if (!ca) throw new Error("channel missing");
+    const active = (isActive: boolean) =>
+      scoped((tx) =>
+        tx
+          .update(schema.salesChannels)
+          .set({ isActive })
+          .where(sql`${schema.salesChannels.id} = ${ca.id}`),
+      );
+    await active(false);
+    const list = await scoped((tx) => listSettlements(tx, { limit: 10, offset: 0 }));
+    expect(list.rows.map((r) => r.externalId)).toEqual(["99887766554"]);
+    expect(list.hidden).toBe(1);
+    await active(true);
+    expect((await scoped((tx) => listSettlements(tx, { limit: 10, offset: 0 }))).hidden).toBe(0);
+  });
+
   it("keeps each company's settlements to itself", async () => {
     const theirs = await scoped((tx) => listSettlements(tx, { limit: 10, offset: 0 }), otherOrgId);
     expect(theirs.count).toBe(0);

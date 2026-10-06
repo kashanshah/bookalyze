@@ -63,6 +63,20 @@ export default async function SettlementsPage({
   const base = `/o/${slug}/commerce/settlements`;
   const day = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
 
+  const hiddenNote = list.hidden ? (
+    <p className="text-muted-foreground text-xs">
+      {list.hidden === 1 ? "1 settlement" : `${list.hidden} settlements`} of disconnected or
+      switched-off marketplaces {list.hidden === 1 ? "isn't" : "aren't"} shown (those in your books
+      always are).{" "}
+      <Link
+        href={`/o/${slug}/commerce/channels`}
+        className="text-primary underline-offset-4 hover:underline"
+      >
+        Channels
+      </Link>
+    </p>
+  ) : null;
+
   const header = (
     <PageHeader
       eyebrow="Commerce"
@@ -111,6 +125,7 @@ export default async function SettlementsPage({
             </Button>
           )}
         </div>
+        {hiddenNote}
       </div>
     );
   }
@@ -206,6 +221,8 @@ export default async function SettlementsPage({
           })}
         </ul>
       </div>
+
+      {hiddenNote}
 
       {list.count > PER_PAGE ? (
         <div className="flex items-center justify-between gap-3 text-muted-foreground text-sm">
