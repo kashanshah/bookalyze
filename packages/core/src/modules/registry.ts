@@ -88,6 +88,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     nav: [
       { label: "Orders", href: "/commerce/orders" },
       { label: "Settlements", href: "/commerce/settlements" },
+      { label: "Channel profit", href: "/commerce/profit" },
       { label: "Channels", href: "/commerce/channels" },
     ],
     status: "available",

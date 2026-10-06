@@ -26,7 +26,7 @@ _Last updated: 2026-10-06, phase 4 slice 2 (settlements post to the books)._
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen), slice 3 (review requests: manual, bulk, automatic) and refunds on orders (red badge, Refunded tab) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation and Finance and Accounting roles) |
-| 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) and 4 (any currency, automatic posting) done. Next: profit and loss by channel |
+| 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Next: phase 4b (UAE: Amazon.ae under the Dubai company, Noon) or phase 5 (inventory and cost of goods sold) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -893,6 +893,23 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Migration `0035_settlement_currencies`. Tests: core `amazon-settlements.test.ts`
   (`convertSettlementEntry`, `depositFit`, `depositMatchLines`), db `settlements.test.ts` (AED
   settlement in a CAD company, CAD deposit matched with the exchange loss).
+
+### Phase 4, slice 5: profit by channel
+
+- **Commerce → Channel profit** (`/commerce/profit`, feature `commerce.settlements`): for a
+  period (the reports' presets and dates, `resolveRange` + `RangeControls`), one column per
+  marketplace in its own currency and, when there's more than one or another currency, "All
+  channels" in the main currency. Rows: sales, refunds, promotions → net sales; Amazon fees,
+  advertising, reimbursements, other → net from the channel, margin (net over net sales); then
+  sales tax and amounts held back (not profit) → paid out.
+- From settlements, not the books (so it works before posting): core `addSettlementLines` sums
+  lines by `settlementGroup`, `channelProfit` makes the totals. A settlement counts in the
+  period its last day falls in (company time zone; db `settlementsForProfit`, shown settlements
+  only). The main-currency total uses the rate a settlement posted at, else that day's rate
+  (`suggestRate`); without one it's left out and the page says so. Before product costs
+  (phase 5).
+- Tests: core `amazon-settlements.test.ts` (`channelProfit`), db `settlements.test.ts`
+  (`settlementsForProfit`), e2e settlements test (the page shows Amazon.ca's column).
 
 ### Order badges: refunded, A-to-z claim, chargeback, replaced
 

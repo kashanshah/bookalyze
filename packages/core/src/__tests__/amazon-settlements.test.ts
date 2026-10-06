@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  addSettlementLines,
   buildSettlementEntry,
+  channelProfit,
   convertSettlementEntry,
   depositFit,
   depositMatchLines,
+  emptyGroupTotals,
   parseReportDocument,
   parseReportsPage,
   parseSettlementReport,
@@ -395,5 +398,39 @@ describe("depositMatchLines", () => {
       ["clearing", "AED", "-1000.0000", "-372.0000"],
       ["loss", "CAD", "1.0000", "1.0000"],
     ]);
+  });
+});
+
+describe("channelProfit", () => {
+  const line = (amountType: string, amountDescription: string, amount: string, tt = "Order") => ({
+    transactionType: tt,
+    amountType,
+    amountDescription,
+    amount,
+  });
+  it("adds up what the channel kept, apart from tax and amounts held back", () => {
+    const totals = addSettlementLines(emptyGroupTotals(), [
+      line("ItemPrice", "Principal", "200.00"),
+      line("ItemPrice", "Tax", "26.00"),
+      line("ItemWithheldTax", "MarketplaceFacilitatorTax-Principal", "-26.00"),
+      line("ItemFees", "Commission", "-30.00"),
+      line("ItemPrice", "Principal", "-50.00", "Refund"),
+      line("Cost of Advertising", "TransactionTotalAmount", "-20.00", "other-transaction"),
+      line("other-transaction", "Current Reserve Amount", "-15.00", "other-transaction"),
+    ]);
+    const p = channelProfit(totals);
+    expect(p.netSales).toBe("150.0000");
+    expect(p.net).toBe("100.0000");
+    expect(p.payout).toBe("85.0000");
+    expect(p.margin).toBeCloseTo(66.66, 1);
+  });
+
+  it("has no margin without sales, and converts with the given rate", () => {
+    const totals = addSettlementLines(
+      emptyGroupTotals(),
+      [line("ItemFees", "Commission", "-10.00")],
+      (u) => u / 2n,
+    );
+    expect(channelProfit(totals)).toMatchObject({ net: "-5.0000", margin: null });
   });
 });
