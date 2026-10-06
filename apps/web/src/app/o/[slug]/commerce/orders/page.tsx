@@ -13,6 +13,7 @@ import {
 } from "@bookalyze/db";
 import { ArrowLeft, ArrowRight, ChevronRight, PackageSearch, Search, Store, X } from "lucide-react";
 import type { Metadata } from "next";
+import Form from "next/form";
 import Link from "next/link";
 import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
@@ -24,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { fiscalConfigOf, isOrgAdmin } from "@/server/org";
+import { MarketplaceFilter } from "./order-filters";
 import { IncludeChannels, StartOrders, SyncOrdersButton } from "./order-sync";
 import { statusVariant } from "./status";
 
@@ -106,6 +108,9 @@ export default async function OrdersPage({
     return `${base}${p.size ? `?${p}` : ""}`;
   };
   const filtered = Boolean(status || channel || q || from || to);
+  /** Filters beyond the status tab, which "Clear filters" resets. */
+  const narrowed = Boolean(channel || q || from || to);
+  const clearHref = href({ channel: "", q: "", from: "", to: "" });
   const day = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
   const lastSynced = syncing
     .map((s) => s.ordersSyncedThrough)
@@ -223,25 +228,18 @@ export default async function OrdersPage({
             </Link>
           ))}
         </nav>
-        <form
+        <Form
+          key={`${channel}|${q}|${from}|${to}`}
           className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto sm:flex-wrap"
           action={base}
+          scroll={false}
         >
           {status ? <input type="hidden" name="status" value={status} /> : null}
           {channels.length > 1 ? (
-            <select
-              name="channel"
-              defaultValue={channel}
-              aria-label="Marketplace"
-              className="col-span-2 h-9 rounded-lg border bg-background px-2 text-sm"
-            >
-              <option value="">All marketplaces</option>
-              {channels.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <MarketplaceFilter
+              channels={channels.map((c) => ({ id: c.id, name: c.name }))}
+              value={channel}
+            />
           ) : null}
           <Input
             type="date"
@@ -271,7 +269,15 @@ export default async function OrdersPage({
           <Button type="submit" variant="outline" size="sm" className="col-span-2 h-9">
             Show
           </Button>
-        </form>
+          {narrowed ? (
+            <Button asChild variant="ghost" size="sm" className="col-span-2 h-9">
+              <Link href={clearHref} scroll={false}>
+                <X />
+                Clear filters
+              </Link>
+            </Button>
+          ) : null}
+        </Form>
       </div>
 
       {list.totals.length ? (
@@ -335,6 +341,13 @@ export default async function OrdersPage({
               ? "Try another search, dates or tab."
               : "Orders placed since the start date show up here as they come in."}
           </p>
+          {narrowed && any ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={clearHref} scroll={false}>
+                Clear filters
+              </Link>
+            </Button>
+          ) : null}
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">

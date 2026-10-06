@@ -703,6 +703,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   mock answers three orders in two pages, with items).
 - **Sales cards per marketplace:** one card per marketplace (and currency). With more than one
   marketplace, a card filters the list to it (`?channel=`); clicking the active card clears it.
+  The filter form is keyed by the filters in the URL, so its fields (the marketplace `Combobox`,
+  which applies on choice, dates, search) always show what's applied. "Clear filters" keeps the
+  status tab.
 
 ### Phase 3, slice 3: Amazon review requests
 

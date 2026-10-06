@@ -1199,7 +1199,11 @@ test("rule suggestions: a payee categorized three times by hand becomes a rule",
   }
   await page.reload();
   await expect(page.getByText(/rules? suggested/)).toBeVisible();
-  await page.getByRole("link", { name: "See suggestions" }).click();
+  // A click while the reloaded list is still hydrating can be dropped on slow CI machines.
+  await expect(async () => {
+    await page.getByRole("link", { name: "See suggestions" }).click();
+    await expect(page).toHaveURL(/\/banking\/rules$/, { timeout: 2_000 });
+  }).toPass();
 
   const card = page.getByRole("listitem").filter({ hasText: "“netflix.com”" });
   await expect(card).toContainText("Software and subscriptions");

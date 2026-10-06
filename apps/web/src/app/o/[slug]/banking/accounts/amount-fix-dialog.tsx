@@ -13,6 +13,7 @@ import {
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -355,22 +356,24 @@ export function AmountFixDialog({
                   {unclear.map((l) =>
                     row(
                       l,
-                      <select
+                      <Combobox
                         aria-label={`Statement transaction for JE-${l.entryNumber}`}
                         value={choices[l.lineId] ?? ""}
-                        onChange={(e) => setChoices((c) => ({ ...c, [l.lineId]: e.target.value }))}
-                        className="h-9 max-w-full rounded-lg border bg-background px-2 text-sm"
-                      >
-                        <option value="">Leave as is</option>
-                        {l.fix.status === "ambiguous"
-                          ? l.fix.candidates.map((c) => (
-                              <option key={c.externalId} value={c.externalId}>
-                                {formatDate(c.date, locale)} · {money(c.amount, currency)} ·{" "}
-                                {c.text.slice(0, 40)}
-                              </option>
-                            ))
-                          : null}
-                      </select>,
+                        onChange={(v) => setChoices((c) => ({ ...c, [l.lineId]: v }))}
+                        options={[
+                          { value: "", label: "Leave as is" },
+                          ...(l.fix.status === "ambiguous"
+                            ? l.fix.candidates.map((c) => ({
+                                value: c.externalId,
+                                label: `${formatDate(c.date, locale)} · ${money(c.amount, currency)}`,
+                                description: c.text,
+                              }))
+                            : []),
+                        ]}
+                        searchPlaceholder="Type a date, amount or description"
+                        className="h-9"
+                        wrapperClassName="w-full max-w-xs"
+                      />,
                     ),
                   )}
                 </ul>
