@@ -1009,6 +1009,9 @@ screenshots work well).
   Kill it before running e2e.
 - **TypeScript is pinned to 6.0.3.** TS 7 native breaks the toolchain here.
 - **Better Auth rate limiting** can trip in e2e. The tests wait where needed.
+- **Clicks right after `page.reload()`** can land before the page hydrates and do nothing on CI
+  (the Transactions list is heavy). Retry the click until the URL changes:
+  `expect(async () => { await link.click(); await expect(page).toHaveURL(…, { timeout: 2_000 }); }).toPass()`.
 - **Server-only modules** (`@/server/*`) import `"server-only"`. Client components may only
   `import type` from them.
 - **Client bundle size:** `@bookalyze/core` re-exports reference data, so client components that
