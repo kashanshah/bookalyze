@@ -20,7 +20,7 @@ import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDate, nowIn } from "@/lib/dates";
+import { formatDate, formatPurchaseDate, nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { isOrgAdmin } from "@/server/org";
@@ -63,15 +63,11 @@ export default async function OrderPage({
   const currency = order.currency ?? channel.currency;
   const status = orderStatusLabel(order.status);
   const link = sellerCentralOrderUrl(channel.name, order.externalId);
-  const placed = new Intl.DateTimeFormat(locale, {
-    dateStyle: "long",
-    timeStyle: "short",
-    timeZone: timezone,
-  }).format(order.purchasedAt);
+  const placed = formatPurchaseDate(order.purchasedAt, locale, timezone);
   const refundDay = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
 
   const facts: { label: string; value: React.ReactNode }[] = [
-    { label: "Placed", value: placed },
+    { label: "Purchase date", value: <span className="tabular">{placed}</span> },
     { label: "Marketplace", value: channel.name },
     {
       label: "Shipped by",

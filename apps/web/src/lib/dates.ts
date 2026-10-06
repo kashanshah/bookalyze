@@ -20,6 +20,68 @@ export function isIsoDate(value: unknown): value is string {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
 }
 
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+const MONTH = 30 * DAY;
+const YEAR = 365 * DAY;
+
+/**
+ * "2 hours ago". Under a minute is "now"; a whole day ago is "yesterday".
+ * `now` is passed in so a list shares one clock.
+ */
+export function formatAgo(at: Date, now: Date, locale: string): string {
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const delta = at.getTime() - now.getTime();
+  const abs = Math.abs(delta);
+  const sign = delta < 0 ? -1 : 1;
+  const amount = (ms: number) => sign * Math.max(1, Math.floor(abs / ms));
+  if (abs < 45_000) return rtf.format(0, "second");
+  if (abs < HOUR) return rtf.format(amount(MINUTE), "minute");
+  if (abs < DAY) return rtf.format(amount(HOUR), "hour");
+  if (abs < WEEK) return rtf.format(amount(DAY), "day");
+  if (abs < MONTH) return rtf.format(amount(WEEK), "week");
+  if (abs < YEAR) return rtf.format(amount(MONTH), "month");
+  return rtf.format(amount(YEAR), "year");
+}
+
+/** "2026-10-06" — the calendar day in the company's time zone. */
+export function formatOrderDay(at: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(at);
+}
+
+/** "11:46 a.m. PDT" in the company's locale and time zone. */
+export function formatOrderClock(at: Date, locale: string, timeZone: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+    hour12: true,
+    timeZone,
+  }).format(at);
+}
+
+/** "Tue, Oct 6, 2026, 11:46 a.m. PDT" — the purchase moment on an order. */
+export function formatPurchaseDate(at: Date, locale: string, timeZone: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+    hour12: true,
+    timeZone,
+  }).format(at);
+}
+
 /** "4 Oct 2026" in the organization's locale. */
 export function formatDate(value: string, locale = "en-CA", style: "medium" | "long" = "medium") {
   return new Intl.DateTimeFormat(locale, {

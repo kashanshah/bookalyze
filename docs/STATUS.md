@@ -674,9 +674,12 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Orders screen** (`/commerce/orders`, sidebar Commerce → Orders; `/commerce` opens it): tabs
   All / Open / Shipped / Cancelled, marketplace (when more than one), placed-from/to dates and a
   search over order number, SKU, ASIN and product title. A sales card per currency (cancelled
-  left out), 50 orders per page. Order page (`/commerce/orders/[id]`): items with SKU and ASIN,
-  items / shipping / tax / discounts / total, ship-to region, who ships it, Prime / Business /
-  Replacement, and "Open in Seller Central" (`sellercentral.<marketplace domain>`).
+  left out), 50 orders per page. The Order date column shows how long ago the order was placed,
+  the calendar day (`2026-10-06`) and the clock with the time zone (`11:46 a.m. PDT`), in the
+  company's time zone. Order page (`/commerce/orders/[id]`): purchase date (`Tue, Oct 6, 2026,
+  11:46 a.m. PDT`), items with SKU and ASIN, items / shipping / tax / discounts / total, ship-to
+  region, who ships it, Prime / Business / Replacement, and "Open in Seller Central"
+  (`sellercentral.<marketplace domain>`).
 - **Orders don't post to the books.** Settlements will (one summarized entry per settlement,
   PLAN §3.4); orders are for operations and analytics. **No buyer PII:** only ship-to country
   and region are kept (sales tax needs them); no Restricted Data Tokens.

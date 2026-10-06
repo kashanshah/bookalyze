@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { fiscalConfigOf, isOrgAdmin } from "@/server/org";
+import { OrderDate } from "./order-date";
 import { MarketplaceFilter } from "./order-filters";
 import { IncludeChannels, StartOrders, SyncOrdersButton } from "./order-sync";
 import { refundBadge, statusVariant } from "./status";
@@ -129,7 +130,7 @@ export default async function OrdersPage({
   /** Filters beyond the status tab, which "Clear filters" resets. */
   const narrowed = Boolean(channel || q || from || to);
   const clearHref = href({ channel: "", q: "", from: "", to: "" });
-  const day = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
+  const now = new Date();
   const lastSynced = syncing
     .map((s) => s.ordersSyncedThrough)
     .filter((d): d is Date => Boolean(d))
@@ -377,11 +378,11 @@ export default async function OrdersPage({
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
-          <div className="hidden grid-cols-[7rem_minmax(0,1fr)_8rem_7rem_8rem_1.25rem] gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider md:grid">
-            <span>Placed</span>
+          <div className="hidden gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider md:grid md:grid-cols-[9.25rem_minmax(0,1fr)_8rem_8rem_1.25rem] xl:grid-cols-[9.25rem_minmax(0,1fr)_8rem_7rem_8rem_1.25rem]">
+            <span>Order date</span>
             <span>Order</span>
             <span>Status</span>
-            <span>Shipped by</span>
+            <span className="hidden xl:block">Shipped by</span>
             <span className="text-end">Total</span>
             <span />
           </div>
@@ -406,18 +407,28 @@ export default async function OrdersPage({
                 >
                   <Link
                     href={`${base}/${o.id}`}
-                    className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:px-5 md:grid-cols-[7rem_minmax(0,1fr)_8rem_7rem_8rem_1.25rem]"
+                    className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:px-5 md:grid-cols-[9.25rem_minmax(0,1fr)_8rem_8rem_1.25rem] xl:grid-cols-[9.25rem_minmax(0,1fr)_8rem_7rem_8rem_1.25rem]"
                   >
-                    <span className="hidden text-muted-foreground text-sm md:block">
-                      {day.format(o.purchasedAt)}
-                    </span>
+                    <OrderDate
+                      at={o.purchasedAt}
+                      now={now}
+                      locale={locale}
+                      timezone={timezone}
+                      className="hidden md:flex"
+                    />
                     <span className="min-w-0">
                       <span className="block truncate font-medium text-sm">{what}</span>
                       <span className="block truncate text-muted-foreground text-xs">
-                        <span className="md:hidden">{day.format(o.purchasedAt)} · </span>
                         <span className="tabular">{o.externalId}</span>
                         {channels.length > 1 ? ` · ${o.channelName}` : ""}
                       </span>
+                      <OrderDate
+                        at={o.purchasedAt}
+                        now={now}
+                        locale={locale}
+                        timezone={timezone}
+                        className="mt-1.5 md:hidden"
+                      />
                     </span>
                     <span className="col-start-1 flex flex-wrap gap-1 md:col-start-auto">
                       <Badge variant={statusVariant(o.status)}>
@@ -463,12 +474,12 @@ export default async function OrdersPage({
                         </Badge>
                       ) : null}
                     </span>
-                    <span className="hidden text-muted-foreground text-sm md:block">
+                    <span className="hidden text-muted-foreground text-sm xl:block">
                       {o.fulfillment === "amazon" ? "Amazon (FBA)" : "You"}
                     </span>
                     <span
                       className={cn(
-                        "col-start-2 row-span-2 row-start-1 text-end font-medium text-sm md:col-start-auto md:row-span-1 md:row-start-auto",
+                        "col-start-2 row-span-2 row-start-1 self-start text-end font-medium text-sm md:col-start-auto md:row-span-1 md:row-start-auto md:self-auto",
                         cancelled && "text-muted-foreground line-through",
                       )}
                     >
