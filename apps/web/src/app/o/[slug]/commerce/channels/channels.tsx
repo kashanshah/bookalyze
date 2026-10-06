@@ -94,7 +94,8 @@ export function ChannelsScreen({
               </li>
               <li>
                 <span className="font-medium">2.</span> Give it these roles: Selling Partner
-                Insights, Inventory and Order Tracking, and Buyer Communication.
+                Insights, Inventory and Order Tracking, Finance and Accounting (for refunds), and
+                Buyer Communication.
               </li>
               <li>
                 <span className="font-medium">3.</span> Copy its LWA client ID and client secret,

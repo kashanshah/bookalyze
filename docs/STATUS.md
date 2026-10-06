@@ -25,7 +25,7 @@ _Last updated: 2026-10-04, phase 1b (importing from other software)._
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
-| 3. Commerce connections, orders & review requests | **In progress.** Slice 1 (connect Amazon Seller Central, channels) and slice 2 (order sync, Orders screen) done. Next: review requests |
+| 3. Commerce connections, orders & review requests | **In progress.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen) and refunds on orders done. Next: review requests |
 | 4+. Settlements, UAE, inventory, analytics | Not started (see PLAN.md §7) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -701,6 +701,34 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   (disconnect had switched them all off).
 - Tests: core `amazon-orders.test.ts`, db `commerce.test.ts`, e2e "bring in Amazon orders" (the
   mock answers three orders in two pages, with items).
+
+### Refunds on orders
+
+- **Red badge:** "Refunded" (everything the buyer paid came back) or "Partly refunded" next to
+  the status, on the Orders list and the order page (`refundState`, core
+  `commerce/refunds.ts`; badge variant `destructive`). A **Refunded** tab lists them, the
+  sales card shows the refunded total, and the order page lists each refund (date, SKU, units,
+  amount) under the order total.
+- **Where refunds come from:** the Orders API doesn't say; the Finances API does
+  (`GET /finances/v0/financialEvents`, `RefundEventList`). The app needs the **Finance and
+  Accounting** role; without it the sync says so (orders still come in).
+- **Sync step 3** (`syncChannelOrders`, after orders are all in, since a refund is kept only
+  against an order already here): events posted since the last sync less two days (Amazon
+  posts some late), from the orders' start date the first time, at most 179 days per window
+  (`refundSyncWindow`; Amazon allows 180), `PostedBefore` now − 3 min. Cursor on the channel
+  (`refunds_synced_through`, `refunds_next_token`, `refunds_window_end`); an earlier start date
+  resets it with the orders cursor. Throttled → waits 2.1 s.
+- **Amount refunded** = −(item charge adjustments + promotion adjustments): price, shipping,
+  tax and gift wrap given back, less promotions clawed back and restocking fees. Amazon's own
+  fee refunds to the seller aren't counted. Compared with the order total for full or partial.
+- **Schema** (migration `0028_order_refunds`): `order_refunds` (one row per refunded item,
+  unique per order + Amazon's `OrderAdjustmentItemId`, so re-reading changes nothing) and
+  `orders.refunded` / `orders.last_refund_at`, recomputed by `saveRefunds`.
+- Financial events are per seller account, not per marketplace, so each channel of one
+  account reads them (a little duplicate work; refunds of other channels' orders are ignored).
+  Settlements (phase 4) will read the same API.
+- Tests: core `amazon-refunds.test.ts`, db `commerce.test.ts` (refunds saved once), e2e "bring
+  in Amazon orders" (mock refunds one of two mugs: "Partly refunded").
 
 ### Fix: foreign-currency amounts recorded in the main currency ("Correct from Wise")
 

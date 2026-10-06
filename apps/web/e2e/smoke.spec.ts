@@ -1363,6 +1363,13 @@ test("commerce: bring in Amazon orders, find one by SKU and open it", async ({ p
   // Sales leave out the cancelled order.
   await expect(page.getByText("$63.69")).toBeVisible();
 
+  // The refund Amazon posted shows in red, and the Refunded tab finds the order.
+  await expect(page.getByText("Partly refunded", { exact: true })).toHaveCount(1);
+  await page.getByRole("link", { name: "Refunded", exact: true }).click();
+  await expect(page.getByText("Maple leaf ceramic mug")).toBeVisible();
+  await expect(page.getByText("Pine forest candle")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "All orders", exact: true }).click();
   await page.getByLabel("Search orders").fill("PINE-CANDLE");
   await page.getByLabel("Search orders").press("Enter");
   await expect(page.getByText("Maple leaf ceramic mug")).toHaveCount(0);
@@ -1373,6 +1380,9 @@ test("commerce: bring in Amazon orders, find one by SKU and open it", async ({ p
   await expect(page.getByRole("heading", { name: "Order 702-1000001-0000001" })).toBeVisible();
   await expect(page.getByText("SKU MAPLE-MUG · ASIN B0E2E00001")).toBeVisible();
   await expect(page.getByText("Prime", { exact: true })).toBeVisible();
+  await expect(page.getByText("Partly refunded", { exact: true })).toBeVisible();
+  await expect(page.getByText("SKU MAPLE-MUG · 1 unit")).toBeVisible();
+  await expect(page.getByText("-$22.59").first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Open in Seller Central" })).toHaveAttribute(
     "href",
     "https://sellercentral.amazon.ca/orders-v3/order/702-1000001-0000001",

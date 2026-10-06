@@ -98,6 +98,29 @@ const items = {
   "702-1000003-0000003": [],
 };
 
+// One mug of the first order refunded (price and tax), less a promotion clawed back: partly.
+const refundEvents = [
+  {
+    AmazonOrderId: "702-1000001-0000001",
+    MarketplaceName: "Amazon.ca",
+    PostedDate: daysAgo(1),
+    ShipmentItemAdjustmentList: [
+      {
+        OrderAdjustmentItemId: "e2e-adjustment-1",
+        SellerSKU: "MAPLE-MUG",
+        QuantityShipped: 1,
+        ItemChargeAdjustmentList: [
+          {
+            ChargeType: "Principal",
+            ChargeAmount: { CurrencyCode: "CAD", CurrencyAmount: -19.99 },
+          },
+          { ChargeType: "Tax", ChargeAmount: { CurrencyCode: "CAD", CurrencyAmount: -2.6 } },
+        ],
+      },
+    ],
+  },
+];
+
 function daysAgo(n) {
   return new Date(Date.now() - n * 86_400_000).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
@@ -143,6 +166,17 @@ createServer((req, res) => {
     return json(res, 200, {
       payload: { Orders: matching, ...(more ? { NextToken: "e2e-page-2" } : {}) },
     });
+  }
+  if (url.pathname === "/finances/v0/financialEvents") {
+    const after = url.searchParams.get("PostedAfter");
+    const before = url.searchParams.get("PostedBefore");
+    if (!url.searchParams.get("NextToken") && (!after || !before)) {
+      return json(res, 400, { errors: [] });
+    }
+    const matching = refundEvents.filter(
+      (e) => !after || (e.PostedDate >= after && e.PostedDate < before),
+    );
+    return json(res, 200, { payload: { FinancialEvents: { RefundEventList: matching } } });
   }
   const itemsPath = /^\/orders\/v0\/orders\/([^/]+)\/orderItems$/.exec(url.pathname);
   if (itemsPath) {

@@ -4,11 +4,13 @@ import {
   AMAZON_REGIONS,
   type AmazonOrder,
   type AmazonOrderItem,
+  type AmazonRefund,
   type AmazonRegion,
   type MarketplaceParticipation,
   parseMarketplaceParticipations,
   parseOrderItemsPage,
   parseOrdersPage,
+  parseRefundEventsPage,
 } from "@bookalyze/core";
 import { env } from "./env";
 
@@ -100,7 +102,7 @@ async function call(
   }
   if (response.status === 401 || response.status === 403) {
     throw new AmazonError(
-      "Amazon refused the request. Check the app is authorized for this seller account and region, and has the roles it needs (Selling Partner Insights, Inventory and Order Tracking, Buyer Communication).",
+      "Amazon refused the request. Check the app is authorized for this seller account and region, and has the roles it needs (Selling Partner Insights, Inventory and Order Tracking, Finance and Accounting, Buyer Communication).",
       "forbidden",
     );
   }
@@ -164,4 +166,20 @@ export async function orderItems(
     nextToken = page.nextToken;
   } while (nextToken);
   return items;
+}
+
+/**
+ * One page of the seller account's refunds posted in a window (or the next page, by its token).
+ * Amazon answers financial events of every kind; only refunds are read here.
+ */
+export async function refundsPage(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  query: { after: string; before: string } | { nextToken: string },
+): Promise<{ refunds: AmazonRefund[]; nextToken: string | null }> {
+  const params: Record<string, string> =
+    "nextToken" in query
+      ? { NextToken: query.nextToken }
+      : { PostedAfter: query.after, PostedBefore: query.before, MaxResultsPerPage: "100" };
+  return parseRefundEventsPage(await call(creds, region, "/finances/v0/financialEvents", params));
 }
