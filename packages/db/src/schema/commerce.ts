@@ -9,11 +9,13 @@ import {
   integer,
   numeric,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import { accounts, journalEntries } from "./accounting";
 import { organization, user } from "./auth";
 import { connections } from "./banking";
 import { tenantIsolationPolicy } from "./tenancy";
@@ -315,6 +317,8 @@ export const settlements = pgTable(
     orderCount: integer("order_count").notNull().default(0),
     /** The lines add up to the total. */
     balanced: boolean("balanced").notNull(),
+    /** The journal entry it posted as (null: not in the books). */
+    journalEntryId: uuid("journal_entry_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -323,6 +327,11 @@ export const settlements = pgTable(
   },
   (t) => [
     unique("settlements_org_id_key").on(t.organizationId, t.id),
+    foreignKey({
+      name: "settlements_journal_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
     unique("settlements_org_external_key").on(t.organizationId, t.externalId),
     index("settlements_org_end_idx").on(t.organizationId, t.endAt),
     foreignKey({
@@ -369,4 +378,43 @@ export const settlementLines = pgTable(
     }).onDelete("cascade"),
     tenantIsolationPolicy("settlement_lines", t.organizationId),
   ],
+);
+
+/**
+ * How settlements post: the account for each kind of line (core `SettlementAccountKey`: sales,
+ * fees, …, and the clearing account the payout goes to), one row per kind.
+ */
+export const settlementAccounts = pgTable(
+  "settlement_accounts",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    accountId: uuid("account_id").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.organizationId, t.key] }),
+    foreignKey({
+      name: "settlement_accounts_account_fk",
+      columns: [t.organizationId, t.accountId],
+      foreignColumns: [accounts.organizationId, accounts.id],
+    }),
+    tenantIsolationPolicy("settlement_accounts", t.organizationId),
+  ],
+);
+
+/** When settlements start posting: those ending before stay out (the books have them already). */
+export const settlementSettings = pgTable(
+  "settlement_settings",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    postFrom: date("post_from").notNull(),
+    updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [tenantIsolationPolicy("settlement_settings", t.organizationId)],
 );

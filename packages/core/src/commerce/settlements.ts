@@ -175,7 +175,7 @@ export const SETTLEMENT_GROUPS = {
   promotions: "Promotions",
   fees: "Amazon fees",
   advertising: "Advertising",
-  tax: "Tax Amazon collects and pays",
+  tax: "Sales tax",
   reimbursements: "Reimbursements",
   reserve: "Held back and released",
   other: "Other",
@@ -192,6 +192,8 @@ export function settlementGroup(
   if (/reserve/.test(`${at} ${ad}`)) return "reserve";
   if (/advertis/.test(`${tt} ${at} ${ad}`)) return "advertising";
   if (/withheld|marketplacefacilitator|tcs|tds/.test(`${at} ${ad}`)) return "tax";
+  // Tax the buyer paid (on items, shipping, gift wrap) isn't income: it goes with the tax lines.
+  if (/itemprice/.test(at) && /tax/.test(ad)) return "tax";
   if (/reimburse/.test(`${tt} ${ad}`)) return "reimbursements";
   if (/promotion/.test(at)) return "promotions";
   if (/fee|commission/.test(`${at} ${ad}`) || /servicefee|storage/.test(tt)) return "fees";
@@ -257,6 +259,8 @@ const LINE_LABELS: Record<string, string> = {
   "previous reserve amount balance": "Released from last period",
   "storage fee": "FBA storage fee",
   "subscription fee": "Selling plan subscription",
+  "successful charge": "Charged to your card by Amazon",
+  "micro deposit": "Bank account check (micro deposit)",
 };
 
 /** A line's name in plain words: "Referral fee" for Amazon's "Commission", say. */
@@ -275,4 +279,86 @@ export function settlementLineLabel(
     .trim();
   const lower = words.toLowerCase().replace(/\bfba\b/g, "FBA");
   return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+// --- Posting ------------------------------------------------------------------------------
+
+/** What a company chooses: an account per group, and the clearing account the payout goes to. */
+export const SETTLEMENT_ACCOUNT_KEYS = [...Object.keys(SETTLEMENT_GROUPS), "clearing"] as Array<
+  SettlementGroup | "clearing"
+>;
+export type SettlementAccountKey = SettlementGroup | "clearing";
+export type SettlementAccounts = Partial<Record<SettlementAccountKey, string>>;
+
+export const SETTLEMENT_ACCOUNT_HINTS: Record<SettlementAccountKey, string> = {
+  sales: "Item price, shipping and gift wrap the buyers paid. Usually an income account.",
+  refunds: "Money given back to buyers. Usually the same income account as sales.",
+  promotions: "Discounts you funded. Usually the same income account as sales.",
+  fees: "Referral, FBA, storage and selling plan fees. An expense account.",
+  advertising: "Sponsored ads paid out of the payout. An expense account.",
+  tax: "Tax buyers paid, and what Amazon paid for you (marketplace facilitator). When Amazon pays it, the two cancel out. Your sales tax account.",
+  reimbursements: "What Amazon pays you back for lost or damaged stock.",
+  reserve: "Amounts held back and released later. The clearing account.",
+  other: "Anything else (card charges, bank checks). The clearing account is fine.",
+  clearing:
+    "What Amazon owes you until the payout reaches your bank. An asset (Money in transit); it returns to zero once each deposit is matched.",
+};
+
+export type SettlementEntryLine = {
+  accountId: string;
+  /** Positive: debit. Negative: credit. */
+  amount: string;
+  description: string;
+};
+
+/**
+ * One journal entry for a settlement: each group's subtotal to its account (money to the seller
+ * is a credit, money to Amazon a debit), and the payout to the clearing account. Lines for the
+ * same account are combined. Errors in plain words when something's missing or doesn't add up.
+ */
+export function buildSettlementEntry(input: {
+  total: string;
+  lines: readonly Pick<
+    SettlementLine,
+    "transactionType" | "amountType" | "amountDescription" | "amount"
+  >[];
+  accounts: SettlementAccounts;
+}): { ok: true; lines: SettlementEntryLine[] } | { ok: false; error: string } {
+  const clearing = input.accounts.clearing;
+  if (!clearing) return { ok: false, error: "Choose the clearing account first." };
+  const byGroup = new Map<SettlementGroup, bigint>();
+  for (const line of input.lines) {
+    const group = settlementGroup(line);
+    byGroup.set(group, (byGroup.get(group) ?? 0n) + parseDecimal(line.amount));
+  }
+  const sum = [...byGroup.values()].reduce((t, v) => t + v, 0n);
+  if (sum !== parseDecimal(input.total)) {
+    return { ok: false, error: "The settlement's lines don't add up to its payout." };
+  }
+  const byAccount = new Map<string, { units: bigint; labels: string[] }>();
+  const add = (accountId: string, units: bigint, label: string) => {
+    const a = byAccount.get(accountId) ?? { units: 0n, labels: [] };
+    a.units += units;
+    if (!a.labels.includes(label)) a.labels.push(label);
+    byAccount.set(accountId, a);
+  };
+  for (const [group, units] of byGroup) {
+    if (units === 0n) continue;
+    const account = input.accounts[group];
+    if (!account) {
+      return { ok: false, error: `Choose an account for “${SETTLEMENT_GROUPS[group]}”.` };
+    }
+    // Money to the seller (positive) credits its account.
+    add(account, -units, SETTLEMENT_GROUPS[group]);
+  }
+  add(clearing, parseDecimal(input.total), "Payout");
+  const lines = [...byAccount.entries()]
+    .filter(([, a]) => a.units !== 0n)
+    .map(([accountId, a]) => ({
+      accountId,
+      amount: formatDecimal(a.units),
+      description: a.labels.join(", "),
+    }));
+  if (!lines.length) return { ok: false, error: "This settlement has nothing to post." };
+  return { ok: true, lines };
 }

@@ -1483,6 +1483,31 @@ test("settlements: bring in Amazon's settlement report, see the payout, and uplo
   });
   await expect(page.getByText("1 settlement added")).toBeVisible();
   await expect(page.getByRole("link", { name: /Aug 1, 2026/ })).toBeVisible();
+
+  // Choose the accounts (suggested from their names), then post the Amazon settlement.
+  await page.getByRole("link", { name: "How settlements post" }).click();
+  await expect(page.getByText(/Suggested from your accounts' names/)).toBeVisible();
+  for (const kind of [
+    "Amazon clearing (the payout)",
+    "Sales tax",
+    "Held back and released",
+    "Other",
+  ]) {
+    await choose(page.getByRole("combobox", { name: kind, exact: true }), "1000 · Cash on hand");
+  }
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Settlements post with these accounts from now on.")).toBeVisible();
+  await page
+    .getByRole("link", { name: /Amazon\.ca/ })
+    .first()
+    .click();
+  await expect(page.getByRole("columnheader", { name: "Debit" })).toBeVisible();
+  await page.getByRole("button", { name: "Post to books" }).click();
+  await expect(page.getByText(/Posted as JE-/)).toBeVisible();
+  // And out again: its entry is reversed.
+  await page.getByRole("button", { name: "Take out of books" }).click();
+  await expect(page.getByText("Taken out of your books")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Post to books" })).toBeVisible();
 });
 
 test("amounts recorded in CAD on a USD account are flagged and corrected from Wise", async ({

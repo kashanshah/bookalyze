@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildSettlementEntry,
   parseReportDocument,
   parseReportsPage,
   parseSettlementReport,
@@ -127,6 +128,7 @@ describe("parseSettlementReport", () => {
     const g = (transactionType: string, amountType: string, amountDescription: string) =>
       settlementGroup({ transactionType, amountType, amountDescription });
     expect(g("Order", "ItemPrice", "Principal")).toBe("sales");
+    expect(g("Order", "ItemPrice", "ShippingTax")).toBe("tax");
     expect(g("Order", "ItemFees", "Commission")).toBe("fees");
     expect(g("Refund", "ItemPrice", "Principal")).toBe("refunds");
     expect(g("Order", "Promotion", "Shipping")).toBe("promotions");
@@ -184,5 +186,47 @@ describe("settlementLineLabel", () => {
       "Reversal reimbursement",
     );
     expect(l("Order", "ItemFees", "FBAInboundPlacementFee")).toBe("FBA inbound placement fee");
+  });
+});
+
+describe("buildSettlementEntry", () => {
+  const s = parseSettlementReport(REPORT);
+  const accounts = {
+    sales: "sales",
+    refunds: "sales",
+    fees: "fees",
+    advertising: "ads",
+    tax: "tax",
+    reserve: "clearing",
+    clearing: "clearing",
+  };
+  it("posts each group's subtotal to its account and the payout to clearing, balanced", () => {
+    const entry = buildSettlementEntry({ total: s.total, lines: s.lines, accounts });
+    expect(entry.ok).toBe(true);
+    if (!entry.ok) return;
+    const by = Object.fromEntries(entry.lines.map((l) => [l.accountId, l.amount]));
+    // Sales 64.75 − 19.99 refunded = 44.76 credit; the 8.43 tax buyers paid isn't income.
+    expect(by.sales).toBe("-44.7600");
+    expect(by.tax).toBe("-8.4300");
+    expect(by.fees).toBe("17.9600");
+    expect(by.ads).toBe("12.0000");
+    // Payout 47.05 debit, less 23.82 reserve released (credit) = 23.23.
+    expect(by.clearing).toBe("23.2300");
+    expect(entry.lines.reduce((t, l) => t + Number(l.amount), 0)).toBeCloseTo(0, 6);
+  });
+  it("says what's missing", () => {
+    const missing = buildSettlementEntry({
+      total: s.total,
+      lines: s.lines,
+      accounts: { ...accounts, fees: undefined },
+    });
+    expect(missing).toEqual({ ok: false, error: "Choose an account for “Amazon fees”." });
+    expect(buildSettlementEntry({ total: "1.00", lines: s.lines, accounts })).toMatchObject({
+      ok: false,
+    });
+    expect(buildSettlementEntry({ total: s.total, lines: s.lines, accounts: {} })).toEqual({
+      ok: false,
+      error: "Choose the clearing account first.",
+    });
   });
 });

@@ -42,6 +42,8 @@ export const JOURNAL_SOURCES = [
   "bank_import",
   "wave_import",
   "import",
+  /** An Amazon settlement (commerce settlements). */
+  "settlement",
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
