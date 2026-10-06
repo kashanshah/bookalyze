@@ -819,7 +819,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   for the same account combined; it refuses when the lines don't add up or an account is
   missing. Dated the period's last day (company time), reference = Amazon's settlement ID, memo
   "Amazon.ca settlement … · Jun 5 – Jul 17, 2026", `source: "settlement"`, `source_id` = the
-  settlement. `settlements.journal_entry_id` links them; a settlement counts as posted while that
+  settlement. A settlement in another currency than the main one shows "AED: posting comes
+  later" on the list and isn't counted in "Post N ready" (`settlementsToPost` takes the currency). `settlements.journal_entry_id` links them; a settlement counts as posted while that
   entry isn't reversed. Main currency only for now (a USD settlement says so).
 - **Buyer-paid tax isn't income:** `Tax`, `ShippingTax`, `GiftWrapTax` under ItemPrice are in
   the "Sales tax" group with Amazon's withheld (marketplace facilitator) tax, so they cancel out
@@ -1195,6 +1196,10 @@ screenshots work well).
   `{"errors":[{"code","message","details"}]}`; `send()` in `server/amazon.ts` keeps that line
   (`amazonErrorDetail` in core), and the order sync adds the marketplace and step ("Amazon.ae,
   refunds: …"). A bare "error (400)" told nobody what to fix.
+- **Negative settlements** (fees above sales, e.g. a quiet month with the $29.99 plan fee): no
+  payout. Posted, they leave clearing negative (what's owed to Amazon) until Amazon charges the
+  card on file (that card charge belongs in clearing, by hand for now) or carries the balance into
+  the next settlement. Nothing to match, so the list just says "In books".
 - **Amazon keeps financial events 730 days.** A refunds query starting earlier is a 400 ("not
   valid, given the retention period: 730"), so `refundSyncWindow` starts at most 729 days back,
   whatever the orders' start date.

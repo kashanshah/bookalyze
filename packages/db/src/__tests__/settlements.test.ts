@@ -262,10 +262,18 @@ describe("settlements", () => {
     expect(await scoped((tx) => getSettlementAccounts(tx))).toEqual({ sales, fees, clearing });
     // The unbalanced, uploaded one isn't offered.
     expect(
-      (await scoped((tx) => settlementsToPost(tx, { from: "2026-09-01", limit: 10 }))).map(
-        (r) => r.id,
-      ),
+      (
+        await scoped((tx) =>
+          settlementsToPost(tx, { from: "2026-09-01", limit: 10, currency: "CAD" }),
+        )
+      ).map((r) => r.id),
     ).toEqual([id]);
+    // Nor in another currency than the main one.
+    expect(
+      await scoped((tx) =>
+        settlementsToPost(tx, { from: "2026-09-01", limit: 10, currency: "USD" }),
+      ),
+    ).toEqual([]);
 
     const entry = await post();
     expect(entry.label).toMatch(/^JE-/);
@@ -280,9 +288,11 @@ describe("settlements", () => {
     expect(by[clearing]).toBe("47.0500");
     expect((await scoped((tx) => getSettlement(tx, id)))?.entryNumber).toBe(entry.entryNumber);
     await expect(post()).rejects.toThrow(/in the books already/);
-    expect(await scoped((tx) => settlementsToPost(tx, { from: "2026-09-01", limit: 10 }))).toEqual(
-      [],
-    );
+    expect(
+      await scoped((tx) =>
+        settlementsToPost(tx, { from: "2026-09-01", limit: 10, currency: "CAD" }),
+      ),
+    ).toEqual([]);
 
     await scoped((tx) => unpostSettlement(tx, { orgId, userId: null, settlementId: id }));
     expect((await scoped((tx) => getSettlement(tx, id)))?.entryId).toBeNull();

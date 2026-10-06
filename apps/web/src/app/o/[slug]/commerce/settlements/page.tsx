@@ -48,7 +48,13 @@ export default async function SettlementsPage({
       list: await listSettlements(tx, { limit: PER_PAGE, offset: (page - 1) * PER_PAGE }),
       settings,
       ready: settings.postFrom
-        ? (await settlementsToPost(tx, { from: settings.postFrom, limit: 50 })).length
+        ? (
+            await settlementsToPost(tx, {
+              from: settings.postFrom,
+              limit: 50,
+              currency: ctx.profile.baseCurrency,
+            })
+          ).length
         : 0,
       found: settings.postFrom ? await settlementsWithOneDeposit(tx, 50) : [],
     };
@@ -170,6 +176,13 @@ export default async function SettlementsPage({
                         s.endAt.toISOString().slice(0, 10) < settings.postFrom ? (
                         <Badge variant="outline" title="It ends before posting starts">
                           Before posting starts
+                        </Badge>
+                      ) : s.currency !== ctx.profile.baseCurrency ? (
+                        <Badge
+                          variant="outline"
+                          title={`Settlements in ${s.currency} can't be posted to your books yet`}
+                        >
+                          {s.currency}: posting comes later
                         </Badge>
                       ) : settings.postFrom && s.balanced ? (
                         <Badge variant="secondary">Ready to post</Badge>
