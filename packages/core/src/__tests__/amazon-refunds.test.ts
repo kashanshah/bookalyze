@@ -67,6 +67,11 @@ describe("refundSyncWindow", () => {
     expect(w.after).toBe("2026-01-01T00:00:00.000Z");
     expect(w.before).toBe("2026-06-29T00:00:00.000Z");
   });
+  it("starts no further back than Amazon keeps financial events (730 days)", () => {
+    const w = refundSyncWindow({ from: "2024-10-05", syncedThrough: null, now });
+    expect(w.after).toBe("2024-10-06T12:00:00.000Z");
+  });
+
   it("then re-reads two days before the last sync, up to a few minutes ago", () => {
     const w = refundSyncWindow({
       from: "2026-01-01",

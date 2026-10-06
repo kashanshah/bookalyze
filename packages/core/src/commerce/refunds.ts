@@ -94,19 +94,27 @@ export function parseRefundEventsPage(json: unknown): {
 export const REFUND_SYNC_OVERLAP_MS = 2 * 24 * 60 * 60 * 1000;
 /** Amazon answers at most 180 days of events per query; stay inside it. */
 const REFUND_SYNC_MAX_MS = 179 * 24 * 60 * 60 * 1000;
+/**
+ * Amazon keeps financial events for 730 days and refuses a query starting earlier ("not valid,
+ * given the retention period: 730"); start a day inside it.
+ */
+const REFUND_RETENTION_MS = 729 * 24 * 60 * 60 * 1000;
 /** Amazon wants PostedBefore at least two minutes in the past. */
 const REFUND_SYNC_LAG_MS = 3 * 60 * 1000;
 
 /**
  * The window of the next refunds query: from the last sync (less two days), or the orders' start
- * date the first time, up to a few minutes ago, at most 179 days at once (a long history takes
+ * date the first time (but no further back than Amazon keeps them), up to a few minutes ago, at most 179 days at once (a long history takes
  * several windows, one after another).
  */
 export function refundSyncWindow(input: { from: string; syncedThrough: Date | null; now: Date }): {
   after: string;
   before: string;
 } {
-  const start = new Date(`${input.from}T00:00:00Z`).getTime();
+  const start = Math.max(
+    new Date(`${input.from}T00:00:00Z`).getTime(),
+    input.now.getTime() - REFUND_RETENTION_MS,
+  );
   const latest = input.now.getTime() - REFUND_SYNC_LAG_MS;
   const after = Math.min(
     input.syncedThrough
