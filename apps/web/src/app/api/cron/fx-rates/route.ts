@@ -1,4 +1,3 @@
-import { syncAllOrders } from "@/server/amazon-orders";
 import { syncAllConnections } from "@/server/banking";
 import { sendComplianceReminders } from "@/server/compliance";
 import { env } from "@/server/env";
@@ -8,8 +7,8 @@ import { syncBankOfCanada } from "@/server/fx";
  * The daily job (scheduled in vercel.json). Vercel Cron calls this with
  * "Authorization: Bearer $CRON_SECRET"; anything else is refused. It re-fetches the last ten
  * days of exchange rates (late corrections, missed runs), then syncs every bank connection, so
- * foreign-currency bank lines find their rate. Then it brings in Amazon orders (within a time
- * budget; a large first sync carries on the next day). Last, it emails compliance reminders.
+ * foreign-currency bank lines find their rate. Last, it emails compliance reminders. Amazon
+ * orders have their own job (/api/cron/orders).
  */
 export const maxDuration = 300;
 
@@ -23,11 +22,8 @@ export async function GET(request: Request) {
   startDate.setUTCDate(startDate.getUTCDate() - 10);
   const stored = await syncBankOfCanada(startDate.toISOString().slice(0, 10), end).catch(() => 0);
   const banking = await syncAllConnections();
-  const orders = await syncAllOrders(150_000).catch((error: unknown) => ({
-    error: (error as Error).message,
-  }));
   const compliance = await sendComplianceReminders().catch((error: unknown) => ({
     error: (error as Error).message,
   }));
-  return Response.json({ stored, banking, orders, compliance });
+  return Response.json({ stored, banking, compliance });
 }

@@ -121,7 +121,7 @@ export default async function OrdersPage({
     <PageHeader
       eyebrow="Commerce"
       title="Orders"
-      description="Every order from your marketplaces, kept up to date every day. Orders don't change your books: Amazon's settlements do."
+      description="Every order from your marketplaces, kept up to date every few minutes. Orders don't change your books: Amazon's settlements do."
       actions={syncing.length ? <SyncOrdersButton slug={slug} /> : null}
     />
   );
@@ -179,7 +179,7 @@ export default async function OrdersPage({
             ? `Up to date as of ${new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: timezone }).format(lastSynced)}`
             : "The first orders are on their way",
           waiting
-            ? `item details still coming for ${waiting} ${waiting === 1 ? "order" : "orders"}`
+            ? `item details still coming for ${waiting} ${waiting === 1 ? "order" : "orders"}, on their own (Amazon allows about 30 a minute)`
             : null,
         ]
           .filter(Boolean)

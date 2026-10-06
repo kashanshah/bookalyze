@@ -160,7 +160,11 @@ uploads never mix with real receipts.
 
 `apps/web/vercel.json` schedules `/api/cron/fx-rates` on weekdays at 22:15 UTC. That's after the
 Bank of Canada publishes its daily rates at about 16:30 Eastern. The job stores the last ten days
-of rates, so missed runs fill themselves in.
+of rates, so missed runs fill themselves in, then syncs bank connections.
+
+The same file schedules `/api/cron/orders` every 5 minutes (Amazon orders and their items) and
+`/api/cron/review-requests` hourly. Both need Vercel Pro (Hobby allows daily jobs only) and the
+same `CRON_SECRET`.
 
 1. Generate a secret: `openssl rand -base64 32`.
 2. In Vercel → Settings → Environment Variables, add `CRON_SECRET` with that value for

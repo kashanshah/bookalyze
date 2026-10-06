@@ -690,13 +690,16 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   - Amazon's 429 is `AmazonError` code `throttled`: the sync waits (5 s orders, 2.1 s items)
     while the budget lasts, then stops with `more: true`.
 - **Runs:** "Bring in new orders" (`syncOrdersAction`, any member, 20 s per call; the button
-  calls again while `more`, up to 30 rounds, refreshing the list) and the daily job
-  (`/api/cron/fx-rates` → `syncAllOrders`, 150 s total, at most 60 s per channel, over
-  `syncable_sales_channels()`; route `maxDuration = 300`).
+  calls again while `more`, up to 30 rounds, refreshing the list) and the order job
+  `/api/cron/orders`, every 5 minutes, every day (`syncAllOrders`, 240 s so a run ends before
+  the next; passes of at most 60 s per channel, then leftover time to channels still with more;
+  over `syncable_sales_channels()`; route `maxDuration = 300`). Amazon allows about one order's
+  items every 2 s, so a first sync of thousands of orders takes a few hours, on its own. Orders
+  aren't listed again within 10 minutes of the last listing (`FRESH_MS`); items carry on.
 - **Schema** (migration `0026_amazon_orders`): `orders` (unique per channel + order number;
   Amazon's own status text, mapped to words by `orderStatusLabel`), `order_items` (prices for
   the whole quantity), four `orders_*` columns on `sales_channels`, and the security-definer
-  `syncable_sales_channels()` for the daily job.
+  `syncable_sales_channels()` for the order job.
 - Reconnecting a disconnected Amazon account puts the marketplaces back as Amazon reports them
   (disconnect had switched them all off).
 - Tests: core `amazon-orders.test.ts`, db `commerce.test.ts`, e2e "bring in Amazon orders" (the
