@@ -113,6 +113,12 @@ export const orders = pgTable(
      */
     reviewEligible: boolean("review_eligible"),
     reviewCheckedAt: timestamp("review_checked_at", { withTimezone: true }),
+    /** A replacement order's original (Amazon's ReplacedOrderId). */
+    replacedOrderId: text("replaced_order_id"),
+    /** An A-to-z claim or a chargeback on the order (core `BuyerClaim`), when one was found. */
+    buyerClaim: text("buyer_claim"),
+    /** When the order's own financial events (refunds, claims) were last read. */
+    financeCheckedAt: timestamp("finance_checked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

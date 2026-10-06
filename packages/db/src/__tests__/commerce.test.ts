@@ -10,6 +10,7 @@ import {
   ordersNeedingItems,
   saveAmazonChannels,
   saveOrderCursor,
+  saveOrderFinance,
   saveOrderItems,
   saveRefunds,
   startOrderSync,
@@ -319,5 +320,50 @@ describe("orders", () => {
     );
     // The connection has no credentials in this test, so nothing is syncable.
     expect(syncable.rows.map((r) => r.channel_id)).not.toContain(channelId);
+  });
+
+  it("links replacements both ways, and keeps an order's claim", async () => {
+    await scoped((tx) =>
+      upsertOrders(tx, {
+        orgId,
+        channelId,
+        from: "2026-09-01",
+        orders: [
+          order("702-0000003-0000003", {
+            purchasedAt: "2026-09-20T10:00:00Z",
+            lastUpdatedAt: "2026-09-20T10:00:00Z",
+            isReplacement: true,
+            replacedOrderId: "702-0000001-0000001",
+            total: "0.0000",
+          }),
+        ],
+      }),
+    );
+    const list = await scoped((tx) => listOrders(tx, { timezone: "UTC", limit: 10, offset: 0 }));
+    const byId = Object.fromEntries(list.rows.map((r) => [r.externalId, r]));
+    expect(byId["702-0000001-0000001"]).toMatchObject({ replaced: true, isReplacement: false });
+    expect(byId["702-0000003-0000003"]).toMatchObject({ replaced: false, isReplacement: true });
+
+    const original = byId["702-0000001-0000001"]?.id ?? "";
+    const replacement = byId["702-0000003-0000003"]?.id ?? "";
+    const detail = await scoped((tx) => getOrder(tx, original));
+    expect(detail?.replacedBy.map((r) => r.externalId)).toEqual(["702-0000003-0000003"]);
+    expect((await scoped((tx) => getOrder(tx, replacement)))?.replaces).toMatchObject({
+      id: original,
+      externalId: "702-0000001-0000001",
+    });
+
+    await scoped((tx) =>
+      saveOrderFinance(tx, {
+        orgId,
+        channelId,
+        orderId: original,
+        refunds: [],
+        claim: "a_to_z",
+      }),
+    );
+    const after = await scoped((tx) => getOrder(tx, original));
+    expect(after?.order.buyerClaim).toBe("a_to_z");
+    expect(after?.order.financeCheckedAt).toBeInstanceOf(Date);
   });
 });

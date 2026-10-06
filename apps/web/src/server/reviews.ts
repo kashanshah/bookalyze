@@ -1,6 +1,7 @@
 import "server-only";
 import {
   addDaysIso,
+  buyerClaim,
   can,
   getPlan,
   isAmazonRegion,
@@ -8,8 +9,10 @@ import {
   localDate,
   type ModuleKey,
   parseDecimal,
+  parseRefundEventsPage,
   type ReviewSettings,
   type ReviewSource,
+  refundReason,
   reviewHold,
   reviewSendDay,
   reviewWindow,
@@ -27,6 +30,7 @@ import {
   recordReviewOutcome,
   reviewCandidates,
   reviewTargets,
+  saveOrderFinance,
   saveReviewEligibility,
   schema,
   VaultError,
@@ -37,7 +41,7 @@ import {
   type AmazonCredentials,
   AmazonError,
   canRequestReview,
-  orderRefundReason,
+  orderFinancialEvents,
   requestReview,
 } from "./amazon";
 import { openAmazonCredentials } from "./commerce";
@@ -65,6 +69,8 @@ const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 /** Amazon allows one solicitations call a second (burst of 5). */
 const PACE_MS = 1_100;
+/** An order's own financial events are read again (from its page) after this long. */
+const FINANCE_FRESH_MS = 6 * HOUR;
 /** Amazon's answer on eligibility is asked again after this long. */
 const ELIGIBILITY_FRESH_MS = 12 * HOUR;
 /** How many times an automatic request is tried before it's left as not eligible or failed. */
@@ -103,6 +109,7 @@ type Target = {
   purchasedOn: string | null;
   /** Refunded so far (kept by the orders sync), if any. */
   refunded: string | null;
+  financeCheckedAt?: Date | null;
   channelId: string;
   marketplaceId: string | null;
 };
@@ -162,7 +169,33 @@ function reviewSender(ctx: Ctx, deadline: number) {
     return answer;
   }
 
-  /** Asks for one order's review. Only Amazon's eligibility answer is recorded here. */
+  /**
+   * The order's own financial events: kept on the order (refunds, A-to-z claim, chargeback, so
+   * its badges show them), and why it shouldn't be asked for a review, if anything.
+   */
+  async function finance(target: Target): Promise<string | null | undefined> {
+    const found = await channel(target.channelId);
+    if (!found || !isAmazonRegion(found.region)) return undefined;
+    const { creds, region } = found;
+    const json = await amazon(() => orderFinancialEvents(creds, region, target.externalId));
+    // An answer without events (an order with no money movements yet) has no refunds.
+    let refunds: ReturnType<typeof parseRefundEventsPage>["refunds"] = [];
+    try {
+      refunds = parseRefundEventsPage(json).refunds;
+    } catch {}
+    await withOrg(getDb(), ctx, (tx) =>
+      saveOrderFinance(tx, {
+        orgId: ctx.orgId,
+        channelId: target.channelId,
+        orderId: target.orderId,
+        refunds,
+        claim: buyerClaim(json),
+      }),
+    );
+    return refundReason(json);
+  }
+
+  /** Asks for one order's review. Only what Amazon says about the order is recorded here. */
   async function ask(
     target: Target,
     input: {
@@ -210,7 +243,7 @@ function reviewSender(ctx: Ctx, deadline: number) {
       if (target.refunded && parseDecimal(target.refunded) > 0n) {
         return { status: "skipped", reason: "Refunded or returned" };
       }
-      const refunded = await amazon(() => orderRefundReason(creds, region, target.externalId));
+      const refunded = await finance(target);
       if (refunded) return { status: "skipped", reason: refunded };
     }
     if (!(await eligible(target))) {
@@ -298,7 +331,7 @@ function reviewSender(ctx: Ctx, deadline: number) {
     return { stop, status, reason: outcome.reason };
   }
 
-  return { handle, eligible };
+  return { handle, eligible, finance };
 }
 
 /** Gives each eligible order a send time (or a reason it's left out). */
@@ -387,7 +420,10 @@ async function checkEligibility(ctx: Ctx, timezone: string, deadline: number) {
   return { checked, error: null };
 }
 
-/** Checks one order with Amazon now (the order page), unless it was checked in the last minute. */
+/**
+ * Checks one order with Amazon now (the order page): whether it takes a review request, and
+ * (every few hours) the order's refunds, A-to-z claim or chargeback, kept for its badges.
+ */
 export async function checkOrderEligibility(
   ctx: Ctx,
   orderId: string,
@@ -399,7 +435,15 @@ export async function checkOrderEligibility(
     return { eligible: null, error: null };
   }
   try {
-    return { eligible: await reviewSender(ctx, Date.now() + 15_000).eligible(target), error: null };
+    const sender = reviewSender(ctx, Date.now() + 15_000);
+    // Refunds, A-to-z claims and chargebacks on the order, for its badges (every few hours).
+    if (
+      !target.financeCheckedAt ||
+      Date.now() - target.financeCheckedAt.getTime() > FINANCE_FRESH_MS
+    ) {
+      await sender.finance(target);
+    }
+    return { eligible: await sender.eligible(target), error: null };
   } catch (error) {
     if (!(error instanceof AmazonError) && !(error instanceof VaultError)) throw error;
     return { eligible: null, error: error.message };

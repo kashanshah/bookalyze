@@ -759,6 +759,27 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   `reviews.test.ts`, e2e "reviews: ask for a review by hand, then turn on automatic requests"
   (the mock offers one request per shipped order, then answers 403).
 
+### Order badges: refunded, A-to-z claim, chargeback, replaced
+
+- **Header badges on the order page**, and the same on the Orders list: Refunded / Partly
+  refunded and A-to-z claim / Chargeback (red), Replaced / Replacement (amber). A strip under the
+  header links a replacement and its original both ways (`getOrder` → `replaces`, `replacedBy`).
+- **Why the refund showed only in the review card:** the review sender read the order's own
+  financial events (`GET /finances/v0/orders/{id}/financialEvents`) but didn't keep them. Now
+  `reviewSender.finance` saves the refunds (`saveRefunds`) and any claim (`orders.buyer_claim`,
+  core `buyerClaim`) with `saveOrderFinance`, stamping `orders.finance_checked_at`. The order
+  page's check (`checkOrderEligibility`) also reads them when they're over 6 hours old.
+- **Refunds sync before items** in `syncChannelOrders` (step 2 of 3): a backlog of item details
+  could use each run's whole budget and keep refunds from ever being read.
+- **Replacements:** `ReplacedOrderId` is kept as `orders.replaced_order_id` (core
+  `AmazonOrder.replacedOrderId`). Replacements already in get the link when Amazon updates them,
+  or when orders are re-read from an earlier start date (`upsertOrders` also takes the same copy
+  when it brings the replaced order's number for the first time).
+- Returns without a refund aren't in the APIs used here (only in FBA returns reports).
+- Migration `0031_order_claims_replacements`. Tests: core `amazon-orders.test.ts`
+  (`ReplacedOrderId`), `reviews.test.ts` (`buyerClaim`), db `commerce.test.ts` (links both ways,
+  claim kept).
+
 ### Review eligibility for FBA orders (and Amazon's answer on every order)
 
 - **Why:** Amazon's Orders API gives `EarliestDeliveryDate` / `LatestDeliveryDate` only for

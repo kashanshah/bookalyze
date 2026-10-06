@@ -13,7 +13,6 @@ import {
   parseRefundEventsPage,
   parseSolicitationActions,
   REVIEW_ACTION,
-  refundReason,
 } from "@bookalyze/core";
 import { env } from "./env";
 
@@ -231,20 +230,21 @@ export async function requestReview(
   return response.status === 403 ? "refused" : "sent";
 }
 
-/** Why the order shouldn't be asked for a review (refunded, A-to-z claim, chargeback), or null. */
-export async function orderRefundReason(
+/**
+ * One order's own financial events (refunds, A-to-z claims, chargebacks), as Amazon answers
+ * them: read with core `refundReason`, `buyerClaim` and `parseRefundEventsPage`.
+ */
+export async function orderFinancialEvents(
   creds: AmazonCredentials,
   region: AmazonRegion,
   externalId: string,
-): Promise<string | null> {
-  return refundReason(
-    await call(
-      creds,
-      region,
-      `/finances/v0/orders/${encodeURIComponent(externalId)}/financialEvents`,
-      undefined,
-      { forbidden: roleMissing("Finance and Accounting") },
-    ),
+): Promise<unknown> {
+  return call(
+    creds,
+    region,
+    `/finances/v0/orders/${encodeURIComponent(externalId)}/financialEvents`,
+    undefined,
+    { forbidden: roleMissing("Finance and Accounting") },
   );
 }
 

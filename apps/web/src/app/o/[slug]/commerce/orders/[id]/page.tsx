@@ -1,5 +1,7 @@
 import {
   addDaysIso,
+  BUYER_CLAIMS,
+  type BuyerClaim,
   can,
   formatDecimal,
   ORDER_STATUS_GROUPS,
@@ -48,7 +50,9 @@ export default async function OrderPage({
     return row && { ...row, request: reviewsOn ? await getReviewRequest(tx, id) : null };
   });
   if (!found) notFound();
-  const { order, channel, items, refunds, request } = found;
+  const { order, channel, items, refunds, request, replaces, replacedBy } = found;
+  const claim = order.buyerClaim ? BUYER_CLAIMS[order.buyerClaim as BuyerClaim] : null;
+  const ordersBase = `/o/${slug}/commerce/orders`;
   const refund = refundBadge(order.total, order.refunded);
   const { locale, timezone } = ctx.profile;
   const today = nowIn(timezone).date;
@@ -88,11 +92,9 @@ export default async function OrderPage({
   if (order.latestDelivery) {
     facts.push({ label: "Delivery promised by", value: formatDate(order.latestDelivery, locale) });
   }
-  const flags = [
-    order.isPrime && "Prime",
-    order.isBusiness && "Business order",
-    order.isReplacement && "Replacement",
-  ].filter((f): f is string => Boolean(f));
+  const flags = [order.isPrime && "Prime", order.isBusiness && "Business order"].filter(
+    (f): f is string => Boolean(f),
+  );
 
   const review = reviewsOn ? reviewSummary() : null;
   /**
@@ -221,8 +223,27 @@ export default async function OrderPage({
         description={
           <span className="flex flex-wrap items-center gap-2">
             <Badge variant={statusVariant(order.status)}>{status.label}</Badge>
-            {refund ? <Badge variant="destructive">{refund.label}</Badge> : null}
-            <span>{refund ? refund.hint : status.hint}</span>
+            {refund ? (
+              <Badge variant="destructive" title={refund.hint}>
+                {refund.label}
+              </Badge>
+            ) : null}
+            {claim ? (
+              <Badge variant="destructive" title={claim.hint}>
+                {claim.label}
+              </Badge>
+            ) : null}
+            {replacedBy.length ? (
+              <Badge variant="warning" title="Amazon sent the buyer a replacement for this order">
+                Replaced
+              </Badge>
+            ) : null}
+            {order.isReplacement ? (
+              <Badge variant="warning" title="Sent to replace another order">
+                Replacement
+              </Badge>
+            ) : null}
+            <span>{claim ? claim.hint : refund ? refund.hint : status.hint}</span>
           </span>
         }
         actions={
@@ -236,6 +257,36 @@ export default async function OrderPage({
           ) : null
         }
       />
+      {replaces || replacedBy.length ? (
+        <div className="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-warning/10 px-4 py-2.5 text-sm">
+          {replaces ? (
+            <span>
+              Replacement for order{" "}
+              {replaces.id ? (
+                <Link
+                  href={`${ordersBase}/${replaces.id}`}
+                  className="tabular font-medium underline-offset-4 hover:underline"
+                >
+                  {replaces.externalId}
+                </Link>
+              ) : (
+                <span className="tabular font-medium">{replaces.externalId}</span>
+              )}
+            </span>
+          ) : null}
+          {replacedBy.map((r) => (
+            <span key={r.id}>
+              Replaced by order{" "}
+              <Link
+                href={`${ordersBase}/${r.id}`}
+                className="tabular font-medium underline-offset-4 hover:underline"
+              >
+                {r.externalId}
+              </Link>
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <section className="overflow-hidden rounded-2xl border bg-card shadow-xs">
