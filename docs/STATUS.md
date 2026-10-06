@@ -26,7 +26,7 @@ _Last updated: 2026-10-06, phase 4 slice 2 (settlements post to the books)._
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen), slice 3 (review requests: manual, bulk, automatic) and refunds on orders (red badge, Refunded tab) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation and Finance and Accounting roles) |
-| 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry) and 3 (matching each payout to its bank deposit) done. Next: settlements in another currency than the main one |
+| 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) and 4 (any currency, automatic posting) done. Next: profit and loss by channel |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -819,8 +819,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   for the same account combined; it refuses when the lines don't add up or an account is
   missing. Dated the period's last day (company time), reference = Amazon's settlement ID, memo
   "Amazon.ca settlement … · Jun 5 – Jul 17, 2026", `source: "settlement"`, `source_id` = the
-  settlement. A settlement in another currency than the main one shows "AED: posting comes
-  later" on the list and isn't counted in "Post N ready" (`settlementsToPost` takes the currency). `settlements.journal_entry_id` links them; a settlement counts as posted while that
+  settlement. Another currency posts at that day's rate (slice 4). `settlements.journal_entry_id` links them; a settlement counts as posted while that
   entry isn't reversed. Main currency only for now (a USD settlement says so).
 - **Buyer-paid tax isn't income:** `Tax`, `ShippingTax`, `GiftWrapTax` under ItemPrice are in
   the "Sales tax" group with Amazon's withheld (marketplace facilitator) tax, so they cancel out
@@ -866,6 +865,34 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   (`settlementDepositWindow`), db `settlements.test.ts` (found, matched, unpost refused,
   unmatched back to Sales, turned down), e2e settlements test (deposit added as Sales, matched,
   unmatched).
+
+### Phase 4, slice 4: settlements in any currency, deposits in any currency, automatic posting
+
+- **Posting another currency** (e.g. AED in a CAD company): the entry is in the settlement's
+  currency at that day's rate (`fxRateOn`, Bank of Canada, the dirham via its USD peg; fetched
+  first by `suggestRate` if missing), each line valued and rounded on its own, the cent left to
+  the largest non-clearing line (core `convertSettlementEntry`). The clearing line is in the
+  settlement's currency, or in the main currency when the clearing account holds only that
+  (`clearingLineCurrency`); a clearing account in a third currency is refused. No rate yet: it
+  says so and waits. `settlements.posted_fx_rate` and `payout_base_amount` (the payout's
+  main-currency value) are kept; the page shows "valued at 1 AED = … CAD".
+- **Deposits in any account and currency** (`settlementDepositCandidates` → core `depositFit`):
+  the same currency must be the exact amount; another currency (an AED payout into a CAD
+  account) is offered when within 5% (`SETTLEMENT_FX_TOLERANCE_BP`) of the market rate on
+  Amazon's deposit date, showing the bank's rate, how far it is from the market and the exchange
+  difference, with "Match at this rate". Converted ones are never matched in bulk or by the job.
+- **Matching** (core `depositMatchLines`): the money line as it is, the payout out of clearing
+  at `payout_base_amount`, and any main-currency difference to Loss/Gain on foreign exchange
+  (`fx_loss` / `fx_gain`), so clearing returns to zero in both currencies. Same-currency,
+  same-rate deposits are unchanged (two lines).
+- **Automatic posting** ("Post new settlements automatically" on How settlements post,
+  `settlement_settings.auto_post`): the daily job (`/api/cron/fx-rates` → `autoPostSettlements`,
+  `server/settlement-posting.ts`) posts what's ready from the start date, then matches deposits
+  with exactly one exact fit that are uncategorized or only in the sales account; anything else
+  waits on the list. Audit entries have no user and `automatic: true`.
+- Migration `0035_settlement_currencies`. Tests: core `amazon-settlements.test.ts`
+  (`convertSettlementEntry`, `depositFit`, `depositMatchLines`), db `settlements.test.ts` (AED
+  settlement in a CAD company, CAD deposit matched with the exchange loss).
 
 ### Order badges: refunded, A-to-z claim, chargeback, replaced
 

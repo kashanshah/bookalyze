@@ -95,6 +95,7 @@ export default async function SettlementAccountsPage({
         keys={SETTLEMENT_ACCOUNT_KEYS as SettlementAccountKey[]}
         initial={Object.fromEntries(SETTLEMENT_ACCOUNT_KEYS.map((k) => [k, initial[k] ?? ""]))}
         postFrom={settings.postFrom ?? fy.start}
+        autoPost={settings.autoPost}
         options={options}
         suggested={firstTime}
         canManage={isOrgAdmin(ctx)}

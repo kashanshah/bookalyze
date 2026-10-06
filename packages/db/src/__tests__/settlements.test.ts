@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import { saveAmazonChannels } from "../commerce";
+import { upsertFxRates } from "../fx";
 import { createDefaultChart, postJournalEntry } from "../ledger";
 import * as schema from "../schema";
 import {
@@ -74,6 +75,7 @@ beforeAll(async () => {
     .values([
       { code: "CAD", name: "Canadian Dollar", minorUnits: 2 },
       { code: "USD", name: "US Dollar", minorUnits: 2 },
+      { code: "AED", name: "UAE Dirham", minorUnits: 2 },
     ])
     .onConflictDoNothing();
   const orgs = await owner.db
@@ -282,18 +284,10 @@ describe("settlements", () => {
     expect(await scoped((tx) => getSettlementAccounts(tx))).toEqual({ sales, fees, clearing });
     // The unbalanced, uploaded one isn't offered.
     expect(
-      (
-        await scoped((tx) =>
-          settlementsToPost(tx, { from: "2026-09-01", limit: 10, currency: "CAD" }),
-        )
-      ).map((r) => r.id),
-    ).toEqual([id]);
-    // Nor in another currency than the main one.
-    expect(
-      await scoped((tx) =>
-        settlementsToPost(tx, { from: "2026-09-01", limit: 10, currency: "USD" }),
+      (await scoped((tx) => settlementsToPost(tx, { from: "2026-09-01", limit: 10 }))).map(
+        (r) => r.id,
       ),
-    ).toEqual([]);
+    ).toEqual([id]);
 
     const entry = await post();
     expect(entry.label).toMatch(/^JE-/);
@@ -308,11 +302,9 @@ describe("settlements", () => {
     expect(by[clearing]).toBe("47.0500");
     expect((await scoped((tx) => getSettlement(tx, id)))?.entryNumber).toBe(entry.entryNumber);
     await expect(post()).rejects.toThrow(/in the books already/);
-    expect(
-      await scoped((tx) =>
-        settlementsToPost(tx, { from: "2026-09-01", limit: 10, currency: "CAD" }),
-      ),
-    ).toEqual([]);
+    expect(await scoped((tx) => settlementsToPost(tx, { from: "2026-09-01", limit: 10 }))).toEqual(
+      [],
+    );
 
     await scoped((tx) => unpostSettlement(tx, { orgId, userId: null, settlementId: id }));
     expect((await scoped((tx) => getSettlement(tx, id)))?.entryId).toBeNull();
@@ -403,7 +395,13 @@ describe("settlements", () => {
     ).toEqual([id]);
 
     const matched = await scoped((tx) =>
-      matchSettlementDeposit(tx, { orgId, userId: null, settlementId: id, entryId: right.id }),
+      matchSettlementDeposit(tx, {
+        orgId,
+        userId: null,
+        settlementId: id,
+        entryId: right.id,
+        baseCurrency: "CAD",
+      }),
     );
     const lines = await scoped((tx) =>
       tx
@@ -445,5 +443,130 @@ describe("settlements", () => {
       dismissSettlementDeposit(tx, { orgId, userId: null, settlementId: id, entryId: another.id }),
     );
     expect(await scoped((tx) => settlementDepositCandidates(tx, id))).toEqual([]);
+  });
+
+  it("posts a settlement in another currency at the day's rate, and matches a converted deposit", async () => {
+    await upsertFxRates(
+      app.db,
+      [{ date: "2026-09-15", base: "CAD", quote: "USD", rate: "1.3650" }],
+      "Bank of Canada",
+    );
+    const accounts = await scoped((tx) => tx.select().from(schema.accounts));
+    const code = (c: string) => accounts.find((a) => a.code === c)?.id ?? "";
+    const { id } = await scoped((tx) =>
+      saveSettlement(tx, {
+        orgId,
+        connectionId: null,
+        channelId: null,
+        reportId: null,
+        source: "upload",
+        settlement: settlement({
+          settlementId: "55556666777",
+          currency: "AED",
+          marketplace: "Amazon.ae",
+          total: "100.0000",
+          lines: [
+            {
+              transactionType: "Order",
+              amountType: "ItemPrice",
+              amountDescription: "Principal",
+              amount: "150.0000",
+              count: 1,
+            },
+            {
+              transactionType: "Order",
+              amountType: "ItemFees",
+              amountDescription: "Commission",
+              amount: "-50.0000",
+              count: 1,
+            },
+          ],
+        }),
+      }),
+    );
+    // 1 AED = 1.3650 / 3.6725 CAD (the dirham is pegged to the US dollar).
+    const entry = await scoped((tx) =>
+      postSettlement(tx, {
+        orgId,
+        userId: null,
+        settlementId: id,
+        baseCurrency: "CAD",
+        date: "2026-09-15",
+        memo: "Amazon.ae settlement 55556666777",
+      }),
+    );
+    const lines = await scoped((tx) =>
+      tx
+        .select()
+        .from(schema.journalLines)
+        .where(sql`${schema.journalLines.journalEntryId} = ${entry.id}`),
+    );
+    const by = Object.fromEntries(
+      lines.map((l) => [l.accountId, [l.currency, String(l.amount), String(l.baseAmount)]]),
+    );
+    expect(by[code("4000")]).toEqual(["AED", "-150.0000", "-55.7500"]);
+    expect(by[code("1150")]).toEqual(["CAD", "37.1700", "37.1700"]);
+    const posted = await scoped((tx) => getSettlement(tx, id));
+    expect(posted?.payoutBaseAmount).toBe("37.1700");
+
+    // CAD 36.50 into the chequing account: about 1.8% under the market rate, so it's offered,
+    // but only to check by hand (not in "Match N deposits").
+    const deposit = await scoped((tx) =>
+      postJournalEntry(tx, {
+        orgId,
+        date: "2026-09-18",
+        memo: "AMAZON.AE DEPOSIT",
+        entry: {
+          currency: "CAD",
+          fxRate: "1",
+          total: "36.5000",
+          lines: [
+            {
+              index: 0,
+              accountId: code("1010"),
+              description: null,
+              currency: "CAD",
+              amount: "36.5000",
+              baseAmount: "36.5000",
+            },
+            {
+              index: 1,
+              accountId: code("4000"),
+              description: null,
+              currency: "CAD",
+              amount: "-36.5000",
+              baseAmount: "-36.5000",
+            },
+          ],
+        },
+      }),
+    );
+    const [candidate] = await scoped((tx) => settlementDepositCandidates(tx, id));
+    expect(candidate).toMatchObject({ entryId: deposit.id, currency: "CAD" });
+    expect(candidate?.fit).toMatchObject({ kind: "converted", impliedRate: "0.3650000000" });
+    expect(
+      (await scoped((tx) => settlementsWithOneDeposit(tx))).map((f) => f.settlementId),
+    ).not.toContain(id);
+
+    const matched = await scoped((tx) =>
+      matchSettlementDeposit(tx, {
+        orgId,
+        userId: null,
+        settlementId: id,
+        entryId: deposit.id,
+        baseCurrency: "CAD",
+      }),
+    );
+    const after = await scoped((tx) =>
+      tx
+        .select()
+        .from(schema.journalLines)
+        .where(sql`${schema.journalLines.journalEntryId} = ${matched.id}`),
+    );
+    expect(Object.fromEntries(after.map((l) => [l.accountId, String(l.baseAmount)]))).toEqual({
+      [code("1010")]: "36.5000",
+      [code("1150")]: "-37.1700",
+      [code("6900")]: "0.6700",
+    });
   });
 });

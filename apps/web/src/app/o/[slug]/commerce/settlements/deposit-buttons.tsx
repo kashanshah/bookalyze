@@ -29,10 +29,13 @@ export function DepositChoice({
   slug,
   settlementId,
   entryId,
+  converted = false,
 }: {
   slug: string;
   settlementId: string;
   entryId: string;
+  /** Paid in another currency: the button says the rate is accepted. */
+  converted?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -57,7 +60,7 @@ export function DepositChoice({
     <div className="flex flex-wrap gap-2">
       <Button size="sm" onClick={() => run("match")} disabled={pending}>
         {pending && which === "match" ? <Spinner /> : <Link2 />}
-        Match
+        {converted ? "Match at this rate" : "Match"}
       </Button>
       <Button size="sm" variant="ghost" onClick={() => run("dismiss")} disabled={pending}>
         {pending && which === "dismiss" ? <Spinner /> : <X />}

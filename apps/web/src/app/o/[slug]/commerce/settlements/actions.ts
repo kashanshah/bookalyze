@@ -1,6 +1,6 @@
 "use server";
 
-import { can, localDate, SETTLEMENT_ACCOUNT_KEYS, type SettlementAccounts } from "@bookalyze/core";
+import { can, SETTLEMENT_ACCOUNT_KEYS, type SettlementAccounts } from "@bookalyze/core";
 import {
   dismissSettlementDeposit,
   getSettlementSettings,
@@ -19,12 +19,14 @@ import {
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { formatDate, isIsoDate } from "@/lib/dates";
+import { isIsoDate } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { type SettlementSyncResult, syncOrgSettlements } from "@/server/amazon-settlements";
 import { audit } from "@/server/audit";
 import { getCommerceContext } from "@/server/commerce";
+import { suggestRate } from "@/server/fx";
 import { isOrgAdmin } from "@/server/org";
+import { settlementEntryFor } from "@/server/settlement-posting";
 
 export type SettlementResult<T = object> = ({ ok: true } & T) | { ok: false; message: string };
 
@@ -131,6 +133,7 @@ const setupSchema = z.object({
     z.uuid().or(z.literal("")),
   ),
   postFrom: z.string().refine(isIsoDate, "Choose a date."),
+  autoPost: z.boolean().optional(),
 });
 
 /** Saves which account each kind of settlement line posts to, and when posting starts. */
@@ -159,13 +162,14 @@ export async function saveSettlementSetupAction(
       userId: ctx.session.user.id,
       accounts,
       postFrom: parsed.data.postFrom,
+      autoPost: parsed.data.autoPost ?? false,
     });
     await audit(tx, {
       orgId: ctx.org.id,
       actorUserId: ctx.session.user.id,
       action: "settlements.accounts_updated",
       entityType: "settlement_settings",
-      after: { accounts, postFrom: parsed.data.postFrom },
+      after: { accounts, postFrom: parsed.data.postFrom, autoPost: parsed.data.autoPost ?? false },
     });
     return true;
   });
@@ -192,13 +196,7 @@ function entryFor(
   ctx: Awaited<ReturnType<typeof settlementsContext>>["ctx"],
   s: { startAt: Date; endAt: Date; externalId: string; marketplace: string | null },
 ) {
-  const { locale, timezone } = ctx.profile;
-  const start = localDate(s.startAt.toISOString(), timezone);
-  const end = localDate(s.endAt.toISOString(), timezone);
-  return {
-    date: end,
-    memo: `${s.marketplace ?? "Amazon"} settlement ${s.externalId} · ${formatDate(start, locale)} – ${formatDate(end, locale)}`,
-  };
+  return settlementEntryFor(ctx.profile, s);
 }
 
 /** Posts settlements to the books: one, or (`all`) every one ready from the start date on. */
@@ -216,13 +214,7 @@ export async function postSettlementsAction(
     if (one?.success) return [one.data];
     const { postFrom } = await getSettlementSettings(tx);
     if (!postFrom) return null;
-    return (
-      await settlementsToPost(tx, {
-        from: postFrom,
-        limit: 50,
-        currency: ctx.profile.baseCurrency,
-      })
-    ).map((r) => r.id);
+    return (await settlementsToPost(tx, { from: postFrom, limit: 50 })).map((r) => r.id);
   });
   if (!ids) return { ok: false, message: "Choose the accounts and when posting starts first." };
   let posted = 0;
@@ -234,6 +226,10 @@ export async function postSettlementsAction(
       await inOrg(ctx, async (tx) => {
         const [s] = await tx.select().from(schema.settlements).where(eq(schema.settlements.id, id));
         if (!s) throw new LedgerError("This settlement no longer exists.");
+        // Another currency posts at that day's rate: fetch it first if it isn't stored yet.
+        if (s.currency !== ctx.profile.baseCurrency) {
+          await suggestRate(ctx.profile.baseCurrency, s.currency, entryFor(ctx, s).date);
+        }
         const entry = await postSettlement(tx, {
           orgId: ctx.org.id,
           userId: ctx.session.user.id,
@@ -316,6 +312,7 @@ export async function matchDepositAction(
         orgId: ctx.org.id,
         userId: ctx.session.user.id,
         ...parsed.data,
+        baseCurrency: ctx.profile.baseCurrency,
       });
       await audit(tx, {
         orgId: ctx.org.id,
@@ -419,6 +416,7 @@ export async function matchFoundDepositsAction(
           userId: ctx.session.user.id,
           settlementId: f.settlementId,
           entryId: f.deposit.entryId,
+          baseCurrency: ctx.profile.baseCurrency,
         });
         await audit(tx, {
           orgId: ctx.org.id,

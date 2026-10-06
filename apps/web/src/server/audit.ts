@@ -6,7 +6,8 @@ export async function audit(
   tx: Transaction,
   entry: {
     orgId: string;
-    actorUserId: string;
+    /** Null for the daily jobs. */
+    actorUserId: string | null;
     action: string;
     entityType: string;
     entityId?: string;

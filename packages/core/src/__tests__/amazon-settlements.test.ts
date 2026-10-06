@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSettlementEntry,
+  convertSettlementEntry,
+  depositFit,
+  depositMatchLines,
   parseReportDocument,
   parseReportsPage,
   parseSettlementReport,
@@ -245,5 +248,150 @@ describe("settlementDepositWindow", () => {
       from: "2026-12-28",
       to: "2027-01-07",
     });
+  });
+});
+
+describe("convertSettlementEntry", () => {
+  const lines = [
+    { accountId: "sales", amount: "-100.0000", description: "Sales" },
+    { accountId: "fees", amount: "33.3300", description: "Amazon fees" },
+    { accountId: "clearing", amount: "66.6700", description: "Payout" },
+  ];
+  it("keeps the main currency as it is", () => {
+    const r = convertSettlementEntry({
+      lines,
+      total: "66.6700",
+      clearingAccountId: "clearing",
+      clearingCurrency: null,
+      currency: "CAD",
+      baseCurrency: "CAD",
+      rate: "1",
+    });
+    expect(r.ok && r.lines.map((l) => [l.currency, l.amount, l.baseAmount])).toEqual([
+      ["CAD", "-100.0000", "-100.0000"],
+      ["CAD", "33.3300", "33.3300"],
+      ["CAD", "66.6700", "66.6700"],
+    ]);
+    expect(r.ok && r.payoutBase).toBe("66.6700");
+  });
+
+  it("converts another currency at the rate, balancing the rounding on the largest line", () => {
+    const r = convertSettlementEntry({
+      lines,
+      total: "66.6700",
+      clearingAccountId: "clearing",
+      clearingCurrency: "CAD",
+      currency: "AED",
+      baseCurrency: "CAD",
+      rate: "0.3715",
+    });
+    if (!r.ok) throw new Error(r.error);
+    // 100 → 37.15, 33.33 → 12.38, 66.67 → 24.77: 12.38 + 24.77 = 37.15.
+    expect(r.lines.map((l) => [l.accountId, l.currency, l.amount, l.baseAmount])).toEqual([
+      ["sales", "AED", "-100.0000", "-37.1500"],
+      ["fees", "AED", "33.3300", "12.3800"],
+      ["clearing", "CAD", "24.7700", "24.7700"],
+    ]);
+    expect(r.lines.reduce((t, l) => t + Number(l.baseAmount), 0)).toBeCloseTo(0, 6);
+    expect(r.payoutBase).toBe("24.7700");
+  });
+
+  it("refuses a clearing account held in a third currency", () => {
+    const r = convertSettlementEntry({
+      lines,
+      total: "66.6700",
+      clearingAccountId: "clearing",
+      clearingCurrency: "USD",
+      currency: "AED",
+      baseCurrency: "CAD",
+      rate: "0.3715",
+    });
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe("depositFit", () => {
+  it("is exact in the same currency, for the same amount only", () => {
+    const base = { total: "2163.45", currency: "AED", depositCurrency: "AED", rate: null };
+    expect(depositFit({ ...base, depositAmount: "2163.45" })).toEqual({ kind: "exact" });
+    expect(depositFit({ ...base, depositAmount: "2163.46" })).toBeNull();
+  });
+
+  it("is close in another currency, within 5% of the market rate", () => {
+    const base = { total: "1000", currency: "AED", depositCurrency: "CAD", rate: "0.3720" };
+    expect(depositFit({ ...base, depositAmount: "365.00" })).toEqual({
+      kind: "converted",
+      impliedRate: "0.3650000000",
+      marketRate: "0.3720",
+      differenceBp: -188,
+    });
+    expect(depositFit({ ...base, depositAmount: "300.00" })).toBeNull();
+    expect(depositFit({ ...base, depositAmount: "365.00", rate: null })).toBeNull();
+    // Market rates come with up to 10 decimal places.
+    expect(depositFit({ ...base, depositAmount: "365.00", rate: "0.3716814159" })).toMatchObject({
+      kind: "converted",
+      differenceBp: -179,
+    });
+  });
+});
+
+describe("depositMatchLines", () => {
+  const money = {
+    accountId: "bank",
+    description: null,
+    currency: "CAD",
+    amount: "365.0000",
+    baseAmount: "365.0000",
+  };
+  const base = {
+    clearingAccountId: "clearing",
+    clearingCurrency: "CAD",
+    currency: "AED",
+    baseCurrency: "CAD",
+    total: "1000.0000",
+    fxGainAccountId: "gain",
+    fxLossAccountId: "loss",
+    description: "Amazon settlement 1",
+  };
+  it("clears the payout at its posted value and books the difference as an exchange loss", () => {
+    const r = depositMatchLines({ ...base, money, payoutBase: "372.0000" });
+    expect(r.ok && r.lines.map((l) => [l.accountId, l.currency, l.amount, l.baseAmount])).toEqual([
+      ["bank", "CAD", "365.0000", "365.0000"],
+      ["clearing", "CAD", "-372.0000", "-372.0000"],
+      ["loss", "CAD", "7.0000", "7.0000"],
+    ]);
+  });
+
+  it("books a gain when the deposit is worth more, and nothing when it's the same", () => {
+    const gain = depositMatchLines({ ...base, money, payoutBase: "360.0000" });
+    expect(gain.ok && gain.lines[2]).toMatchObject({ accountId: "gain", amount: "-5.0000" });
+    const same = depositMatchLines({
+      ...base,
+      currency: "CAD",
+      total: "365.0000",
+      money,
+      payoutBase: "365.0000",
+    });
+    expect(same.ok && same.lines).toHaveLength(2);
+  });
+
+  it("keeps a clearing account in the payout's currency in that currency", () => {
+    const aed = {
+      ...money,
+      currency: "AED",
+      amount: "1000.0000",
+      baseAmount: "371.0000",
+    };
+    const r = depositMatchLines({
+      ...base,
+      clearingCurrency: null,
+      money: aed,
+      payoutBase: "372.0000",
+    });
+    expect(r.ok && r.lines.map((l) => [l.accountId, l.currency, l.amount, l.baseAmount])).toEqual([
+      ["bank", "AED", "1000.0000", "371.0000"],
+      ["clearing", "AED", "-1000.0000", "-372.0000"],
+      ["loss", "CAD", "1.0000", "1.0000"],
+    ]);
   });
 });
