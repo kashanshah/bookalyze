@@ -145,6 +145,37 @@ describe("orders", () => {
     );
     expect(await scoped((tx) => countOrdersNeedingItems(tx))).toBe(0);
 
+    // Two syncs saving the same order at once (the background job and the button) both succeed.
+    const mug = {
+      itemId: "1",
+      asin: "B000TEST01",
+      sku: "MAPLE-MUG",
+      title: "Maple mug",
+      quantityOrdered: 1,
+      quantityShipped: 1,
+      itemPrice: "22.1200",
+      itemTax: "2.8800",
+      shippingPrice: null,
+      shippingTax: null,
+      promotionDiscount: null,
+    };
+    const save = (wait: number) =>
+      scoped(async (tx) => {
+        await saveOrderItems(tx, { orgId, orderId: first?.id ?? "", items: [mug] });
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      });
+    await Promise.all([
+      save(300),
+      new Promise((resolve) => setTimeout(resolve, 100)).then(() => save(0)),
+    ]);
+    const saved = await scoped((tx) =>
+      tx
+        .select()
+        .from(schema.orderItems)
+        .where(sql`order_id = ${first?.id ?? ""}`),
+    );
+    expect(saved).toHaveLength(1);
+
     // An older copy is ignored; a newer one with a new status asks for the items again.
     const stale = await scoped((tx) =>
       upsertOrders(tx, {

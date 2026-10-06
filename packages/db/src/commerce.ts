@@ -329,6 +329,9 @@ export async function saveOrderItems(
   tx: Transaction,
   input: { orgId: string; orderId: string; items: readonly AmazonOrderItem[] },
 ) {
+  // The background job and "Bring in new orders" can save the same order at once: the row lock
+  // makes the second wait, so its delete sees the first one's items.
+  await tx.select({ id: orders.id }).from(orders).where(eq(orders.id, input.orderId)).for("update");
   await tx.delete(orderItems).where(eq(orderItems.orderId, input.orderId));
   if (input.items.length) {
     await tx.insert(orderItems).values(
