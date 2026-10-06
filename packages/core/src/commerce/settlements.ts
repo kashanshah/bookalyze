@@ -1,3 +1,4 @@
+import { addDaysIso } from "../entity/compliance";
 import { formatDecimal, parseDecimal } from "../money";
 
 /**
@@ -361,4 +362,25 @@ export function buildSettlementEntry(input: {
     }));
   if (!lines.length) return { ok: false, error: "This settlement has nothing to post." };
   return { ok: true, lines };
+}
+
+// --- Matching the payout to its bank deposit -----------------------------------------------
+
+/** Banks show a deposit a little before Amazon's date at most, and up to a week or so after. */
+export const SETTLEMENT_DEPOSIT_DAYS_BEFORE = 3;
+export const SETTLEMENT_DEPOSIT_DAYS_AFTER = 10;
+
+/**
+ * The days a settlement's bank deposit is looked for in: around Amazon's deposit date, or from
+ * the period's last day when Amazon didn't give one.
+ */
+export function settlementDepositWindow(input: { depositDate: string | null; endDate: string }): {
+  from: string;
+  to: string;
+} {
+  const anchor = input.depositDate ?? input.endDate;
+  return {
+    from: addDaysIso(anchor, input.depositDate ? -SETTLEMENT_DEPOSIT_DAYS_BEFORE : 0),
+    to: addDaysIso(anchor, SETTLEMENT_DEPOSIT_DAYS_AFTER),
+  };
 }

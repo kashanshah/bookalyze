@@ -4,6 +4,7 @@ import {
   listAmazonConnections,
   listSettlements,
   settlementsToPost,
+  settlementsWithOneDeposit,
 } from "@bookalyze/db";
 import { ArrowLeft, ArrowRight, ChevronRight, Landmark, Settings2 } from "lucide-react";
 import type { Metadata } from "next";
@@ -17,6 +18,7 @@ import { formatDate } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { isOrgAdmin } from "@/server/org";
+import { MatchFoundDepositsButton } from "./deposit-buttons";
 import { PostAllSettlementsButton } from "./posting-buttons";
 import { SyncSettlementsButton, UploadSettlements } from "./settlement-sync";
 
@@ -39,7 +41,7 @@ export default async function SettlementsPage({
   if (!can(ctx.plan, ctx.enabledModules, "commerce.settlements")) notFound();
   const { locale, timezone } = ctx.profile;
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
-  const { connections, list, settings, ready } = await inOrg(ctx, async (tx) => {
+  const { connections, list, settings, ready, found } = await inOrg(ctx, async (tx) => {
     const settings = await getSettlementSettings(tx);
     return {
       connections: (await listAmazonConnections(tx)).filter((c) => c.status !== "disconnected"),
@@ -48,6 +50,7 @@ export default async function SettlementsPage({
       ready: settings.postFrom
         ? (await settlementsToPost(tx, { from: settings.postFrom, limit: 50 })).length
         : 0,
+      found: settings.postFrom ? await settlementsWithOneDeposit(tx, 50) : [],
     };
   });
   const canManage = isOrgAdmin(ctx);
@@ -69,6 +72,13 @@ export default async function SettlementsPage({
             </Link>
           </Button>
           {connections.length ? <SyncSettlementsButton slug={slug} /> : null}
+          {canManage && found.length ? (
+            <MatchFoundDepositsButton
+              slug={slug}
+              count={found.length}
+              categorized={found.filter((f) => !f.deposit.uncategorized).length}
+            />
+          ) : null}
           {canManage && ready ? <PostAllSettlementsButton slug={slug} count={ready} /> : null}
         </div>
       }
@@ -148,7 +158,13 @@ export default async function SettlementsPage({
                           Check
                         </Badge>
                       )}
-                      {s.entryId ? (
+                      {s.entryId && s.depositMatched ? (
+                        <Badge variant="success">In books · deposit matched</Badge>
+                      ) : s.entryId && parseDecimal(s.total) > 0n ? (
+                        <Badge variant="secondary" title="Match its bank deposit on the settlement">
+                          In books · match deposit
+                        </Badge>
+                      ) : s.entryId ? (
                         <Badge variant="success">In books</Badge>
                       ) : settings.postFrom &&
                         s.endAt.toISOString().slice(0, 10) < settings.postFrom ? (
