@@ -15,6 +15,7 @@ const REVIEWED_DIRECT_USE = [
   "app/o/[slug]/settings/members/page.tsx", // member, user, invitation
   "server/auth.ts", // Better Auth tables, invitation
   "server/amazon-orders.ts", // syncable_sales_channels() for the daily job; the rest in withOrg()
+  "server/amazon-settlements.ts", // syncable_amazon_connections() for the daily job; the rest in withOrg()
   "server/amount-fix.ts", // fx_rates (reference data); the rest runs in withOrg()
   "server/banking.ts", // syncable_connections() for the daily job; the rest runs in withOrg()
   "server/compliance.ts", // organization, member, user for the daily reminders; the rest in withOrg()

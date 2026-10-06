@@ -225,6 +225,13 @@
       "when": 1791259826431,
       "tag": "0031_order_claims_replacements",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791267409524,
+      "tag": "0032_settlements",
+      "breakpoints": true
     }
   ]
 }

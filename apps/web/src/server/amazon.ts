@@ -1,4 +1,5 @@
 import "server-only";
+import { gunzipSync } from "node:zlib";
 import {
   AMAZON_LWA_TOKEN_URL,
   AMAZON_REGIONS,
@@ -11,8 +12,11 @@ import {
   parseOrderItemsPage,
   parseOrdersPage,
   parseRefundEventsPage,
+  parseReportDocument,
+  parseReportsPage,
   parseSolicitationActions,
   REVIEW_ACTION,
+  SETTLEMENT_REPORT_TYPE,
 } from "@bookalyze/core";
 import { env } from "./env";
 
@@ -266,4 +270,64 @@ export async function refundsPage(
       forbidden: roleMissing("Finance and Accounting"),
     }),
   );
+}
+
+const FINANCE_ROLE = roleMissing("Finance and Accounting");
+
+/**
+ * One page of the seller account's settlement reports created since a time (or the next page,
+ * by its token). Amazon makes these on its own, one per settlement; they can't be requested.
+ */
+export async function settlementReportsPage(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  query: { createdSince: string } | { nextToken: string },
+) {
+  const params: Record<string, string> =
+    "nextToken" in query
+      ? { nextToken: query.nextToken }
+      : {
+          reportTypes: SETTLEMENT_REPORT_TYPE,
+          processingStatuses: "DONE",
+          createdSince: query.createdSince,
+          pageSize: "100",
+        };
+  return parseReportsPage(
+    await call(creds, region, "/reports/2021-06-30/reports", params, { forbidden: FINANCE_ROLE }),
+  );
+}
+
+/** Downloads a report's document (unzipped) as text. */
+export async function downloadReport(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  reportDocumentId: string,
+): Promise<string> {
+  const doc = parseReportDocument(
+    await call(
+      creds,
+      region,
+      `/reports/2021-06-30/documents/${encodeURIComponent(reportDocumentId)}`,
+      undefined,
+      { forbidden: FINANCE_ROLE },
+    ),
+  );
+  let response: Response;
+  try {
+    // A short-lived signed link: no Amazon token goes with it.
+    response = await fetch(doc.url, { cache: "no-store", signal: AbortSignal.timeout(60_000) });
+  } catch {
+    throw new AmazonError(
+      "Amazon's report couldn't be downloaded. Try again in a minute.",
+      "unavailable",
+    );
+  }
+  if (!response.ok) {
+    throw new AmazonError(
+      `Amazon's report couldn't be downloaded (${response.status}).`,
+      "unexpected",
+    );
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  return new TextDecoder("utf-8").decode(doc.gzip ? gunzipSync(bytes) : bytes);
 }

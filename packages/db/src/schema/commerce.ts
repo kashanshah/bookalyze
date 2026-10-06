@@ -286,3 +286,87 @@ export const orderRefunds = pgTable(
     tenantIsolationPolicy("order_refunds", t.organizationId),
   ],
 );
+
+/**
+ * An Amazon settlement: one period's payout (sales, refunds, fees, reserve) as Amazon's
+ * settlement report has it. Nothing here posts to the books yet.
+ */
+export const settlements = pgTable(
+  "settlements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id"),
+    /** The marketplace it's for, when one of the company's channels matches. */
+    channelId: uuid("channel_id"),
+    /** Amazon's settlement ID. */
+    externalId: text("external_id").notNull(),
+    /** The report it came from (null when uploaded). */
+    reportId: text("report_id"),
+    source: text("source", { enum: ["amazon", "upload"] }).notNull(),
+    startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+    endAt: timestamp("end_at", { withTimezone: true }).notNull(),
+    depositDate: date("deposit_date"),
+    total: numeric("total", { precision: 20, scale: 4 }).notNull(),
+    currency: char("currency", { length: 3 }).notNull(),
+    marketplace: text("marketplace"),
+    orderCount: integer("order_count").notNull().default(0),
+    /** The lines add up to the total. */
+    balanced: boolean("balanced").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    unique("settlements_org_id_key").on(t.organizationId, t.id),
+    unique("settlements_org_external_key").on(t.organizationId, t.externalId),
+    index("settlements_org_end_idx").on(t.organizationId, t.endAt),
+    foreignKey({
+      name: "settlements_connection_fk",
+      columns: [t.organizationId, t.connectionId],
+      foreignColumns: [connections.organizationId, connections.id],
+    }),
+    foreignKey({
+      name: "settlements_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }),
+    check("settlements_source_valid", sql`${t.source} in ('amazon', 'upload')`),
+    tenantIsolationPolicy("settlements", t.organizationId),
+  ],
+);
+
+/** A settlement's amounts, summed by kind (transaction type, amount type, description). */
+export const settlementLines = pgTable(
+  "settlement_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    settlementId: uuid("settlement_id").notNull(),
+    transactionType: text("transaction_type").notNull(),
+    amountType: text("amount_type").notNull(),
+    amountDescription: text("amount_description").notNull(),
+    amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [
+    unique("settlement_lines_kind_key").on(
+      t.settlementId,
+      t.transactionType,
+      t.amountType,
+      t.amountDescription,
+    ),
+    foreignKey({
+      name: "settlement_lines_settlement_fk",
+      columns: [t.organizationId, t.settlementId],
+      foreignColumns: [settlements.organizationId, settlements.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("settlement_lines", t.organizationId),
+  ],
+);

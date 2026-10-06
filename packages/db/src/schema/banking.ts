@@ -49,6 +49,8 @@ export const connections = pgTable(
     /** Provider settings that aren't secret, e.g. the Wise profile. */
     settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default({}),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    /** Amazon only: when settlement reports were last looked for. */
+    settlementsSyncedAt: timestamp("settlements_synced_at", { withTimezone: true }),
     /** The last sync's problem, in words fit to show. Cleared by a good sync. */
     lastError: text("last_error"),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
