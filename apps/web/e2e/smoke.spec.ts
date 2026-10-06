@@ -1382,7 +1382,7 @@ test("commerce: bring in Amazon orders, find one by SKU and open it", async ({ p
   await expect(page.getByText("Prime", { exact: true })).toBeVisible();
   await expect(page.getByText("Partly refunded", { exact: true })).toBeVisible();
   await expect(page.getByText("SKU MAPLE-MUG · 1 unit")).toBeVisible();
-  await expect(page.getByText("-$22.59").first()).toBeVisible();
+  await expect(page.getByText("($22.59)").first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Open in Seller Central" })).toHaveAttribute(
     "href",
     "https://sellercentral.amazon.ca/orders-v3/order/702-1000001-0000001",
