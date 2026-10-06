@@ -5,11 +5,18 @@ import {
   parseDecimal,
   SETTLEMENT_GROUPS,
   type SettlementGroup,
+  settlementDepositWindow,
   settlementGroup,
   settlementLineLabel,
 } from "@bookalyze/core";
-import { getSettlement, getSettlementAccounts, getSettlementSettings, schema } from "@bookalyze/db";
-import { AlertTriangle, ArrowLeft, BookCheck, Settings2 } from "lucide-react";
+import {
+  getSettlement,
+  getSettlementAccounts,
+  getSettlementSettings,
+  schema,
+  settlementDepositCandidates,
+} from "@bookalyze/db";
+import { AlertTriangle, ArrowLeft, BookCheck, Landmark, Settings2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -21,6 +28,7 @@ import { formatDate } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { isOrgAdmin } from "@/server/org";
+import { DepositChoice, UnmatchDepositButton } from "../deposit-buttons";
 import { PostSettlementButton, UnpostSettlementButton } from "../posting-buttons";
 
 export const metadata: Metadata = { title: "Settlement" };
@@ -40,8 +48,11 @@ export default async function SettlementPage({
   const found = await inOrg(ctx, async (tx) => {
     const settlement = await getSettlement(tx, id);
     if (!settlement) return null;
+    const lookForDeposit =
+      Boolean(settlement.entryId) && !settlement.deposit && parseDecimal(settlement.total) > 0n;
     return {
       settlement,
+      candidates: lookForDeposit ? await settlementDepositCandidates(tx, id) : [],
       accounts: await getSettlementAccounts(tx),
       settings: await getSettlementSettings(tx),
       names: new Map(
@@ -53,7 +64,7 @@ export default async function SettlementPage({
     };
   });
   if (!found) notFound();
-  const { settlement: s, accounts, settings, names } = found;
+  const { settlement: s, candidates, accounts, settings, names } = found;
   const canPost = isOrgAdmin(ctx);
   const posted = Boolean(s.entryId);
   const before = settings.postFrom ? s.endAt.toISOString().slice(0, 10) < settings.postFrom : false;
@@ -62,6 +73,11 @@ export default async function SettlementPage({
   const { locale, timezone } = ctx.profile;
   const day = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
   const negative = parseDecimal(s.total) < 0n;
+  const clearingName = accounts.clearing ? names.get(accounts.clearing) : null;
+  const depositWindow = settlementDepositWindow({
+    depositDate: s.depositDate,
+    endDate: s.endAt.toISOString().slice(0, 10),
+  });
 
   // Lines by group, each group with its subtotal, in a fixed order.
   const groups = ORDER.map((key) => {
@@ -185,7 +201,10 @@ export default async function SettlementPage({
                   >
                     JE-{String(s.entryNumber).padStart(4, "0")}
                   </Link>
-                  . The payout waits in the clearing account until its deposit is matched.
+                  .{" "}
+                  {s.deposit
+                    ? "Its deposit is matched below."
+                    : "The payout waits in the clearing account until its deposit is matched."}
                 </p>
                 {canPost ? <UnpostSettlementButton slug={slug} id={s.id} /> : null}
               </div>
@@ -268,6 +287,71 @@ export default async function SettlementPage({
               </div>
             )}
           </div>
+          {posted && parseDecimal(s.total) > 0n ? (
+            <div className="rounded-2xl border bg-card p-5 shadow-xs">
+              <h2 className="flex items-center gap-2 font-medium text-sm">
+                <Landmark className="size-4 text-primary" />
+                Bank deposit
+              </h2>
+              {s.deposit ? (
+                <div className="mt-2 grid gap-3 text-sm">
+                  <p>
+                    Matched to the deposit into {s.deposit.accountName} on{" "}
+                    {formatDate(s.deposit.date, locale)} (
+                    <Link
+                      href={`/o/${slug}/accounting/journal/${s.deposit.entryId}`}
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      JE-{String(s.deposit.entryNumber).padStart(4, "0")}
+                    </Link>
+                    ). It clears the payout from {clearingName ?? "the clearing account"}.
+                  </p>
+                  {canPost ? <UnmatchDepositButton slug={slug} settlementId={s.id} /> : null}
+                </div>
+              ) : candidates.length ? (
+                <div className="mt-2 grid gap-3 text-sm">
+                  <p className="text-muted-foreground text-xs">
+                    {candidates.length === 1
+                      ? "This deposit matches the payout:"
+                      : "These deposits match the payout. Choose the right one:"}
+                  </p>
+                  <ul className="grid gap-3">
+                    {candidates.map((c) => (
+                      <li key={c.entryId} className="grid gap-2 rounded-xl border p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="min-w-0">
+                            <span className="block font-medium">
+                              {formatDate(c.date, locale)} · {c.accountName}
+                            </span>
+                            {c.description ? (
+                              <span className="block truncate text-muted-foreground text-xs">
+                                {c.description}
+                              </span>
+                            ) : null}
+                          </span>
+                          <Amount value={s.total} currency={s.currency} locale={locale} />
+                        </div>
+                        <p className="text-muted-foreground text-xs">
+                          {c.uncategorized
+                            ? `Not categorized yet. Matching puts it in ${clearingName ?? "the clearing account"}.`
+                            : `Now in ${c.categories.join(", ")}. Matching moves it to ${clearingName ?? "the clearing account"}, so these sales aren't counted twice.`}
+                        </p>
+                        {canPost ? (
+                          <DepositChoice slug={slug} settlementId={s.id} entryId={c.entryId} />
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="mt-2 text-muted-foreground text-sm">
+                  No deposit of <Amount value={s.total} currency={s.currency} locale={locale} />{" "}
+                  found in your bank accounts between {formatDate(depositWindow.from, locale)} and{" "}
+                  {formatDate(depositWindow.to, locale)}. It shows here once your bank brings it in.
+                </p>
+              )}
+            </div>
+          ) : null}
         </aside>
       </div>
     </div>

@@ -6,6 +6,7 @@ import {
   parseSettlementReport,
   readSettlementAmount,
   readSettlementDate,
+  settlementDepositWindow,
   settlementGroup,
   settlementLineLabel,
 } from "../commerce/settlements";
@@ -227,6 +228,22 @@ describe("buildSettlementEntry", () => {
     expect(buildSettlementEntry({ total: s.total, lines: s.lines, accounts: {} })).toEqual({
       ok: false,
       error: "Choose the clearing account first.",
+    });
+  });
+});
+
+describe("settlementDepositWindow", () => {
+  it("looks a few days before Amazon's deposit date and up to ten after", () => {
+    expect(settlementDepositWindow({ depositDate: "2026-07-20", endDate: "2026-07-17" })).toEqual({
+      from: "2026-07-17",
+      to: "2026-07-30",
+    });
+  });
+
+  it("starts at the period's end when Amazon gave no deposit date", () => {
+    expect(settlementDepositWindow({ depositDate: null, endDate: "2026-12-28" })).toEqual({
+      from: "2026-12-28",
+      to: "2027-01-07",
     });
   });
 });

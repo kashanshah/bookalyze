@@ -319,6 +319,12 @@ export const settlements = pgTable(
     balanced: boolean("balanced").notNull(),
     /** The journal entry it posted as (null: not in the books). */
     journalEntryId: uuid("journal_entry_id"),
+    /**
+     * The bank deposit of its payout, once matched: the deposit as it is now (moved to the
+     * clearing account), and as it was before (put back on unmatch).
+     */
+    depositEntryId: uuid("deposit_entry_id"),
+    depositOriginalEntryId: uuid("deposit_original_entry_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -330,6 +336,16 @@ export const settlements = pgTable(
     foreignKey({
       name: "settlements_journal_entry_fk",
       columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    foreignKey({
+      name: "settlements_deposit_entry_fk",
+      columns: [t.organizationId, t.depositEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    foreignKey({
+      name: "settlements_deposit_original_entry_fk",
+      columns: [t.organizationId, t.depositOriginalEntryId],
       foreignColumns: [journalEntries.organizationId, journalEntries.id],
     }),
     unique("settlements_org_external_key").on(t.organizationId, t.externalId),
@@ -417,4 +433,32 @@ export const settlementSettings = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [tenantIsolationPolicy("settlement_settings", t.organizationId)],
+);
+
+/** Bank deposits someone said aren't a settlement's payout, so they aren't suggested again. */
+export const settlementDepositDismissals = pgTable(
+  "settlement_deposit_dismissals",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    settlementId: uuid("settlement_id").notNull(),
+    journalEntryId: uuid("journal_entry_id").notNull(),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.settlementId, t.journalEntryId] }),
+    foreignKey({
+      name: "settlement_deposit_dismissals_settlement_fk",
+      columns: [t.organizationId, t.settlementId],
+      foreignColumns: [settlements.organizationId, settlements.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "settlement_deposit_dismissals_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("settlement_deposit_dismissals", t.organizationId),
+  ],
 );

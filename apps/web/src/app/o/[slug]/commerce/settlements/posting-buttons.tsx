@@ -21,7 +21,7 @@ export function PostSettlementButton({ slug, id }: { slug: string; id: string })
           const result = await postSettlementsAction(slug, { id });
           if (!result.ok) return void toast.error(result.message);
           toast.success("In your books", {
-            description: "Match its deposit to the clearing account when it reaches your bank.",
+            description: "Next, match its bank deposit (below), so its sales are counted once.",
           });
           router.refresh();
         })

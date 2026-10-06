@@ -1504,6 +1504,44 @@ test("settlements: bring in Amazon's settlement report, see the payout, and uplo
   await expect(page.getByRole("columnheader", { name: "Debit" })).toBeVisible();
   await page.getByRole("button", { name: "Post to books" }).click();
   await expect(page.getByText(/Posted as JE-/)).toBeVisible();
+  await expect(page.getByText(/No deposit of \$26\.03 found/)).toBeVisible();
+
+  // The payout reaches the bank, recorded as sales (the Wave way): it's found and matched.
+  await page.getByRole("link", { name: "Chart of accounts", exact: true }).click();
+  await page.getByRole("button", { name: "Add account" }).click();
+  await page.getByLabel("Name").fill("Main chequing");
+  await page.getByLabel("Code (optional)").fill("1045");
+  await choose(page.locator("#currency"), /^CAD · /);
+  await page.getByRole("button", { name: "Add account" }).last().click();
+  await expect(page.getByText("Account added")).toBeVisible();
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("button", { name: "Add income" }).click();
+  await choose(page.locator("#tx-money"), /^1045 · Main chequing/);
+  await page.locator("#tx-memo").fill("AMAZON.CA DEPOSIT");
+  await choose(page.getByLabel("Category 1", { exact: true }), "4000 · Sales");
+  await page.getByLabel("Amount 1").fill("26.03");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added").first()).toBeVisible();
+  await page.getByRole("link", { name: "Settlements", exact: true }).click();
+  await expect(page.getByText("In books · match deposit")).toBeVisible();
+  await page
+    .getByRole("link", { name: /Amazon\.ca/ })
+    .first()
+    .click();
+  await expect(page.getByText("AMAZON.CA DEPOSIT")).toBeVisible();
+  await expect(
+    page.getByText(/Now in Sales\. Matching moves it to 1000 · Cash on hand/),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Match", exact: true }).click();
+  await expect(page.getByText("Deposit matched")).toBeVisible();
+  await expect(page.getByText(/Matched to the deposit into Main chequing/)).toBeVisible();
+  // Taking it out of the books waits until the deposit is unmatched.
+  await page.getByRole("button", { name: "Take out of books" }).click();
+  await expect(page.getByText(/Unmatch its bank deposit first/)).toBeVisible();
+  await page.getByRole("button", { name: "Unmatch" }).click();
+  await expect(page.getByText("Deposit unmatched")).toBeVisible();
+  await expect(page.getByText(/No deposit of \$26\.03 found/)).toBeVisible();
+
   // And out again: its entry is reversed.
   await page.getByRole("button", { name: "Take out of books" }).click();
   await expect(page.getByText("Taken out of your books")).toBeVisible();

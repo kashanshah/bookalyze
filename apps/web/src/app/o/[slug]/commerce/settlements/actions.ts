@@ -2,14 +2,18 @@
 
 import { can, localDate, SETTLEMENT_ACCOUNT_KEYS, type SettlementAccounts } from "@bookalyze/core";
 import {
+  dismissSettlementDeposit,
   getSettlementSettings,
   LedgerError,
+  matchSettlementDeposit,
   postSettlement,
   saveSettlement,
   saveSettlementSetup,
   schema,
   settlementChannel,
   settlementsToPost,
+  settlementsWithOneDeposit,
+  unmatchSettlementDeposit,
   unpostSettlement,
 } from "@bookalyze/db";
 import { eq } from "drizzle-orm";
@@ -279,4 +283,153 @@ export async function unpostSettlementAction(slug: string, id: string): Promise<
   revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
   revalidatePath(`/o/${slug}/accounting`, "layout");
   return { ok: true };
+}
+
+// --- Matching the payout to its bank deposit -----------------------------------------------
+
+const matchSchema = z.object({ settlementId: z.uuid(), entryId: z.uuid() });
+
+function revalidateBooks(slug: string) {
+  revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
+  revalidatePath(`/o/${slug}/accounting`, "layout");
+}
+
+/** Matches a posted settlement's payout to a bank deposit (moving the deposit to clearing). */
+export async function matchDepositAction(
+  slug: string,
+  input: z.input<typeof matchSchema>,
+): Promise<SettlementResult> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only owners and admins can do this." };
+  const parsed = matchSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Deposit not found." };
+  try {
+    await inOrg(ctx, async (tx) => {
+      const matched = await matchSettlementDeposit(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        ...parsed.data,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "settlements.deposit_matched",
+        entityType: "settlement",
+        entityId: parsed.data.settlementId,
+        before: { journalEntryId: parsed.data.entryId, categories: matched.was.categories },
+        after: { journalEntryId: matched.id },
+      });
+    });
+  } catch (error) {
+    return { ok: false, message: postingError(error) };
+  }
+  revalidateBooks(slug);
+  return { ok: true };
+}
+
+/** Puts the matched deposit back as it was (its old category). */
+export async function unmatchDepositAction(
+  slug: string,
+  settlementId: string,
+): Promise<SettlementResult> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only owners and admins can do this." };
+  if (!z.uuid().safeParse(settlementId).success) {
+    return { ok: false, message: "Settlement not found." };
+  }
+  try {
+    await inOrg(ctx, async (tx) => {
+      const back = await unmatchSettlementDeposit(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        settlementId,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "settlements.deposit_unmatched",
+        entityType: "settlement",
+        entityId: settlementId,
+        after: { journalEntryId: back.id },
+      });
+    });
+  } catch (error) {
+    return { ok: false, message: postingError(error) };
+  }
+  revalidateBooks(slug);
+  return { ok: true };
+}
+
+/** "Not this one": the deposit isn't suggested for the settlement again. */
+export async function dismissDepositAction(
+  slug: string,
+  input: z.input<typeof matchSchema>,
+): Promise<SettlementResult> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only owners and admins can do this." };
+  const parsed = matchSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Deposit not found." };
+  await inOrg(ctx, async (tx) => {
+    await dismissSettlementDeposit(tx, {
+      orgId: ctx.org.id,
+      userId: ctx.session.user.id,
+      ...parsed.data,
+    });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "settlements.deposit_dismissed",
+      entityType: "settlement",
+      entityId: parsed.data.settlementId,
+      after: { journalEntryId: parsed.data.entryId },
+    });
+  });
+  revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
+  return { ok: true };
+}
+
+/**
+ * Matches every posted settlement that has exactly one possible deposit (up to 50 per click),
+ * each in its own transaction.
+ */
+export async function matchFoundDepositsAction(
+  slug: string,
+): Promise<SettlementResult<{ matched: number; failed: number; message: string | null }>> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only owners and admins can do this." };
+  const found = await inOrg(ctx, (tx) => settlementsWithOneDeposit(tx, 50));
+  let matched = 0;
+  let failed = 0;
+  let message: string | null = null;
+  for (const f of found) {
+    try {
+      await inOrg(ctx, async (tx) => {
+        const done = await matchSettlementDeposit(tx, {
+          orgId: ctx.org.id,
+          userId: ctx.session.user.id,
+          settlementId: f.settlementId,
+          entryId: f.deposit.entryId,
+        });
+        await audit(tx, {
+          orgId: ctx.org.id,
+          actorUserId: ctx.session.user.id,
+          action: "settlements.deposit_matched",
+          entityType: "settlement",
+          entityId: f.settlementId,
+          before: { journalEntryId: f.deposit.entryId, categories: f.deposit.categories },
+          after: { journalEntryId: done.id },
+        });
+      });
+      matched++;
+    } catch (error) {
+      failed++;
+      message ??= postingError(error);
+    }
+  }
+  revalidateBooks(slug);
+  return { ok: true, matched, failed, message };
 }

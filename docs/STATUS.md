@@ -26,7 +26,7 @@ _Last updated: 2026-10-06, phase 4 slice 2 (settlements post to the books)._
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen), slice 3 (review requests: manual, bulk, automatic) and refunds on orders (red badge, Refunded tab) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation and Finance and Accounting roles) |
-| 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen) and 2 (accounts for each kind of line, posting each settlement as one entry) done. Next: matching payouts to bank deposits |
+| 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry) and 3 (matching each payout to its bank deposit) done. Next: settlements in another currency than the main one |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -829,13 +829,42 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   day). The list shows In books / Ready to post / Before posting starts, and "Post N ready"
   (`settlementsToPost`: balanced, not posted, period ends on or after the start date; 50 per
   click, each in its own transaction). Posting needs an owner or admin.
-- **Not yet:** the bank deposit still sits on its old category (Amazon Sales, for Wave-era
-  ones): matching it to the clearing account is slice 3. Until then, posted settlements and
-  their deposits both count as sales.
+- **The bank deposit** is matched to the clearing account in slice 3 (below).
 - Schema (migration `0033_settlement_posting`): `settlement_accounts`, `settlement_settings`,
   `settlements.journal_entry_id`, journal source `settlement`. Tests: core
   `amazon-settlements.test.ts` (`buildSettlementEntry`), db `settlements.test.ts` (post once,
   take out, post again), e2e settlements test (choose accounts, post, take out).
+
+### Phase 4, slice 3: matching each payout to its bank deposit
+
+- **Why:** a posted settlement already counts its sales (and fees), with the payout in the
+  clearing account. Its bank deposit, often categorized Amazon Sales (the Wave way), would count
+  them again. Matching moves the deposit to the clearing account: clearing returns to zero and
+  the sales are counted once.
+- **Possible deposits** (db `settlementDepositCandidates`): current entries with exactly one
+  money line (bank, card, cash, not the clearing account) of exactly the payout, in its
+  currency, dated within core `settlementDepositWindow` (Amazon's deposit date −3 to +10 days, or
+  the period's end to +10), not on the clearing account already, not a settlement entry, not
+  turned down for this settlement. In any bank account (Amazon.ca may pay into RBC or Wise).
+  Closest date first.
+- **Matching** (`matchSettlementDeposit`, posted settlements only): `replaceJournalEntry` with the
+  money line kept and one line to clearing for everything else, so bank links, receipts and the
+  reviewed tick follow. `settlements.deposit_entry_id` (now) and `deposit_original_entry_id`
+  (before) keep the link; it counts while that entry isn't reversed (editing the deposit undoes
+  the match). **Unmatch** (`unmatchSettlementDeposit`) reposts the original lines and turns the
+  deposit down for the settlement; **Not this one** (`dismissSettlementDeposit`,
+  `settlement_deposit_dismissals`). Taking a settlement out of the books waits until its deposit
+  is unmatched.
+- **Screens:** the settlement page's "Bank deposit" card: the match (date, bank account, entry)
+  with Unmatch; else each possible deposit with where it's categorized now ("Now in Amazon
+  Sales. Matching moves it to Amazon Clearing…"), Match and Not this one; else "No deposit of
+  $X found between …". The list shows "In books · match deposit" / "In books · deposit
+  matched", and "Match N deposits" (`settlementsWithOneDeposit`: posted settlements with exactly
+  one possible deposit; a dialog says how many already have a category; 50 per click).
+- Migration `0034_settlement_deposits`. Tests: core `amazon-settlements.test.ts`
+  (`settlementDepositWindow`), db `settlements.test.ts` (found, matched, unpost refused,
+  unmatched back to Sales, turned down), e2e settlements test (deposit added as Sales, matched,
+  unmatched).
 
 ### Order badges: refunded, A-to-z claim, chargeback, replaced
 
