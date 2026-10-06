@@ -216,7 +216,13 @@ export async function postSettlementsAction(
     if (one?.success) return [one.data];
     const { postFrom } = await getSettlementSettings(tx);
     if (!postFrom) return null;
-    return (await settlementsToPost(tx, { from: postFrom, limit: 50 })).map((r) => r.id);
+    return (
+      await settlementsToPost(tx, {
+        from: postFrom,
+        limit: 50,
+        currency: ctx.profile.baseCurrency,
+      })
+    ).map((r) => r.id);
   });
   if (!ids) return { ok: false, message: "Choose the accounts and when posting starts first." };
   let posted = 0;

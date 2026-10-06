@@ -383,8 +383,14 @@ export async function unpostSettlement(
     .where(eq(settlements.id, input.settlementId));
 }
 
-/** Settlements not in the books whose period ends on or after `from`, oldest first. */
-export async function settlementsToPost(tx: Transaction, input: { from: string; limit: number }) {
+/**
+ * Settlements not in the books, in `currency` (the main one), whose period ends on or after
+ * `from`, oldest first.
+ */
+export async function settlementsToPost(
+  tx: Transaction,
+  input: { from: string; limit: number; currency: string },
+) {
   return tx
     .select({ id: settlements.id })
     .from(settlements)
@@ -393,6 +399,8 @@ export async function settlementsToPost(tx: Transaction, input: { from: string; 
       and(
         isNull(journalEntries.id),
         eq(settlements.balanced, true),
+        // Only the main currency posts for now.
+        eq(settlements.currency, input.currency),
         sql`${settlements.endAt} >= ${input.from}::date`,
       ),
     )
