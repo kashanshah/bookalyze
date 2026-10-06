@@ -22,7 +22,7 @@ import { formatDate, nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { isOrgAdmin } from "@/server/org";
-import { AskOneButton } from "../../../reviews/review-rows";
+import { AskOneButton, EligibilityCheck } from "../../../reviews/review-rows";
 import { refundBadge, statusVariant } from "../status";
 
 /** "Ask for a review now" runs inside this page's server actions. */
@@ -52,7 +52,10 @@ export default async function OrderPage({
   const refund = refundBadge(order.total, order.refunded);
   const { locale, timezone } = ctx.profile;
   const today = nowIn(timezone).date;
-  const reviewDays = reviewWindow(order);
+  const reviewDays = reviewWindow({
+    ...order,
+    purchasedOn: order.purchasedAt.toISOString().slice(0, 10),
+  });
   const currency = order.currency ?? channel.currency;
   const status = orderStatusLabel(order.status);
   const link = sellerCentralOrderUrl(channel.name, order.externalId);
@@ -92,58 +95,108 @@ export default async function OrderPage({
   ].filter((f): f is string => Boolean(f));
 
   const review = reviewsOn ? reviewSummary() : null;
-  function reviewSummary() {
+  /**
+   * The review card: the request if there is one, otherwise what Amazon said when last asked
+   * (FBA orders have no delivery dates, so Amazon's answer is what counts), else the window.
+   */
+  function reviewSummary(): {
+    badge: { text: string; variant: "success" | "outline" | "secondary" } | null;
+    text: string;
+    reason: string | null;
+    canAsk: boolean;
+    check: "auto" | "button" | null;
+  } {
     const moment = new Intl.DateTimeFormat(locale, {
       dateStyle: "medium",
       timeStyle: "short",
       timeZone: timezone,
     });
-    if (request) {
-      const label = REVIEW_STATUS_LABELS[request.status].label;
-      if (request.status === "sent" && request.sentAt) {
-        return { badge: label, text: moment.format(request.sentAt), reason: null, canAsk: false };
-      }
-      if (request.status === "scheduled" && request.dueAt) {
-        return {
-          badge: label,
-          text: `Goes out ${moment.format(request.dueAt)}`,
-          reason: request.reason,
-          canAsk: Boolean(reviewDays && reviewDays.opens <= today),
-        };
-      }
-      return { badge: label, text: "", reason: request.reason, canAsk: false };
-    }
     const shipped = (ORDER_STATUS_GROUPS.shipped as readonly string[]).includes(order.status);
-    if (!shipped || !reviewDays) {
+    const last = reviewDays ? addDaysIso(reviewDays.closes, -1) : null;
+    const closed = Boolean(last && today > last);
+    const eligible = order.reviewEligible;
+    const checked = order.reviewCheckedAt;
+    const stale = !checked || Date.now() - checked.getTime() > 60 * 60 * 1000;
+    const checkable = shipped && !closed;
+    const check = checkable ? (stale ? "auto" : "button") : null;
+    const checkedNote = checked ? ` Checked ${moment.format(checked)}.` : "";
+    const estimateNote = reviewDays?.estimated
+      ? "Amazon doesn't share delivery dates for orders it ships (FBA): it takes a request from 5 days after delivery."
+      : null;
+
+    if (request?.status === "sent") {
       return {
-        badge: null,
-        text: "Can be asked once Amazon has shipped it and given a delivery date.",
+        badge: { text: REVIEW_STATUS_LABELS.sent.label, variant: "success" },
+        text: request.sentAt ? moment.format(request.sentAt) : "",
         reason: null,
         canAsk: false,
+        check: null,
       };
     }
-    const last = addDaysIso(reviewDays.closes, -1);
-    if (today > last) {
+    if (request && request.status !== "scheduled") {
+      return {
+        badge: { text: REVIEW_STATUS_LABELS[request.status].label, variant: "outline" },
+        text: "",
+        reason: request.reason,
+        canAsk: false,
+        check: null,
+      };
+    }
+    if (!shipped || !reviewDays || !last) {
       return {
         badge: null,
-        text: `Amazon's window closed on ${formatDate(last, locale)}.`,
+        text: "Can be asked once Amazon has shipped it.",
         reason: null,
         canAsk: false,
+        check: null,
       };
     }
-    if (today < reviewDays.opens) {
+    if (closed) {
       return {
         badge: null,
-        text: `Can be asked from ${formatDate(reviewDays.opens, locale)} to ${formatDate(last, locale)}.`,
+        text: `Amazon's window closed ${reviewDays.estimated ? "around" : "on"} ${formatDate(last, locale)}.`,
         reason: null,
         canAsk: false,
+        check: null,
       };
     }
+    const scheduled =
+      request?.status === "scheduled" && request.dueAt
+        ? `Goes out automatically ${moment.format(request.dueAt)}. `
+        : "";
+    if (eligible === true) {
+      return {
+        badge: { text: "Ready to ask", variant: "success" },
+        text: `${scheduled}Amazon is taking a review request for this order now.${checkedNote}`,
+        reason: request?.reason ?? null,
+        canAsk: true,
+        check,
+      };
+    }
+    if (eligible === false) {
+      return {
+        badge: { text: "Not yet", variant: "secondary" },
+        text: `${scheduled}Amazon isn't taking a review request for this order yet.${checkedNote}`,
+        reason:
+          estimateNote ??
+          "If it was already asked from Seller Central, Amazon won't take another request.",
+        canAsk: false,
+        check,
+      };
+    }
+    const range = `${formatDate(reviewDays.opens, locale)} to ${formatDate(last, locale)}`;
     return {
-      badge: null,
-      text: `Not asked yet. Amazon takes a request until ${formatDate(last, locale)}.`,
-      reason: null,
-      canAsk: true,
+      badge: request ? { text: REVIEW_STATUS_LABELS.scheduled.label, variant: "secondary" } : null,
+      text: `${scheduled}${
+        reviewDays.estimated
+          ? `Likely from ${range}. Checking with Amazon…`
+          : today < reviewDays.opens
+            ? `Can be asked from ${range}.`
+            : `Not asked yet. Amazon takes a request until ${formatDate(last, locale)}.`
+      }`,
+      reason: estimateNote,
+      canAsk: today >= reviewDays.opens,
+      check,
     };
   }
 
@@ -314,11 +367,8 @@ export default async function OrderPage({
               </h2>
               <p className="mt-2 text-sm">
                 {review.badge ? (
-                  <Badge
-                    variant={review.badge === "Requested" ? "success" : "outline"}
-                    className="me-2"
-                  >
-                    {review.badge}
+                  <Badge variant={review.badge.variant} className="me-2">
+                    {review.badge.text}
                   </Badge>
                 ) : null}
                 {review.text}
@@ -326,9 +376,18 @@ export default async function OrderPage({
               {review.reason ? (
                 <p className="mt-1 text-muted-foreground text-xs">{review.reason}</p>
               ) : null}
-              {review.canAsk && isOrgAdmin(ctx) ? (
-                <div className="mt-4">
-                  <AskOneButton slug={slug} orderId={order.id} />
+              {(review.canAsk && isOrgAdmin(ctx)) || review.check ? (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  {review.canAsk && isOrgAdmin(ctx) ? (
+                    <AskOneButton slug={slug} orderId={order.id} />
+                  ) : null}
+                  {review.check ? (
+                    <EligibilityCheck
+                      slug={slug}
+                      orderId={order.id}
+                      auto={review.check === "auto"}
+                    />
+                  ) : null}
                 </div>
               ) : null}
               <Link

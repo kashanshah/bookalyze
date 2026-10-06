@@ -35,7 +35,7 @@ const TAB_LABELS: Record<ReviewTab, string> = {
 const EMPTY: Record<ReviewTab, { title: string; hint: string }> = {
   ask: {
     title: "Nothing to ask right now",
-    hint: "Shipped orders show up here until Amazon's window closes, 30 days after delivery.",
+    hint: "Shipped orders show up here until Amazon's window closes, 30 days after delivery. Amazon is asked every few hours which ones it takes a request for.",
   },
   scheduled: {
     title: "Nothing scheduled",
@@ -108,7 +108,8 @@ export default async function ReviewsPage({
   const onDay = (iso: string) => short.format(new Date(`${iso}T00:00:00Z`));
   const sourceLabel = { auto: "Automatic", manual: "By hand", bulk: "In bulk" } as const;
   const rows: ReviewRow[] = list.rows.map((r) => {
-    const open = r.opens <= today;
+    const open = r.ready;
+    const about = r.estimated ? "about " : "";
     let when: string;
     if (r.request?.status === "scheduled" && r.request.dueAt) {
       when = `Goes out ${moment.format(r.request.dueAt)}`;
@@ -117,7 +118,14 @@ export default async function ReviewsPage({
     } else if (r.request) {
       when = REVIEW_STATUS_LABELS[r.request.status].label;
     } else {
-      when = open ? `Can be asked until ${onDay(r.closes)}` : `Can be asked from ${onDay(r.opens)}`;
+      when =
+        r.reviewEligible === true
+          ? `Amazon is taking a request · until ${about}${onDay(r.closes)}`
+          : r.reviewEligible === false
+            ? "Amazon isn't taking a request yet"
+            : open
+              ? `Can be asked until ${about}${onDay(r.closes)}`
+              : `Can be asked from ${about}${onDay(r.opens)}`;
     }
     return {
       id: r.id,
@@ -130,6 +138,7 @@ export default async function ReviewsPage({
       reason: r.request?.reason ?? null,
       status: r.request?.status ?? null,
       open,
+      eligible: r.request ? null : r.reviewEligible,
     };
   });
 
@@ -173,7 +182,7 @@ export default async function ReviewsPage({
     {
       label: "Ready to ask now",
       value: list.counts.ready,
-      hint: "Within Amazon's window, not asked yet",
+      hint: "Amazon is taking a request, or the window has opened",
     },
     { label: "Scheduled", value: list.counts.scheduled, hint: "Going out automatically" },
     {

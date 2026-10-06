@@ -1,12 +1,14 @@
 import {
   DEFAULT_REVIEW_SETTINGS,
+  ESTIMATED_DELIVERY_FROM_DAYS,
+  ESTIMATED_DELIVERY_TO_DAYS,
   REVIEW_WINDOW_CLOSES_DAYS,
   REVIEW_WINDOW_OPENS_DAYS,
   type ReviewSettings,
   type ReviewSource,
   type ReviewStatus,
 } from "@bookalyze/core";
-import { and, asc, desc, eq, inArray, ne, notExists, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, notExists, or, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import {
   orderItems,
@@ -65,12 +67,28 @@ export async function saveReviewSettings(
   return cleared.length;
 }
 
-const opens = sql<string>`(coalesce(${orders.earliestDelivery}, ${orders.latestDelivery}) + ${REVIEW_WINDOW_OPENS_DAYS}::int)::text`;
-const closes = sql<string>`(${orders.latestDelivery} + ${REVIEW_WINDOW_CLOSES_DAYS}::int)::text`;
+/** The purchase day (UTC), which delivery is estimated from when Amazon gives no dates (FBA). */
+const purchasedOn = sql<string>`((${orders.purchasedAt} at time zone 'UTC')::date)::text`;
+/** Delivery dates as core `deliveryDates` reads them: Amazon's, or estimated from the purchase. */
+const earliestDelivery = sql`(case when ${orders.latestDelivery} is null then (${orders.purchasedAt} at time zone 'UTC')::date + ${ESTIMATED_DELIVERY_FROM_DAYS}::int else coalesce(${orders.earliestDelivery}, ${orders.latestDelivery}) end)`;
+const latestDelivery = sql`coalesce(${orders.latestDelivery}, (${orders.purchasedAt} at time zone 'UTC')::date + ${ESTIMATED_DELIVERY_TO_DAYS}::int)`;
+const opens = sql<string>`(${earliestDelivery} + ${REVIEW_WINDOW_OPENS_DAYS}::int)::text`;
+const closes = sql<string>`(${latestDelivery} + ${REVIEW_WINDOW_CLOSES_DAYS}::int)::text`;
 const shipped = inArray(orders.status, ["Shipped", "InvoiceUnconfirmed"]);
 /** The window hasn't closed (its last day is kept free). */
 const windowOpenUntil = (today: string) =>
-  sql`${orders.latestDelivery} + ${REVIEW_WINDOW_CLOSES_DAYS - 1}::int >= ${today}::date`;
+  sql`${latestDelivery} + ${REVIEW_WINDOW_CLOSES_DAYS - 1}::int >= ${today}::date`;
+/** The (possibly estimated) window has opened. */
+const windowOpened = (today: string) => sql`${opens}::date <= ${today}::date`;
+/**
+ * Ready to ask today: Amazon offered a request when last checked, or (not checked yet) the window
+ * has opened. Amazon is asked again before anything is sent.
+ */
+const readyToday = (today: string) =>
+  and(
+    windowOpenUntil(today),
+    or(eq(orders.reviewEligible, true), and(isNull(orders.reviewEligible), windowOpened(today))),
+  );
 const unasked = notExists(sql`(select 1 from ${reviewRequests} r where r.order_id = ${orders.id})`);
 const skus = sql<
   string[]
@@ -99,6 +117,7 @@ export async function reviewCandidates(
         isReplacement: orders.isReplacement,
         earliestDelivery: orders.earliestDelivery,
         latestDelivery: orders.latestDelivery,
+        purchasedOn,
         skus,
         hasPromotion: promoted,
       })
@@ -113,7 +132,7 @@ export async function reviewCandidates(
           input.needsItems ? sql`${orders.itemsSyncedAt} is not null` : undefined,
         ),
       )
-      .orderBy(asc(orders.latestDelivery), asc(orders.id))
+      .orderBy(asc(latestDelivery), asc(orders.id))
       .limit(input.limit)
   );
 }
@@ -147,6 +166,8 @@ const sendable = {
   status: orders.status,
   earliestDelivery: orders.earliestDelivery,
   latestDelivery: orders.latestDelivery,
+  purchasedOn,
+  refunded: orders.refunded,
   channelId: salesChannels.id,
   marketplaceId: salesChannels.marketplaceId,
 };
@@ -197,14 +218,58 @@ export async function readyToAsk(
       and(
         shipped,
         unasked,
-        sql`${opens}::date <= ${input.today}::date`,
-        windowOpenUntil(input.today),
+        readyToday(input.today),
         input.channelId ? eq(orders.channelId, input.channelId) : undefined,
       ),
     )
     .orderBy(asc(closes), asc(orders.id))
     .limit(input.limit);
   return rows.map((r) => r.id);
+}
+
+/**
+ * Orders whose eligibility is worth asking Amazon about: shipped, inside the (possibly estimated)
+ * window, not asked or left out yet, and not checked since `checkedBefore`. Never checked first.
+ */
+export async function ordersToCheckEligibility(
+  tx: Transaction,
+  input: { today: string; checkedBefore: Date; limit: number },
+) {
+  return tx
+    .select(sendable)
+    .from(orders)
+    .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
+    .leftJoin(reviewRequests, eq(reviewRequests.orderId, orders.id))
+    .where(
+      and(
+        shipped,
+        windowOpened(input.today),
+        windowOpenUntil(input.today),
+        or(isNull(reviewRequests.status), eq(reviewRequests.status, "scheduled")),
+        or(
+          isNull(orders.reviewCheckedAt),
+          sql`${orders.reviewCheckedAt} < ${input.checkedBefore.toISOString()}::timestamptz`,
+        ),
+      ),
+    )
+    .orderBy(sql`${orders.reviewCheckedAt} asc nulls first`, asc(closes), asc(orders.id))
+    .limit(input.limit);
+}
+
+/**
+ * Keeps Amazon's answer: whether it offers "Request a Review" for the order now (null: it
+ * couldn't be asked, e.g. no connection; the check still counts, so it isn't retried at once).
+ */
+export async function saveReviewEligibility(
+  tx: Transaction,
+  orderId: string,
+  eligible: boolean | null,
+  at = new Date(),
+) {
+  await tx
+    .update(orders)
+    .set({ reviewEligible: eligible, reviewCheckedAt: at })
+    .where(eq(orders.id, orderId));
 }
 
 /**
@@ -302,6 +367,10 @@ export async function listReviewOrders(
       fulfillment: orders.fulfillment,
       opens,
       closes,
+      estimated: sql<boolean>`${orders.latestDelivery} is null`,
+      ready: sql<boolean>`coalesce(${readyToday(input.today)}, false)`,
+      reviewEligible: orders.reviewEligible,
+      reviewCheckedAt: orders.reviewCheckedAt,
       firstTitle,
       request: {
         status: reviewRequests.status,
@@ -328,7 +397,7 @@ export async function listReviewOrders(
   const [counts] = await tx
     .select({
       ask: sql<number>`(count(*) filter (where ${ask}))::int`,
-      ready: sql<number>`(count(*) filter (where ${ask} and ${opens}::date <= ${input.today}::date))::int`,
+      ready: sql<number>`(count(*) filter (where ${ask} and ${readyToday(input.today)}))::int`,
       scheduled: sql<number>`(count(*) filter (where ${byTab.scheduled}))::int`,
       sent: sql<number>`(count(*) filter (where ${byTab.sent}))::int`,
       sentLast30: sql<number>`(count(*) filter (where ${byTab.sent} and ${reviewRequests.sentAt} >= now() - interval '30 days'))::int`,

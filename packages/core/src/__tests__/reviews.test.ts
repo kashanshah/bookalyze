@@ -19,6 +19,7 @@ const order: ReviewOrder = {
   isReplacement: false,
   earliestDelivery: "2026-09-03",
   latestDelivery: "2026-09-05",
+  purchasedOn: "2026-09-01",
   skus: ["MAPLE-MUG"],
   hasPromotion: false,
 };
@@ -26,12 +27,30 @@ const settings = { ...DEFAULT_REVIEW_SETTINGS, enabled: true };
 
 describe("reviewWindow", () => {
   it("opens 5 days after the earliest delivery and closes 30 after the latest", () => {
-    expect(reviewWindow(order)).toEqual({ opens: "2026-09-08", closes: "2026-10-05" });
+    expect(reviewWindow(order)).toEqual({
+      opens: "2026-09-08",
+      closes: "2026-10-05",
+      estimated: false,
+    });
     expect(reviewWindow({ earliestDelivery: null, latestDelivery: "2026-09-05" })).toEqual({
       opens: "2026-09-10",
       closes: "2026-10-05",
+      estimated: false,
     });
     expect(reviewWindow({ earliestDelivery: null, latestDelivery: null })).toBeNull();
+  });
+
+  it("estimates the window from the purchase day when Amazon gives no delivery dates (FBA)", () => {
+    // Delivery taken as 1 to 7 days after purchase: opens 6 days after, closes 37 after.
+    const fba = { earliestDelivery: null, latestDelivery: null, purchasedOn: "2026-09-01" };
+    expect(reviewWindow(fba)).toEqual({
+      opens: "2026-09-07",
+      closes: "2026-10-08",
+      estimated: true,
+    });
+    // Asked the chosen 7 days after the latest estimated delivery (2026-09-08).
+    expect(reviewSendDay(fba, settings, "2026-09-01")).toBe("2026-09-15");
+    expect(reviewHold({ ...order, ...fba }, settings)).toBeNull();
   });
 });
 
@@ -52,7 +71,9 @@ describe("reviewSendDay", () => {
   it("gives up once the window has closed (keeping its last day free)", () => {
     expect(reviewSendDay(order, settings, "2026-10-04")).toBe("2026-10-04");
     expect(reviewSendDay(order, settings, "2026-10-05")).toBeNull();
-    expect(reviewSendDay({ ...order, latestDelivery: null }, settings, "2026-09-01")).toBeNull();
+    expect(
+      reviewSendDay({ ...order, latestDelivery: null, purchasedOn: null }, settings, "2026-09-01"),
+    ).toBeNull();
   });
 });
 
@@ -62,7 +83,9 @@ describe("reviewHold", () => {
       reason: "Not shipped yet",
       waiting: true,
     });
-    expect(reviewHold({ ...order, latestDelivery: null }, null)?.waiting).toBe(true);
+    expect(reviewHold({ ...order, latestDelivery: null, purchasedOn: null }, null)?.waiting).toBe(
+      true,
+    );
     expect(reviewHold({ ...order, status: "Canceled" }, null)?.waiting).toBe(false);
     expect(reviewHold(order, null)).toBeNull();
     expect(reviewHold(order, settings)).toBeNull();

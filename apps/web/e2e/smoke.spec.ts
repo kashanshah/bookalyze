@@ -1359,13 +1359,13 @@ test("commerce: bring in Amazon orders, find one by SKU and open it", async ({ p
   const start = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
   await page.getByLabel("Bring in orders placed from").fill(start);
   await page.getByRole("button", { name: /^Bring in orders from/ }).click();
-  await expect(page.getByText("3 orders brought in")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("4 orders brought in")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Maple leaf ceramic mug")).toBeVisible();
   await expect(page.getByText("Pine forest candle")).toBeVisible();
   await expect(page.getByText("To ship", { exact: true })).toBeVisible();
   await expect(page.getByText("Cancelled", { exact: true }).last()).toBeVisible();
   // Sales leave out the cancelled order.
-  await expect(page.getByText("$63.69")).toBeVisible();
+  await expect(page.getByText("$91.68")).toBeVisible();
 
   // The refund Amazon posted shows in red, and the Refunded tab finds the order.
   await expect(page.getByText("Partly refunded", { exact: true })).toHaveCount(1);
@@ -1404,13 +1404,28 @@ test("reviews: ask for a review by hand, then turn on automatic requests", async
   await page.locator("#module-reviews").click();
   await expect(page.getByText("Review requests switched on")).toBeVisible();
 
-  // The shipped order was delivered a week ago: it can be asked now.
+  // Both shipped orders can be asked: the mug (delivered a week ago) and the coaster set, shipped
+  // by Amazon (FBA) with no delivery dates, so its window is estimated from the purchase day.
   await page.getByRole("link", { name: "Requests", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Review requests" })).toBeVisible();
-  const row = page.getByRole("listitem").filter({ hasText: "Maple leaf ceramic mug" });
-  await expect(row.getByText(/^Can be asked until/)).toBeVisible();
-  await row.getByRole("button", { name: "Ask now" }).click();
+  const mug = page.getByRole("listitem").filter({ hasText: "Maple leaf ceramic mug" });
+  await expect(mug.getByText(/^Can be asked until/)).toBeVisible();
+  const coaster = page.getByRole("listitem").filter({ hasText: "Birch bark coaster set" });
+  await expect(coaster.getByText(/^Can be asked until about/)).toBeVisible();
+  // The mug was partly refunded (the orders sync found it): it's left out, with no request.
+  await mug.getByRole("button", { name: "Ask now" }).click();
+  await expect(page.getByText("Refunded or returned").first()).toBeVisible({ timeout: 30_000 });
+
+  // The coaster's order page asks Amazon by itself, and Amazon takes a request.
+  await coaster.getByRole("link").first().click();
+  await expect(page.getByRole("heading", { name: "Review request" })).toBeVisible();
+  await expect(page.getByText("Ready to ask", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.getByText(/Amazon is taking a review request for this order now/),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Ask for a review now" }).click();
   await expect(page.getByText("Review request sent")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("link", { name: "All review requests" }).click();
   await page.getByRole("link", { name: /^Requested/ }).click();
   await expect(page.getByText(/Requested .* · By hand/)).toBeVisible();
 
@@ -1422,9 +1437,10 @@ test("reviews: ask for a review by hand, then turn on automatic requests", async
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Automatic requests are on")).toBeVisible();
 
-  // The order shows its request.
+  // The Orders list and the order show the request.
   await page.getByRole("link", { name: "Orders", exact: true }).click();
-  await page.getByText("Maple leaf ceramic mug").click();
+  await expect(page.getByText("Review requested", { exact: true })).toBeVisible();
+  await page.getByText("Birch bark coaster set").click();
   await expect(page.getByRole("heading", { name: "Review request" })).toBeVisible();
   await expect(page.getByText("Requested", { exact: true })).toBeVisible();
 });

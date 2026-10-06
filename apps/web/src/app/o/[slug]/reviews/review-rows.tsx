@@ -1,17 +1,22 @@
 "use client";
 
 import type { ReviewStatus } from "@bookalyze/core";
-import { Ban, ChevronRight, RotateCcw, Send } from "lucide-react";
+import { Ban, ChevronRight, RefreshCw, RotateCcw, Send } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { askReviewsAction, restoreReviewsAction, skipReviewsAction } from "./actions";
+import {
+  askReviewsAction,
+  checkReviewEligibilityAction,
+  restoreReviewsAction,
+  skipReviewsAction,
+} from "./actions";
 
 export type ReviewRow = {
   id: string;
@@ -23,8 +28,10 @@ export type ReviewRow = {
   when: string;
   reason: string | null;
   status: ReviewStatus | null;
-  /** Amazon's window is open today. */
+  /** Amazon's window is open today (or Amazon said it takes a request). */
   open: boolean;
+  /** What Amazon said when last asked, for orders not asked yet (null: not checked). */
+  eligible: boolean | null;
 };
 
 /** At most this many calls per click: Amazon allows about one request a second. */
@@ -125,6 +132,52 @@ export function AskOneButton({ slug, orderId }: { slug: string; orderId: string 
     >
       {pending ? <Spinner /> : <Send />}
       {pending ? "Asking…" : "Ask for a review now"}
+    </Button>
+  );
+}
+
+/**
+ * Asks Amazon whether the order can be asked for a review now (nothing is sent): by itself when
+ * the last answer is stale (`auto`), or with the button.
+ */
+export function EligibilityCheck({
+  slug,
+  orderId,
+  auto,
+}: {
+  slug: string;
+  orderId: string;
+  auto: boolean;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const started = useRef(false);
+  const check = (quiet: boolean) =>
+    start(async () => {
+      const result = await checkReviewEligibilityAction(slug, orderId);
+      if (!result.ok) {
+        if (!quiet) toast.error(result.message);
+        return;
+      }
+      router.refresh();
+      if (!quiet) {
+        toast.success(
+          result.eligible
+            ? "Amazon is taking a review request for this order"
+            : "Amazon isn't taking a request for this order yet",
+        );
+      }
+    });
+  useEffect(() => {
+    if (auto && !started.current) {
+      started.current = true;
+      check(true);
+    }
+  });
+  return (
+    <Button size="sm" variant="ghost" onClick={() => check(false)} disabled={pending}>
+      {pending ? <Spinner /> : <RefreshCw />}
+      {pending ? "Checking with Amazon…" : "Check with Amazon"}
     </Button>
   );
 }
@@ -257,6 +310,10 @@ export function ReviewRows({
                 <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                   {r.status && tab !== "sent" && tab !== "scheduled" ? (
                     <Badge variant={STATUS_VARIANT[r.status]}>{STATUS_TEXT[r.status]}</Badge>
+                  ) : r.eligible === true ? (
+                    <Badge variant="success">Ready to ask</Badge>
+                  ) : r.eligible === false ? (
+                    <Badge variant="secondary">Not yet</Badge>
                   ) : null}
                   <span
                     className={cn(r.status === "sent" ? "text-success" : "text-muted-foreground")}

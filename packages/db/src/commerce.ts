@@ -403,6 +403,10 @@ export async function listOrders(
       currency: sql<string>`coalesce(${orders.currency}, ${salesChannels.currency})`,
       total: orders.total,
       refunded: orders.refunded,
+      reviewEligible: orders.reviewEligible,
+      reviewStatus: sql<
+        string | null
+      >`(select r.status from review_requests r where r.order_id = ${orders.id})`,
       units: sql<number>`(${orders.itemsShipped} + ${orders.itemsUnshipped})::int`,
       itemsSynced: sql<boolean>`${orders.itemsSyncedAt} is not null`,
       firstTitle: sql<

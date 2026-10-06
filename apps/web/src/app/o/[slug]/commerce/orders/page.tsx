@@ -1,4 +1,5 @@
 import {
+  can,
   fiscalYearFor,
   ORDER_STATUS_GROUPS,
   type OrderStatusGroup,
@@ -12,7 +13,16 @@ import {
   listOrders,
   orderSyncChannels,
 } from "@bookalyze/db";
-import { ArrowLeft, ArrowRight, ChevronRight, PackageSearch, Search, Store, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronRight,
+  PackageSearch,
+  Search,
+  Star,
+  Store,
+  X,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
@@ -61,6 +71,7 @@ export default async function OrdersPage({
   const { slug } = await params;
   const sp = await searchParams;
   const ctx = await getCommerceContext(slug);
+  const reviewsOn = can(ctx.plan, ctx.enabledModules, "reviews.manual");
   const { locale, timezone } = ctx.profile;
   const today = nowIn(timezone).date;
   const status = TABS.some((t) => t.key === sp.status)
@@ -413,6 +424,20 @@ export default async function OrdersPage({
                       {refund ? (
                         <Badge variant="destructive" title={refund.hint}>
                           {refund.label}
+                        </Badge>
+                      ) : null}
+                      {reviewsOn && o.reviewStatus === "sent" ? (
+                        <Badge variant="outline" title="Amazon sent the buyer its review request">
+                          <Star />
+                          Review requested
+                        </Badge>
+                      ) : reviewsOn && !o.reviewStatus && o.reviewEligible ? (
+                        <Badge
+                          variant="primary"
+                          title="Amazon is taking a review request for this order"
+                        >
+                          <Star />
+                          Ready for review
                         </Badge>
                       ) : null}
                     </span>

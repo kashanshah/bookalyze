@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-05, phase 3 slice 3 (Amazon review requests)._
+_Last updated: 2026-10-06, review eligibility for FBA orders._
 
 ---
 
@@ -703,7 +703,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Reconnecting a disconnected Amazon account puts the marketplaces back as Amazon reports them
   (disconnect had switched them all off).
 - Tests: core `amazon-orders.test.ts`, db `commerce.test.ts`, e2e "bring in Amazon orders" (the
-  mock answers three orders in two pages, with items).
+  mock answers four orders in two pages, with items).
 - **Sales cards per marketplace:** one card per marketplace (and currency). With more than one
   marketplace, a card filters the list to it (`?channel=`); clicking the active card clears it.
   The filter form is keyed by the filters in the URL, so its fields (the marketplace `Combobox`,
@@ -758,6 +758,42 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `reviews.test.ts` (window, holds, send day, timezones, Amazon's answers), db
   `reviews.test.ts`, e2e "reviews: ask for a review by hand, then turn on automatic requests"
   (the mock offers one request per shipped order, then answers 403).
+
+### Review eligibility for FBA orders (and Amazon's answer on every order)
+
+- **Why:** Amazon's Orders API gives `EarliestDeliveryDate` / `LatestDeliveryDate` only for
+  orders the seller ships. FBA orders (most of the AE ones) had no window, so the order page
+  never offered "Ask", the planner never scheduled them and "To ask" left them out.
+- **Estimated window** (core `deliveryDates`, `ESTIMATED_DELIVERY_FROM_DAYS` /
+  `ESTIMATED_DELIVERY_TO_DAYS`): without Amazon's dates, delivery is taken as 1 to 7 days after
+  the purchase day (UTC), so the window is purchase + 6 to purchase + 37 days and the automatic
+  send day is purchase + 7 + the chosen delay. `reviewWindow` says `estimated`. The SQL in db
+  `reviews.ts` (`earliestDelivery` / `latestDelivery` / `opens` / `closes`) mirrors it, so no
+  re-sync is needed for orders already in.
+- **Amazon decides eligibility, and the answer is kept** on the order (`orders.review_eligible`,
+  `review_checked_at`, migration `0030_review_eligibility`): every `canRequestReview` call goes
+  through `reviewSender.eligible`, which saves it. Asked by:
+  - the order page: when the answer is over an hour old it checks on its own
+    (`EligibilityCheck` → `checkReviewEligibilityAction` → `checkOrderEligibility`), plus a
+    "Check with Amazon" button;
+  - the hourly job: after automatic requests, `checkEligibility` asks about shipped orders in
+    the (estimated) window, not asked or left out, not checked for 12 hours, never-checked
+    first (`ordersToCheckEligibility`). `review_request_orgs()` now also lists every company
+    with a marketplace bringing orders in; the job checks the plan (`reviews.manual`).
+- **Ready** (`readyToday`): Amazon said yes, or never asked and the window has opened. Amazon
+  saying "not yet" takes the order out of "Ask all" until a later check says yes; "yes" makes it
+  askable even before the estimated window (a quick delivery).
+- **By hand, "not yet" is no longer final:** a manual or bulk ask Amazon doesn't take records
+  nothing (status `later`, with the reason), so it can be asked again in a few days. An
+  estimated window doesn't block a manual ask; Amazon's answer does.
+- **Refunds:** an order the orders sync found refunded (`orders.refunded`) is skipped without a
+  Finances call; claims and chargebacks are still checked per order.
+- **Shown:** order page card ("Ready to ask" / "Not yet" with when it was checked, the estimate
+  note for FBA, "Ask for a review now"); Reviews rows (same badges, "about" before estimated
+  dates); Orders list ("Ready for review" / "Review requested").
+- Tests: core `reviews.test.ts` (FBA estimate), db `reviews.test.ts` (FBA window, Amazon's
+  answer, what's checked), e2e reviews test (the mock's FBA coaster order has no delivery dates;
+  its page checks with Amazon, then asks; the partly refunded mug is skipped).
 
 ### Refunds on orders
 
@@ -902,6 +938,10 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 
 ### Phase 3: review requests, remaining
 - [x] Manual, bulk and automatic review requests. Done in slice 3.
+- [x] FBA orders (no delivery dates): estimated window, and Amazon's eligibility answer kept on
+  each order and shown on the Orders list, the Reviews page and the order page.
+- [ ] Amazon's real delivery dates for FBA orders would sharpen the estimate (only in reports,
+  e.g. the FBA "Amazon Fulfilled Shipments" report). Worth it if "not yet" answers pile up.
 - [ ] Add the Buyer Solicitation and Finance and Accounting roles to Kazomo's Amazon app,
   authorize it again, paste the new refresh token, and turn automatic requests on.
 - [ ] Custom review emails: not possible with the official API today (PLAN §3.5). Revisit if

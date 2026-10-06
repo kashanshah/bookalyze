@@ -21,7 +21,12 @@ import { inOrg } from "@/server/accounting";
 import { audit } from "@/server/audit";
 import { getReviewsContext } from "@/server/commerce";
 import { isOrgAdmin } from "@/server/org";
-import { type AskResult, askForReviews, planOrgReviewRequests } from "@/server/reviews";
+import {
+  type AskResult,
+  askForReviews,
+  checkOrderEligibility,
+  planOrgReviewRequests,
+} from "@/server/reviews";
 
 export type ReviewResult<T = object> =
   | ({ ok: true } & T)
@@ -82,6 +87,25 @@ export async function askReviewsAction(
   }
   revalidate(slug);
   return { ok: true, ...result };
+}
+
+/**
+ * Asks Amazon whether it takes a review request for the order now (nothing is sent), and keeps
+ * the answer on the order. Anyone who can see review requests may check.
+ */
+export async function checkReviewEligibilityAction(
+  slug: string,
+  orderId: string,
+): Promise<ReviewResult<{ eligible: boolean | null }>> {
+  const ctx = await getReviewsContext(slug);
+  if (!z.uuid().safeParse(orderId).success) return { ok: false, message: "Order not found." };
+  const result = await checkOrderEligibility(
+    { orgId: ctx.org.id, userId: ctx.session.user.id },
+    orderId,
+  );
+  if (result.error) return { ok: false, message: result.error };
+  revalidate(slug);
+  return { ok: true, eligible: result.eligible };
 }
 
 /** "Don't ask": leaves the orders out of automatic and bulk requests. */
