@@ -90,10 +90,19 @@ export async function activeChannels(tx: Transaction, connectionId: string) {
     .where(and(eq(salesChannels.connectionId, connectionId), eq(salesChannels.isActive, true)));
 }
 
-/** The company's Amazon connection for a region, if it ever had one (even disconnected). */
-export async function findAmazonConnection(tx: Transaction, region: string) {
-  const [row] = await tx
-    .select()
+/**
+ * The company's Amazon connections for a region, connected first, then newest. Each brings the
+ * number of its latest order: a new seller account that can see that order is the same account.
+ */
+export async function amazonConnectionsForRegion(tx: Transaction, region: string) {
+  return tx
+    .select({
+      id: connections.id,
+      status: connections.status,
+      latestOrderId: sql<
+        string | null
+      >`(select o.external_id from orders o join sales_channels ch on ch.id = o.channel_id where ch.connection_id = connections.id order by o.purchased_at desc, o.external_id desc limit 1)`,
+    })
     .from(connections)
     .where(
       and(
@@ -101,8 +110,7 @@ export async function findAmazonConnection(tx: Transaction, region: string) {
         sql`${connections.settings}->>'region' = ${region}`,
       ),
     )
-    .limit(1);
-  return row ?? null;
+    .orderBy(sql`${connections.status} = 'disconnected'`, desc(connections.createdAt));
 }
 
 /** Forgets the credentials and switches the channels off; their history stays. */
@@ -393,10 +401,17 @@ export type OrderFilters = {
   timezone: string;
 };
 
+/**
+ * Orders of marketplaces still connected. A disconnected account's orders (or a different seller
+ * account's, after new credentials were saved for the region) stay in but aren't shown.
+ */
+const connectedOrder = sql`exists (select 1 from sales_channels ch join connections c on c.id = ch.connection_id where ch.id = orders.channel_id and c.status <> 'disconnected')`;
+
 function orderWhere(f: OrderFilters) {
   const day = sql`(${orders.purchasedAt} at time zone ${f.timezone})::date`;
   const like = f.search ? `%${f.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
   return and(
+    connectedOrder,
     f.channelId ? eq(orders.channelId, f.channelId) : undefined,
     f.statuses?.length ? inArray(orders.status, [...f.statuses]) : undefined,
     f.refunded ? sql`${orders.refunded} > 0` : undefined,
@@ -477,13 +492,13 @@ export async function listOrders(
   };
 }
 
-/** One order with its channel and items. */
+/** One order with its channel and items (null when its marketplace isn't connected). */
 export async function getOrder(tx: Transaction, orderId: string) {
   const [row] = await tx
     .select({ order: orders, channel: salesChannels })
     .from(orders)
     .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
-    .where(eq(orders.id, orderId));
+    .where(and(eq(orders.id, orderId), connectedOrder));
   if (!row) return null;
   const items = await tx
     .select()
@@ -522,9 +537,9 @@ export async function getOrder(tx: Transaction, orderId: string) {
   return { ...row, items, refunds, replaces, replacedBy };
 }
 
-/** Whether the company has any orders at all (for the empty state). */
+/** Whether the company has any orders from connected marketplaces (for the empty state). */
 export async function hasOrders(tx: Transaction) {
-  const [row] = await tx.select({ id: orders.id }).from(orders).limit(1);
+  const [row] = await tx.select({ id: orders.id }).from(orders).where(connectedOrder).limit(1);
   return Boolean(row);
 }
 

@@ -7,6 +7,9 @@ const port = Number(process.env.AMAZON_MOCK_PORT ?? 4011);
 const CLIENT_ID = "amzn1.application-oa2-client.e2e0000000000000000000000000000";
 const REFRESH_TOKEN = "Atzr|e2e-refresh-token-0000";
 const ACCESS_TOKEN = "Atza|e2e-access-token-0000";
+/** A different seller account in the same region: same marketplace, none of the orders. */
+const OTHER_REFRESH_TOKEN = "Atzr|e2e-other-seller-0000";
+const OTHER_ACCESS_TOKEN = "Atza|e2e-other-seller-0000";
 
 const participations = {
   payload: [
@@ -270,12 +273,23 @@ createServer((req, res) => {
     req.on("end", () => {
       const form = new URLSearchParams(body);
       if (form.get("client_id") !== CLIENT_ID) return json(res, 401, { error: "invalid_client" });
-      if (form.get("refresh_token") !== REFRESH_TOKEN) {
+      const refresh = form.get("refresh_token");
+      if (refresh !== REFRESH_TOKEN && refresh !== OTHER_REFRESH_TOKEN) {
         return json(res, 400, { error: "invalid_grant" });
       }
-      json(res, 200, { access_token: ACCESS_TOKEN, token_type: "bearer", expires_in: 3600 });
+      const token = refresh === REFRESH_TOKEN ? ACCESS_TOKEN : OTHER_ACCESS_TOKEN;
+      json(res, 200, { access_token: token, token_type: "bearer", expires_in: 3600 });
     });
     return;
+  }
+  if (req.headers["x-amz-access-token"] === OTHER_ACCESS_TOKEN) {
+    if (url.pathname === "/sellers/v1/marketplaceParticipations") {
+      return json(res, 200, {
+        payload: participations.payload.map((p) => ({ ...p, storeName: "Cedar Trading Co" })),
+      });
+    }
+    if (url.pathname === "/orders/v0/orders") return json(res, 200, { payload: { Orders: [] } });
+    return json(res, 404, { errors: [{ code: "NotFound" }] });
   }
   if (req.headers["x-amz-access-token"] !== ACCESS_TOKEN) {
     return json(res, 403, { errors: [{ code: "Unauthorized" }] });
@@ -333,6 +347,13 @@ createServer((req, res) => {
       url: `http://localhost:${port}/report-files/settlement-1`,
       compressionAlgorithm: "GZIP",
     });
+  }
+  // One order: Amazon only answers a seller's own (how a reconnect tells accounts apart).
+  const orderPath = /^\/orders\/v0\/orders\/([^/]+)$/.exec(url.pathname);
+  if (orderPath) {
+    const order = orders.find((o) => o.AmazonOrderId === decodeURIComponent(orderPath[1]));
+    if (!order) return json(res, 404, { errors: [{ code: "NotFound" }] });
+    return json(res, 200, { payload: order });
   }
   const itemsPath = /^\/orders\/v0\/orders\/([^/]+)\/orderItems$/.exec(url.pathname);
   if (itemsPath) {

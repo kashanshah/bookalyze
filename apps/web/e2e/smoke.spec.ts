@@ -1510,6 +1510,40 @@ test("settlements: bring in Amazon's settlement report, see the payout, and uplo
   await expect(page.getByRole("button", { name: "Post to books" })).toBeVisible();
 });
 
+test("commerce: a different seller account's credentials hide the previous account's orders", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  await expect(page.getByText("Maple leaf ceramic mug")).toBeVisible();
+
+  const replace = async (refreshToken: string) => {
+    await page.getByRole("link", { name: "Channels", exact: true }).click();
+    await page.getByRole("button", { name: "Replace credentials" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog
+      .getByLabel("LWA client ID")
+      .fill("amzn1.application-oa2-client.e2e0000000000000000000000000000");
+    await dialog.getByLabel("LWA client secret").fill("e2e-client-secret-000000");
+    await dialog.getByLabel("Refresh token").fill(refreshToken);
+    await dialog.getByRole("button", { name: "Check and replace" }).click();
+    await expect(page.getByText("Credentials replaced")).toBeVisible();
+  };
+
+  // Another seller in the same region (Amazon doesn't know our orders): it starts fresh.
+  await replace("Atzr|e2e-other-seller-0000");
+  await expect(page.getByText("Cedar Trading Co", { exact: false })).toBeVisible();
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Bring in your orders" })).toBeVisible();
+  await expect(page.getByText("Maple leaf ceramic mug")).toHaveCount(0);
+
+  // The first seller again: its marketplaces and orders come back.
+  await replace("Atzr|e2e-refresh-token-0000");
+  await expect(page.getByText("Maple Goods Store", { exact: false })).toBeVisible();
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  await expect(page.getByText("Maple leaf ceramic mug")).toBeVisible();
+});
+
 test("amounts recorded in CAD on a USD account are flagged and corrected from Wise", async ({
   page,
 }) => {

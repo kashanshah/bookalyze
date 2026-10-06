@@ -2,9 +2,9 @@
 
 import { AMAZON_REGIONS, isAmazonRegion } from "@bookalyze/core";
 import {
+  amazonConnectionsForRegion,
   createConnection,
   disconnectAmazon,
-  findAmazonConnection,
   getConnection,
   listAmazonConnections,
   recordConnectionSync,
@@ -20,7 +20,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { isIsoDate, nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
-import { AmazonError, marketplaceParticipations } from "@/server/amazon";
+import { AmazonError, marketplaceParticipations, ownsOrder } from "@/server/amazon";
 import { type OrderSyncResult, syncOrgOrders } from "@/server/amazon-orders";
 import { audit } from "@/server/audit";
 import {
@@ -78,7 +78,10 @@ const connectSchema = z.object({
 
 /**
  * Checks the app's credentials with Amazon, then saves them (sealed) and the marketplaces the
- * seller account sells in. One connection per region: connecting again replaces its credentials.
+ * seller account sells in. One connected account per region: connecting again replaces it.
+ * The same seller account (Amazon can see an order brought in before) carries on with its
+ * marketplaces and orders; a different one gets a connection of its own, and the previous
+ * account's orders stay out of sight until that account is connected again.
  */
 export async function connectAmazonAction(
   slug: string,
@@ -99,8 +102,17 @@ export async function connectAmazonAction(
     const marketplaces = await marketplaceParticipations(creds, region);
     const regionLabel = AMAZON_REGIONS.find((r) => r.key === region)?.label ?? region;
     const storeName = marketplaces.find((m) => m.storeName)?.storeName ?? null;
+    const candidates = await inOrg(ctx, (tx) => amazonConnectionsForRegion(tx, region));
+    let existing: (typeof candidates)[number] | undefined;
+    for (const c of candidates) {
+      if (c.latestOrderId && (await ownsOrder(creds, region, c.latestOrderId))) {
+        existing = c;
+        break;
+      }
+    }
+    // A connection with no orders has nothing to tell accounts apart by, or to show by mistake.
+    existing ??= candidates.find((c) => !c.latestOrderId);
     await inOrg(ctx, async (tx) => {
-      const existing = await findAmazonConnection(tx, region);
       const settings = { region, storeName };
       const id =
         existing?.id ??
@@ -118,6 +130,19 @@ export async function connectAmazonAction(
           .update(schema.connections)
           .set({ settings, status: "active" })
           .where(eq(schema.connections.id, id));
+      }
+      // Another seller account connected for the region is replaced by this one.
+      for (const other of candidates) {
+        if (other.id === id || other.status === "disconnected") continue;
+        await disconnectAmazon(tx, other.id);
+        await audit(tx, {
+          orgId: ctx.org.id,
+          actorUserId: ctx.session.user.id,
+          action: "connection.disconnected",
+          entityType: "connection",
+          entityId: other.id,
+          after: { replacedBy: id },
+        });
       }
       await setConnectionSecret(tx, id, sealAmazonCredentials(ctx.org.id, id, creds));
       await saveAmazonChannels(tx, {

@@ -184,6 +184,25 @@ export async function ordersPage(
   return parseOrdersPage(await call(creds, region, "/orders/v0/orders", params));
 }
 
+/**
+ * Whether the order is the seller account's own: Amazon only answers a seller's own orders, so
+ * it tells whether new credentials are for the same account as orders brought in before.
+ */
+export async function ownsOrder(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  orderId: string,
+): Promise<boolean> {
+  const response = await send(
+    creds,
+    region,
+    `/orders/v0/orders/${encodeURIComponent(orderId)}`,
+    undefined,
+    { allow: [400, 404] },
+  );
+  return response.ok;
+}
+
 /** Every item of an order (following Amazon's pages). */
 export async function orderItems(
   creds: AmazonCredentials,
