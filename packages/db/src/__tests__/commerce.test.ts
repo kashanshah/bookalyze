@@ -11,6 +11,7 @@ import {
   saveAmazonChannels,
   saveOrderCursor,
   saveOrderItems,
+  saveRefunds,
   startOrderSync,
   upsertOrders,
 } from "../commerce";
@@ -195,6 +196,7 @@ describe("orders", () => {
         sold: 2,
         units: 2,
         sales: "65.0000",
+        refunded: "0",
       },
     ]);
 
@@ -217,6 +219,47 @@ describe("orders", () => {
 
     const detail = await scoped((tx) => getOrder(tx, all.rows[1]?.id ?? ""));
     expect(detail?.items.map((i) => i.sku)).toEqual(["MAPLE-MUG"]);
+  });
+
+  it("keeps refunds against their orders once, and totals what was given back", async () => {
+    const refund = (adjustmentId: string, amount: string, orderId = "702-0000001-0000001") => ({
+      orderId,
+      adjustmentId,
+      postedAt: "2026-09-20T12:00:00Z",
+      sku: "MAPLE-MUG",
+      quantity: 1,
+      amount,
+      currency: "CAD",
+    });
+    const added = await scoped((tx) =>
+      saveRefunds(tx, {
+        orgId,
+        channelId,
+        // An order this channel doesn't have is left out.
+        refunds: [refund("adj-1", "10.0000"), refund("adj-x", "5.0000", "702-9999999-9999999")],
+      }),
+    );
+    expect(added).toBe(1);
+    // The same events read again change nothing; a second refund adds up.
+    expect(
+      await scoped((tx) =>
+        saveRefunds(tx, {
+          orgId,
+          channelId,
+          refunds: [refund("adj-1", "10.0000"), refund("adj-2", "15.0000")],
+        }),
+      ),
+    ).toBe(1);
+    const list = await scoped((tx) =>
+      listOrders(tx, { timezone: "UTC", refunded: true, limit: 10, offset: 0 }),
+    );
+    expect(list.rows.map((r) => [r.externalId, r.refunded])).toEqual([
+      ["702-0000001-0000001", "25.0000"],
+    ]);
+    expect(list.totals[0]?.refunded).toBe("25.0000");
+    const detail = await scoped((tx) => getOrder(tx, list.rows[0]?.id ?? ""));
+    expect(detail?.refunds.map((r) => r.externalId)).toEqual(["adj-1", "adj-2"]);
+    expect(detail?.order.lastRefundAt).toEqual(new Date("2026-09-20T12:00:00Z"));
   });
 
   it("keeps the sync position, and an earlier start date reads everything again", async () => {

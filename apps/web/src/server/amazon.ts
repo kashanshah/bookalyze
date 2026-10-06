@@ -4,11 +4,13 @@ import {
   AMAZON_REGIONS,
   type AmazonOrder,
   type AmazonOrderItem,
+  type AmazonRefund,
   type AmazonRegion,
   type MarketplaceParticipation,
   parseMarketplaceParticipations,
   parseOrderItemsPage,
   parseOrdersPage,
+  parseRefundEventsPage,
   parseSolicitationActions,
   REVIEW_ACTION,
   refundReason,
@@ -243,5 +245,25 @@ export async function orderRefundReason(
       undefined,
       { forbidden: roleMissing("Finance and Accounting") },
     ),
+  );
+}
+
+/**
+ * One page of the seller account's refunds posted in a window (or the next page, by its token).
+ * Amazon answers financial events of every kind; only refunds are read here.
+ */
+export async function refundsPage(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  query: { after: string; before: string } | { nextToken: string },
+): Promise<{ refunds: AmazonRefund[]; nextToken: string | null }> {
+  const params: Record<string, string> =
+    "nextToken" in query
+      ? { NextToken: query.nextToken }
+      : { PostedAfter: query.after, PostedBefore: query.before, MaxResultsPerPage: "100" };
+  return parseRefundEventsPage(
+    await call(creds, region, "/finances/v0/financialEvents", params, {
+      forbidden: roleMissing("Finance and Accounting"),
+    }),
   );
 }

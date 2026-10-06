@@ -29,6 +29,7 @@ function useOrderSync(slug: string) {
     start(async () => {
       let orders = 0;
       let items = 0;
+      let refunds = 0;
       for (let round = 0; round < MAX_ROUNDS; round++) {
         const result = await syncOrdersAction(slug);
         if (!result.ok) {
@@ -37,6 +38,7 @@ function useOrderSync(slug: string) {
         }
         orders += result.orders;
         items += result.items;
+        refunds += result.refunds;
         router.refresh();
         if (result.error) {
           toast.error(result.error);
@@ -45,7 +47,16 @@ function useOrderSync(slug: string) {
         if (!result.more) {
           toast.success(
             orders ? `${plural(orders, "order")} brought in` : "Your orders are up to date",
-            items ? { description: `Item details added for ${plural(items, "order")}.` } : {},
+            items || refunds
+              ? {
+                  description: [
+                    items ? `Item details added for ${plural(items, "order")}.` : "",
+                    refunds ? `${plural(refunds, "new refund")} found.` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" "),
+                }
+              : {},
           );
           break;
         }

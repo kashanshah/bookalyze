@@ -1,5 +1,5 @@
 import "server-only";
-import { isAmazonRegion, orderSyncWindow } from "@bookalyze/core";
+import { isAmazonRegion, orderSyncWindow, refundSyncWindow } from "@bookalyze/core";
 import {
   countOrdersNeedingItems,
   getChannelForSync,
@@ -9,18 +9,20 @@ import {
   recordConnectionSync,
   saveOrderCursor,
   saveOrderItems,
+  saveRefundCursor,
+  saveRefunds,
   upsertOrders,
   VaultError,
   withOrg,
 } from "@bookalyze/db";
 import { sql } from "drizzle-orm";
-import { AmazonError, orderItems, ordersPage } from "./amazon";
+import { AmazonError, orderItems, ordersPage, refundsPage } from "./amazon";
 import { openAmazonCredentials } from "./commerce";
 
 /**
  * Bringing Amazon orders in, one sales channel (marketplace) at a time, within a time budget:
  * first the orders changed since the last sync (Amazon's pages, 100 at a time), then the items of
- * orders that don't have them yet. Amazon rations both calls, so a large first sync takes several
+ * orders that don't have them yet, then the refunds posted since the last sync (Finances API). Amazon rations both calls, so a large first sync takes several
  * runs; each run carries on where the last stopped (the page token is kept on the channel).
  * Nothing here posts to the books.
  */
@@ -35,6 +37,8 @@ export type OrderSyncResult = {
   orders: number;
   /** Orders whose items were fetched. */
   items: number;
+  /** Refunds newly found. */
+  refunds: number;
   /** Orders still waiting for their items. */
   waiting: number;
   /** More to do: run again. */
@@ -50,7 +54,14 @@ export async function syncChannelOrders(
   deadline: number,
 ): Promise<OrderSyncResult> {
   const db = getDb();
-  const result: OrderSyncResult = { orders: 0, items: 0, waiting: 0, more: false, error: null };
+  const result: OrderSyncResult = {
+    orders: 0,
+    items: 0,
+    refunds: 0,
+    waiting: 0,
+    more: false,
+    error: null,
+  };
   const found = await withOrg(db, ctx, (tx) => getChannelForSync(tx, channelId));
   if (!found) return { ...result, error: "This channel no longer exists." };
   const { channel, connection } = found;
@@ -165,6 +176,71 @@ export async function syncChannelOrders(
         result.items++;
       }
     }
+
+    // 3. Refunds posted since the last sync (window by window for a long history), once the
+    // orders are all in: a refund is kept only against an order already here.
+    let refundToken = channel.refundsNextToken;
+    let refundEnd = channel.refundsWindowEnd;
+    let refundsThrough = channel.refundsSyncedThrough;
+    let refundsDone = Boolean(
+      !refundToken && refundsThrough && Date.now() - refundsThrough.getTime() < FRESH_MS,
+    );
+    while (ordersDone && !refundsDone && Date.now() < deadline) {
+      let page: Awaited<ReturnType<typeof refundsPage>>;
+      try {
+        if (refundToken && refundEnd) {
+          page = await refundsPage(creds, region, { nextToken: refundToken });
+        } else {
+          const window = refundSyncWindow({ from, syncedThrough: refundsThrough, now: new Date() });
+          refundEnd = new Date(window.before);
+          page = await refundsPage(creds, region, window);
+        }
+      } catch (error) {
+        if (error instanceof AmazonError && error.code === "throttled") {
+          if (await backOff(2_100)) continue;
+          break;
+        }
+        if (error instanceof AmazonError && error.code === "unexpected" && refundToken) {
+          refundToken = null;
+          refundEnd = null;
+          await withOrg(db, ctx, (tx) =>
+            saveRefundCursor(tx, channelId, { nextToken: null, syncedThrough: refundsThrough }),
+          );
+          continue;
+        }
+        if (error instanceof AmazonError && error.code === "forbidden") {
+          throw new AmazonError(
+            "Orders are in, but Amazon didn't let us read refunds. Give the app the Finance and Accounting role in Seller Central → Develop Apps, then authorize it again.",
+            "forbidden",
+          );
+        }
+        throw error;
+      }
+      const end = refundEnd as Date;
+      const token = page.nextToken;
+      result.refunds += await withOrg(db, ctx, async (tx) => {
+        const saved = await saveRefunds(tx, {
+          orgId: ctx.orgId,
+          channelId,
+          refunds: page.refunds,
+        });
+        await saveRefundCursor(
+          tx,
+          channelId,
+          token ? { nextToken: token, windowEnd: end } : { nextToken: null, syncedThrough: end },
+        );
+        return saved;
+      });
+      refundToken = token;
+      if (!token) {
+        refundsThrough = end;
+        refundEnd = null;
+        // A window short of now (a long history) means another one follows.
+        refundsDone = Date.now() - end.getTime() < FRESH_MS;
+      }
+    }
+    if (!refundsDone) result.more = true;
+
     result.waiting = await withOrg(db, ctx, (tx) => countOrdersNeedingItems(tx, [channelId]));
     if (result.waiting) result.more = true;
     await withOrg(db, ctx, (tx) =>
@@ -187,12 +263,20 @@ export async function syncOrgOrders(
   budgetMs: number,
 ): Promise<OrderSyncResult & { channels: number }> {
   const deadline = Date.now() + budgetMs;
-  const total = { orders: 0, items: 0, waiting: 0, more: false, error: null as string | null };
+  const total = {
+    orders: 0,
+    items: 0,
+    refunds: 0,
+    waiting: 0,
+    more: false,
+    error: null as string | null,
+  };
   const channelIds = (await withOrg(getDb(), ctx, (tx) => orderSyncChannels(tx))).map((c) => c.id);
   for (const id of channelIds) {
     const r = await syncChannelOrders(ctx, id, deadline);
     total.orders += r.orders;
     total.items += r.items;
+    total.refunds += r.refunds;
     total.waiting += r.waiting;
     total.more ||= r.more;
     total.error ??= r.error;

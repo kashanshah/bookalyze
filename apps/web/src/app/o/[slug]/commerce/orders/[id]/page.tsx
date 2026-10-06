@@ -10,7 +10,7 @@ import {
   sellerCentralOrderUrl,
 } from "@bookalyze/core";
 import { getOrder, getReviewRequest } from "@bookalyze/db";
-import { ArrowLeft, ExternalLink, Package, Star } from "lucide-react";
+import { ArrowLeft, ExternalLink, Package, Star, Undo2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -23,7 +23,7 @@ import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { isOrgAdmin } from "@/server/org";
 import { AskOneButton } from "../../../reviews/review-rows";
-import { statusVariant } from "../status";
+import { refundBadge, statusVariant } from "../status";
 
 /** "Ask for a review now" runs inside this page's server actions. */
 export const maxDuration = 60;
@@ -48,7 +48,8 @@ export default async function OrderPage({
     return row && { ...row, request: reviewsOn ? await getReviewRequest(tx, id) : null };
   });
   if (!found) notFound();
-  const { order, channel, items, request } = found;
+  const { order, channel, items, refunds, request } = found;
+  const refund = refundBadge(order.total, order.refunded);
   const { locale, timezone } = ctx.profile;
   const today = nowIn(timezone).date;
   const reviewDays = reviewWindow(order);
@@ -60,6 +61,7 @@ export default async function OrderPage({
     timeStyle: "short",
     timeZone: timezone,
   }).format(order.purchasedAt);
+  const refundDay = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
 
   const facts: { label: string; value: React.ReactNode }[] = [
     { label: "Placed", value: placed },
@@ -166,7 +168,8 @@ export default async function OrderPage({
         description={
           <span className="flex flex-wrap items-center gap-2">
             <Badge variant={statusVariant(order.status)}>{status.label}</Badge>
-            <span>{status.hint}</span>
+            {refund ? <Badge variant="destructive">{refund.label}</Badge> : null}
+            <span>{refund ? refund.hint : status.hint}</span>
           </span>
         }
         actions={
@@ -234,7 +237,49 @@ export default async function OrderPage({
                 <Amount value={order.total} currency={currency} locale={locale} />
               </dd>
             </div>
+            {order.refunded ? (
+              <div className="flex justify-between gap-4 font-medium text-destructive">
+                <dt>Refunded</dt>
+                <dd>
+                  <Amount value={`-${order.refunded}`} currency={currency} locale={locale} />
+                </dd>
+              </div>
+            ) : null}
           </dl>
+          {refunds.length ? (
+            <div className="border-t">
+              <h3 className="flex items-center gap-2 px-5 pt-4 pb-1 font-medium text-sm">
+                <Undo2 className="size-4 text-destructive" />
+                Refunds
+              </h3>
+              <ul className="divide-y">
+                {refunds.map((r) => (
+                  <li key={r.id} className="flex items-start justify-between gap-4 px-5 py-3">
+                    <span className="min-w-0 text-sm">
+                      <span className="block">{refundDay.format(r.postedAt)}</span>
+                      <span className="block text-muted-foreground text-xs">
+                        {[
+                          r.sku && `SKU ${r.sku}`,
+                          r.quantity
+                            ? `${r.quantity} ${r.quantity === 1 ? "unit" : "units"}`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "Money back, no units returned"}
+                      </span>
+                    </span>
+                    <span className="text-destructive text-sm">
+                      <Amount
+                        value={`-${r.amount}`}
+                        currency={r.currency ?? currency}
+                        locale={locale}
+                      />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </section>
 
         <div className="grid h-fit gap-6">

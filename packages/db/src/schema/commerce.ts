@@ -49,6 +49,10 @@ export const salesChannels = pgTable(
     /** A query in progress across several runs: Amazon's page token and the window's end. */
     ordersNextToken: text("orders_next_token"),
     ordersWindowEnd: timestamp("orders_window_end", { withTimezone: true }),
+    /** Refunds (Amazon's financial events) posted up to here are in; same idea as orders. */
+    refundsSyncedThrough: timestamp("refunds_synced_through", { withTimezone: true }),
+    refundsNextToken: text("refunds_next_token"),
+    refundsWindowEnd: timestamp("refunds_window_end", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -100,6 +104,9 @@ export const orders = pgTable(
     latestDelivery: date("latest_delivery"),
     /** When its items were last fetched; cleared when the order changes. */
     itemsSyncedAt: timestamp("items_synced_at", { withTimezone: true }),
+    /** Given back to the buyer so far (the sum of its refunds); null when never refunded. */
+    refunded: numeric("refunded", { precision: 20, scale: 4 }),
+    lastRefundAt: timestamp("last_refund_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -237,5 +244,33 @@ export const reviewRequests = pgTable(
     ),
     check("review_requests_source_valid", sql`${t.source} in ('auto', 'manual', 'bulk')`),
     tenantIsolationPolicy("review_requests", t.organizationId),
+  ],
+);
+
+/** A refund on an order item, as the marketplace posted it. Amounts are positive. */
+export const orderRefunds = pgTable(
+  "order_refunds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id").notNull(),
+    /** Amazon's adjustment ID, so reading the same events again changes nothing. */
+    externalId: text("external_id").notNull(),
+    postedAt: timestamp("posted_at", { withTimezone: true }).notNull(),
+    sku: text("sku"),
+    quantity: integer("quantity").notNull().default(0),
+    amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
+    currency: char("currency", { length: 3 }),
+  },
+  (t) => [
+    unique("order_refunds_order_external_key").on(t.orderId, t.externalId),
+    foreignKey({
+      name: "order_refunds_order_fk",
+      columns: [t.organizationId, t.orderId],
+      foreignColumns: [orders.organizationId, orders.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("order_refunds", t.organizationId),
   ],
 );

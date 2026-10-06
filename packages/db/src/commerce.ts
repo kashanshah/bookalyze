@@ -1,9 +1,14 @@
-import type { AmazonOrder, AmazonOrderItem, MarketplaceParticipation } from "@bookalyze/core";
+import type {
+  AmazonOrder,
+  AmazonOrderItem,
+  AmazonRefund,
+  MarketplaceParticipation,
+} from "@bookalyze/core";
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { disconnectConnection } from "./banking";
 import type { Transaction } from "./client";
 import { connections } from "./schema/banking";
-import { orderItems, orders, salesChannels } from "./schema/commerce";
+import { orderItems, orderRefunds, orders, salesChannels } from "./schema/commerce";
 
 /**
  * Commerce: marketplace connections (Amazon Seller Central through the SP-API) and the sales
@@ -133,6 +138,9 @@ export async function startOrderSync(tx: Transaction, channelIds: readonly strin
       ordersSyncedThrough: sql`case when ${salesChannels.ordersFrom} is null or ${salesChannels.ordersFrom} > ${from}::date then null else ${salesChannels.ordersSyncedThrough} end`,
       ordersNextToken: null,
       ordersWindowEnd: null,
+      refundsSyncedThrough: sql`case when ${salesChannels.ordersFrom} is null or ${salesChannels.ordersFrom} > ${from}::date then null else ${salesChannels.refundsSyncedThrough} end`,
+      refundsNextToken: null,
+      refundsWindowEnd: null,
     })
     .where(inArray(salesChannels.id, [...channelIds]));
 }
@@ -220,6 +228,76 @@ export async function upsertOrders(
   return saved.length;
 }
 
+/** Where the refunds query got to: mid-way (a page token) or done up to `syncedThrough`. */
+export async function saveRefundCursor(
+  tx: Transaction,
+  channelId: string,
+  cursor: { nextToken: string; windowEnd: Date } | { nextToken: null; syncedThrough: Date | null },
+) {
+  await tx
+    .update(salesChannels)
+    .set(
+      cursor.nextToken !== null
+        ? { refundsNextToken: cursor.nextToken, refundsWindowEnd: cursor.windowEnd }
+        : {
+            refundsNextToken: null,
+            refundsWindowEnd: null,
+            refundsSyncedThrough: cursor.syncedThrough,
+          },
+    )
+    .where(eq(salesChannels.id, channelId));
+}
+
+/**
+ * Keeps the refunds of this channel's orders (others, and orders from before the start date, are
+ * left out) and updates each order's refunded total. Reading the same events again changes
+ * nothing. Returns how many refunds were new.
+ */
+export async function saveRefunds(
+  tx: Transaction,
+  input: { orgId: string; channelId: string; refunds: readonly AmazonRefund[] },
+): Promise<number> {
+  if (!input.refunds.length) return 0;
+  const ids = [...new Set(input.refunds.map((r) => r.orderId))];
+  const found = await tx
+    .select({ id: orders.id, externalId: orders.externalId })
+    .from(orders)
+    .where(and(eq(orders.channelId, input.channelId), inArray(orders.externalId, ids)));
+  const byExternal = new Map(found.map((o) => [o.externalId, o.id]));
+  const rows = input.refunds.flatMap((r) => {
+    const orderId = byExternal.get(r.orderId);
+    return orderId
+      ? [
+          {
+            organizationId: input.orgId,
+            orderId,
+            externalId: r.adjustmentId,
+            postedAt: new Date(r.postedAt),
+            sku: r.sku,
+            quantity: r.quantity,
+            amount: r.amount,
+            currency: r.currency?.slice(0, 3) ?? null,
+          },
+        ]
+      : [];
+  });
+  if (!rows.length) return 0;
+  const added = await tx
+    .insert(orderRefunds)
+    .values(rows)
+    .onConflictDoNothing({ target: [orderRefunds.orderId, orderRefunds.externalId] })
+    .returning({ id: orderRefunds.id });
+  const touched = [...new Set(rows.map((r) => r.orderId))];
+  await tx
+    .update(orders)
+    .set({
+      refunded: sql`(select sum(r.amount) from ${orderRefunds} r where r.order_id = ${orders.id})`,
+      lastRefundAt: sql`(select max(r.posted_at) from ${orderRefunds} r where r.order_id = ${orders.id})`,
+    })
+    .where(inArray(orders.id, touched));
+  return added.length;
+}
+
 const pricedFilter = sql`${orders.status} not in ('Pending', 'PendingAvailability')`;
 
 /** Orders whose items haven't been fetched (priced orders only), oldest first. */
@@ -277,6 +355,8 @@ export async function saveOrderItems(
 export type OrderFilters = {
   channelId?: string | null;
   statuses?: readonly string[] | null;
+  /** Only orders with money given back. */
+  refunded?: boolean;
   /** Order number, SKU, ASIN or product title. */
   search?: string | null;
   /** Purchase dates (YYYY-MM-DD) in the company's timezone. */
@@ -291,6 +371,7 @@ function orderWhere(f: OrderFilters) {
   return and(
     f.channelId ? eq(orders.channelId, f.channelId) : undefined,
     f.statuses?.length ? inArray(orders.status, [...f.statuses]) : undefined,
+    f.refunded ? sql`${orders.refunded} > 0` : undefined,
     f.from ? sql`${day} >= ${f.from}::date` : undefined,
     f.to ? sql`${day} <= ${f.to}::date` : undefined,
     like
@@ -318,6 +399,7 @@ export async function listOrders(
       fulfillment: orders.fulfillment,
       currency: sql<string>`coalesce(${orders.currency}, ${salesChannels.currency})`,
       total: orders.total,
+      refunded: orders.refunded,
       units: sql<number>`(${orders.itemsShipped} + ${orders.itemsUnshipped})::int`,
       itemsSynced: sql<boolean>`${orders.itemsSyncedAt} is not null`,
       firstTitle: sql<
@@ -341,6 +423,7 @@ export async function listOrders(
       sold: sql<number>`(count(*) filter (where ${orders.status} not in ('Canceled', 'Unfulfillable')))::int`,
       units: sql<number>`coalesce(sum(${orders.itemsShipped} + ${orders.itemsUnshipped}) filter (where ${orders.status} not in ('Canceled', 'Unfulfillable')), 0)::int`,
       sales: sql<string>`coalesce(sum(${orders.total}) filter (where ${orders.status} not in ('Canceled', 'Unfulfillable')), 0)::text`,
+      refunded: sql<string>`coalesce(sum(${orders.refunded}), 0)::text`,
     })
     .from(orders)
     .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
@@ -348,7 +431,11 @@ export async function listOrders(
     .groupBy(salesChannels.id, salesChannels.name, sql`3`)
     .orderBy(sql`4 desc`, salesChannels.name);
   return {
-    rows: rows.map((r) => ({ ...r, total: r.total === null ? null : String(r.total) })),
+    rows: rows.map((r) => ({
+      ...r,
+      total: r.total === null ? null : String(r.total),
+      refunded: r.refunded === null ? null : String(r.refunded),
+    })),
     count: totals.reduce((n, t) => n + t.orders, 0),
     totals,
   };
@@ -367,7 +454,12 @@ export async function getOrder(tx: Transaction, orderId: string) {
     .from(orderItems)
     .where(eq(orderItems.orderId, orderId))
     .orderBy(desc(orderItems.itemPrice), asc(orderItems.externalId));
-  return { ...row, items };
+  const refunds = await tx
+    .select()
+    .from(orderRefunds)
+    .where(eq(orderRefunds.orderId, orderId))
+    .orderBy(asc(orderRefunds.postedAt), asc(orderRefunds.externalId));
+  return { ...row, items, refunds };
 }
 
 /** Whether the company has any orders at all (for the empty state). */

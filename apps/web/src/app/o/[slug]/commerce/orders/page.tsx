@@ -3,6 +3,7 @@ import {
   ORDER_STATUS_GROUPS,
   type OrderStatusGroup,
   orderStatusLabel,
+  parseDecimal,
 } from "@bookalyze/core";
 import {
   countOrdersNeedingItems,
@@ -27,7 +28,7 @@ import { getCommerceContext } from "@/server/commerce";
 import { fiscalConfigOf, isOrgAdmin } from "@/server/org";
 import { MarketplaceFilter } from "./order-filters";
 import { IncludeChannels, StartOrders, SyncOrdersButton } from "./order-sync";
-import { statusVariant } from "./status";
+import { refundBadge, statusVariant } from "./status";
 
 export const metadata: Metadata = { title: "Orders" };
 /** "Bring in new orders" runs inside this page's server actions. */
@@ -35,11 +36,12 @@ export const maxDuration = 60;
 
 const PER_PAGE = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const TABS: { key: "" | OrderStatusGroup; label: string }[] = [
+const TABS: { key: "" | OrderStatusGroup | "refunded"; label: string }[] = [
   { key: "", label: "All orders" },
   { key: "open", label: "Open" },
   { key: "shipped", label: "Shipped" },
   { key: "cancelled", label: "Cancelled" },
+  { key: "refunded", label: "Refunded" },
 ];
 
 export default async function OrdersPage({
@@ -61,7 +63,9 @@ export default async function OrdersPage({
   const ctx = await getCommerceContext(slug);
   const { locale, timezone } = ctx.profile;
   const today = nowIn(timezone).date;
-  const status = TABS.some((t) => t.key === sp.status) ? (sp.status as OrderStatusGroup) : "";
+  const status = TABS.some((t) => t.key === sp.status)
+    ? (sp.status as OrderStatusGroup | "refunded")
+    : "";
   const q = (sp.q ?? "").trim().slice(0, 100);
   const from = isIsoDate(sp.from) ? sp.from : "";
   const to = isIsoDate(sp.to) ? sp.to : "";
@@ -76,7 +80,8 @@ export default async function OrdersPage({
     const channel = sp.channel && UUID.test(sp.channel) ? sp.channel : "";
     const list = await listOrders(tx, {
       channelId: channel || null,
-      statuses: status ? ORDER_STATUS_GROUPS[status] : null,
+      statuses: status && status !== "refunded" ? ORDER_STATUS_GROUPS[status] : null,
+      refunded: status === "refunded",
       search: q || null,
       from: from || null,
       to: to || null,
@@ -302,6 +307,14 @@ export default async function OrdersPage({
                 <p className="mt-0.5 text-muted-foreground text-xs">
                   {t.sold} {t.sold === 1 ? "order" : "orders"} · {t.units}{" "}
                   {t.units === 1 ? "unit" : "units"}
+                  {parseDecimal(t.refunded) > 0n ? (
+                    <>
+                      {" · "}
+                      <span className="text-destructive">
+                        <Amount value={t.refunded} currency={t.currency} locale={locale} /> refunded
+                      </span>
+                    </>
+                  ) : null}
                 </p>
               </>
             );
@@ -364,6 +377,7 @@ export default async function OrdersPage({
               const cancelled = (ORDER_STATUS_GROUPS.cancelled as readonly string[]).includes(
                 o.status,
               );
+              const refund = refundBadge(o.total, o.refunded);
               const what = o.firstTitle
                 ? `${o.firstTitle}${o.lines > 1 ? ` + ${o.lines - 1} more` : ""}`
                 : cancelled
@@ -392,10 +406,15 @@ export default async function OrdersPage({
                         {channels.length > 1 ? ` · ${o.channelName}` : ""}
                       </span>
                     </span>
-                    <span className="col-start-1 md:col-start-auto">
+                    <span className="col-start-1 flex flex-wrap gap-1 md:col-start-auto">
                       <Badge variant={statusVariant(o.status)}>
                         {orderStatusLabel(o.status).label}
                       </Badge>
+                      {refund ? (
+                        <Badge variant="destructive" title={refund.hint}>
+                          {refund.label}
+                        </Badge>
+                      ) : null}
                     </span>
                     <span className="hidden text-muted-foreground text-sm md:block">
                       {o.fulfillment === "amazon" ? "Amazon (FBA)" : "You"}
