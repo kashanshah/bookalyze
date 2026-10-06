@@ -204,7 +204,8 @@ function ConnectionCard({
       if (!result.ok) return void toast.error(result.message);
       setConfirming(false);
       toast.success("Disconnected", {
-        description: "The credentials are deleted. Orders already brought in stay.",
+        description:
+          "The credentials are deleted. Its orders are kept but hidden, and come back if you connect this account again.",
       });
     });
   const checked = c.lastSyncedAt
@@ -346,6 +347,9 @@ function ConnectForm({
         <DialogDescription>
           From your app in Seller Central → Develop Apps. They're checked with Amazon, then stored
           encrypted; nobody can read them back.
+          {replacing
+            ? " If they're for a different seller account, it starts fresh, and this account's orders are hidden until it's connected again."
+            : null}
         </DialogDescription>
       </DialogHeader>
       <Field label="Region" htmlFor="amazon-region" hint={hint} error={errors.region}>

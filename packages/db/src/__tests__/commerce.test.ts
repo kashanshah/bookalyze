@@ -4,7 +4,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import {
+  amazonConnectionsForRegion,
   countOrdersNeedingItems,
+  disconnectAmazon,
   getOrder,
   listOrders,
   ordersNeedingItems,
@@ -365,5 +367,80 @@ describe("orders", () => {
     const after = await scoped((tx) => getOrder(tx, original));
     expect(after?.order.buyerClaim).toBe("a_to_z");
     expect(after?.order.financeCheckedAt).toBeInstanceOf(Date);
+  });
+
+  it("hides a disconnected account's orders, and finds the region's connections with their latest order", async () => {
+    const { connectionId, euChannelId } = await scoped(async (tx) => {
+      const connection = await createConnection(tx, {
+        orgId,
+        userId: null,
+        provider: "amazon_sp",
+        name: "Amazon Seller Central · Europe",
+        settings: { region: "eu" },
+      });
+      await saveAmazonChannels(tx, {
+        orgId,
+        connectionId: connection.id,
+        marketplaces: [
+          {
+            marketplaceId: "A2VIGQ35RCS4UG",
+            name: "Amazon.ae",
+            country: "AE",
+            currency: "AED",
+            participating: true,
+            hasSuspendedListings: false,
+            storeName: null,
+          },
+        ],
+      });
+      const [channel] = await tx
+        .select()
+        .from(schema.salesChannels)
+        .where(sql`${schema.salesChannels.connectionId} = ${connection.id}`);
+      return { connectionId: connection.id, euChannelId: channel?.id ?? "" };
+    });
+    expect(await scoped((tx) => amazonConnectionsForRegion(tx, "eu"))).toEqual([
+      { id: connectionId, status: "active", latestOrderId: null },
+    ]);
+    await scoped((tx) =>
+      upsertOrders(tx, {
+        orgId,
+        channelId: euChannelId,
+        from: "2026-09-01",
+        orders: [
+          order("406-0000001-0000001", { marketplaceId: "A2VIGQ35RCS4UG", currency: "AED" }),
+          order("406-0000002-0000002", {
+            marketplaceId: "A2VIGQ35RCS4UG",
+            currency: "AED",
+            purchasedAt: "2026-09-11T15:00:00Z",
+          }),
+        ],
+      }),
+    );
+    expect(await scoped((tx) => amazonConnectionsForRegion(tx, "eu"))).toEqual([
+      { id: connectionId, status: "active", latestOrderId: "406-0000002-0000002" },
+    ]);
+    const listed = async () =>
+      (await scoped((tx) => listOrders(tx, { timezone: "UTC", limit: 50, offset: 0 }))).rows.map(
+        (r) => r.externalId,
+      );
+    expect(await listed()).toContain("406-0000001-0000001");
+    const [ae] = (
+      await scoped((tx) =>
+        listOrders(tx, { timezone: "UTC", channelId: euChannelId, limit: 1, offset: 0 }),
+      )
+    ).rows;
+
+    await scoped((tx) => disconnectAmazon(tx, connectionId));
+    const after = await listed();
+    expect(after.some((id) => id.startsWith("406-"))).toBe(false);
+    expect(after).toContain("702-0000001-0000001");
+    expect(await scoped((tx) => getOrder(tx, ae?.id ?? ""))).toBeNull();
+    const totals = await scoped((tx) => listOrders(tx, { timezone: "UTC", limit: 1, offset: 0 }));
+    expect(totals.totals.map((t) => t.channelName)).toEqual(["Amazon.ca"]);
+    // Still there, for when the same account is connected again.
+    expect(await scoped((tx) => amazonConnectionsForRegion(tx, "eu"))).toEqual([
+      { id: connectionId, status: "disconnected", latestOrderId: "406-0000002-0000002" },
+    ]);
   });
 });

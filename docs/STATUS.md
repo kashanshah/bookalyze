@@ -636,7 +636,15 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Channels** (`sales_channels`, migration `0025_sales_channels`): one per marketplace the account
   is registered in; new ones start switched on where the seller participates. Switching a channel
   off means nothing is synced from it. Disconnecting deletes the credentials and switches channels
-  off (history stays).
+  off; their orders stay in the database but are hidden (Orders list, totals, order page) until
+  that same seller account is connected again.
+- **Same or different seller account:** SP-API gives no seller ID to self-authorized apps, so on
+  connect we ask Amazon for the latest order of each of the region's connections
+  (`amazonConnectionsForRegion`, web `ownsOrder`: Amazon only answers a seller's own orders). A
+  match reuses that connection (its channels and orders come back); otherwise a connection with no
+  orders is reused, or a new one is created. Any other connected account in the region is
+  disconnected, so there is still one connected account per region. A connection with
+  settlements but no orders can't be told apart this way.
 - Code: core `commerce/amazon.ts` (regions, marketplace IDs, parser); web `server/amazon.ts`
   (LWA + SP-API calls with plain-language errors, access tokens cached in memory),
   `server/commerce.ts` (context, sealing), `app/o/[slug]/commerce/`.
@@ -701,7 +709,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   the whole quantity), four `orders_*` columns on `sales_channels`, and the security-definer
   `syncable_sales_channels()` for the order job.
 - Reconnecting a disconnected Amazon account puts the marketplaces back as Amazon reports them
-  (disconnect had switched them all off).
+  (disconnect had switched them all off). Orders of disconnected connections aren't listed
+  (`connectedOrder` in db `commerce.ts`).
 - Tests: core `amazon-orders.test.ts`, db `commerce.test.ts`, e2e "bring in Amazon orders" (the
   mock answers four orders in two pages, with items).
 - **Sales cards per marketplace:** one card per marketplace (and currency). With more than one
