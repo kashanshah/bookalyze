@@ -577,24 +577,23 @@ describe("bank connections", () => {
         firstDate: "2027-08-15",
       }),
     );
-    const rows = [
-      line({
-        feedId: feed.feedId,
-        externalId: `csv:${cadBank}:2027-08-15:-12.0000:bb:0`,
-        date: "2027-08-15",
-        amount: "-12.0000",
-      }),
-    ];
+    const row = line({
+      feedId: feed.feedId,
+      externalId: `csv:${cadBank}:2027-08-15:-12.0000:bb:0`,
+      date: "2027-08-15",
+      amount: "-12.0000",
+    });
+    const rows = [row];
     expect(await sync(rows)).toMatchObject({ posted: 1, duplicates: 0 });
     const [posted] = await inOrg(orgA, (tx) =>
-      tx.select().from(schema.bankLines).where(eq(schema.bankLines.externalId, rows[0].externalId)),
+      tx.select().from(schema.bankLines).where(eq(schema.bankLines.externalId, row.externalId)),
     );
     await inOrg(orgA, (tx) =>
       voidJournalEntry(tx, { orgId: orgA, entryId: posted?.journalEntryId ?? "" }),
     );
     expect(await sync(rows)).toMatchObject({ posted: 1, duplicates: 0 });
     const [restored] = await inOrg(orgA, (tx) =>
-      tx.select().from(schema.bankLines).where(eq(schema.bankLines.externalId, rows[0].externalId)),
+      tx.select().from(schema.bankLines).where(eq(schema.bankLines.externalId, row.externalId)),
     );
     expect(restored?.journalEntryId).toBeTruthy();
     expect(restored?.journalEntryId).not.toBe(posted?.journalEntryId);
