@@ -175,7 +175,10 @@ export function Combobox({
         move(index - 8);
         break;
       case "Enter": {
+        // The list is in a portal, but React bubbles its keys to the form around the trigger:
+        // choosing an option mustn't also submit or advance that form.
         e.preventDefault();
+        e.stopPropagation();
         const option = enabled[index];
         if (option) choose(option);
         break;

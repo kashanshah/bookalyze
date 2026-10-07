@@ -73,6 +73,7 @@ export function OnboardingForm({
   const [direction, setDirection] = useState<1 | -1>(1);
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const errors = { ...state.errors, ...localErrors };
 
   // Jump to the first step with a server-side error.
@@ -86,9 +87,25 @@ export function OnboardingForm({
     headingRef.current?.focus({ preventScroll: true });
   }, [step]);
 
+  /**
+   * Fields the browser can't read, like a half-typed date: its value comes through empty, so it
+   * would be dropped without a word. The form doesn't use the browser's own checks (they can't
+   * point at a field on a hidden step), so this catches them.
+   */
+  function unreadable(from: number, to: number): Record<string, string> {
+    const errs: Record<string, string> = {};
+    for (const input of formRef.current?.querySelectorAll("input") ?? []) {
+      const at = FIELD_STEP[input.name];
+      if (at === undefined || at < from || at > to || !input.validity.badInput) continue;
+      errs[input.name] =
+        input.type === "date" ? "Enter a full date, or clear it." : "This doesn't look right.";
+    }
+    return errs;
+  }
+
   function go(to: number) {
     if (to > step) {
-      const errs: Record<string, string> = {};
+      const errs = unreadable(step, step);
       if (step === 0) {
         if (name.trim().length < 2) errs.name = "Give your company a name.";
         if (profile.legalName.trim().length < 2)
@@ -108,12 +125,25 @@ export function OnboardingForm({
 
   return (
     <form
+      ref={formRef}
       action={action}
+      noValidate
+      onSubmit={(e) => {
+        const errs = unreadable(0, STEPS.length - 1);
+        if (!Object.keys(errs).length) return;
+        e.preventDefault();
+        setLocalErrors(errs);
+        setDirection(-1);
+        setStep(Math.min(...Object.keys(errs).map((k) => FIELD_STEP[k] ?? 0)));
+      }}
       onKeyDown={(e) => {
+        // Enter in a field moves on a step. Keys from a dropdown's list (rendered outside the
+        // form, but React still bubbles them here) are the dropdown's own.
         if (
           e.key === "Enter" &&
           step < STEPS.length - 1 &&
-          (e.target as HTMLElement).tagName === "INPUT"
+          (e.target as HTMLElement).tagName === "INPUT" &&
+          e.currentTarget.contains(e.target as Node)
         ) {
           e.preventDefault();
           go(step + 1);
@@ -262,6 +292,7 @@ export function OnboardingForm({
                   name="incorporationDate"
                   type="date"
                   value={profile.incorporationDate}
+                  aria-invalid={Boolean(errors.incorporationDate)}
                   onChange={(e) => profile.setIncorporationDate(e.target.value)}
                 />
               </Field>

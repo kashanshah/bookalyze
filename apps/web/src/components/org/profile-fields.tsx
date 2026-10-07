@@ -368,6 +368,7 @@ export function FiscalYearFields({
             name="firstFiscalYearStart"
             type="date"
             value={state.firstFiscalYearStart}
+            aria-invalid={Boolean(errors?.firstFiscalYearStart)}
             onChange={(e) => state.setFirstFiscalYearStart(e.target.value)}
           />
         </Field>
