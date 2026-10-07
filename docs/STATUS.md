@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-07, a removed bank transaction comes back on the next statement upload or sync._
+_Last updated: 2026-10-07, settlement account pickers can add a new account._
 
 ---
 
@@ -817,9 +817,11 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   (core `SETTLEMENT_ACCOUNT_KEYS`: sales, refunds, promotions, fees, advertising, sales tax,
   reimbursements, held back and released, other) plus the **clearing account** (an asset,
   ideally Money in transit) the payout goes to, and "Post settlements from" (default: the start
-  of the financial year). The first time, accounts are suggested from names and types (only a
-  suggestion: posting reads the saved choices, `settlement_accounts`). Saved with
-  `saveSettlementSetupAction` → `saveSettlementSetup`.
+  of the financial year). Each dropdown has "Add a new account" (the category form): the new
+  account is selected for that line, opening on a fitting type (income for sales, money in
+  transit for the payout, sales tax for tax). Clearing still lists assets only. The first time,
+  accounts are suggested from names and types (only a suggestion: posting reads the saved
+  choices, `settlement_accounts`). Saved with `saveSettlementSetupAction` → `saveSettlementSetup`.
 - **One entry per settlement** (core `buildSettlementEntry`, db `postSettlement`): each group's
   subtotal to its account (money to the seller credits it), the payout debited to clearing, lines
   for the same account combined; it refuses when the lines don't add up or an account is

@@ -152,7 +152,7 @@ export function CategoryPicker({
       <Dialog open={creating !== null} onOpenChange={(open) => !open && setCreating(null)}>
         <DialogContent>
           {creating !== null ? (
-            <NewCategoryForm
+            <NewAccountForm
               slug={slug}
               initialName={creating}
               defaultType={direction === "in" ? "income" : "expense"}
@@ -175,21 +175,37 @@ const CATEGORY_TYPES: AccountType[] = ["expense", "income", "asset", "liability"
 const categorySubtypes = (type: AccountType) =>
   subtypesOf(type).filter((s) => !isMoneyAccountSubtype(s.key));
 
-function NewCategoryForm({
+export function NewAccountForm({
   slug,
   initialName,
   defaultType,
+  defaultSubtype,
+  title = "Add a category",
+  description = "Categories sort your money on reports. This one is added to your chart of accounts.",
+  submitLabel = "Add category",
+  addedDescription = "It's in your chart of accounts and every category list.",
   onCancel,
   onSaved,
 }: {
   slug: string;
   initialName: string;
   defaultType: AccountType;
+  /** Pre-selected "what it's for", when it belongs to `defaultType`. */
+  defaultSubtype?: string;
+  title?: string;
+  description?: string;
+  submitLabel?: string;
+  addedDescription?: string;
   onCancel: () => void;
   onSaved: (category: NewCategory) => void;
 }) {
+  const subtypes = categorySubtypes(defaultType);
   const [type, setType] = useState<AccountType>(defaultType);
-  const [subtype, setSubtype] = useState(categorySubtypes(defaultType)[0]?.key ?? "");
+  const [subtype, setSubtype] = useState(
+    defaultSubtype && subtypes.some((s) => s.key === defaultSubtype)
+      ? defaultSubtype
+      : (subtypes[0]?.key ?? ""),
+  );
   const [name, setName] = useState(initialName);
   const [code, setCode] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -224,18 +240,14 @@ function NewCategoryForm({
           }
           const trimmed = name.trim();
           const label = code.trim() ? `${code.trim()} · ${trimmed}` : trimmed;
-          toast.success(`${trimmed} added`, {
-            description: "It's in your chart of accounts and every category list.",
-          });
+          toast.success(`${trimmed} added`, { description: addedDescription });
           onSaved({ id: result.data.id, label, name: trimmed, type });
         });
       }}
     >
       <DialogHeader>
-        <DialogTitle>Add a category</DialogTitle>
-        <DialogDescription>
-          Categories sort your money on reports. This one is added to your chart of accounts.
-        </DialogDescription>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
 
       <fieldset disabled={pending} className="grid gap-5">
@@ -309,7 +321,7 @@ function NewCategoryForm({
         </Button>
         <Button type="submit" disabled={pending || !name.trim()}>
           {pending ? <Spinner /> : null}
-          Add category
+          {submitLabel}
         </Button>
       </DialogFooter>
     </form>
