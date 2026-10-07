@@ -1,5 +1,5 @@
-import { checkDueListingWatches } from "@/server/listing-watch";
 import { env } from "@/server/env";
+import { checkDueListingWatches } from "@/server/listing-watch";
 
 /**
  * The listing watch job, hourly (vercel.json). Vercel Cron calls it with

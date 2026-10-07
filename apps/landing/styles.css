@@ -319,10 +319,6 @@ summary:focus-visible,
 .form-note.err {
   color: #db2b33;
 }
-.waitlist.done input,
-.waitlist.done button {
-  display: none;
-}
 
 /* Product preview */
 .preview {
@@ -809,7 +805,7 @@ summary:focus-visible,
 .cta h2 {
   color: #fff;
 }
-.cta > p {
+.cta-wrap .cta > p {
   margin-top: 10px;
   color: rgb(255 255 255 / 0.75);
   font-size: 17px;
@@ -832,6 +828,10 @@ summary:focus-visible,
 }
 .waitlist-inverse .form-note.ok {
   color: #9ff0c9;
+}
+.waitlist.done input,
+.waitlist.done button {
+  display: none;
 }
 
 /* Footer */
