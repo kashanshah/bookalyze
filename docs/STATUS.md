@@ -1326,6 +1326,13 @@ screenshots work well).
     Track it in state (see `touched` in `components/org/profile-state.ts`).
   - Pass `name` to post the value with a form (it renders a hidden input).
   - In e2e, use `choose(trigger, "Option label")` from `e2e/helpers.ts`, not `selectOption`.
+  - Its list is in a portal, but React still bubbles the list's key presses to the form around
+    the trigger. `Combobox` stops Enter there; a form `onKeyDown` should also ignore targets
+    outside itself (`e.currentTarget.contains(e.target)`), like the onboarding wizard does.
+- **Multi-step forms use `noValidate`.** The browser's own checks can't focus a field on a
+  hidden step ("An invalid form control … is not focusable"), so the submit just does nothing.
+  Check `input.validity.badInput` yourself (a half-typed date posts as empty) and send the user
+  to that step, as `unreadable()` in `app/onboarding/onboarding-form.tsx` does.
 - **Tenant isolation lives in `withOrg()`.** Production logs in as Neon's owner (`DATABASE_URL`
   from Vercel's Storage integration), which bypasses RLS on its own. `withOrg()` switches each
   transaction to `app_runtime` (`set_config('role', 'app_runtime', true)`, i.e. SET LOCAL ROLE,

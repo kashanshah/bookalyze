@@ -53,7 +53,12 @@ test("owner signs up, verifies email and sets up a company with the wizard", asy
   await expect(page.getByRole("heading", { name: "Where you operate" })).toBeVisible();
   await choose(page.locator("#countryCode"), "United Arab Emirates");
   await expect(page.locator("#baseCurrency")).toContainText("AED");
-  await choose(page.locator("#countryCode"), "Canada");
+  // Choosing with the keyboard: Enter picks the option and stays on this step.
+  await page.locator("#countryCode").click();
+  await page.keyboard.type("Canada");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#countryCode")).toContainText("Canada");
+  await expect(page.getByRole("heading", { name: "Where you operate" })).toBeVisible();
   await expect(page.locator("#baseCurrency")).toContainText("CAD");
   await choose(page.locator("#subdivisionCode"), "Ontario");
   await page.getByRole("button", { name: "Continue" }).click();
