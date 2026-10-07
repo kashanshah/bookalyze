@@ -3,6 +3,7 @@
   "crons": [
     { "path": "/api/cron/fx-rates", "schedule": "15 22 * * 1-5" },
     { "path": "/api/cron/orders", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/review-requests", "schedule": "5 * * * *" }
+    { "path": "/api/cron/review-requests", "schedule": "5 * * * *" },
+    { "path": "/api/cron/listings", "schedule": "20 * * * *" }
   ]
 }

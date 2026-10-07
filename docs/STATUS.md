@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-06, phase 4 slice 2 (settlements post to the books)._
+_Last updated: 2026-10-07, listing watch (Amazon products, official API only)._
 
 ---
 
@@ -25,7 +25,7 @@ _Last updated: 2026-10-06, phase 4 slice 2 (settlements post to the books)._
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
-| 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen), slice 3 (review requests: manual, bulk, automatic) and refunds on orders (red badge, Refunded tab) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation and Finance and Accounting roles) |
+| 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, and Pricing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -1058,6 +1058,32 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   apply as Wise (no bank line is recorded, as there's no feed).
 - Not covered: Cash in Hand USD and the 7 rows the import skipped for it (no statement exists:
   type the amounts on the same screen), and scanned (image) PDFs.
+
+### Listing watch
+
+- **What it is:** Commerce → Listing watch. Pick an ASIN on a connected marketplace, choose what
+  to compare, how often, and whether owners and admins get one email when something changes.
+  The first look is the baseline and does not email. Later checks write a timeline on the
+  product and, when email is on, one digest (not one email per product).
+- **Only Amazon's official API.** Catalog Items 2022-04-01 (title, bullets, description, photos,
+  best seller rank), Product Pricing v0 item offers for New (price with shipping, featured
+  offer, how many sellers), and Customer Feedback 2024-06-01 review topics when Amazon shares
+  them for the seller's brand. A 400/403/404 on review topics is "Amazon isn't sharing review
+  topics", not a failed watch. Star ratings, review text, Amazon's Choice and "bought in the
+  past month" are not in the API and are not offered. Best seller rank is the number, reported
+  when it moves by at least 5 places and about 10%.
+- **Cadence:** daily (default), weekly, or hourly. Hourly is only price, featured offer and
+  other sellers, and at most 25 products (`MAX_HOURLY_WATCHES`); 200 watches in total. A failed
+  look retries in an hour; a switched-off channel or bad credentials retries in a day. A
+  throttle stops that run without marking the product done.
+- **Job:** `/api/cron/listings` at minute 20 (`vercel.json`), 45 s budget, up to 20 due watches
+  per company, 400 ms between calls. Companies come from `listing_watch_orgs()` (security
+  definer), then each company is opened with `withOrg`.
+- **Schema** (migration `0037_listing_watches`): `listing_watches` (unique per company, channel
+  and ASIN) and `listing_changes`. Any commerce member can add, edit, pause or stop a watch.
+- Roles the Amazon app needs beyond orders: **Product Listing** and **Pricing**. Review topics
+  also need Brand Analytics, and only for a brand the seller owns.
+- Tests: core `listings.test.ts`, db `listings.test.ts`.
 
 ---
 

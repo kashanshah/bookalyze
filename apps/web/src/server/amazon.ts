@@ -356,3 +356,61 @@ export async function downloadReport(
   const bytes = Buffer.from(await response.arrayBuffer());
   return new TextDecoder("utf-8").decode(doc.gzip ? gunzipSync(bytes) : bytes);
 }
+
+const CATALOG_ROLE = roleMissing("Product Listing");
+const PRICING_ROLE = roleMissing("Pricing");
+
+/** A product's words, photos and best seller rank on one marketplace. */
+export async function catalogItem(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  asin: string,
+  marketplaceId: string,
+): Promise<unknown> {
+  return call(
+    creds,
+    region,
+    `/catalog/2022-04-01/items/${encodeURIComponent(asin)}`,
+    { marketplaceIds: marketplaceId, includedData: "summaries,attributes,images,salesRanks" },
+    { forbidden: CATALOG_ROLE },
+  );
+}
+
+/** New offers for a product, including the featured offer (the Buy Box). */
+export async function itemOffers(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  asin: string,
+  marketplaceId: string,
+): Promise<unknown> {
+  return call(
+    creds,
+    region,
+    `/products/pricing/v0/items/${encodeURIComponent(asin)}/offers`,
+    { MarketplaceId: marketplaceId, ItemCondition: "New" },
+    { forbidden: PRICING_ROLE },
+  );
+}
+
+/**
+ * What buyers mention in reviews, for a brand the seller owns. Amazon refuses this for other
+ * brands; the caller treats that as "not shared" rather than a broken watch.
+ */
+export async function reviewTopics(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  asin: string,
+  marketplaceId: string,
+): Promise<{ body: unknown | null; unavailable: boolean }> {
+  const response = await send(
+    creds,
+    region,
+    `/customerFeedback/2024-06-01/items/${encodeURIComponent(asin)}/reviews/topics`,
+    { marketplaceId },
+    { allow: [400, 403, 404], forbidden: roleMissing("Brand Analytics") },
+  );
+  if (response.status === 400 || response.status === 403 || response.status === 404) {
+    return { body: null, unavailable: true };
+  }
+  return { body: await response.json(), unavailable: false };
+}

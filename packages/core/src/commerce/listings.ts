@@ -1,0 +1,604 @@
+import { formatMoney, minorUnits } from "../currency";
+import { formatDecimal, parseDecimal } from "../money";
+
+/**
+ * Watching an Amazon product for changes Amazon will actually report: price, the featured
+ * offer, how many sellers, photos, the words on the page, best seller rank, and (for a brand
+ * you own) what buyers mention in reviews. Star ratings, review text, Amazon's Choice and the
+ * "bought in the past month" tag are not in Amazon's API, so they are not offered.
+ */
+
+export const LISTING_CHECKS = [
+  {
+    key: "price",
+    label: "Price",
+    hint: "The price shoppers pay, including shipping.",
+  },
+  {
+    key: "featured",
+    label: "Featured offer",
+    hint: "Who has the Buy Box, and whether that offer is Prime.",
+  },
+  {
+    key: "offers",
+    label: "Other sellers",
+    hint: "How many sellers offer it new.",
+  },
+  {
+    key: "content",
+    label: "Title and description",
+    hint: "The title, bullet points, and description.",
+  },
+  {
+    key: "images",
+    label: "Photos",
+    hint: "The main photo and the rest of the gallery.",
+  },
+  {
+    key: "rank",
+    label: "Best seller rank",
+    hint: "The ranking in each category, when it moves by about 10% or more. This is the number, not the Best Seller badge.",
+  },
+  {
+    key: "reviews",
+    label: "Review topics",
+    hint: "What buyers mention most, when Amazon shares it for your brand. Star ratings and each review's text stay on Amazon.",
+  },
+] as const;
+
+export type ListingCheck = (typeof LISTING_CHECKS)[number]["key"];
+
+export const LISTING_CHECK_KEYS: readonly ListingCheck[] = LISTING_CHECKS.map((c) => c.key);
+
+/** Hourly checks are only these. Photos, words, rank and review topics move too slowly to ask every hour. */
+export const HOURLY_CHECKS: readonly ListingCheck[] = ["price", "featured", "offers"];
+
+export const LISTING_CADENCES = [
+  {
+    key: "daily",
+    label: "Daily",
+    hint: "A good default. Most listing changes are caught within a day.",
+  },
+  {
+    key: "weekly",
+    label: "Weekly",
+    hint: "For products you only need a glance at.",
+  },
+  {
+    key: "hourly",
+    label: "Hourly",
+    hint: "Price, the featured offer, and other sellers. Limited to a short list, because Amazon rations these questions.",
+  },
+] as const;
+
+export type ListingCadence = (typeof LISTING_CADENCES)[number]["key"];
+
+export const MAX_LISTING_WATCHES = 200;
+export const MAX_HOURLY_WATCHES = 25;
+
+const ASIN = /^[A-Z0-9]{10}$/;
+
+/** "b0abc12345" → "B0ABC12345", or null when it isn't an ASIN. */
+export function normalizeAsin(value: string): string | null {
+  const asin = value.trim().toUpperCase().replace(/\s+/g, "");
+  return ASIN.test(asin) ? asin : null;
+}
+
+export function listingCheck(key: string): (typeof LISTING_CHECKS)[number] | undefined {
+  return LISTING_CHECKS.find((c) => c.key === key);
+}
+
+/** Why this combination can't be saved, in words a seller can act on. */
+export function listingWatchIssue(input: {
+  checks: readonly ListingCheck[];
+  cadence: ListingCadence;
+}): string | null {
+  if (input.checks.length === 0) return "Choose at least one thing to watch.";
+  if (input.cadence === "hourly" && input.checks.some((c) => !HOURLY_CHECKS.includes(c))) {
+    return "Hourly checks are only for price, the featured offer, and other sellers. Photos, words, rank, and review topics are checked daily or weekly.";
+  }
+  return null;
+}
+
+const HOUR = 60 * 60 * 1000;
+
+/** When to look again after a successful check. */
+export function checkAgainAt(cadence: ListingCadence, from: Date): Date {
+  const ms = cadence === "hourly" ? HOUR : cadence === "weekly" ? 7 * 24 * HOUR : 24 * HOUR;
+  return new Date(from.getTime() + ms);
+}
+
+/** The product page shoppers see. */
+export function amazonProductUrl(channelName: string, asin: string): string | null {
+  if (!/^Amazon\.[a-z.]+$/i.test(channelName) || !ASIN.test(asin)) return null;
+  return `https://www.${channelName.toLowerCase()}/dp/${asin}`;
+}
+
+export type ListingImage = { variant: string; url: string };
+
+export type FeaturedOffer = {
+  sellerId: string | null;
+  price: string | null;
+  currency: string | null;
+  prime: boolean;
+};
+
+export type SalesRank = { category: string; rank: number };
+
+export type ReviewTopic = {
+  topic: string;
+  sentiment: "positive" | "negative";
+  /** Share of reviews that mention it, e.g. "12.5", or null when Amazon didn't say. */
+  share: string | null;
+};
+
+/** The comparable snapshot of a product. Stored as JSON; every field is plain data. */
+export type ListingObservation = {
+  title: string | null;
+  bullets: string[];
+  description: string | null;
+  images: ListingImage[];
+  price: string | null;
+  currency: string | null;
+  featured: FeaturedOffer | null;
+  offerCount: number | null;
+  ranks: SalesRank[];
+  reviewTopics: ReviewTopic[];
+  /** Set when review topics were asked for and Amazon wouldn't share them. */
+  reviewNote: string | null;
+};
+
+export type ListingChange = {
+  field: ListingCheck;
+  summary: string;
+  before: string | null;
+  after: string | null;
+};
+
+const record = (v: unknown): Record<string, unknown> =>
+  v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+
+function plain(value: string): string {
+  return value
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function clip(value: string, max = 160): string {
+  const clean = plain(value);
+  return clean.length <= max ? clean : `${clean.slice(0, max - 1)}…`;
+}
+
+function jsonMoney(value: unknown): { currency: string; amount: string } | null {
+  const row = record(value);
+  const currency = text(row.CurrencyCode).toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) return null;
+  const amount = row.Amount;
+  const raw =
+    typeof amount === "number" && Number.isFinite(amount)
+      ? amount.toFixed(Math.min(minorUnits(currency), 4))
+      : typeof amount === "string"
+        ? amount
+        : null;
+  if (!raw) return null;
+  try {
+    return { currency, amount: formatDecimal(parseDecimal(raw)) };
+  } catch {
+    return null;
+  }
+}
+
+function attributeValues(attributes: Record<string, unknown>, key: string, marketplaceId: string) {
+  const list = attributes[key];
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((item) => {
+    const row = record(item);
+    const marketplace = text(row.marketplace_id);
+    if (marketplace && marketplace !== marketplaceId) return [];
+    const value = plain(text(row.value));
+    return value ? [value] : [];
+  });
+}
+
+function largestImages(groups: unknown, marketplaceId: string): ListingImage[] {
+  if (!Array.isArray(groups)) return [];
+  const byVariant = new Map<string, { url: string; height: number }>();
+  for (const group of groups) {
+    const row = record(group);
+    if (text(row.marketplaceId) && text(row.marketplaceId) !== marketplaceId) continue;
+    const images = row.images;
+    if (!Array.isArray(images)) continue;
+    for (const image of images) {
+      const item = record(image);
+      const variant = text(item.variant) || "MAIN";
+      const url = text(item.link);
+      const height = typeof item.height === "number" ? item.height : 0;
+      if (!url) continue;
+      const current = byVariant.get(variant);
+      if (!current || height > current.height) byVariant.set(variant, { url, height });
+    }
+  }
+  return [...byVariant.entries()]
+    .map(([variant, image]) => ({ variant, url: image.url }))
+    .sort((a, b) => a.variant.localeCompare(b.variant));
+}
+
+function ranksOf(salesRanks: unknown, marketplaceId: string): SalesRank[] {
+  if (!Array.isArray(salesRanks)) return [];
+  const ranks: SalesRank[] = [];
+  for (const group of salesRanks) {
+    const row = record(group);
+    if (text(row.marketplaceId) && text(row.marketplaceId) !== marketplaceId) continue;
+    for (const key of ["displayGroupRanks", "classificationRanks"] as const) {
+      const list = row[key];
+      if (!Array.isArray(list)) continue;
+      for (const item of list) {
+        const rank = record(item);
+        const category = plain(text(rank.title));
+        const place = rank.rank;
+        if (!category || typeof place !== "number" || !Number.isInteger(place) || place < 1)
+          continue;
+        ranks.push({ category, rank: place });
+      }
+    }
+  }
+  const seen = new Set<string>();
+  return ranks.filter((rank) => {
+    const key = rank.category.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Reads GET /catalog/2022-04-01/items/{asin}. */
+export function parseCatalogItem(
+  json: unknown,
+  marketplaceId: string,
+): Pick<ListingObservation, "title" | "bullets" | "description" | "images" | "ranks"> {
+  const body = record(json);
+  const summaries = Array.isArray(body.summaries) ? body.summaries.map(record) : [];
+  const summary =
+    summaries.find((s) => text(s.marketplaceId) === marketplaceId) ?? summaries[0] ?? {};
+  const attributes = record(body.attributes);
+  const names = attributeValues(attributes, "item_name", marketplaceId);
+  const bullets = attributeValues(attributes, "bullet_point", marketplaceId);
+  const descriptions = attributeValues(attributes, "product_description", marketplaceId);
+  return {
+    title: names[0] ?? (plain(text(summary.itemName)) || null),
+    bullets,
+    description: descriptions[0] ?? null,
+    images: largestImages(body.images, marketplaceId),
+    ranks: ranksOf(body.salesRanks, marketplaceId),
+  };
+}
+
+/** Reads GET /products/pricing/v0/items/{asin}/offers. */
+export function parseItemOffers(
+  json: unknown,
+): Pick<ListingObservation, "price" | "currency" | "featured" | "offerCount"> {
+  const payload = record(record(json).payload ?? json);
+  const summary = record(payload.Summary);
+  const offers = Array.isArray(payload.Offers) ? payload.Offers.map(record) : [];
+  const winner = offers.find((o) => o.IsBuyBoxWinner === true) ?? null;
+  const buyBox = Array.isArray(summary.BuyBoxPrices)
+    ? jsonMoney(record(summary.BuyBoxPrices[0]).LandedPrice)
+    : null;
+  const winnerPrice = winner
+    ? (jsonMoney(winner.LandedPrice) ?? jsonMoney(winner.ListingPrice))
+    : null;
+  const lowest = Array.isArray(summary.LowestPrices)
+    ? summary.LowestPrices.map(record).find(
+        (p) => text(p.condition) === "New" || !text(p.condition),
+      )
+    : undefined;
+  const lowestPrice = lowest ? jsonMoney(lowest.LandedPrice) : null;
+  const price = buyBox ?? winnerPrice ?? lowestPrice;
+  const count = summary.TotalOfferCount;
+  const prime = record(winner?.PrimeInformation);
+  return {
+    price: price?.amount ?? null,
+    currency: price?.currency ?? null,
+    featured: winner
+      ? {
+          sellerId: text(winner.SellerId) || null,
+          price: (winnerPrice ?? buyBox)?.amount ?? null,
+          currency: (winnerPrice ?? buyBox)?.currency ?? null,
+          prime: prime.IsPrime === true || winner.IsPrime === true,
+        }
+      : buyBox
+        ? { sellerId: null, price: buyBox.amount, currency: buyBox.currency, prime: false }
+        : null,
+    offerCount:
+      typeof count === "number" && Number.isFinite(count)
+        ? Math.max(0, Math.round(count))
+        : offers.length || null,
+  };
+}
+
+const TOPIC_CAP = 8;
+
+function topicsOf(list: unknown, sentiment: ReviewTopic["sentiment"]): ReviewTopic[] {
+  if (!Array.isArray(list)) return [];
+  const topics = list.flatMap((item) => {
+    const row = record(item);
+    const topic = plain(text(row.topic));
+    if (!topic) return [];
+    const metrics = record(row.asinMetrics);
+    const share = metrics.occurrencePercentage;
+    const parsed = typeof share === "number" && Number.isFinite(share) ? share.toFixed(1) : null;
+    return [{ topic, sentiment, share: parsed }];
+  });
+  return topics
+    .sort((a, b) => Number(b.share ?? -1) - Number(a.share ?? -1) || a.topic.localeCompare(b.topic))
+    .slice(0, TOPIC_CAP);
+}
+
+/** Reads the Customer Feedback API's review topics. An empty list is a real answer. */
+export function parseReviewTopics(json: unknown): ReviewTopic[] {
+  const topics = record(record(json).topics);
+  return [
+    ...topicsOf(topics.positiveTopics, "positive"),
+    ...topicsOf(topics.negativeTopics, "negative"),
+  ];
+}
+
+export const EMPTY_OBSERVATION: ListingObservation = {
+  title: null,
+  bullets: [],
+  description: null,
+  images: [],
+  price: null,
+  currency: null,
+  featured: null,
+  offerCount: null,
+  ranks: [],
+  reviewTopics: [],
+  reviewNote: null,
+};
+
+function moneyLabel(amount: string, currency: string, locale: string): string {
+  try {
+    return formatMoney(amount, currency, locale);
+  } catch {
+    return amount;
+  }
+}
+
+function sameMoney(a: string | null, b: string | null): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  try {
+    return parseDecimal(a) === parseDecimal(b);
+  } catch {
+    return false;
+  }
+}
+
+function rankMoved(before: number, after: number): boolean {
+  const delta = Math.abs(after - before);
+  if (delta < 5) return false;
+  return delta / Math.max(before, 1) >= 0.1;
+}
+
+function photoSummary(before: ListingImage[], after: ListingImage[]): string | null {
+  const previous = new Map(before.map((image) => [image.variant, image.url]));
+  const next = new Map(after.map((image) => [image.variant, image.url]));
+  const mainChanged =
+    previous.get("MAIN") !== next.get("MAIN") && (previous.has("MAIN") || next.has("MAIN"));
+  let added = 0;
+  let removed = 0;
+  let replaced = 0;
+  for (const [variant, url] of next) {
+    if (!previous.has(variant)) added += 1;
+    else if (previous.get(variant) !== url && variant !== "MAIN") replaced += 1;
+  }
+  for (const variant of previous.keys()) if (!next.has(variant)) removed += 1;
+  if (!mainChanged && added === 0 && removed === 0 && replaced === 0) return null;
+  if (mainChanged && (added || removed)) {
+    return `The main photo changed, and there are now ${after.length} photos (was ${before.length}).`;
+  }
+  if (mainChanged) return "The main photo changed.";
+  if (added && !removed && !replaced) {
+    return added === 1 ? "A photo was added." : `${added} photos were added.`;
+  }
+  if (removed && !added && !replaced) {
+    return removed === 1 ? "A photo was removed." : `${removed} photos were removed.`;
+  }
+  return "The photos changed.";
+}
+
+function contentSummary(
+  before: ListingObservation,
+  after: ListingObservation,
+): ListingChange | null {
+  const parts: string[] = [];
+  if ((before.title ?? "") !== (after.title ?? "")) parts.push("title");
+  if (before.bullets.join("\n") !== after.bullets.join("\n")) parts.push("bullet points");
+  if ((before.description ?? "") !== (after.description ?? "")) parts.push("description");
+  if (!parts.length) return null;
+  const summary =
+    parts.length === 1
+      ? parts[0] === "title"
+        ? "The title changed."
+        : parts[0] === "bullet points"
+          ? "The bullet points changed."
+          : "The description changed."
+      : `The ${parts.slice(0, -1).join(", ")} and ${parts.at(-1)} changed.`;
+  const titleOnly = parts.length === 1 && parts[0] === "title";
+  return {
+    field: "content",
+    summary,
+    before: titleOnly ? clip(before.title ?? "") || null : null,
+    after: titleOnly ? clip(after.title ?? "") || null : null,
+  };
+}
+
+function featuredSummary(before: FeaturedOffer | null, after: FeaturedOffer | null): string | null {
+  if (!before && after) return "A featured offer is available.";
+  if (before && !after) return "There's no featured offer right now.";
+  if (!before || !after) return null;
+  const sellerMoved =
+    before.sellerId !== null && after.sellerId !== null && before.sellerId !== after.sellerId;
+  if (sellerMoved) return "The featured offer moved to another seller.";
+  if (before.prime !== after.prime) {
+    return after.prime
+      ? "The featured offer is now Prime."
+      : "The featured offer is no longer Prime.";
+  }
+  return null;
+}
+
+function rankSummary(before: SalesRank[], after: SalesRank[], locale: string): string | null {
+  const previous = new Map(before.map((rank) => [rank.category.toLowerCase(), rank]));
+  const next = new Map(after.map((rank) => [rank.category.toLowerCase(), rank]));
+  const lines: string[] = [];
+  const number = (n: number) => new Intl.NumberFormat(locale).format(n);
+  for (const rank of after) {
+    const old = previous.get(rank.category.toLowerCase());
+    if (!old) {
+      lines.push(`Now ranked ${number(rank.rank)} in ${rank.category}.`);
+      continue;
+    }
+    if (rankMoved(old.rank, rank.rank)) {
+      lines.push(
+        `Best seller rank in ${rank.category} moved from ${number(old.rank)} to ${number(rank.rank)}.`,
+      );
+    }
+  }
+  for (const rank of before) {
+    if (!next.has(rank.category.toLowerCase())) lines.push(`No longer ranked in ${rank.category}.`);
+  }
+  if (!lines.length) return null;
+  return lines.slice(0, 3).join(" ");
+}
+
+function reviewSummary(before: ReviewTopic[], after: ReviewTopic[]): string | null {
+  const key = (topic: ReviewTopic) => `${topic.sentiment}:${topic.topic.toLowerCase()}`;
+  const previous = new Map(before.map((topic) => [key(topic), topic]));
+  const next = new Map(after.map((topic) => [key(topic), topic]));
+  const lines: string[] = [];
+  for (const topic of after) {
+    const old = previous.get(key(topic));
+    const name = topic.sentiment === "negative" ? `${topic.topic} (a complaint)` : topic.topic;
+    if (!old) {
+      lines.push(`Buyers are mentioning “${name}”.`);
+      continue;
+    }
+    if (topic.share === null || old.share === null) continue;
+    const delta = Math.abs(Number(topic.share) - Number(old.share));
+    if (delta < 1) continue;
+    const direction = Number(topic.share) > Number(old.share) ? "More" : "Fewer";
+    lines.push(
+      `${direction} buyers mention “${name}” (${topic.share}% of reviews, was ${old.share}%).`,
+    );
+  }
+  for (const topic of before) {
+    if (!next.has(key(topic))) lines.push(`Buyers stopped mentioning “${topic.topic}”.`);
+  }
+  if (!lines.length) return null;
+  return lines.slice(0, 3).join(" ");
+}
+
+/**
+ * What changed since the last look, for the checks that are switched on. The first look (no
+ * previous snapshot) is the baseline and reports nothing.
+ */
+export function diffListing(
+  previous: ListingObservation | null,
+  next: ListingObservation,
+  checks: readonly ListingCheck[],
+  locale = "en-CA",
+): ListingChange[] {
+  if (!previous) return [];
+  const on = new Set(checks);
+  const changes: ListingChange[] = [];
+  if (on.has("price") && !sameMoney(previous.price, next.price)) {
+    const currency = next.currency ?? previous.currency ?? "USD";
+    const label = (amount: string | null) =>
+      amount ? moneyLabel(amount, currency, locale) : "no price";
+    changes.push({
+      field: "price",
+      summary:
+        previous.price && next.price
+          ? `Price went from ${label(previous.price)} to ${label(next.price)}.`
+          : next.price
+            ? `A price is listed again: ${label(next.price)}.`
+            : "The price is no longer listed.",
+      before: previous.price,
+      after: next.price,
+    });
+  }
+  if (on.has("featured")) {
+    const summary = featuredSummary(previous.featured, next.featured);
+    if (summary) {
+      changes.push({ field: "featured", summary, before: null, after: null });
+    }
+  }
+  if (on.has("offers") && previous.offerCount !== next.offerCount) {
+    const summary =
+      previous.offerCount === null
+        ? `${next.offerCount} sellers offer it new.`
+        : next.offerCount === null
+          ? "Amazon didn't say how many sellers offer it."
+          : next.offerCount === 1
+            ? `1 seller offers it new (was ${previous.offerCount}).`
+            : `${next.offerCount} sellers offer it new (was ${previous.offerCount}).`;
+    changes.push({
+      field: "offers",
+      summary,
+      before: previous.offerCount === null ? null : String(previous.offerCount),
+      after: next.offerCount === null ? null : String(next.offerCount),
+    });
+  }
+  if (on.has("content")) {
+    const change = contentSummary(previous, next);
+    if (change) changes.push(change);
+  }
+  if (on.has("images")) {
+    const summary = photoSummary(previous.images, next.images);
+    if (summary) {
+      changes.push({
+        field: "images",
+        summary,
+        before: `${previous.images.length} photos`,
+        after: `${next.images.length} photos`,
+      });
+    }
+  }
+  if (on.has("rank")) {
+    const summary = rankSummary(previous.ranks, next.ranks, locale);
+    if (summary) changes.push({ field: "rank", summary, before: null, after: null });
+  }
+  if (on.has("reviews")) {
+    const summary = reviewSummary(previous.reviewTopics, next.reviewTopics);
+    if (summary) changes.push({ field: "reviews", summary, before: null, after: null });
+  }
+  return changes;
+}
+
+/** One line for a list: the first change, and how many others arrived with it. */
+export function changeHeadline(changes: readonly { summary: string }[]): string | null {
+  const first = changes[0];
+  if (!first) return null;
+  if (changes.length === 1) return first.summary;
+  const more = changes.length - 1;
+  return `${first.summary} ${more} more ${more === 1 ? "change" : "changes"}.`;
+}
+
+/** The main photo, for the list. */
+export function mainImageUrl(observation: ListingObservation | null): string | null {
+  return (
+    observation?.images.find((image) => image.variant === "MAIN")?.url ??
+    observation?.images[0]?.url ??
+    null
+  );
+}

@@ -1,3 +1,4 @@
+import type { ListingObservation } from "@bookalyze/core";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -7,6 +8,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   primaryKey,
@@ -468,5 +470,97 @@ export const settlementDepositDismissals = pgTable(
       foreignColumns: [journalEntries.organizationId, journalEntries.id],
     }).onDelete("cascade"),
     tenantIsolationPolicy("settlement_deposit_dismissals", t.organizationId),
+  ],
+);
+
+/**
+ * A product someone asked us to watch on one marketplace. The snapshot (`observed`) is the last
+ * look Amazon gave us; changes hang off `listing_changes`. Nothing here posts to the books.
+ */
+export const listingWatches = pgTable(
+  "listing_watches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    /** Amazon's ASIN, upper case. */
+    asin: text("asin").notNull(),
+    title: text("title"),
+    imageUrl: text("image_url"),
+    /** Which signals to compare. See core `LISTING_CHECKS`. */
+    checks: text("checks").array().notNull(),
+    cadence: text("cadence", { enum: ["hourly", "daily", "weekly"] }).notNull(),
+    /** Owners and admins get an email when a check finds a change. */
+    notify: boolean("notify").notNull().default(true),
+    paused: boolean("paused").notNull().default(false),
+    observed: jsonb("observed").$type<ListingObservation | null>(),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    nextCheckAt: timestamp("next_check_at", { withTimezone: true }).notNull().defaultNow(),
+    lastError: text("last_error"),
+    lastChangeSummary: text("last_change_summary"),
+    lastChangeAt: timestamp("last_change_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    unique("listing_watches_org_id_key").on(t.organizationId, t.id),
+    unique("listing_watches_channel_asin_key").on(t.organizationId, t.channelId, t.asin),
+    index("listing_watches_org_idx").on(t.organizationId),
+    index("listing_watches_due_idx").on(t.paused, t.nextCheckAt),
+    foreignKey({
+      name: "listing_watches_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    check("listing_watches_cadence_valid", sql`${t.cadence} in ('hourly', 'daily', 'weekly')`),
+    check("listing_watches_asin_valid", sql`${t.asin} ~ '^[A-Z0-9]{10}$'`),
+    check(
+      "listing_watches_checks_valid",
+      sql`cardinality(${t.checks}) > 0 and ${t.checks} <@ array['content','images','price','featured','offers','rank','reviews']::text[]`,
+    ),
+    check(
+      "listing_watches_hourly_valid",
+      sql`${t.cadence} <> 'hourly' or ${t.checks} <@ array['price','featured','offers']::text[]`,
+    ),
+    tenantIsolationPolicy("listing_watches", t.organizationId),
+  ],
+);
+
+/** One thing that changed between two looks at a watched product. */
+export const listingChanges = pgTable(
+  "listing_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    watchId: uuid("watch_id").notNull(),
+    field: text("field").notNull(),
+    summary: text("summary").notNull(),
+    before: text("before"),
+    after: text("after"),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
+    /** Set once the change has been included in an email, or immediately when email is off. */
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("listing_changes_watch_idx").on(t.watchId, t.checkedAt),
+    index("listing_changes_unnotified_idx").on(t.organizationId, t.notifiedAt),
+    foreignKey({
+      name: "listing_changes_watch_fk",
+      columns: [t.organizationId, t.watchId],
+      foreignColumns: [listingWatches.organizationId, listingWatches.id],
+    }).onDelete("cascade"),
+    check(
+      "listing_changes_field_valid",
+      sql`${t.field} in ('content', 'images', 'price', 'featured', 'offers', 'rank', 'reviews')`,
+    ),
+    tenantIsolationPolicy("listing_changes", t.organizationId),
   ],
 );

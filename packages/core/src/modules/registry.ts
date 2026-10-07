@@ -80,13 +80,14 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
   commerce: {
     key: "commerce",
     label: "Commerce",
-    description: "Sales channels, marketplace connections, orders and settlements.",
+    description: "Sales channels, marketplace connections, orders, settlements and listing watch.",
     basePath: "/commerce",
     phase: "3",
     requires: ["accounting"],
-    features: ["commerce.channels", "commerce.orders", "commerce.settlements"],
+    features: ["commerce.channels", "commerce.orders", "commerce.settlements", "commerce.listings"],
     nav: [
       { label: "Orders", href: "/commerce/orders" },
+      { label: "Listing watch", href: "/commerce/watch" },
       { label: "Settlements", href: "/commerce/settlements" },
       { label: "Channel profit", href: "/commerce/profit" },
       { label: "Channels", href: "/commerce/channels" },

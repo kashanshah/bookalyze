@@ -304,6 +304,8 @@ Taxes collected, reimbursements, reserves and other adjustments each map to thei
 
 **PII policy:** we do **not** request buyer PII (no Restricted Data Tokens). None of these features need it, and leaving it out keeps the app outside Amazon's restricted-data requirements, which matters once this is a public app.
 
+**Listing watch** (built): a seller picks ASINs and what to compare (price, featured offer, other sellers, title and description, photos, best seller rank, review topics). Checks are daily, weekly, or hourly for price and offers only. Owners and admins get one email when something changes. It uses Catalog Items, Product Pricing and Customer Feedback only — never a scrape of the product page. Star ratings, review text, Amazon's Choice and the "bought in the past month" tag are not in those APIs, so they are not offered.
+
 ### 3.5 Review requests (Amazon Solicitations API)
 
 - **Eligibility:** Amazon allows one request per order, sent 5–30 days after delivery. The API (`getSolicitationActionsForOrder`) is the source of truth, and orders already requested in Seller Central come back ineligible.
