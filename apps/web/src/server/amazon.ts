@@ -99,7 +99,10 @@ const roleMissing = (role: string) =>
 
 /** Amazon's `x-amz-date` value, `YYYYMMDDTHHMMSSZ`. */
 function amzDate(now = new Date()): string {
-  return now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  return now
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
 }
 
 type CallOptions = {
