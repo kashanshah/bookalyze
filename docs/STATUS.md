@@ -634,10 +634,15 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   India / Far East), the app's LWA client ID and secret, and the seller's refresh token. They're
   checked with Amazon (LWA token exchange, then `GET /sellers/v1/marketplaceParticipations`),
   then sealed as one JSON value in `connections.secret` (`provider = 'amazon_sp'`,
-  `settings.region`, `settings.storeName`). Amazon refuses the other regions' endpoints with a
-  403 that names no role, so a token is tried on the chosen region and then the others, and
-  connected where it is accepted. One connection per region: connecting again replaces its
-  credentials. No AWS signing is needed (SP-API dropped SigV4).
+  `settings.region`, `settings.storeName`). Every call sends Amazon's required `user-agent`
+  (`Bookalyze/1.0 (Language=TypeScript; Platform=Node.js)`) and `x-amz-date`. Amazon refuses the
+  other regions' endpoints with a 403 that names no role, so a token is tried on the chosen
+  region and then the others, and connected where it is accepted. A 403 on
+  `sellingpartnerapi-eu.amazon.com` is expected for an Amazon.ae seller's own region when the
+  app lacks Selling Partner Insights, or when the app lists a role the developer profile does
+  not have (Tax Invoicing is the usual one): the refusal keeps Amazon's own words. One
+  connection per region: connecting again replaces its credentials. No AWS signing is needed
+  (SP-API dropped SigV4).
 - **Channels** (`sales_channels`, migration `0025_sales_channels`): one per marketplace the account
   is registered in; new ones start switched on where the seller participates. Switching a channel
   off means nothing is synced from it. Disconnecting deletes the credentials and switches channels

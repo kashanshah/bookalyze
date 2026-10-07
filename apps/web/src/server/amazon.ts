@@ -90,8 +90,17 @@ async function accessToken(creds: AmazonCredentials): Promise<string> {
 
 const FORBIDDEN =
   "Amazon refused the request. Check the app is authorized for this seller account and region, and has the roles it needs (Selling Partner Insights, Inventory and Order Tracking, Buyer Communication).";
+/** Amazon requires this shape on every call. A bare client name is refused with 403. */
+const USER_AGENT = "Bookalyze/1.0 (Language=TypeScript; Platform=Node.js)";
+const PARTICIPATIONS_DENIED =
+  "Amazon refused the marketplace list. That call needs the Selling Partner Insights role. It is also refused when the app includes a role your developer profile does not have yet, such as Tax Invoicing: remove that role or get it approved, then authorize the app again and paste the new refresh token in Commerce → Channels.";
 const roleMissing = (role: string) =>
   `Amazon refused the request. In Seller Central → Develop Apps, give the app the ${role} role, then authorize it again and paste the new refresh token in Commerce → Channels.`;
+
+/** Amazon's `x-amz-date` value, `YYYYMMDDTHHMMSSZ`. */
+function amzDate(now = new Date()): string {
+  return now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
 
 type CallOptions = {
   method?: "GET" | "POST";
@@ -120,6 +129,8 @@ async function send(
     const search = query ? `?${new URLSearchParams(query)}` : "";
     const headers: Record<string, string> = {
       "x-amz-access-token": token,
+      "x-amz-date": amzDate(),
+      "user-agent": USER_AGENT,
       Accept: "application/json",
     };
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
@@ -135,7 +146,13 @@ async function send(
   }
   if (options.allow?.includes(response.status)) return response;
   if (response.status === 401 || response.status === 403) {
-    throw new AmazonError(options.forbidden ?? FORBIDDEN, "forbidden");
+    const detail = amazonErrorDetail(await response.json().catch(() => null));
+    // Path and Amazon's own words only. The access token stays in the request header.
+    console.error(
+      `Amazon SP-API ${response.status} ${options.method ?? "GET"} ${path} (${region})${detail ? `: ${detail}` : ""}`,
+    );
+    const base = options.forbidden ?? FORBIDDEN;
+    throw new AmazonError(detail ? `${base} Amazon said: ${detail}` : base, "forbidden");
   }
   if (response.status === 429) {
     throw new AmazonError("Amazon asked us to slow down. We'll carry on shortly.", "throttled");
@@ -170,7 +187,9 @@ export async function marketplaceParticipations(
   region: AmazonRegion,
 ): Promise<MarketplaceParticipation[]> {
   return parseMarketplaceParticipations(
-    await call(creds, region, "/sellers/v1/marketplaceParticipations"),
+    await call(creds, region, "/sellers/v1/marketplaceParticipations", undefined, {
+      forbidden: PARTICIPATIONS_DENIED,
+    }),
   );
 }
 
@@ -187,14 +206,16 @@ export async function resolveAmazonAccount(
     preferred,
     ...AMAZON_REGIONS.map((r) => r.key).filter((key) => key !== preferred),
   ];
+  let denied: AmazonError | null = null;
   for (const region of regions) {
     try {
       return { region, marketplaces: await marketplaceParticipations(creds, region) };
     } catch (error) {
       if (!(error instanceof AmazonError) || error.code !== "forbidden") throw error;
+      denied ??= error;
     }
   }
-  throw new AmazonError(FORBIDDEN, "forbidden");
+  throw denied ?? new AmazonError(PARTICIPATIONS_DENIED, "forbidden");
 }
 
 /**
