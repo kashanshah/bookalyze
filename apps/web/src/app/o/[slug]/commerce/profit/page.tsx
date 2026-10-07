@@ -9,7 +9,8 @@ import {
   minorUnits,
   SETTLEMENT_GROUPS,
 } from "@bookalyze/core";
-import { settlementsForProfit } from "@bookalyze/db";
+import { getSettlementAccounts, schema, settlementsForProfit } from "@bookalyze/db";
+import { eq } from "drizzle-orm";
 import { AlertTriangle, ChartColumn } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -42,6 +43,7 @@ const ROWS: { key: string; label: string; kind?: "subtotal" | "total" | "muted" 
   { key: "promotions", label: "Promotions" },
   { key: "netSales", label: "Net sales", kind: "subtotal" },
   { key: "fees", label: SETTLEMENT_GROUPS.fees },
+  { key: "feeTax", label: SETTLEMENT_GROUPS.feeTax },
   { key: "advertising", label: SETTLEMENT_GROUPS.advertising },
   { key: "reimbursements", label: SETTLEMENT_GROUPS.reimbursements },
   { key: "other", label: SETTLEMENT_GROUPS.other },
@@ -69,7 +71,20 @@ export default async function ChannelProfitPage({
     today,
     fiscalConfigOf(ctx.profile),
   );
-  const rows = await inOrg(ctx, (tx) => settlementsForProfit(tx, { from, to, timezone }));
+  const { rows, feeTaxRecoverable } = await inOrg(ctx, async (tx) => {
+    // Tax on fees recoverable: its account is an asset or liability (input tax), not the fees.
+    const feeTax = (await getSettlementAccounts(tx)).feeTax;
+    const [account] = feeTax
+      ? await tx
+          .select({ type: schema.accounts.type })
+          .from(schema.accounts)
+          .where(eq(schema.accounts.id, feeTax))
+      : [];
+    return {
+      rows: await settlementsForProfit(tx, { from, to, timezone }),
+      feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
+    };
+  });
 
   // One column per channel, in its own currency; plus all of them in the main currency.
   const columns = new Map<string, Column>();
@@ -122,7 +137,10 @@ export default async function ChannelProfitPage({
   const showAll =
     channels.length > 1 || channels.some((c) => c.currency !== baseCurrency) || unconverted > 0;
   const shown = showAll ? [...channels, all] : channels;
-  const results = shown.map((c) => ({ column: c, profit: channelProfit(c.totals) }));
+  const results = shown.map((c) => ({
+    column: c,
+    profit: channelProfit(c.totals, { feeTaxRecoverable }),
+  }));
 
   const cell = (key: string, profit: ReturnType<typeof channelProfit>, currency: string) => {
     if (key === "margin") {
@@ -214,6 +232,9 @@ export default async function ChannelProfitPage({
           Each settlement counts in the period its last day falls in. Settlements in another
           currency are in {baseCurrency} at the rate they posted at, or that day's rate if they
           aren't in your books yet. Product costs come with inventory.
+          {feeTaxRecoverable
+            ? " Tax on Amazon's fees posts to a recoverable tax account, so it isn't counted as a cost."
+            : ""}
         </p>
         {unconverted ? (
           <p className="flex items-center gap-1.5">

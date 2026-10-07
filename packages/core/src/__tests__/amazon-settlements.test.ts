@@ -434,3 +434,47 @@ describe("channelProfit", () => {
     expect(channelProfit(totals)).toMatchObject({ net: "-5.0000", margin: null });
   });
 });
+
+describe("tax on Amazon's fees", () => {
+  const fee = (amountDescription: string) => ({
+    transactionType: "Order",
+    amountType: "ItemFees",
+    amountDescription,
+  });
+  it("is its own group: VAT, GST or HST charged on a fee", () => {
+    expect(settlementGroup(fee("Commission VAT"))).toBe("feeTax");
+    expect(settlementGroup(fee("VAT on FBA Fees"))).toBe("feeTax");
+    expect(settlementGroup(fee("CommissionTax"))).toBe("feeTax");
+    expect(settlementGroup(fee("Commission"))).toBe("fees");
+    expect(settlementGroup(fee("FBAPerUnitFulfillmentFee"))).toBe("fees");
+  });
+
+  it("posts to the fees account until an account of its own is chosen", () => {
+    const input = {
+      total: "84.00",
+      lines: [
+        { ...fee("Principal"), amountType: "ItemPrice", amount: "100.00" },
+        { ...fee("Commission"), amount: "-15.00" },
+        { ...fee("Commission VAT"), amount: "-1.00" },
+      ],
+    };
+    const same = buildSettlementEntry({
+      ...input,
+      accounts: { sales: "s", fees: "f", clearing: "c" },
+    });
+    expect(same.ok && same.lines.find((l) => l.accountId === "f")?.amount).toBe("16.0000");
+    const own = buildSettlementEntry({
+      ...input,
+      accounts: { sales: "s", fees: "f", feeTax: "vat", clearing: "c" },
+    });
+    expect(own.ok && own.lines.find((l) => l.accountId === "vat")?.amount).toBe("1.0000");
+  });
+
+  it("isn't a cost in channel profit when it's recoverable", () => {
+    const totals = { ...emptyGroupTotals(), sales: 1_000_000n, fees: -150_000n, feeTax: -10_000n };
+    expect(channelProfit(totals).net).toBe("84.0000");
+    const registered = channelProfit(totals, { feeTaxRecoverable: true });
+    expect(registered.net).toBe("85.0000");
+    expect(registered.payout).toBe("84.0000");
+  });
+});

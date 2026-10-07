@@ -176,6 +176,7 @@ export const SETTLEMENT_GROUPS = {
   refunds: "Refunds",
   promotions: "Promotions",
   fees: "Amazon fees",
+  feeTax: "Tax on Amazon's fees",
   advertising: "Advertising",
   tax: "Sales tax",
   reimbursements: "Reimbursements",
@@ -198,7 +199,10 @@ export function settlementGroup(
   if (/itemprice/.test(at) && /tax/.test(ad)) return "tax";
   if (/reimburse/.test(`${tt} ${ad}`)) return "reimbursements";
   if (/promotion/.test(at)) return "promotions";
-  if (/fee|commission/.test(`${at} ${ad}`) || /servicefee|storage/.test(tt)) return "fees";
+  const fee = /fee|commission/.test(`${at} ${ad}`) || /servicefee|storage/.test(tt);
+  // VAT, GST or HST Amazon charges on its fees: a cost, or recoverable when registered.
+  if (fee && /\b(vat|gst|hst|qst|pst)\b|tax/.test(ad)) return "feeTax";
+  if (fee) return "fees";
   if (/refund|chargeback|guarantee|a-to-z/.test(tt)) return "refunds";
   if (/order/.test(tt) && /itemprice/.test(at)) return "sales";
   return "other";
@@ -297,6 +301,8 @@ export const SETTLEMENT_ACCOUNT_HINTS: Record<SettlementAccountKey, string> = {
   refunds: "Money given back to buyers. Usually the same income account as sales.",
   promotions: "Discounts you funded. Usually the same income account as sales.",
   fees: "Referral, FBA, storage and selling plan fees. An expense account.",
+  feeTax:
+    "VAT, GST or HST Amazon charges on its fees. Not registered: your fees account (it's a cost). Registered: your recoverable tax (input tax) account. Left empty, it goes with the fees.",
   advertising: "Sponsored ads paid out of the payout. An expense account.",
   tax: "Tax buyers paid, and what Amazon paid for you (marketplace facilitator). When Amazon pays it, the two cancel out. Your sales tax account.",
   reimbursements: "What Amazon pays you back for lost or damaged stock.",
@@ -346,7 +352,8 @@ export function buildSettlementEntry(input: {
   };
   for (const [group, units] of byGroup) {
     if (units === 0n) continue;
-    const account = input.accounts[group];
+    // Tax on fees goes with the fees until an account of its own is chosen.
+    const account = input.accounts[group] ?? (group === "feeTax" ? input.accounts.fees : undefined);
     if (!account) {
       return { ok: false, error: `Choose an account for “${SETTLEMENT_GROUPS[group]}”.` };
     }
@@ -567,6 +574,7 @@ export const PROFIT_GROUPS = [
   "refunds",
   "promotions",
   "fees",
+  "feeTax",
   "advertising",
   "reimbursements",
   "other",
@@ -579,6 +587,7 @@ export const emptyGroupTotals = (): GroupTotals => ({
   refunds: 0n,
   promotions: 0n,
   fees: 0n,
+  feeTax: 0n,
   advertising: 0n,
   tax: 0n,
   reimbursements: 0n,
@@ -607,9 +616,16 @@ export function addSettlementLines(
  * back, which aren't the seller's to keep or spend yet), the payouts (net plus those), and the
  * margin (net over sales, before the cost of the goods). Amounts as decimal strings.
  */
-export function channelProfit(totals: GroupTotals) {
-  const net = PROFIT_GROUPS.reduce((t, g) => t + totals[g], 0n);
-  const payout = net + totals.tax + totals.reserve;
+export function channelProfit(
+  totals: GroupTotals,
+  options: {
+    /** Tax on Amazon's fees is recoverable (the company is registered): not a cost. */
+    feeTaxRecoverable?: boolean;
+  } = {},
+) {
+  const recoverable = options.feeTaxRecoverable ? totals.feeTax : 0n;
+  const net = PROFIT_GROUPS.reduce((t, g) => t + totals[g], 0n) - recoverable;
+  const payout = net + recoverable + totals.tax + totals.reserve;
   const sales = totals.sales + totals.refunds + totals.promotions;
   return {
     groups: Object.fromEntries(
