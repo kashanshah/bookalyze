@@ -26,7 +26,7 @@ _Last updated: 2026-10-06, phase 4 slice 2 (settlements post to the books)._
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen), slice 3 (review requests: manual, bulk, automatic) and refunds on orders (red badge, Refunded tab) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation and Finance and Accounting roles) |
-| 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Next: phase 4b (UAE: Amazon.ae under the Dubai company, Noon) or phase 5 (inventory and cost of goods sold) |
+| 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -913,6 +913,22 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   (phase 5).
 - Tests: core `amazon-settlements.test.ts` (`channelProfit`), db `settlements.test.ts`
   (`settlementsForProfit`), e2e settlements test (the page shows Amazon.ca's column).
+
+### Phase 4b, slice 1: tax on Amazon's fees
+
+- **Why:** Amazon charges VAT (UAE), GST/HST (Canada) on its fees. Whether that's a cost or
+  recoverable input tax depends on the company being registered, which is the company's call
+  (turnover outside the app counts too), not something the app works out.
+- **Group** `feeTax` ("Tax on Amazon's fees", core `settlementGroup`): a fee line (fee or
+  commission in its type or description) whose description names VAT, GST, HST, QST, PST or tax.
+- **Account** (How settlements post): not registered → the fees account (a cost); registered →
+  the recoverable tax account. Left empty it posts with the fees (`buildSettlementEntry`), so
+  setups saved before keep posting as they did.
+- **Channel profit:** when the chosen account is an asset or liability (input tax), tax on fees
+  isn't counted as a cost (`channelProfit(…, { feeTaxRecoverable })`); it's still in "Paid out".
+- Not built (by decision): a VAT registration threshold watch. Noon moved to phase 4c, after
+  phase 5.
+- Tests: core `amazon-settlements.test.ts` ("tax on Amazon's fees").
 
 ### Order badges: refunded, A-to-z claim, chargeback, replaced
 
