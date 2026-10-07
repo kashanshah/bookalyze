@@ -20,7 +20,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { isIsoDate, nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
-import { AmazonError, marketplaceParticipations, ownsOrder } from "@/server/amazon";
+import { AmazonError, ownsOrder, resolveAmazonAccount } from "@/server/amazon";
 import { type OrderSyncResult, syncOrgOrders } from "@/server/amazon-orders";
 import { audit } from "@/server/audit";
 import {
@@ -86,7 +86,7 @@ const connectSchema = z.object({
 export async function connectAmazonAction(
   slug: string,
   input: z.input<typeof connectSchema>,
-): Promise<CommerceResult<{ channels: number }>> {
+): Promise<CommerceResult<{ channels: number; regionLabel: string; moved: boolean }>> {
   const { ctx, denied } = await adminContext(slug);
   if (denied) return denied;
   const parsed = connectSchema.safeParse(input);
@@ -96,10 +96,11 @@ export async function connectAmazonAction(
       errors[String(issue.path[0] ?? "form")] ??= issue.message;
     return { ok: false, message: "Check the highlighted fields.", errors };
   }
-  const { region, ...creds } = parsed.data;
-  if (!isAmazonRegion(region)) return { ok: false, message: "Choose a region." };
+  const { region: chosen, ...creds } = parsed.data;
+  if (!isAmazonRegion(chosen)) return { ok: false, message: "Choose a region." };
   try {
-    const marketplaces = await marketplaceParticipations(creds, region);
+    const account = await resolveAmazonAccount(creds, chosen);
+    const { region, marketplaces } = account;
     const regionLabel = AMAZON_REGIONS.find((r) => r.key === region)?.label ?? region;
     const storeName = marketplaces.find((m) => m.storeName)?.storeName ?? null;
     const candidates = await inOrg(ctx, (tx) => amazonConnectionsForRegion(tx, region));
@@ -162,7 +163,12 @@ export async function connectAmazonAction(
       });
     });
     revalidate(slug);
-    return { ok: true, channels: marketplaces.filter((m) => m.participating).length };
+    return {
+      ok: true,
+      channels: marketplaces.filter((m) => m.participating).length,
+      regionLabel,
+      moved: region !== chosen,
+    };
   } catch (error) {
     return failure(error);
   }
@@ -186,11 +192,18 @@ export async function testAmazonAction(
   let count = 0;
   try {
     const creds = openAmazonCredentials(ctx.org.id, connectionId, connection.secret);
-    const marketplaces = await marketplaceParticipations(creds, region);
-    count = marketplaces.filter((m) => m.participating).length;
-    await inOrg(ctx, (tx) =>
-      saveAmazonChannels(tx, { orgId: ctx.org.id, connectionId, marketplaces }),
-    );
+    const account = await resolveAmazonAccount(creds, region);
+    if (account.region !== region) {
+      const actual = AMAZON_REGIONS.find((r) => r.key === account.region)?.label ?? account.region;
+      const chosen = AMAZON_REGIONS.find((r) => r.key === region)?.label ?? region;
+      error = `These credentials are for ${actual}, and this connection is ${chosen}. Replace them and choose ${actual}.`;
+    } else {
+      const marketplaces = account.marketplaces;
+      count = marketplaces.filter((m) => m.participating).length;
+      await inOrg(ctx, (tx) =>
+        saveAmazonChannels(tx, { orgId: ctx.org.id, connectionId, marketplaces }),
+      );
+    }
   } catch (e) {
     if (!(e instanceof AmazonError) && !(e instanceof VaultError)) throw e;
     error = e.message;
