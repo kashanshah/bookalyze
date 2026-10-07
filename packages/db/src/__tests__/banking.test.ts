@@ -23,7 +23,7 @@ import { upsertFxRates } from "../fx";
 import { createDefaultChart, postJournalEntry } from "../ledger";
 import { applyRuleToExisting, countRuleMatches, createRule, deleteRule, listRules } from "../rules";
 import * as schema from "../schema";
-import { replaceJournalEntry } from "../transactions";
+import { replaceJournalEntry, voidJournalEntry } from "../transactions";
 
 const ownerUrl =
   process.env.TEST_DATABASE_URL_MIGRATOR ??
@@ -565,6 +565,47 @@ describe("bank connections", () => {
       sql`select connection_id from syncable_connections()`,
     );
     expect(listed.rows.map((r) => r.connection_id)).not.toContain(feed.connectionId);
+  });
+
+  it("brings a removed statement transaction back when the file is uploaded again", async () => {
+    const feed = await inOrg(orgA, (tx) =>
+      statementFeedFor(tx, {
+        orgId: orgA,
+        accountId: cadBank,
+        accountName: "Bank statements",
+        currency: "CAD",
+        firstDate: "2027-08-15",
+      }),
+    );
+    const rows = [
+      line({
+        feedId: feed.feedId,
+        externalId: `csv:${cadBank}:2027-08-15:-12.0000:bb:0`,
+        date: "2027-08-15",
+        amount: "-12.0000",
+      }),
+    ];
+    expect(await sync(rows)).toMatchObject({ posted: 1, duplicates: 0 });
+    const [posted] = await inOrg(orgA, (tx) =>
+      tx.select().from(schema.bankLines).where(eq(schema.bankLines.externalId, rows[0].externalId)),
+    );
+    await inOrg(orgA, (tx) =>
+      voidJournalEntry(tx, { orgId: orgA, entryId: posted?.journalEntryId ?? "" }),
+    );
+    expect(await sync(rows)).toMatchObject({ posted: 1, duplicates: 0 });
+    const [restored] = await inOrg(orgA, (tx) =>
+      tx.select().from(schema.bankLines).where(eq(schema.bankLines.externalId, rows[0].externalId)),
+    );
+    expect(restored?.journalEntryId).toBeTruthy();
+    expect(restored?.journalEntryId).not.toBe(posted?.journalEntryId);
+    const [entry] = await inOrg(orgA, (tx) =>
+      tx
+        .select({ reversedByEntryId: schema.journalEntries.reversedByEntryId })
+        .from(schema.journalEntries)
+        .where(eq(schema.journalEntries.id, restored?.journalEntryId ?? "")),
+    );
+    expect(entry?.reversedByEntryId).toBeNull();
+    expect(await sync(rows)).toMatchObject({ posted: 0, duplicates: 1 });
   });
 
   it("categorizes bank lines with rules as they arrive, and uncategorized ones on request", async () => {

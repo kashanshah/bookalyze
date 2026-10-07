@@ -1,0 +1,2 @@
+DROP INDEX "journal_entries_org_bank_source_key";--> statement-breakpoint
+CREATE UNIQUE INDEX "journal_entries_org_bank_source_key" ON "journal_entries" USING btree ("organization_id","source_id") WHERE "journal_entries"."source" = 'bank_import' and "journal_entries"."reversed_by_entry_id" is null;

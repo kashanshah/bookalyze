@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-07, listing watch (Amazon products, official API only)._
+_Last updated: 2026-10-07, a removed bank transaction comes back on the next statement upload or sync._
 
 ---
 
@@ -380,8 +380,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   - `connections` (provider `wise`, sealed `secret`, `settings` such as the Wise profile and fee
     account, last sync and last error) and `bank_feeds` (one per Wise balance → one `cash_bank`
     account, `sync_from`, `synced_through`). Both under RLS.
-  - Unique `(organization_id, source_id)` where `source = 'bank_import'`: a bank line is posted
-    once, ever. Edits and deletes keep the original (reversed) row, so it stays recognised.
+  - Unique `(organization_id, source_id)` where `source = 'bank_import'` and the entry is still
+    in the books (migration `0038_reimport_removed_bank`): a bank line is posted once while it
+    stands. Removing it frees the id, so the next sync or statement upload brings it back. An
+    edit or a merge keeps the id on the entry that stands for it, so that one is not posted again.
   - `syncable_connections()` (SECURITY DEFINER) gives the daily job organization and connection
     IDs only; each sync then runs inside `withOrg()`.
 - **Core** (`banking/`): `parseWiseProfiles/Balances/Statement` (JSON numbers become exact
@@ -392,11 +394,12 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   `bank_lines`, unique on `(organization_id, external_id)` (Wise: `wise:<balance>:<reference>`; a
   statement upload will hash its rows the same way). Syncing again, overlapping windows or
   uploading the same file twice can't add it twice. Status `posted` (`journal_entry_id`) or
-  `pending` (`reason`, e.g. no rate yet; retried every sync). Editing a bank transaction
+  `pending` (`reason`, e.g. no rate yet; retried every sync). A posted line whose transaction was
+  removed is posted again on the next sync or upload. Editing a bank transaction
   (`replaceJournalEntry`) or merging it moves the link to the entry that stands for it now
   (`carryEntryLinks`), and an edited one keeps source `bank_import`.
 - **DB** (`banking.ts`): connections and feeds, and `importBankLines()`: stores the lines, then
-  posts each new or pending one (each in a savepoint). A conversion between two connected
+  posts each new or pending one, and each one whose transaction was removed (each in a savepoint). A conversion between two connected
   balances is one cross-currency transfer (source id `conversion:<ref>`); foreign lines use the
   Bank of Canada rate of the day.
 - **Possible duplicates, the Wave way** (`duplicates.ts`, table `duplicate_suggestions`):

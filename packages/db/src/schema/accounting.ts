@@ -196,10 +196,11 @@ export const journalEntries = pgTable(
     uniqueIndex("journal_entries_org_import_source_key")
       .on(t.organizationId, t.sourceId)
       .where(sql`${t.source} = 'import' and ${t.reversedByEntryId} is null`),
-    // A bank transaction (from a connection or a statement file) is posted once.
+    // A bank transaction is in the books once. A removed (reversed) one no longer counts, so the
+    // next sync or statement upload brings it back. An edited one keeps the id on its replacement.
     uniqueIndex("journal_entries_org_bank_source_key")
       .on(t.organizationId, t.sourceId)
-      .where(sql`${t.source} = 'bank_import'`),
+      .where(sql`${t.source} = 'bank_import' and ${t.reversedByEntryId} is null`),
     foreignKey({
       name: "journal_entries_reversed_by_fk",
       columns: [t.organizationId, t.reversedByEntryId],

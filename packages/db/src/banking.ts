@@ -9,13 +9,13 @@ import {
   prepareTransfer,
   transactionLines,
 } from "@bookalyze/core";
-import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { findDuplicateOf, suggestDuplicate } from "./duplicates";
 import { fxRateOn } from "./fx";
 import { LedgerError, postJournalEntry } from "./ledger";
 import { activeRules, recordRuleApplication } from "./rules";
-import { accounts } from "./schema/accounting";
+import { accounts, journalEntries } from "./schema/accounting";
 import { bankFeeds, bankLines, type ConnectionProvider, connections } from "./schema/banking";
 
 /**
@@ -258,7 +258,8 @@ type BankLineRow = typeof bankLines.$inferSelect;
 
 /**
  * Brings bank lines into the books. Each line is stored once in `bank_lines` (its external ID is
- * unique), so a re-sync or the same file uploaded again adds nothing. Each new line is posted:
+ * unique). A line already in the books is left alone; one whose transaction was removed is posted
+ * again. Each new line is posted:
  * to Uncategorized (fee split out) or, for a conversion between two connected balances, as one
  * transfer. One that looks like a transaction already in the books is flagged as a possible
  * duplicate for someone to merge or keep (see duplicates.ts); nothing is merged on its own.
@@ -309,13 +310,24 @@ export async function importBankLines(
     inserted.push(...rows);
   }
   const insertedIds = new Set(inserted.map((r) => r.externalId));
-  // Already known lines still pending (no rate yet, closed period) get another try.
+  // Already known lines still pending (no rate yet, closed period) get another try, and so does
+  // a line whose transaction was removed. An edit or a merge points the line at the entry that
+  // still stands, so that one is not posted again.
   const known = input.lines.map((l) => l.externalId).filter((id) => !insertedIds.has(id));
+  const removed = sql`exists (
+    select 1 from ${journalEntries} e
+    where e.id = ${bankLines.journalEntryId} and e.reversed_by_entry_id is not null
+  )`;
   const retry = known.length
     ? await tx
         .select()
         .from(bankLines)
-        .where(and(eq(bankLines.status, "pending"), inArray(bankLines.externalId, known)))
+        .where(
+          and(
+            inArray(bankLines.externalId, known),
+            or(eq(bankLines.status, "pending"), and(eq(bankLines.status, "posted"), removed)),
+          ),
+        )
     : [];
   result.duplicates = input.lines.length - inserted.length - retry.length;
 
