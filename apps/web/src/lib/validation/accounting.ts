@@ -1,4 +1,5 @@
 import {
+  canHoldOneCurrency,
   FILING_FREQUENCIES,
   getAccountSubtype,
   isAccountSubtype,
@@ -65,7 +66,9 @@ export const accountSchema = z
         message: "Bank and card accounts hold one currency. Choose it.",
       });
     }
-  });
+  })
+  // Categories (income, expenses, equity) take any currency.
+  .transform((value) => (canHoldOneCurrency(value.type) ? value : { ...value, currency: null }));
 
 export type AccountInput = z.input<typeof accountSchema>;
 

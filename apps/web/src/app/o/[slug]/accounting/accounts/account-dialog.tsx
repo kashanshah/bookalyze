@@ -4,6 +4,7 @@ import {
   ACCOUNT_TYPES,
   type AccountType,
   accountTypes,
+  canHoldOneCurrency,
   getAccountSubtype,
   subtypesOf,
 } from "@bookalyze/core";
@@ -82,16 +83,24 @@ function AccountForm({
   const needsCurrency = Boolean(getAccountSubtype(subtype)?.needsCurrency);
   const typeLocked = Boolean(account?.isSystem || account?.isUsed);
 
+  // Bank and card accounts start in the main currency; anything else starts as "Any currency",
+  // so a currency filled in for a bank account doesn't stay behind on a category.
+  function currencyFor(nextType: AccountType, nextSubtype: string) {
+    if (getAccountSubtype(nextSubtype)?.needsCurrency) return currency || baseCurrency;
+    if (!canHoldOneCurrency(nextType)) return "";
+    return account ? currency : "";
+  }
+
   function chooseType(next: AccountType) {
     setType(next);
     const first = subtypesOf(next)[0]?.key ?? "";
     setSubtype(first);
-    if (getAccountSubtype(first)?.needsCurrency && !currency) setCurrency(baseCurrency);
+    setCurrency(currencyFor(next, first));
   }
 
   function chooseSubtype(next: string) {
     setSubtype(next);
-    if (getAccountSubtype(next)?.needsCurrency && !currency) setCurrency(baseCurrency);
+    setCurrency(currencyFor(type, next));
   }
 
   return (
@@ -200,30 +209,32 @@ function AccountForm({
           </Field>
         </div>
 
-        <Field
-          label={needsCurrency ? "Currency" : "Currency (optional)"}
-          htmlFor="currency"
-          error={errors.currency}
-          hint={
-            account?.isUsed && currency !== (account.currency ?? "")
-              ? "Amounts already recorded stay exactly as they are; only new transactions use the new currency. If they were really in the new currency, correct them on Banking → Bank accounts."
-              : needsCurrency
-                ? "The currency this account is held in."
-                : "Leave as “Any currency” unless this account only ever holds one."
-          }
-        >
-          <Combobox
-            id="currency"
-            value={currency}
-            onChange={setCurrency}
-            placeholder="Choose a currency…"
-            searchPlaceholder="Search currencies"
-            options={[
-              ...(needsCurrency ? [] : [{ value: "", label: "Any currency" }]),
-              ...currencies.map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` })),
-            ]}
-          />
-        </Field>
+        {canHoldOneCurrency(type) ? (
+          <Field
+            label={needsCurrency ? "Currency" : "Currency (optional)"}
+            htmlFor="currency"
+            error={errors.currency}
+            hint={
+              account?.isUsed && currency !== (account.currency ?? "")
+                ? "Amounts already recorded stay exactly as they are; only new transactions use the new currency. If they were really in the new currency, correct them on Banking → Bank accounts."
+                : needsCurrency
+                  ? "The currency this account is held in."
+                  : "Leave as “Any currency” unless this account only ever holds one."
+            }
+          >
+            <Combobox
+              id="currency"
+              value={currency}
+              onChange={setCurrency}
+              placeholder="Choose a currency…"
+              searchPlaceholder="Search currencies"
+              options={[
+                ...(needsCurrency ? [] : [{ value: "", label: "Any currency" }]),
+                ...currencies.map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` })),
+              ]}
+            />
+          </Field>
+        ) : null}
 
         <Field label="Description (optional)" htmlFor="description" error={errors.description}>
           <Input
