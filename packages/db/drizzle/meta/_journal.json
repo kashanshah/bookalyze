@@ -253,6 +253,13 @@
       "when": 1791315424195,
       "tag": "0035_settlement_currencies",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791340638582,
+      "tag": "0036_categories_any_currency",
+      "breakpoints": true
     }
   ]
 }

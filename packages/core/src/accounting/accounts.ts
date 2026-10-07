@@ -104,6 +104,15 @@ export function isAccountType(value: string): value is AccountType {
   return (ACCOUNT_TYPES as readonly string[]).includes(value);
 }
 
+/**
+ * Only what you hold or owe (assets and liabilities) can be kept to one currency. Income,
+ * expense and equity categories take amounts in any currency: a sale in USD and one in CAD can
+ * both be "Sales".
+ */
+export function canHoldOneCurrency(type: string): boolean {
+  return type === "asset" || type === "liability";
+}
+
 export function isAccountSubtype(value: string): value is AccountSubtype {
   return SUBTYPES_BY_KEY.has(value);
 }

@@ -1161,6 +1161,10 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
     currency).
   - Rounding residue in base amounts goes on the largest line.
   - Accounts with a `currency` (bank, card) accept only entries in that currency.
+  - Only assets and liabilities can have a `currency` (`canHoldOneCurrency` in core). Income,
+    expense and equity categories take any currency: `accountSchema` drops one sent for them,
+    the account dialog hides the field, and migration `0036_categories_any_currency` cleared the
+    ones saved before (the add-account dialog used to carry the bank default over).
 - **Never edit or delete posted entries.** Correct them with `reverseJournalEntry()` and post a new
   entry. The database enforces this.
 - **Always validate first.** Call `prepareJournalEntry()` (core), then `postJournalEntry()` (db),
