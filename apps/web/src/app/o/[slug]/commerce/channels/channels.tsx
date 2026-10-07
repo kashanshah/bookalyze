@@ -94,8 +94,8 @@ export function ChannelsScreen({
               </li>
               <li>
                 <span className="font-medium">2.</span> Give it these roles: Selling Partner
-                Insights, Inventory and Order Tracking, Finance and Accounting (for refunds), and
-                Buyer Communication.
+                Insights, Inventory and Order Tracking, Finance and Accounting (for refunds), Buyer
+                Communication, and Tax Invoicing (for customer invoices).
               </li>
               <li>
                 <span className="font-medium">3.</span> Copy its LWA client ID and client secret,
@@ -335,8 +335,11 @@ function ConnectForm({
             if (!result.errors) toast.error(result.message);
             return;
           }
-          toast.success(replacing ? "Credentials replaced" : "Amazon connected", {
-            description: `Selling in ${result.channels} ${result.channels === 1 ? "marketplace" : "marketplaces"}.`,
+          const selling = `Selling in ${result.channels} ${result.channels === 1 ? "marketplace" : "marketplaces"}.`;
+          toast.success(result.moved || !replacing ? "Amazon connected" : "Credentials replaced", {
+            description: result.moved
+              ? `These credentials are for ${result.regionLabel}, so the account was connected there. ${selling}`
+              : selling,
           });
           onDone();
         });

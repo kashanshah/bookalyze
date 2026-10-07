@@ -4,6 +4,7 @@ import {
   type BuyerClaim,
   can,
   formatDecimal,
+  formatInvoiceNumber,
   ORDER_STATUS_GROUPS,
   orderStatusLabel,
   parseDecimal,
@@ -11,8 +12,8 @@ import {
   reviewWindow,
   sellerCentralOrderUrl,
 } from "@bookalyze/core";
-import { getOrder, getReviewRequest } from "@bookalyze/db";
-import { ArrowLeft, ExternalLink, Package, Star, Undo2 } from "lucide-react";
+import { getOrder, getOrderInvoice, getReviewRequest } from "@bookalyze/db";
+import { ArrowLeft, Download, ExternalLink, FileText, Package, Star, Undo2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -26,8 +27,9 @@ import { getCommerceContext } from "@/server/commerce";
 import { isOrgAdmin } from "@/server/org";
 import { AskOneButton, EligibilityCheck } from "../../../reviews/review-rows";
 import { refundBadge, statusVariant } from "../status";
+import { InvoiceDialog } from "./invoice-dialog";
 
-/** "Ask for a review now" runs inside this page's server actions. */
+/** Review requests and the invoice lookup talk to Amazon from this page. */
 export const maxDuration = 60;
 
 export const metadata: Metadata = { title: "Order" };
@@ -47,10 +49,15 @@ export default async function OrderPage({
   const reviewsOn = can(ctx.plan, ctx.enabledModules, "reviews.manual");
   const found = await inOrg(ctx, async (tx) => {
     const row = await getOrder(tx, id);
-    return row && { ...row, request: reviewsOn ? await getReviewRequest(tx, id) : null };
+    if (!row) return null;
+    return {
+      ...row,
+      request: reviewsOn ? await getReviewRequest(tx, id) : null,
+      invoice: await getOrderInvoice(tx, id),
+    };
   });
   if (!found) notFound();
-  const { order, channel, items, refunds, request, replaces, replacedBy } = found;
+  const { order, channel, items, refunds, request, replaces, replacedBy, invoice } = found;
   const claim = order.buyerClaim ? BUYER_CLAIMS[order.buyerClaim as BuyerClaim] : null;
   const ordersBase = `/o/${slug}/commerce/orders`;
   const refund = refundBadge(order.total, order.refunded);
@@ -402,10 +409,61 @@ export default async function OrderPage({
               </div>
             ) : null}
             <p className="mt-5 border-t pt-4 text-muted-foreground text-xs leading-relaxed">
-              Buyer names and addresses stay in Seller Central: Bookalyze doesn't ask Amazon for
-              them.
+              The order itself doesn't keep the buyer's name or address. A customer invoice can
+              include the name and tax number, and you can add an address.
             </p>
           </aside>
+          {invoice || isOrgAdmin(ctx) ? (
+            <section className="rounded-2xl border bg-card p-5 shadow-xs">
+              <h2 className="flex items-center gap-2 font-medium text-sm">
+                <FileText className="size-4 text-primary" />
+                Customer invoice
+              </h2>
+              {invoice ? (
+                <>
+                  <p className="mt-2 text-sm">
+                    <span className="tabular font-medium">
+                      {formatInvoiceNumber(invoice.invoiceNumber)}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-muted-foreground text-xs leading-relaxed">
+                    Upload this file in Seller Central, on the buyer's invoice request. Sending it
+                    from here comes later.
+                  </p>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <Button asChild variant="outline" size="sm">
+                      <a href={`/api/o/${slug}/invoices/${invoice.id}?download=1`}>
+                        <Download />
+                        Download
+                      </a>
+                    </Button>
+                    {isOrgAdmin(ctx) ? (
+                      <InvoiceDialog
+                        slug={slug}
+                        orderId={order.id}
+                        locale={locale}
+                        mode="correct"
+                      />
+                    ) : null}
+                  </div>
+                </>
+              ) : items.length === 0 || order.total == null ? (
+                <p className="mt-2 text-muted-foreground text-sm">
+                  You can create an invoice once Amazon has priced this order.
+                </p>
+              ) : (
+                <>
+                  <p className="mt-2 text-muted-foreground text-sm leading-relaxed">
+                    A PDF for the buyer, from this order. Upload it in Seller Central on their
+                    invoice request. Sending it from here comes later.
+                  </p>
+                  <div className="mt-4">
+                    <InvoiceDialog slug={slug} orderId={order.id} locale={locale} mode="create" />
+                  </div>
+                </>
+              )}
+            </section>
+          ) : null}
           {review ? (
             <section className="rounded-2xl border bg-card p-5 shadow-xs">
               <h2 className="flex items-center gap-2 font-medium text-sm">

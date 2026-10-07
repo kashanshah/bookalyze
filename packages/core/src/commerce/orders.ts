@@ -3,8 +3,8 @@ import { formatDecimal, parseDecimal } from "../money";
 /**
  * Amazon orders (Orders API v0): parsing, status wording and the sync window. Orders are kept
  * for the Orders screen and analytics; the books are written from settlements later, so nothing
- * here touches the ledger. No buyer details are requested or kept, only the ship-to country and
- * region (which sales tax depends on).
+ * here touches the ledger. The sync keeps no buyer details, only the ship-to country and region
+ * (which sales tax depends on). A customer invoice may ask for the name and tax number later.
  */
 
 /** Amazon's order statuses, in the words the Orders screen uses. */

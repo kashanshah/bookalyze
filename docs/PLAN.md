@@ -302,7 +302,7 @@ Later, when the RBC/Wise deposit arrives, it is matched as a transfer:
 
 Taxes collected, reimbursements, reserves and other adjustments each map to their own lines. Order-level detail stays in the commerce module for analytics, while the ledger stays clean.
 
-**PII policy:** we do **not** request buyer PII (no Restricted Data Tokens). None of these features need it, and leaving it out keeps the app outside Amazon's restricted-data requirements, which matters once this is a public app.
+**PII policy:** order sync does **not** request buyer PII (no Restricted Data Tokens). A customer invoice is the exception: opening **Create invoice** asks Amazon for that order's buyer name and tax number only (`buyerInfo`), never the email and never the street address. Those details are stored on the invoice, not on the order. Leaving general buyer data out keeps the rest of the app outside Amazon's restricted-data requirements, which matters once this is a public app.
 
 **Listing watch** (built): a seller picks ASINs and what to compare (price, featured offer, other sellers, title and description, photos, best seller rank, review topics). Checks are daily, weekly, or hourly for price and offers only. Owners and admins get one email when something changes. It uses Catalog Items, Product Pricing and Customer Feedback only — never a scrape of the product page. Star ratings, review text, Amazon's Choice and the "bought in the past month" tag are not in those APIs, so they are not offered.
 
@@ -533,6 +533,7 @@ A domain like 3dboxstudio.com works well because it is *both* a memorable brand 
 | 2026-10-04 | No Wave invoicing in use, so invoices/bills/AR/AP move to phase 8 (public launch). |
 | 2026-10-04 | UAE commerce (Amazon.ae + Noon) comes after the Canadian companies, as **phase 4b**. |
 | 2026-10-07 | VAT registration is a setting the company makes (the account tax on fees posts to), never inferred from turnover in the app. Noon moves to **phase 4c**, after phase 5. |
+| 2026-10-07 | Amazon customer invoices are PDFs on the order, not ledger invoices. Creating one may ask Amazon for that order's buyer name and tax number only (never email). Sending the PDF through Amazon waits on Buyer Communication. |
 
 | 2026-10-04 | Name: **Bookalyze** (`bookalyze.com`). |
 | 2026-10-04 | Kazomo For Online Selling is a **Dubai** sole establishment (DET e-Trader license), **not VAT-registered**. Kazomo Inc. is a federal (CBCA) corporation with a short first fiscal year (Jun–Dec 2026); Teknoffice is an Ontario corporation. Entity type and first fiscal year start become org settings, and an Entity & compliance module is added. |

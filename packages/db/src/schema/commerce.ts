@@ -1,4 +1,4 @@
-import type { ListingObservation } from "@bookalyze/core";
+import type { ListingObservation, OrderInvoice } from "@bookalyze/core";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -75,7 +75,8 @@ export const salesChannels = pgTable(
 
 /**
  * An order on a sales channel, as the marketplace reports it (kept up to date by the sync).
- * Orders don't post to the books: settlements do. No buyer details are kept.
+ * Orders don't post to the books: settlements do. Buyer name and tax number are not kept here;
+ * a customer invoice may store them for that document only.
  */
 export const orders = pgTable(
   "orders",
@@ -562,5 +563,50 @@ export const listingChanges = pgTable(
       sql`${t.field} in ('content', 'images', 'price', 'featured', 'offers', 'rank', 'reviews')`,
     ),
     tenantIsolationPolicy("listing_changes", t.organizationId),
+  ],
+);
+
+/**
+ * A customer invoice for one order: the PDF a buyer asked for. It does not post to the books.
+ * The snapshot is the document as issued (including the buyer's name and tax number). Email is
+ * never stored. One current invoice per order; correcting it keeps the number.
+ */
+export const orderInvoices = pgTable(
+  "order_invoices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id").notNull(),
+    /** Sequential per organization, shown as "INV-0001". */
+    invoiceNumber: integer("invoice_number").notNull(),
+    title: text("title").notNull(),
+    currency: char("currency", { length: 3 }).notNull(),
+    snapshot: jsonb("snapshot").$type<OrderInvoice>().notNull(),
+    storageKey: text("storage_key").notNull(),
+    fileName: text("file_name").notNull(),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    unique("order_invoices_org_id_key").on(t.organizationId, t.id),
+    unique("order_invoices_org_number_key").on(t.organizationId, t.invoiceNumber),
+    unique("order_invoices_order_key").on(t.organizationId, t.orderId),
+    unique("order_invoices_storage_key_key").on(t.storageKey),
+    index("order_invoices_order_idx").on(t.organizationId, t.orderId),
+    foreignKey({
+      name: "order_invoices_order_fk",
+      columns: [t.organizationId, t.orderId],
+      foreignColumns: [orders.organizationId, orders.id],
+    }).onDelete("cascade"),
+    check("order_invoices_number_positive", sql`${t.invoiceNumber} > 0`),
+    check("order_invoices_title_valid", sql`${t.title} in ('Invoice', 'Tax invoice')`),
+    tenantIsolationPolicy("order_invoices", t.organizationId),
   ],
 );

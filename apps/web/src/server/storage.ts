@@ -113,6 +113,31 @@ export async function createUploadTarget(input: {
   throw new Error("File storage isn't configured");
 }
 
+/** Saves a file the server created (an invoice PDF). Browsers still upload through a presigned URL. */
+export async function putStoredFile(input: {
+  key: string;
+  bytes: Uint8Array;
+  contentType: string;
+}) {
+  const driver = storageDriver();
+  if (driver === "s3") {
+    await s3().send(
+      new PutObjectCommand({
+        Bucket: env().AWS_S3_BUCKET,
+        Key: input.key,
+        Body: input.bytes,
+        ContentType: input.contentType,
+      }),
+    );
+    return;
+  }
+  if (driver === "local") {
+    await writeLocalFile(input.key, input.bytes);
+    return;
+  }
+  throw new Error("File storage isn't configured");
+}
+
 /** Saves an uploaded file with the local driver. */
 export async function writeLocalFile(key: string, bytes: Uint8Array) {
   const path = localPath(key);
@@ -172,15 +197,41 @@ export async function deleteStoredFile(key: string) {
   await rm(localPath(key), { force: true });
 }
 
-/** e.g. "org/<org>/attachments/2026/10/<id>/receipt-march.pdf" */
-export function attachmentKey(orgId: string, id: string, fileName: string, now = new Date()) {
-  const safe =
+function safeFileName(fileName: string): string {
+  return (
     fileName
       .normalize("NFKD")
       .replace(/[^\w.-]+/g, "-")
       .replace(/-+/g, "-")
       .replace(/^-|-$/g, "")
-      .slice(-100) || "file";
+      .slice(-100) || "file"
+  );
+}
+
+/** e.g. "org/<org>/invoices/2026/10/<id>/INV-0001.pdf" */
+export function invoiceKey(orgId: string, id: string, fileName: string, now = new Date()) {
   const month = String(now.getUTCMonth() + 1).padStart(2, "0");
-  return join("org", orgId, "attachments", String(now.getUTCFullYear()), month, id, safe);
+  return [
+    "org",
+    orgId,
+    "invoices",
+    String(now.getUTCFullYear()),
+    month,
+    id,
+    safeFileName(fileName),
+  ].join("/");
+}
+
+/** e.g. "org/<org>/attachments/2026/10/<id>/receipt-march.pdf" */
+export function attachmentKey(orgId: string, id: string, fileName: string, now = new Date()) {
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+  return join(
+    "org",
+    orgId,
+    "attachments",
+    String(now.getUTCFullYear()),
+    month,
+    id,
+    safeFileName(fileName),
+  );
 }

@@ -9,6 +9,7 @@ import {
   type AmazonRegion,
   amazonErrorDetail,
   type MarketplaceParticipation,
+  parseBuyerInfo,
   parseMarketplaceParticipations,
   parseOrderItemsPage,
   parseOrdersPage,
@@ -94,6 +95,10 @@ const roleMissing = (role: string) =>
 
 type CallOptions = {
   method?: "GET" | "POST";
+  /** JSON body for a POST. */
+  body?: unknown;
+  /** Use this instead of the login token (a restricted-data token). */
+  token?: string;
   /** What to say when Amazon refuses (401 or 403). */
   forbidden?: string;
   /** Answer these statuses instead of throwing. */
@@ -107,15 +112,21 @@ async function send(
   query: Record<string, string> | undefined,
   options: CallOptions,
 ): Promise<Response> {
-  const token = await accessToken(creds);
+  const token = options.token ?? (await accessToken(creds));
   const base =
     env().AMAZON_SPAPI_URL ?? AMAZON_REGIONS.find((r) => r.key === region)?.endpoint ?? "";
   let response: Response;
   try {
     const search = query ? `?${new URLSearchParams(query)}` : "";
+    const headers: Record<string, string> = {
+      "x-amz-access-token": token,
+      Accept: "application/json",
+    };
+    if (options.body !== undefined) headers["Content-Type"] = "application/json";
     response = await fetch(`${base}${path}${search}`, {
       method: options.method ?? "GET",
-      headers: { "x-amz-access-token": token, Accept: "application/json" },
+      headers,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       cache: "no-store",
       signal: AbortSignal.timeout(30_000),
     });
@@ -161,6 +172,29 @@ export async function marketplaceParticipations(
   return parseMarketplaceParticipations(
     await call(creds, region, "/sellers/v1/marketplaceParticipations"),
   );
+}
+
+/**
+ * The region these credentials belong to. A seller account lives in one region: the same token
+ * is refused (403) by the others, which looks like a missing role. Try the chosen region first,
+ * then the others, and use the one Amazon accepts.
+ */
+export async function resolveAmazonAccount(
+  creds: AmazonCredentials,
+  preferred: AmazonRegion,
+): Promise<{ region: AmazonRegion; marketplaces: MarketplaceParticipation[] }> {
+  const regions = [
+    preferred,
+    ...AMAZON_REGIONS.map((r) => r.key).filter((key) => key !== preferred),
+  ];
+  for (const region of regions) {
+    try {
+      return { region, marketplaces: await marketplaceParticipations(creds, region) };
+    } catch (error) {
+      if (!(error instanceof AmazonError) || error.code !== "forbidden") throw error;
+    }
+  }
+  throw new AmazonError(FORBIDDEN, "forbidden");
 }
 
 /**
@@ -220,6 +254,39 @@ export async function orderItems(
     nextToken = page.nextToken;
   } while (nextToken);
   return items;
+}
+
+const TAX_INVOICING = roleMissing("Tax Invoicing");
+
+/**
+ * The buyer's name, company and tax number for one order. Asks Amazon for buyerInfo only, and
+ * the parser drops any email Amazon includes. Needs the Tax Invoicing role.
+ */
+export async function orderBuyerIdentity(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  orderId: string,
+) {
+  const path = `/orders/v0/orders/${encodeURIComponent(orderId)}`;
+  const tokenJson = await call(creds, region, "/tokens/2021-03-01/restrictedDataToken", undefined, {
+    method: "POST",
+    body: { restrictedResources: [{ method: "GET", path, dataElements: ["buyerInfo"] }] },
+    forbidden: TAX_INVOICING,
+  });
+  const raw =
+    typeof tokenJson === "object" && tokenJson && "restrictedDataToken" in tokenJson
+      ? (tokenJson as { restrictedDataToken?: unknown }).restrictedDataToken
+      : null;
+  const token = typeof raw === "string" ? raw : "";
+  if (!token) {
+    throw new AmazonError(
+      "Amazon didn't return a token for the buyer's name and tax number.",
+      "unexpected",
+    );
+  }
+  return parseBuyerInfo(
+    await call(creds, region, path, undefined, { token, forbidden: TAX_INVOICING }),
+  );
 }
 
 const SOLICITATIONS = roleMissing("Buyer Solicitation");

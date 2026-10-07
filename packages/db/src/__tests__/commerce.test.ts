@@ -1,5 +1,5 @@
-import type { AmazonOrder } from "@bookalyze/core";
-import { sql } from "drizzle-orm";
+import { type AmazonOrder, formatInvoiceNumber, prepareOrderInvoice } from "@bookalyze/core";
+import { inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
@@ -18,6 +18,12 @@ import {
   startOrderSync,
   upsertOrders,
 } from "../commerce";
+import {
+  getOrderInvoice,
+  insertOrderInvoice,
+  nextInvoiceNumber,
+  updateOrderInvoice,
+} from "../invoices";
 import * as schema from "../schema";
 
 const ownerUrl =
@@ -442,5 +448,110 @@ describe("orders", () => {
     expect(await scoped((tx) => amazonConnectionsForRegion(tx, "eu"))).toEqual([
       { id: connectionId, status: "disconnected", latestOrderId: "406-0000002-0000002" },
     ]);
+  });
+
+  it("numbers invoices per company and keeps buyer details off the order", async () => {
+    await scoped((tx) =>
+      upsertOrders(tx, {
+        orgId,
+        channelId,
+        from: "2026-09-01",
+        orders: [order("702-9990001-0000001"), order("702-9990002-0000002")],
+      }),
+    );
+    const saved = await scoped((tx) =>
+      tx
+        .select({ id: schema.orders.id, externalId: schema.orders.externalId })
+        .from(schema.orders)
+        .where(inArray(schema.orders.externalId, ["702-9990001-0000001", "702-9990002-0000002"])),
+    );
+    const first = saved.find((row) => row.externalId === "702-9990001-0000001");
+    const second = saved.find((row) => row.externalId === "702-9990002-0000002");
+    const document = (company: string, number: string) =>
+      prepareOrderInvoice({
+        number,
+        seller: {
+          legalName: "Orders Org",
+          tradeName: null,
+          address: "Toronto",
+          tradeLicense: null,
+          taxNumber: null,
+          taxName: "GST/HST",
+          registered: false,
+        },
+        buyer: { name: null, company, taxNumber: "100234567800003", address: null },
+        orderNumber: "702-9990001-0000001",
+        marketplace: "Amazon.ca",
+        currency: "CAD",
+        purchasedOn: "2026-09-10",
+        invoiceDate: "2026-10-07",
+        total: "25.0000",
+        refunded: null,
+        items: [],
+      });
+
+    const created = await scoped(async (tx) => {
+      const n = await nextInvoiceNumber(tx, orgId);
+      const id = crypto.randomUUID();
+      const snapshot = document("Acme Trading LLC", formatInvoiceNumber(n));
+      await insertOrderInvoice(tx, {
+        id,
+        orgId,
+        orderId: first?.id ?? "",
+        invoiceNumber: n,
+        snapshot,
+        storageKey: `org/${orgId}/invoices/${id}/first.pdf`,
+        fileName: `${snapshot.number}.pdf`,
+        userId: null,
+      });
+      return { id, number: snapshot.number };
+    });
+    expect(created.number).toBe("INV-0001");
+
+    const secondNumber = await scoped(async (tx) => {
+      const n = await nextInvoiceNumber(tx, orgId);
+      const id = crypto.randomUUID();
+      const snapshot = document("Other Buyer", formatInvoiceNumber(n));
+      await insertOrderInvoice(tx, {
+        id,
+        orgId,
+        orderId: second?.id ?? "",
+        invoiceNumber: n,
+        snapshot,
+        storageKey: `org/${orgId}/invoices/${id}/second.pdf`,
+        fileName: `${snapshot.number}.pdf`,
+        userId: null,
+      });
+      return snapshot.number;
+    });
+    expect(secondNumber).toBe("INV-0002");
+
+    const stored = await scoped((tx) => getOrderInvoice(tx, first?.id ?? ""));
+    expect(stored?.snapshot.buyer.company).toBe("Acme Trading LLC");
+    expect(JSON.stringify(stored?.snapshot)).not.toContain("email");
+    const detail = await scoped((tx) => getOrder(tx, first?.id ?? ""));
+    expect(JSON.stringify(detail?.order)).not.toContain("Acme Trading LLC");
+    expect(JSON.stringify(detail?.order)).not.toContain("100234567800003");
+    const columns = await owner.pool.query<{ column_name: string }>(
+      "select column_name from information_schema.columns where table_schema = 'public' and table_name = 'orders'",
+    );
+    const names = columns.rows.map((row) => row.column_name);
+    expect(names).not.toContain("buyer_email");
+    expect(names).not.toContain("buyer_name");
+    expect(await scoped((tx) => getOrderInvoice(tx, first?.id ?? ""), otherOrgId)).toBeNull();
+
+    await scoped((tx) =>
+      updateOrderInvoice(tx, {
+        id: created.id,
+        snapshot: document("Corrected Co", "INV-0001"),
+        storageKey: `org/${orgId}/invoices/${created.id}/corrected.pdf`,
+        fileName: "INV-0001.pdf",
+        userId: null,
+      }),
+    );
+    const corrected = await scoped((tx) => getOrderInvoice(tx, first?.id ?? ""));
+    expect(corrected?.invoiceNumber).toBe(1);
+    expect(corrected?.snapshot.number).toBe("INV-0001");
+    expect(corrected?.snapshot.buyer.company).toBe("Corrected Co");
   });
 });

@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-07, settlement account pickers can add a new account._
+_Last updated: 2026-10-07, customer invoices on Amazon orders._
 
 ---
 
@@ -25,7 +25,7 @@ _Last updated: 2026-10-07, settlement account pickers can add a new account._
 | 1. Ledger & accounting core | **In progress.** Slices 1 (ledger, chart of accounts, journal entries, reports), 2 (closed periods), 3 (transactions), 4 (receipts), 5 (customers and vendors), 6 (exchange rates) and 7 (sales tax) are done |
 | 1b. Migration from other software | **Importer done**: transactions (generic CSV, Wave first), customer and vendor lists, and receipt files. Being tried on a real Wave export |
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
-| 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, and Pricing roles) |
+| 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -634,8 +634,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   India / Far East), the app's LWA client ID and secret, and the seller's refresh token. They're
   checked with Amazon (LWA token exchange, then `GET /sellers/v1/marketplaceParticipations`),
   then sealed as one JSON value in `connections.secret` (`provider = 'amazon_sp'`,
-  `settings.region`, `settings.storeName`). One connection per region: connecting again replaces
-  its credentials. No AWS signing is needed (SP-API dropped SigV4).
+  `settings.region`, `settings.storeName`). Amazon refuses the other regions' endpoints with a
+  403 that names no role, so a token is tried on the chosen region and then the others, and
+  connected where it is accepted. One connection per region: connecting again replaces its
+  credentials. No AWS signing is needed (SP-API dropped SigV4).
 - **Channels** (`sales_channels`, migration `0025_sales_channels`): one per marketplace the account
   is registered in; new ones start switched on where the seller participates. Switching a channel
   off means nothing is synced from it. Disconnecting deletes the credentials and switches channels
@@ -684,8 +686,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   region, who ships it, Prime / Business / Replacement, and "Open in Seller Central"
   (`sellercentral.<marketplace domain>`).
 - **Orders don't post to the books.** Settlements will (one summarized entry per settlement,
-  PLAN §3.4); orders are for operations and analytics. **No buyer PII:** only ship-to country
-  and region are kept (sales tax needs them); no Restricted Data Tokens.
+  PLAN §3.4); orders are for operations and analytics. **No buyer PII on the order:** only
+  ship-to country and region are kept (sales tax needs them). A customer invoice may ask Amazon
+  for that order's name and tax number (see below); email and street address are never requested.
 - **First time:** an admin picks "Bring in orders placed from" (defaults to the start of the
   financial year, at most two years back) for every switched-on marketplace
   (`startOrdersAction` → `startOrderSync`). An earlier date later re-reads from there.
@@ -724,6 +727,32 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   The filter form is keyed by the filters in the URL, so its fields (the marketplace `Combobox`,
   which applies on choice, dates, search) always show what's applied. "Clear filters" keeps the
   status tab.
+
+### Customer invoices (on the order)
+
+- **A PDF for the buyer**, not a ledger invoice. Orders still don't post to the books. Owners and
+  admins use **Create invoice** on the order page. The first save assigns `INV-0001` (per
+  company, under an advisory lock). **Correct details** replaces the PDF and keeps the number.
+  `order_invoices` (migration `0039_order_invoices`) stores the snapshot and the file. One
+  invoice per order. Download: `/api/o/[slug]/invoices/[id]`.
+- **What's on it:** legal name, trade name, registered address, trade license, and the sales-tax
+  number when the company has an active registration. Lines, shipping, discounts and the order
+  total come from the order. "Tax invoice" only when the company is registered; otherwise
+  "Invoice" and "Not registered for VAT" (or GST/HST). Tax Amazon reported for an unregistered
+  seller is labelled "Tax reported by Amazon". A refund is noted. The PDF says Amazon already
+  collected the payment.
+- **Buyer details:** opening the dialog, when no invoice exists yet, requests a restricted-data
+  token for `GET /orders/v0/orders/{id}` with `dataElements: ["buyerInfo"]` and reads the name,
+  company and tax number (`parseBuyerInfo`). Email is dropped and never stored. Street address
+  is typed, not requested. A 403 explains the **Tax Invoicing** role (Seller Central → Develop
+  Apps, then a new refresh token in Commerce → Channels). The form still saves without Amazon.
+  The order row stays free of buyer fields.
+- **Not sent through Amazon yet.** The page says to upload the file in Seller Central on the
+  buyer's invoice request. Messaging API `sendInvoice` waits until Buyer Communication is
+  granted and `getMessagingActionsForOrder` allows it. The PDF uses standard fonts, so a name
+  outside Latin-1 is left off the file (the dialog still shows what was typed).
+- The invoice can't be created until the order has items and a total, or until Company has a
+  registered address. File storage has to be set up (S3, or the local driver in development).
 
 ### Phase 3, slice 3: Amazon review requests
 
@@ -1167,6 +1196,10 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
   e.g. the FBA "Amazon Fulfilled Shipments" report). Worth it if "not yet" answers pile up.
 - [ ] Add the Buyer Solicitation and Finance and Accounting roles to Kazomo's Amazon app,
   authorize it again, paste the new refresh token, and turn automatic requests on.
+- [ ] Add the Tax Invoicing role the same way, so customer invoices can prefill the buyer's name
+  and tax number. Until then the form is filled in by hand.
+- [ ] Send the invoice PDF through Amazon's invoice message (`sendInvoice`) once Buyer
+  Communication allows that action for the order.
 - [ ] Custom review emails: not possible with the official API today (PLAN §3.5). Revisit if
   Amazon opens a route that doesn't need buyer data.
 
