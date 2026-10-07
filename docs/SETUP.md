@@ -5,7 +5,7 @@
 Requirements: Node 22, pnpm 10 (`corepack enable`), Docker (or any Postgres 16).
 
 ```bash
-pnpm install
+pnpm install                    # also installs the pre-commit hook (Biome on staged files)
 cp .env.example .env            # then fill in BETTER_AUTH_SECRET (openssl rand -base64 32)
 # Optional: put overrides (e.g. Neon connection strings) in a root .env.local; it wins over .env.
 ```

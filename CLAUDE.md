@@ -34,7 +34,7 @@ packages/db/         Drizzle schema, migrations (drizzle/), RLS, client + withOr
 pnpm db:up          # local Postgres in Docker (first run creates roles + databases)
 pnpm db:setup       # migrate + seed reference data
 pnpm dev            # http://localhost:3000
-pnpm lint           # Biome (pnpm format to auto-fix)
+pnpm lint           # Biome (pnpm format to auto-fix). A pre-commit hook runs this on staged files.
 pnpm typecheck
 pnpm test           # unit + database (RLS) tests
 pnpm e2e            # Playwright; needs a built app (pnpm build) and EMAIL_DEV_LOG=true

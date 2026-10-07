@@ -46,6 +46,7 @@ Real company details are entered in the app and never committed.
 ### Phase 0: foundations
 - **Monorepo and tooling:**
   - pnpm and Turborepo, TypeScript 6.0.3 (pinned), Biome, Vitest, Playwright.
+    A pre-commit hook (`prepare`: Husky + lint-staged) runs `biome check --write` on staged files.
   - GitHub Actions CI: lint → typecheck → migrate → unit and DB tests → build → e2e.
 - **Database:**
   - Drizzle and PostgreSQL with row-level security on every tenant table, set by `withOrg()`.
