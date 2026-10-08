@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-08, phase 5 slice 5: Amazon's FBA inventory ledger (returns, losses)._
+_Last updated: 2026-10-08, phase 5 slice 6: bundles. Phase 5 done._
 
 ---
 
@@ -27,7 +27,7 @@ _Last updated: 2026-10-08, phase 5 slice 5: Amazon's FBA inventory ledger (retur
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
-| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) and slice 5 (FBA inventory ledger: returns back into stock, losses written off) done. Next: bundles, then Noon (phase 4c) |
+| 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off) and slice 6 (bundles) done. Next: Noon (phase 4c), with bundles from day one |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1223,6 +1223,25 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   partial and full deliveries, over-receiving refused, cancel rules, tenant isolation), e2e
   "purchase orders: draft, send, a partial delivery, then the rest".
 
+### Phase 5, slice 6: bundles
+
+- **What it is:** one marketplace listing that holds several products (a gift set, a kit, a
+  variety pack). Needed for Noon, where Kazomo sells bundles. A bundle is the same SKU linked to
+  each product in it, with how many of each one listing holds (`product_skus` is now unique per
+  marketplace, SKU **and product**; migration `0047_product_bundles`).
+- **Everything already counts it:** every query joins order lines and ledger rows to
+  `product_skus` on marketplace and SKU, so a bundle sale counts toward each product (units sold
+  on Products, cost of goods sold from each product's own lots, returns and losses from the
+  ledger, "your stock against Amazon's").
+- **Making one:** on Products, an unlinked SKU's **Bundle** button opens "Make SKU a bundle":
+  products and how many of each (two or more, each once), replacing any earlier link
+  (`linkBundle`). Or, in a product's dialog, tick **It's a bundle** when linking a SKU that's
+  already linked to another product (`linkSku({ bundle: true })`; without it the error says how).
+- **Showing it:** a bundle SKU's badge on Products says "bundle" (tooltip: the other products);
+  the product dialog lists "bundle with Mug ×2"; Stock movements names all its products.
+- Tests: db `inventory.test.ts` (bundle needs the tick, units sold per component, not listed as
+  unlinked, two or more products), e2e "bundles: one listing that holds several products".
+
 ### Phase 5, slice 5: Amazon's FBA inventory ledger
 
 - **Inventory → Stock movements** (`/inventory/movements`, feature `inventory.cogs`): each
@@ -1422,7 +1441,7 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 3. [x] **Landed costs and FIFO lots.** Done in slice 3.
 4. [x] **Inventory movements.** Done in slice 5 (the FBA inventory ledger: returns, losses, found).
 5. [x] **Opening stock and cost of goods sold.** Done in slice 4 (monthly per marketplace).
-6. [ ] **Bundles** (`product_components`): one listing that is several products.
+6. [x] **Bundles.** Done in slice 6 (a SKU linked to several products).
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.

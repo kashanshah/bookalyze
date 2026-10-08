@@ -177,13 +177,16 @@ export default async function ProductsPage({
                       <Badge
                         key={s.id}
                         variant="primary"
-                        title={`${s.channelName}: ${s.units === 1 ? "1 unit" : `${s.units} units`} per listing`}
+                        title={`${s.channelName}: ${s.units === 1 ? "1 unit" : `${s.units} units`} per listing${s.bundleWith.length ? `, in a bundle with ${s.bundleWith.map((b) => b.name).join(", ")}` : ""}`}
                       >
                         {manyChannels ? (
                           <span className="font-normal opacity-75">{s.channelName}</span>
                         ) : null}
                         {s.sku}
                         {s.units > 1 ? <span className="opacity-75">×{s.units}</span> : null}
+                        {s.bundleWith.length ? (
+                          <span className="font-normal opacity-75">bundle</span>
+                        ) : null}
                       </Badge>
                     ))
                   ) : (

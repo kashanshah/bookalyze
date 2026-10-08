@@ -1625,6 +1625,42 @@ test("stock movements: Amazon's inventory ledger, returns and losses", async ({ 
   await expect(page.getByText(/1 returned · 1 lost or damaged/).first()).toBeVisible();
 });
 
+test("bundles: one listing that holds several products", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Products", exact: true })).toBeVisible();
+
+  // A coaster product, then the coaster listing as a set: 2 coasters and a mug.
+  await page.getByRole("button", { name: "Add product" }).first().click();
+  const add = page.getByRole("dialog");
+  await add.getByLabel("Name", { exact: true }).fill("Birch coaster");
+  await add.getByRole("button", { name: "Add product" }).click();
+  await expect(page.getByText("Birch coaster added")).toBeVisible();
+
+  const unlinked = page.getByRole("region", { name: "SKUs that aren't linked to a product yet" });
+  await unlinked
+    .getByRole("listitem", { name: "BIRCH-COASTER", exact: true })
+    .getByRole("button", { name: "Bundle" })
+    .click();
+  const bundle = page.getByRole("dialog");
+  await expect(bundle.getByRole("heading", { name: "Make BIRCH-COASTER a bundle" })).toBeVisible();
+  await choose(bundle.getByLabel("Bundle product 1", { exact: true }), "Birch coaster");
+  await bundle.getByLabel("How many of product 1", { exact: true }).fill("2");
+  await choose(bundle.getByLabel("Bundle product 2", { exact: true }), "Maple leaf ceramic mug");
+  await bundle.getByRole("button", { name: "Save bundle" }).click();
+  await expect(page.getByText("BIRCH-COASTER is a bundle now")).toBeVisible();
+  await expect(unlinked.getByRole("listitem", { name: "BIRCH-COASTER", exact: true })).toHaveCount(
+    0,
+  );
+
+  // Both products carry the listing, marked as a bundle; the coaster set sold once = 2 coasters.
+  const coaster = page.getByRole("listitem", { name: "Birch coaster", exact: true });
+  await expect(coaster.getByText("BIRCH-COASTER")).toBeVisible();
+  await expect(coaster.getByText("bundle", { exact: true })).toBeVisible();
+  const mug = page.getByRole("listitem", { name: "Maple leaf ceramic mug", exact: true });
+  await expect(mug.getByText("bundle", { exact: true })).toBeVisible();
+});
+
 test("reviews: ask for a review by hand, then turn on automatic requests", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Features", exact: true }).click();

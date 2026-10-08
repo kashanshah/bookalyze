@@ -330,6 +330,13 @@
       "when": 1791494641000,
       "tag": "0046_inventory_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791496393978,
+      "tag": "0047_product_bundles",
+      "breakpoints": true
     }
   ]
 }

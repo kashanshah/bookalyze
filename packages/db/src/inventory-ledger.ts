@@ -93,8 +93,8 @@ export async function ledgerByMonth(
       order by 1 desc limit ${options.months ?? 6}
     )
     select e.channel_id, to_char(e.event_date, 'YYYY-MM') as month, e.sku,
-      (select p.name from product_skus ps join products p on p.id = ps.product_id
-        where ps.channel_id = e.channel_id and ps.sku = e.sku limit 1) as product_name,
+      (select string_agg(p.name, ' + ' order by p.name) from product_skus ps join products p on p.id = ps.product_id
+        where ps.channel_id = e.channel_id and ps.sku = e.sku) as product_name,
       coalesce(sum(e.quantity) filter (where e.event_type = 'Shipments'), 0)::int as shipped,
       coalesce(sum(e.quantity) filter (where e.event_type = 'CustomerReturns'), 0)::int as returned,
       coalesce(sum(e.quantity) filter (where e.event_type = 'Receipts'), 0)::int as received,
