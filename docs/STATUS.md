@@ -1106,7 +1106,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   The first look is the baseline and does not email. Later checks write a timeline on the
   product and, when email is on, one digest (not one email per product). The list and the
   product page show the latest price, featured offer (with its price and Prime), seller count
-  and best seller rank. The list also shows a short note of the title and description.
+  and best seller rank. The list also shows a short note of the title and description. An icon
+  on each product, and on its page, opens that product on Amazon.
 - **Only Amazon's official API.** Catalog Items 2022-04-01 (title, bullets, description, photos,
   best seller rank), Product Pricing v0 item offers for New (price with shipping, featured
   offer, how many sellers), and Customer Feedback 2024-06-01 review topics when Amazon shares

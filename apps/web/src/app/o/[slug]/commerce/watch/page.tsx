@@ -1,4 +1,5 @@
 import {
+  amazonProductUrl,
   LISTING_CADENCES,
   type ListingCheck,
   type ListingObservation,
@@ -6,7 +7,7 @@ import {
   listingValues,
 } from "@bookalyze/core";
 import { listAmazonConnections, listListingWatches } from "@bookalyze/db";
-import { Binoculars, Plus, Search } from "lucide-react";
+import { Binoculars, ExternalLink, Plus, Search } from "lucide-react";
 import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
@@ -120,11 +121,12 @@ export default async function ListingWatchPage({
                   const label = listingCheck(key)?.label;
                   return label ? [label] : [];
                 });
+                const productUrl = amazonProductUrl(watch.channelName, watch.asin);
                 return (
-                  <li key={watch.id}>
+                  <li key={watch.id} className="relative">
                     <Link
                       href={`${base}/${watch.id}`}
-                      className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:px-5"
+                      className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-3 py-3.5 ps-4 pe-12 transition-colors hover:bg-muted/40 sm:ps-5 sm:pe-14"
                     >
                       <ProductImage src={watch.imageUrl} alt="" className="size-14" />
                       <span className="min-w-0">
@@ -176,6 +178,18 @@ export default async function ListingWatchPage({
                         )}
                       </span>
                     </Link>
+                    {productUrl ? (
+                      <a
+                        href={productUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`Open on ${watch.channelName}`}
+                        title={`Open on ${watch.channelName}`}
+                        className="absolute end-2 top-2 flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:end-3 sm:top-3"
+                      >
+                        <ExternalLink className="size-4" />
+                      </a>
+                    ) : null}
                   </li>
                 );
               })}

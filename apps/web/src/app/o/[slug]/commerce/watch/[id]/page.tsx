@@ -101,8 +101,20 @@ export default async function WatchPage({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="grid gap-6">
-          <section className="rounded-2xl border bg-card p-5 shadow-xs sm:p-6">
-            <h2 className="font-medium text-sm">Latest look</h2>
+          <section className="relative rounded-2xl border bg-card p-5 shadow-xs sm:p-6">
+            {productUrl ? (
+              <a
+                href={productUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Open on ${watch.channelName}`}
+                title={`Open on ${watch.channelName}`}
+                className="absolute end-3 top-3 flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:end-4 sm:top-4"
+              >
+                <ExternalLink className="size-4" />
+              </a>
+            ) : null}
+            <h2 className="pe-10 font-medium text-sm">Latest look</h2>
             <p className="mt-1 text-muted-foreground text-xs">
               {watch.lastCheckedAt
                 ? `Last checked ${formatAgo(watch.lastCheckedAt, now, locale)}`
@@ -133,17 +145,6 @@ export default async function WatchPage({
                 check.
               </p>
             )}
-            {productUrl ? (
-              <a
-                href={productUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-4 inline-flex items-center gap-1.5 text-primary text-sm underline-offset-4 hover:underline"
-              >
-                <ExternalLink className="size-4" />
-                View on {watch.channelName}
-              </a>
-            ) : null}
           </section>
 
           {observed?.images.length ? (
