@@ -3,8 +3,10 @@ import {
   type AmazonOrderItem,
   type AmazonRefund,
   type BuyerClaim,
+  type FulfilmentMode,
   formatDecimal,
   type MarketplaceParticipation,
+  type NoonMarketplace,
   parseDecimal,
 } from "@bookalyze/core";
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
@@ -73,6 +75,75 @@ export async function saveAmazonChannels(
         },
       });
   }
+}
+
+// --- Noon -------------------------------------------------------------------------------------
+
+/** The company's Noon channels (one per country), by name. */
+export async function listNoonChannels(tx: Transaction) {
+  return tx
+    .select()
+    .from(salesChannels)
+    .where(eq(salesChannels.kind, "noon"))
+    .orderBy(asc(salesChannels.name));
+}
+
+/**
+ * Adds a Noon country as a channel, switched on. Adding one the company already has switches it
+ * back on and keeps its history. Returns the channel and whether it was new.
+ */
+export async function addNoonChannel(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    marketplace: Pick<NoonMarketplace, "id" | "name" | "country" | "currency">;
+    fulfilment: FulfilmentMode;
+  },
+) {
+  const [existing] = await tx
+    .select({ id: salesChannels.id })
+    .from(salesChannels)
+    .where(
+      and(eq(salesChannels.kind, "noon"), eq(salesChannels.marketplaceId, input.marketplace.id)),
+    );
+  if (existing) {
+    const [row] = await tx
+      .update(salesChannels)
+      .set({ isActive: true, fulfilment: input.fulfilment })
+      .where(eq(salesChannels.id, existing.id))
+      .returning();
+    if (!row) throw new Error("The Noon channel couldn't be updated.");
+    return { channel: row, created: false };
+  }
+  const [row] = await tx
+    .insert(salesChannels)
+    .values({
+      organizationId: input.orgId,
+      kind: "noon",
+      name: input.marketplace.name,
+      marketplaceId: input.marketplace.id,
+      country: input.marketplace.country,
+      currency: input.marketplace.currency,
+      fulfilment: input.fulfilment,
+      isActive: true,
+    })
+    .returning();
+  if (!row) throw new Error("The Noon channel couldn't be added.");
+  return { channel: row, created: true };
+}
+
+/** Who ships a channel's orders. */
+export async function setChannelFulfilment(
+  tx: Transaction,
+  channelId: string,
+  fulfilment: FulfilmentMode,
+) {
+  const [row] = await tx
+    .update(salesChannels)
+    .set({ fulfilment })
+    .where(eq(salesChannels.id, channelId))
+    .returning();
+  return row ?? null;
 }
 
 export async function setChannelActive(tx: Transaction, channelId: string, isActive: boolean) {
@@ -405,9 +476,10 @@ export type OrderFilters = {
 
 /**
  * Orders of marketplaces still connected. A disconnected account's orders (or a different seller
- * account's, after new credentials were saved for the region) stay in but aren't shown.
+ * account's, after new credentials were saved for the region) stay in but aren't shown. Channels
+ * without a connection (Noon, brought in by upload) always show.
  */
-const connectedOrder = sql`exists (select 1 from sales_channels ch join connections c on c.id = ch.connection_id where ch.id = orders.channel_id and c.status <> 'disconnected')`;
+const connectedOrder = sql`exists (select 1 from sales_channels ch left join connections c on c.id = ch.connection_id where ch.id = orders.channel_id and (ch.connection_id is null or c.status <> 'disconnected'))`;
 
 function orderWhere(f: OrderFilters) {
   const day = sql`(${orders.purchasedAt} at time zone ${f.timezone})::date`;

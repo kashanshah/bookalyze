@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-08, phase 5 slice 6: bundles. Phase 5 done._
+_Last updated: 2026-10-08, phase 4c slice 1: Noon channels._
 
 ---
 
@@ -28,6 +28,7 @@ _Last updated: 2026-10-08, phase 5 slice 6: bundles. Phase 5 done._
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off) and slice 6 (bundles) done. Next: Noon (phase 4c), with bundles from day one |
+| 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slice 1 (Noon channels, added by hand, with who ships the orders) done. Next: the transaction view as payouts (upload first), then Noon's API (connection, orders, transactions), posting, channel profit, cost of goods sold and FBN stock. See §3 "Phase 4c" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1223,6 +1224,30 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   partial and full deliveries, over-receiving refused, cancel rules, tenant isolation), e2e
   "purchase orders: draft, send, a partial delivery, then the rest".
 
+### Phase 4c, slice 1: Noon channels
+
+- **Built as a product** (PLAN decision log, 2026-10-08): all three Noon countries and both ways
+  of fulfilling. Kazomo For Online Selling uses Noon UAE, FBN.
+- **Commerce → Channels → Noon:** "Add a Noon country" (admins) picks the country (core
+  `NOON_MARKETPLACES`: Noon UAE / AED, Noon KSA / SAR, Noon Egypt / EGP; the company's own country
+  is offered first, else the UAE) and **who ships the orders** (`NOON_FULFILMENT`: Fulfilled by
+  Noon (FBN), Fulfilled by you (FBP), or Both). Each country is a channel of its own, `kind =
+  'noon'`, `marketplace_id` = core's key (`noon-ae`…), **no connection**. Adding a country again
+  switches it back on with its history. Who ships can be changed on the list; the switch turns
+  the channel off (`addNoonChannelAction`, `setChannelFulfilmentAction`, audited).
+- **Products:** a Noon channel is a marketplace in the product dialog, so its SKUs (and bundles)
+  link to products like Amazon's.
+- **Channels without a connection always show:** orders (`connectedOrder`) and SKUs not linked
+  yet (`unlinkedSkus`) only hide a channel whose connection is disconnected.
+- **Amazon uploads stay on Amazon:** an uploaded Amazon settlement is matched to Amazon channels
+  only (`settlementChannel`), so Noon UAE doesn't make Amazon.ae's AED ambiguous.
+- Schema (migration `0048_noon_channels`): `sales_channels.kind` takes `noon`;
+  `sales_channels.fulfilment` (`marketplace` / `seller` / `both`, null: not said); one Noon
+  channel per country per company (partial unique index).
+- Tests: core `noon.test.ts`; db `noon.test.ts` (added once, switched back on, other company's
+  apart, fulfilment checked, orders shown without a connection, Amazon.ae's upload unaffected);
+  e2e "noon: add a Noon country, say who ships, and link a SKU on it".
+
 ### Phase 5, slice 6: bundles
 
 - **What it is:** one marketplace listing that holds several products (a gift set, a kit, a
@@ -1442,6 +1467,36 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 4. [x] **Inventory movements.** Done in slice 5 (the FBA inventory ledger: returns, losses, found).
 5. [x] **Opening stock and cost of goods sold.** Done in slice 4 (monthly per marketplace).
 6. [x] **Bundles.** Done in slice 6 (a SKU linked to several products).
+
+### Phase 4c: Noon (as a product: UAE, KSA, Egypt; FBN and FBP)
+What we know of Noon's partner API (its docs at noon-docs.noonpartners.dev couldn't be reached
+from the build container, so check each point there before relying on it):
+- Credentials: a **service account** (API user) made at access.noon.partners → User & Access → API
+  Users → Add Service Account. Noon gives a **JSON key file once** (key ID, secret, project code;
+  it looks like a Google service-account file). Keys carry the role of their user; guides say it
+  needs **Project Owner**. A 403 naming the project means the wrong project, not a bad key.
+- The docs have Auth (authentication, OAuth for integrators, API users), orders and fulfilment
+  (FBPI, with webhooks) and data/reports (3 endpoints).
+- Payouts: the **item-level transaction view** (export `noon_financeweb_transactionviewreportonitemlevel`,
+  from and to dates): every sale, fee, refund, subsidy and payout row. Columns include order,
+  item and **reference numbers**, SKU, date, transaction type, currency, net proceeds, referral
+  fee, fulfilment and logistics fee, shipping credits, other order fees, order subsidies and
+  non-order fees. A sale's row comes the same day; its fees arrive later on "Order Update" rows;
+  the statement later still. So re-read the last few weeks every time and key rows on the
+  reference number.
+
+1. [x] **Noon channels.** Done in slice 1.
+2. [ ] **Payouts from the transaction view, by upload.** Seller Lab → Finance → Transaction view
+   (and the statement detail report, if it carries the statement number): rows kept by
+   reference number, grouped into payouts on Settlements, with Noon's own line names and groups.
+   Needs a real file's header row to confirm the columns (no amounts or names needed).
+3. [ ] **Connect Noon's API.** The JSON key file in the encrypted connection screen, checked with
+   Noon, attached to the company's Noon channels. Needs the Authentication page of the docs.
+4. [ ] **Orders and transactions by API**, daily with the other jobs.
+5. [ ] **Posting, deposit matching and channel profit** for Noon payouts (VAT on Noon's fees: a
+   cost or recoverable, as for Amazon).
+6. [ ] **Cost of goods sold for Noon**, per month and marketplace, bundles included.
+7. [ ] **FBN stock**: returns back into stock, losses written off, "your stock against Noon's".
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.
@@ -1702,3 +1757,6 @@ cases. These answers only help pick sensible defaults and test data:
    committed. Report any column or account it gets wrong.
 3. Roles: today every member can manage accounts and post entries. A future "accountant" or
    read-only role is a permissions change, not a data change.
+4. Noon (phase 4c): let the build environment reach `noon-docs.noonpartners.dev` (or paste its
+   Authentication and Reports pages), and share only the **header row** of a Seller Lab
+   transaction-view export (no amounts, orders or names). Both confirm what slices 2 and 3 read.

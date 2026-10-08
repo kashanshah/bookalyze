@@ -1,7 +1,14 @@
 "use server";
 
-import { AMAZON_REGIONS, isAmazonRegion } from "@bookalyze/core";
 import {
+  AMAZON_REGIONS,
+  FULFILMENT_MODES,
+  isAmazonRegion,
+  NOON_FULFILMENT,
+  noonMarketplace,
+} from "@bookalyze/core";
+import {
+  addNoonChannel,
   amazonConnectionsForRegion,
   createConnection,
   disconnectAmazon,
@@ -11,6 +18,7 @@ import {
   saveAmazonChannels,
   schema,
   setChannelActive,
+  setChannelFulfilment,
   setConnectionSecret,
   startOrderSync,
   VaultError,
@@ -239,6 +247,77 @@ export async function setChannelActiveAction(
   if (!row) return { ok: false, message: "This channel no longer exists." };
   revalidate(slug);
   return { ok: true };
+}
+
+const noonChannelSchema = z.object({
+  marketplace: z.string().refine((v) => noonMarketplace(v) !== null, "Choose a Noon country."),
+  fulfilment: z.enum(FULFILMENT_MODES, { message: "Choose who ships the orders." }),
+});
+
+/** Adds a Noon country as a channel (or switches one added before back on). */
+export async function addNoonChannelAction(
+  slug: string,
+  input: unknown,
+): Promise<CommerceResult<{ name: string; created: boolean }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const parsed = noonChannelSchema.safeParse(input);
+  if (!parsed.success) {
+    const errors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) errors[String(issue.path[0])] ??= issue.message;
+    return { ok: false, message: "Check the highlighted fields.", errors };
+  }
+  const marketplace = noonMarketplace(parsed.data.marketplace);
+  if (!marketplace) return { ok: false, message: "Choose a Noon country." };
+  const result = await inOrg(ctx, async (tx) => {
+    const added = await addNoonChannel(tx, {
+      orgId: ctx.org.id,
+      marketplace,
+      fulfilment: parsed.data.fulfilment,
+    });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: added.created ? "channel.added" : "channel.switched_on",
+      entityType: "sales_channel",
+      entityId: added.channel.id,
+      after: { name: marketplace.name, fulfilment: parsed.data.fulfilment },
+    });
+    return added;
+  });
+  revalidate(slug);
+  return { ok: true, name: marketplace.name, created: result.created };
+}
+
+/** Who ships a channel's orders (Noon: FBN, FBP or both). */
+export async function setChannelFulfilmentAction(
+  slug: string,
+  channelId: string,
+  fulfilment: string,
+): Promise<CommerceResult<{ label: string }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const parsed = z
+    .object({ channelId: z.string().uuid(), fulfilment: z.enum(FULFILMENT_MODES) })
+    .safeParse({ channelId, fulfilment });
+  if (!parsed.success) return { ok: false, message: "Choose who ships the orders." };
+  const row = await inOrg(ctx, async (tx) => {
+    const updated = await setChannelFulfilment(tx, parsed.data.channelId, parsed.data.fulfilment);
+    if (updated) {
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "channel.fulfilment_changed",
+        entityType: "sales_channel",
+        entityId: updated.id,
+        after: { fulfilment: parsed.data.fulfilment },
+      });
+    }
+    return updated;
+  });
+  if (!row) return { ok: false, message: "This channel no longer exists." };
+  revalidate(slug);
+  return { ok: true, label: NOON_FULFILMENT[parsed.data.fulfilment].label };
 }
 
 /** Forgets the credentials; channels are switched off and keep their history. */

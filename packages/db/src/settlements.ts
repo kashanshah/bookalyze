@@ -82,7 +82,8 @@ export async function settlementChannel(
   tx: Transaction,
   input: { connectionId: string | null; marketplace: string | null; currency: string },
 ): Promise<string | null> {
-  const channels = await tx.select().from(salesChannels);
+  // Amazon's settlements only: a Noon UAE channel mustn't make Amazon.ae's AED ambiguous.
+  const channels = await tx.select().from(salesChannels).where(eq(salesChannels.kind, "amazon"));
   const scoped = input.connectionId
     ? channels.filter((c) => c.connectionId === input.connectionId)
     : channels;
