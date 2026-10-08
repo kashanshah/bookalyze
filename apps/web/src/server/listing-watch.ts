@@ -38,7 +38,7 @@ import { env } from "./env";
  */
 
 const REVIEW_NOTE =
-  "Amazon isn't sharing review topics for this product. That usually means it isn't registered to your brand.";
+  "Amazon isn't sharing review topics for this product. The app needs the Selling Partner Insights role, and Amazon only returns them for a child product of a brand you sell.";
 const HOUR = 60 * 60 * 1000;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

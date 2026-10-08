@@ -484,8 +484,10 @@ export async function itemOffers(
 }
 
 /**
- * What buyers mention in reviews, for a brand the seller owns. Amazon refuses this for other
- * brands; the caller treats that as "not shared" rather than a broken watch.
+ * What buyers mention in reviews, plus how that moves the star rating and a few quotes.
+ * `sortBy` is required; without it Amazon answers 400. A seller app needs Selling Partner
+ * Insights, and Amazon only answers for a child ASIN. The caller treats a refusal as
+ * "not shared" rather than a broken watch.
  */
 export async function reviewTopics(
   creds: AmazonCredentials,
@@ -497,9 +499,11 @@ export async function reviewTopics(
     creds,
     region,
     `/customerFeedback/2024-06-01/items/${encodeURIComponent(asin)}/reviews/topics`,
-    { marketplaceId },
-    { allow: [400, 403, 404], forbidden: roleMissing("Brand Analytics") },
+    { marketplaceId, sortBy: "MENTIONS" },
+    { allow: [400, 403, 404], forbidden: roleMissing("Selling Partner Insights") },
   );
+  // 204 is a real answer: not enough reviews to name topics.
+  if (response.status === 204) return { body: null, unavailable: false };
   if (response.status === 400 || response.status === 403 || response.status === 404) {
     return { body: null, unavailable: true };
   }

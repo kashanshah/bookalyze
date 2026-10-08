@@ -175,21 +175,52 @@ describe("Amazon listing responses", () => {
     });
   });
 
-  it("reads review topics, positive and negative", () => {
+  it("reads review topics, quotes and the star rating impact", () => {
     expect(
       parseReviewTopics({
         topics: {
           positiveTopics: [
-            { topic: "easy to clean", asinMetrics: { occurrencePercentage: 12.04 } },
+            {
+              topic: "easy to clean",
+              asinMetrics: {
+                occurrencePercentage: 12.04,
+                numberOfMentions: 36,
+                starRatingImpact: 4,
+              },
+              reviewSnippets: ["Wipes clean.", ""],
+            },
             { topic: "rare", asinMetrics: { occurrencePercentage: 1 } },
           ],
-          negativeTopics: [{ topic: "chipped", asinMetrics: { occurrencePercentage: 4 } }],
+          negativeTopics: [
+            { topic: "chipped", asinMetrics: { occurrencePercentage: 4, starRatingImpact: -1.5 } },
+          ],
         },
       }),
     ).toEqual([
-      { topic: "easy to clean", sentiment: "positive", share: "12.0" },
-      { topic: "rare", sentiment: "positive", share: "1.0" },
-      { topic: "chipped", sentiment: "negative", share: "4.0" },
+      {
+        topic: "easy to clean",
+        sentiment: "positive",
+        share: "12.0",
+        mentions: 36,
+        starImpact: "4.0",
+        snippets: ["Wipes clean."],
+      },
+      {
+        topic: "rare",
+        sentiment: "positive",
+        share: "1.0",
+        mentions: null,
+        starImpact: null,
+        snippets: [],
+      },
+      {
+        topic: "chipped",
+        sentiment: "negative",
+        share: "4.0",
+        mentions: null,
+        starImpact: "-1.5",
+        snippets: [],
+      },
     ]);
   });
 });

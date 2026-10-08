@@ -185,33 +185,60 @@ export default async function WatchPage({
 
           {(watch.checks as string[]).includes("reviews") ? (
             <section className="rounded-2xl border bg-card p-5 shadow-xs sm:p-6">
-              <h2 className="font-medium text-sm">Review topics</h2>
+              <h2 className="font-medium text-sm">Reviews</h2>
+              <p className="mt-1 text-muted-foreground text-xs">
+                What buyers mention, and how it moves the star rating. Amazon doesn't share the
+                overall average.
+              </p>
               {observed?.reviewNote ? (
-                <p className="mt-2 text-muted-foreground text-sm">{observed.reviewNote}</p>
+                <p className="mt-3 text-muted-foreground text-sm">{observed.reviewNote}</p>
               ) : observed?.reviewTopics.length ? (
-                <ul className="mt-3 grid gap-2">
-                  {observed.reviewTopics.map((topic) => (
-                    <li
-                      key={`${topic.sentiment}-${topic.topic}`}
-                      className="flex items-baseline justify-between gap-4 text-sm"
-                    >
-                      <span>
-                        {topic.topic}
-                        <span className="ms-2 text-muted-foreground text-xs">
-                          {topic.sentiment === "negative" ? "Complaint" : "Praise"}
-                        </span>
-                      </span>
-                      {topic.share ? (
-                        <span className="tabular text-muted-foreground text-xs">
-                          {topic.share}%
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
+                <ul className="mt-4 grid gap-4">
+                  {observed.reviewTopics.map((topic) => {
+                    const snippets = topic.snippets ?? [];
+                    return (
+                      <li key={`${topic.sentiment}-${topic.topic}`} className="text-sm">
+                        <div className="flex items-baseline justify-between gap-4">
+                          <span className="font-medium">
+                            {topic.topic}
+                            <span className="ms-2 font-normal text-muted-foreground text-xs">
+                              {topic.sentiment === "negative" ? "Complaint" : "Praise"}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-end text-muted-foreground text-xs">
+                            {[
+                              topic.mentions === 1
+                                ? "1 mention"
+                                : topic.mentions
+                                  ? `${topic.mentions} mentions`
+                                  : null,
+                              topic.share ? `${topic.share}%` : null,
+                              topic.starImpact ? `Star rating impact ${topic.starImpact}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </div>
+                        {snippets.length ? (
+                          <ul className="mt-1.5 grid gap-1">
+                            {snippets.map((snippet) => (
+                              <li
+                                key={snippet}
+                                className="text-muted-foreground text-xs leading-relaxed"
+                              >
+                                “{snippet}”
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
-                <p className="mt-2 text-muted-foreground text-sm">
-                  No topics yet. Amazon only shares these for a brand you own.
+                <p className="mt-3 text-muted-foreground text-sm">
+                  No topics yet. Check again, or confirm this is a child product of a brand you
+                  sell.
                 </p>
               )}
             </section>

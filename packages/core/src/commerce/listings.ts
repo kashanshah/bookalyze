@@ -4,8 +4,9 @@ import { formatDecimal, parseDecimal } from "../money";
 /**
  * Watching an Amazon product for changes Amazon will actually report: price, the featured
  * offer, how many sellers, photos, the words on the page, best seller rank, and (for a brand
- * you own) what buyers mention in reviews. Star ratings, review text, Amazon's Choice and the
- * "bought in the past month" tag are not in Amazon's API, so they are not offered.
+ * you own) what buyers mention in reviews, how that moves the star rating, and short quotes.
+ * The overall star average, the total number of reviews, Amazon's Choice and the "bought in
+ * the past month" tag are not in Amazon's API, so they are not offered.
  */
 
 export const LISTING_CHECKS = [
@@ -42,7 +43,7 @@ export const LISTING_CHECKS = [
   {
     key: "reviews",
     label: "Review topics",
-    hint: "What buyers mention most, when Amazon shares it for your brand. Star ratings and each review's text stay on Amazon.",
+    hint: "What buyers mention, how it moves the star rating, and a few quotes. Amazon shares this for a child product of a brand you sell. The overall star average stays on Amazon.",
   },
 ] as const;
 
@@ -130,6 +131,12 @@ export type ReviewTopic = {
   sentiment: "positive" | "negative";
   /** Share of reviews that mention it, e.g. "12.5", or null when Amazon didn't say. */
   share: string | null;
+  /** How many reviews mention it, or null when Amazon didn't say. */
+  mentions: number | null;
+  /** How this topic moves the star rating. Positive lifts it. Null when Amazon didn't say. */
+  starImpact: string | null;
+  /** Up to three short quotes from reviews that mention it. */
+  snippets: string[];
 };
 
 /** The comparable snapshot of a product. Stored as JSON; every field is plain data. */
@@ -326,6 +333,20 @@ export function parseItemOffers(
 
 const TOPIC_CAP = 8;
 
+function oneDecimal(value: unknown): string | null {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(1) : null;
+}
+
+function snippetsOf(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .flatMap((item) => {
+      const snippet = clip(text(item), 180);
+      return snippet ? [snippet] : [];
+    })
+    .slice(0, 3);
+}
+
 function topicsOf(list: unknown, sentiment: ReviewTopic["sentiment"]): ReviewTopic[] {
   if (!Array.isArray(list)) return [];
   const topics = list.flatMap((item) => {
@@ -333,9 +354,18 @@ function topicsOf(list: unknown, sentiment: ReviewTopic["sentiment"]): ReviewTop
     const topic = plain(text(row.topic));
     if (!topic) return [];
     const metrics = record(row.asinMetrics);
-    const share = metrics.occurrencePercentage;
-    const parsed = typeof share === "number" && Number.isFinite(share) ? share.toFixed(1) : null;
-    return [{ topic, sentiment, share: parsed }];
+    const mentions = metrics.numberOfMentions;
+    return [
+      {
+        topic,
+        sentiment,
+        share: oneDecimal(metrics.occurrencePercentage),
+        mentions:
+          typeof mentions === "number" && Number.isFinite(mentions) ? Math.round(mentions) : null,
+        starImpact: oneDecimal(metrics.starRatingImpact),
+        snippets: snippetsOf(row.reviewSnippets),
+      },
+    ];
   });
   return topics
     .sort((a, b) => Number(b.share ?? -1) - Number(a.share ?? -1) || a.topic.localeCompare(b.topic))
@@ -397,6 +427,16 @@ export function listingValues(
   if (options?.content) {
     const words = contentValue(observed);
     if (words) values.push({ label: "Title and description", value: words });
+  }
+  const topics = observed.reviewTopics ?? [];
+  if (topics.length) {
+    values.push({
+      label: "Reviews",
+      value: topics
+        .slice(0, 3)
+        .map((topic) => topic.topic)
+        .join(", "),
+    });
   }
   return values;
 }

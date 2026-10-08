@@ -1110,11 +1110,14 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   on each product, and on its page, opens that product on Amazon.
 - **Only Amazon's official API.** Catalog Items 2022-04-01 (title, bullets, description, photos,
   best seller rank), Product Pricing v0 item offers for New (price with shipping, featured
-  offer, how many sellers), and Customer Feedback 2024-06-01 review topics when Amazon shares
-  them for the seller's brand. A 400/403/404 on review topics is "Amazon isn't sharing review
-  topics", not a failed watch. Star ratings, review text, Amazon's Choice and "bought in the
-  past month" are not in the API and are not offered. Best seller rank is the number, reported
-  when it moves by at least 5 places and about 10%.
+  offer, how many sellers), and Customer Feedback 2024-06-01 review topics. `sortBy=MENTIONS`
+  is required; without it Amazon answers 400 and nothing comes back. The answer is what buyers
+  mention, how many reviews say it, how that moves the star rating, and up to three quotes. A
+  204 is "not enough reviews"; a 400/403/404 is "Amazon isn't sharing review topics" (Selling
+  Partner Insights, and a child ASIN of a brand you sell), not a failed watch. The overall star
+  average, the total review count, Amazon's Choice and "bought in the past month" are not in
+  the API and are not offered. Best seller rank is the number, reported when it moves by at
+  least 5 places and about 10%.
 - **Cadence:** daily (default), weekly, or hourly. Hourly is only price, featured offer and
   other sellers, and at most 25 products (`MAX_HOURLY_WATCHES`); 200 watches in total. A failed
   look retries in an hour; a switched-off channel or bad credentials retries in a day. A
@@ -1125,7 +1128,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Schema** (migration `0037_listing_watches`): `listing_watches` (unique per company, channel
   and ASIN) and `listing_changes`. Any commerce member can add, edit, pause or stop a watch.
 - Roles the Amazon app needs beyond orders: **Product Listing** and **Pricing**. Review topics
-  also need Brand Analytics, and only for a brand the seller owns.
+  also need **Selling Partner Insights**, and Amazon only returns them for a child ASIN of a
+  brand the seller sells.
 - Tests: core `listings.test.ts`, db `listings.test.ts`.
 
 ---
