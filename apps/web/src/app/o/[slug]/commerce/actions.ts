@@ -5,14 +5,20 @@ import {
   FULFILMENT_MODES,
   isAmazonRegion,
   NOON_FULFILMENT,
+  NOON_TRANSACTIONS_EXPORT,
+  type NoonExportCategory,
   noonMarketplace,
+  parseNoonKeyFile,
 } from "@bookalyze/core";
 import {
   addNoonChannel,
   amazonConnectionsForRegion,
+  attachNoonChannels,
   createConnection,
   disconnectAmazon,
+  disconnectNoon,
   getConnection,
+  getNoonConnection,
   listAmazonConnections,
   recordConnectionSync,
   saveAmazonChannels,
@@ -34,8 +40,11 @@ import { audit } from "@/server/audit";
 import {
   getCommerceContext,
   openAmazonCredentials,
+  openNoonCredentials,
   sealAmazonCredentials,
+  sealNoonCredentials,
 } from "@/server/commerce";
+import { checkNoonKey, NoonError } from "@/server/noon";
 import { isOrgAdmin } from "@/server/org";
 
 export type CommerceResult<T = object> =
@@ -47,7 +56,9 @@ function revalidate(slug: string) {
 }
 
 function failure(error: unknown): { ok: false; message: string } {
-  if (error instanceof AmazonError) return { ok: false, message: error.message };
+  if (error instanceof AmazonError || error instanceof NoonError) {
+    return { ok: false, message: error.message };
+  }
   if (error instanceof VaultError) {
     return {
       ok: false,
@@ -409,4 +420,150 @@ export async function syncOrdersAction(slug: string): Promise<CommerceResult<Ord
   revalidate(slug);
   const { channels: _, ...rest } = result;
   return { ok: true, ...rest };
+}
+
+// --- Noon's API ------------------------------------------------------------------------------
+
+/** What's kept (not secret) about a Noon connection: its project and the reports it can get. */
+function noonSettings(projectCode: string, categories: NoonExportCategory[]) {
+  return {
+    projectCode,
+    reports: categories.map((c) => c.code).slice(0, 200),
+    payoutsReport: categories.some((c) => c.code === NOON_TRANSACTIONS_EXPORT),
+  };
+}
+
+/**
+ * Checks a service-account key file with Noon (signs in, lists the reports it can download),
+ * then saves it sealed and puts the company's Noon channels on it. One Noon connection per
+ * company: connecting again replaces the key. The file's text is read in the browser and sent
+ * here once; it's never stored as it came.
+ */
+export async function connectNoonAction(
+  slug: string,
+  input: unknown,
+): Promise<CommerceResult<{ reports: number; payoutsReport: boolean; replaced: boolean }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const parsed = z.object({ keyFile: z.string().max(20_000) }).safeParse(input);
+  if (!parsed.success || !parsed.data.keyFile.trim()) {
+    return {
+      ok: false,
+      message: "Choose the key file.",
+      errors: { keyFile: "Choose the .json key file Noon downloaded." },
+    };
+  }
+  let creds: ReturnType<typeof parseNoonKeyFile>;
+  try {
+    creds = parseNoonKeyFile(parsed.data.keyFile);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "This isn't a Noon key file.";
+    return { ok: false, message, errors: { keyFile: message } };
+  }
+  try {
+    const categories = await checkNoonKey(creds);
+    const settings = noonSettings(creds.projectCode, categories);
+    const replaced = await inOrg(ctx, async (tx) => {
+      const existing = await getNoonConnection(tx);
+      const id =
+        existing?.id ??
+        (
+          await createConnection(tx, {
+            orgId: ctx.org.id,
+            userId: ctx.session.user.id,
+            provider: "noon",
+            name: "Noon",
+            settings,
+          })
+        ).id;
+      if (existing) {
+        await tx
+          .update(schema.connections)
+          .set({ settings, status: "active" })
+          .where(eq(schema.connections.id, id));
+      }
+      await setConnectionSecret(tx, id, sealNoonCredentials(ctx.org.id, id, creds));
+      await attachNoonChannels(tx, id);
+      await recordConnectionSync(tx, id, { at: new Date(), error: null });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: existing ? "connection.credentials_replaced" : "connection.created",
+        entityType: "connection",
+        entityId: id,
+        after: {
+          provider: "noon",
+          projectCode: creds.projectCode,
+          reports: settings.reports.length,
+        },
+      });
+      return Boolean(existing && existing.status !== "disconnected");
+    });
+    revalidate(slug);
+    return {
+      ok: true,
+      reports: categories.length,
+      payoutsReport: settings.payoutsReport,
+      replaced,
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Signs in to Noon again with the saved key and refreshes the reports it can download. */
+export async function testNoonAction(
+  slug: string,
+): Promise<CommerceResult<{ reports: number; payoutsReport: boolean }>> {
+  const ctx = await getCommerceContext(slug);
+  const connection = await inOrg(ctx, async (tx) => {
+    const found = await getNoonConnection(tx);
+    return found ? getConnection(tx, found.id) : null;
+  });
+  if (!connection?.secret || connection.status === "disconnected") {
+    return { ok: false, message: "Noon isn't connected. Upload the key file first." };
+  }
+  let error: string | null = null;
+  let result = { reports: 0, payoutsReport: false };
+  try {
+    const creds = openNoonCredentials(ctx.org.id, connection.id, connection.secret);
+    const categories = await checkNoonKey(creds);
+    const settings = noonSettings(creds.projectCode, categories);
+    result = { reports: categories.length, payoutsReport: settings.payoutsReport };
+    await inOrg(ctx, (tx) =>
+      tx
+        .update(schema.connections)
+        .set({ settings })
+        .where(eq(schema.connections.id, connection.id)),
+    );
+  } catch (e) {
+    const failed = failure(e);
+    error = failed.message;
+  }
+  await inOrg(ctx, (tx) => recordConnectionSync(tx, connection.id, { at: new Date(), error }));
+  revalidate(slug);
+  return error ? { ok: false, message: error } : { ok: true, ...result };
+}
+
+/** Forgets Noon's key; the Noon channels and everything brought in stay. */
+export async function disconnectNoonAction(slug: string): Promise<CommerceResult> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const done = await inOrg(ctx, async (tx) => {
+    const connection = await getNoonConnection(tx);
+    if (!connection || connection.status === "disconnected") return false;
+    await disconnectNoon(tx, connection.id);
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "connection.disconnected",
+      entityType: "connection",
+      entityId: connection.id,
+      after: { provider: "noon" },
+    });
+    return true;
+  });
+  if (!done) return { ok: false, message: "Noon isn't connected." };
+  revalidate(slug);
+  return { ok: true };
 }

@@ -30,6 +30,12 @@ export default defineConfig({
       reuseExistingServer: true,
     },
     {
+      // A stand-in for Noon's partner API (e2e/noon-mock.mjs).
+      command: "node e2e/noon-mock.mjs",
+      url: "http://localhost:4012/health",
+      reuseExistingServer: true,
+    },
+    {
       command: "pnpm start",
       url: `http://localhost:${port}/sign-in`,
       reuseExistingServer: true,
@@ -38,6 +44,7 @@ export default defineConfig({
         WISE_API_URL: process.env.WISE_API_URL ?? "http://localhost:4010",
         AMAZON_LWA_URL: process.env.AMAZON_LWA_URL ?? "http://localhost:4011/auth/o2/token",
         AMAZON_SPAPI_URL: process.env.AMAZON_SPAPI_URL ?? "http://localhost:4011",
+        NOON_API_URL: process.env.NOON_API_URL ?? "http://localhost:4012",
         // Test-only key for the credential vault (32 zero bytes); real keys live in Vercel.
         APP_ENCRYPTION_KEY:
           process.env.APP_ENCRYPTION_KEY ?? "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",

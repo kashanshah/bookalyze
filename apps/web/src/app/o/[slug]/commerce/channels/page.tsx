@@ -1,5 +1,5 @@
 import { defaultAmazonRegion, defaultNoonMarketplace, isFulfilmentMode } from "@bookalyze/core";
-import { listAmazonConnections, listNoonChannels } from "@bookalyze/db";
+import { getNoonConnection, listAmazonConnections, listNoonChannels } from "@bookalyze/db";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/shell/page-header";
 import { inOrg } from "@/server/accounting";
@@ -13,9 +13,10 @@ export const metadata: Metadata = { title: "Channels" };
 export default async function ChannelsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const ctx = await getCommerceContext(slug);
-  const { connections, noon } = await inOrg(ctx, async (tx) => ({
+  const { connections, noon, noonConnection } = await inOrg(ctx, async (tx) => ({
     connections: await listAmazonConnections(tx),
     noon: await listNoonChannels(tx),
+    noonConnection: await getNoonConnection(tx),
   }));
   return (
     <div className="grid gap-8">
@@ -48,6 +49,24 @@ export default async function ChannelsPage({ params }: { params: Promise<{ slug:
       />
       <NoonChannels
         slug={slug}
+        locale={ctx.profile.locale}
+        connection={
+          noonConnection
+            ? {
+                status: noonConnection.status,
+                projectCode:
+                  typeof noonConnection.settings.projectCode === "string"
+                    ? noonConnection.settings.projectCode
+                    : null,
+                lastSyncedAt: noonConnection.lastSyncedAt?.toISOString() ?? null,
+                lastError: noonConnection.lastError,
+                reports: Array.isArray(noonConnection.settings.reports)
+                  ? noonConnection.settings.reports.length
+                  : 0,
+                payoutsReport: noonConnection.settings.payoutsReport === true,
+              }
+            : null
+        }
         canManage={isOrgAdmin(ctx)}
         defaultMarketplace={defaultNoonMarketplace(ctx.profile.countryCode).id}
         channels={noon.map((ch) => ({

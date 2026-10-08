@@ -6,9 +6,19 @@ import {
   NOON_FULFILMENT,
   NOON_MARKETPLACES,
 } from "@bookalyze/core";
-import { Plus, Store } from "lucide-react";
-import { useState, useTransition } from "react";
+import {
+  CircleAlert,
+  FileKey,
+  KeyRound,
+  PlugZap,
+  Plus,
+  RefreshCw,
+  Store,
+  Unplug,
+} from "lucide-react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import {
@@ -25,9 +35,21 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   addNoonChannelAction,
+  connectNoonAction,
+  disconnectNoonAction,
   setChannelActiveAction,
   setChannelFulfilmentAction,
+  testNoonAction,
 } from "../actions";
+
+export type NoonConnectionView = {
+  status: "active" | "error" | "disconnected";
+  projectCode: string | null;
+  lastSyncedAt: string | null;
+  lastError: string | null;
+  reports: number;
+  payoutsReport: boolean;
+};
 
 export type NoonChannelView = {
   id: string;
@@ -47,14 +69,18 @@ const fulfilmentOptions = FULFILMENT_MODES.map((m) => ({
 
 export function NoonChannels({
   slug,
+  locale,
   canManage,
   defaultMarketplace,
   channels,
+  connection,
 }: {
   slug: string;
+  locale: string;
   canManage: boolean;
   defaultMarketplace: string;
   channels: NoonChannelView[];
+  connection: NoonConnectionView | null;
 }) {
   const [adding, setAdding] = useState(false);
   const [key, setKey] = useState(0);
@@ -116,8 +142,9 @@ export function NoonChannels({
           </Button>
         ) : null}
       </div>
+      <NoonApi slug={slug} locale={locale} canManage={canManage} connection={connection} />
       {channels.length ? (
-        <ul className="divide-y">
+        <ul className="divide-y border-t">
           {channels.map((ch) => (
             <li
               key={ch.id}
@@ -151,7 +178,7 @@ export function NoonChannels({
           ))}
         </ul>
       ) : (
-        <div className="grid justify-items-start gap-3 px-5 py-5">
+        <div className="grid justify-items-start gap-3 border-t px-5 py-5">
           <p className="max-w-prose text-muted-foreground text-sm">
             Selling on Noon in the UAE, Saudi Arabia or Egypt? Add the country here. Each one is a
             channel in its own currency, like an Amazon marketplace.
@@ -275,6 +302,242 @@ function AddNoonForm({
         <Button type="submit" disabled={pending}>
           {pending ? <Spinner /> : <Plus />}
           Add country
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+/** Noon's API: the service-account key that lets Bookalyze download Noon's reports itself. */
+function NoonApi({
+  slug,
+  locale,
+  canManage,
+  connection: c,
+}: {
+  slug: string;
+  locale: string;
+  canManage: boolean;
+  connection: NoonConnectionView | null;
+}) {
+  const [connecting, setConnecting] = useState(false);
+  const [key, setKey] = useState(0);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const live = c && c.status !== "disconnected" ? c : null;
+  const open = () => {
+    setKey((k) => k + 1);
+    setConnecting(true);
+  };
+  const run = (id: string, task: () => Promise<void>) =>
+    start(async () => {
+      setBusy(id);
+      await task();
+      setBusy(null);
+    });
+  const test = () =>
+    run("test", async () => {
+      const result = await testNoonAction(slug);
+      if (!result.ok) return void toast.error(result.message);
+      toast.success("Noon answered", { description: reportsLine(result) });
+    });
+  const disconnect = () =>
+    run("disconnect", async () => {
+      const result = await disconnectNoonAction(slug);
+      if (!result.ok) return void toast.error(result.message);
+      setConfirming(false);
+      toast.success("Noon disconnected", {
+        description: "The key is deleted. Your Noon countries and everything brought in stay.",
+      });
+    });
+  const checked = live?.lastSyncedAt
+    ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(
+        new Date(live.lastSyncedAt),
+      )
+    : null;
+
+  return (
+    <div className="grid gap-3 bg-muted/30 px-5 py-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <KeyRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1 basis-[calc(100%-1.75rem)] sm:basis-0">
+          <h3 className="flex flex-wrap items-center gap-2 font-medium text-sm">
+            Noon's API
+            {live ? (
+              live.status === "error" ? (
+                <Badge variant="warning">Needs attention</Badge>
+              ) : (
+                <Badge variant="success">Connected</Badge>
+              )
+            ) : null}
+          </h3>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            {live
+              ? [
+                  live.projectCode ? `Project ${live.projectCode}` : null,
+                  checked ? `Last checked ${checked}` : "Not checked yet",
+                  reportsLine(live),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : "Connect it with your service account's key file, so Noon's reports come in by themselves. Without it, they can be uploaded by hand."}
+          </p>
+        </div>
+        <div className="ms-7 flex flex-wrap gap-2 sm:ms-0">
+          {live ? (
+            <>
+              <Button variant="outline" size="sm" onClick={test} disabled={pending}>
+                {busy === "test" ? <Spinner /> : <RefreshCw />}
+                Test connection
+              </Button>
+              {canManage ? (
+                <>
+                  <Button variant="ghost" size="sm" onClick={open} disabled={pending}>
+                    <FileKey />
+                    Replace key
+                  </Button>
+                  <Button
+                    variant={confirming ? "destructive" : "ghost"}
+                    size="sm"
+                    onClick={() => (confirming ? disconnect() : setConfirming(true))}
+                    disabled={pending}
+                  >
+                    {busy === "disconnect" ? <Spinner /> : <Unplug />}
+                    {confirming ? "Click again to disconnect" : "Disconnect"}
+                  </Button>
+                </>
+              ) : null}
+            </>
+          ) : canManage ? (
+            <Button variant="outline" size="sm" onClick={open}>
+              <PlugZap />
+              Connect Noon's API
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {live?.lastError ? (
+        <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-sm">
+          <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+          {live.lastError}
+        </p>
+      ) : live && !live.lastError && !live.payoutsReport ? (
+        <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-sm">
+          <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+          Noon's payouts report (the transaction view) isn't among the reports this key can
+          download. Give the service account a role that can see finance, then test again.
+        </p>
+      ) : null}
+
+      <Dialog open={connecting} onOpenChange={setConnecting}>
+        <DialogContent>
+          {connecting ? (
+            <ConnectNoonForm
+              key={key}
+              slug={slug}
+              replacing={Boolean(live)}
+              onDone={() => setConnecting(false)}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function reportsLine(r: { reports: number; payoutsReport: boolean }) {
+  const count = r.reports === 1 ? "1 report" : `${r.reports} reports`;
+  return `${count} available${r.payoutsReport ? ", payouts included" : ""}`;
+}
+
+function ConnectNoonForm({
+  slug,
+  replacing,
+  onDone,
+}: {
+  slug: string;
+  replacing: boolean;
+  onDone: () => void;
+}) {
+  const [file, setFile] = useState<{ name: string; text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <form
+      className="grid gap-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!file) return setError("Choose the .json key file Noon downloaded.");
+        start(async () => {
+          const result = await connectNoonAction(slug, { keyFile: file.text });
+          if (!result.ok) {
+            setError(result.errors?.keyFile ?? result.message);
+            return;
+          }
+          toast.success(result.replaced ? "Key replaced" : "Noon connected", {
+            description: reportsLine(result),
+          });
+          onDone();
+        });
+      }}
+    >
+      <DialogHeader>
+        <DialogTitle>{replacing ? "Replace Noon's key" : "Connect Noon's API"}</DialogTitle>
+        <DialogDescription>
+          The key file is checked with Noon, then stored encrypted. Nobody can read it back, and you
+          can delete the file from your computer afterwards.
+        </DialogDescription>
+      </DialogHeader>
+      <ol className="grid gap-2.5 rounded-xl border bg-background/60 p-4 text-sm">
+        <li>
+          <span className="font-medium">1.</span> In{" "}
+          <span className="font-medium">access.noon.partners → User &amp; Access → API Users</span>,
+          choose <span className="font-medium">Add Service Account</span>.
+        </li>
+        <li>
+          <span className="font-medium">2.</span> Give it a role that can download reports, such as
+          Project Owner or Project Admin. Leave the IP whitelist empty: Bookalyze's servers don't
+          have a fixed address.
+        </li>
+        <li>
+          <span className="font-medium">3.</span> Noon downloads a{" "}
+          <span className="font-medium">.json</span> key file once. Choose it below.
+        </li>
+      </ol>
+      <Field
+        label="Key file"
+        htmlFor="noon-key-file"
+        error={error ?? undefined}
+        hint={file ? `Chosen: ${file.name}` : "The .json file, e.g. noon_credentials.json."}
+      >
+        <input
+          ref={input}
+          id="noon-key-file"
+          type="file"
+          accept=".json,application/json"
+          aria-invalid={Boolean(error)}
+          className="block w-full min-w-0 rounded-lg border border-input bg-card text-sm file:me-3 file:border-0 file:border-e file:bg-muted file:px-3 file:py-2 file:font-medium file:text-foreground"
+          onChange={async (e) => {
+            setError(null);
+            const chosen = e.target.files?.[0];
+            if (!chosen) return setFile(null);
+            if (chosen.size > 20_000) {
+              setFile(null);
+              return setError("This file is too large to be a Noon key file.");
+            }
+            setFile({ name: chosen.name, text: await chosen.text() });
+          }}
+        />
+      </Field>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={pending}>
+          {pending ? <Spinner /> : <PlugZap />}
+          {replacing ? "Check and replace" : "Check and connect"}
         </Button>
       </DialogFooter>
     </form>

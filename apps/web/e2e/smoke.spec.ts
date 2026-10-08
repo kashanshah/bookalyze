@@ -2023,6 +2023,49 @@ test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ p
   await expect(dialog.getByText(/Noon UAE · 1 unit per listing/)).toBeVisible();
 });
 
+test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
+  const keyFile = async (path: string) => ({
+    name: "noon_credentials.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(await (await fetch(`http://localhost:4012${path}`)).text()),
+  });
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  const noon = page.getByRole("region", { name: "Noon", exact: true });
+  await noon.getByRole("button", { name: "Connect Noon's API" }).click();
+  const dialog = page.getByRole("dialog");
+
+  // Another kind of file, then a key Noon doesn't know: both say what's wrong.
+  await dialog.getByLabel("Key file").setInputFiles({
+    name: "other.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({ type: "service_account" })),
+  });
+  await dialog.getByRole("button", { name: "Check and connect" }).click();
+  await expect(dialog.getByText(/isn't a Noon key file/)).toBeVisible();
+  await dialog.getByLabel("Key file").setInputFiles(await keyFile("/test/unknown-key-file"));
+  await dialog.getByRole("button", { name: "Check and connect" }).click();
+  await expect(dialog.getByText(/Noon didn't accept this key/)).toBeVisible();
+
+  await dialog.getByLabel("Key file").setInputFiles(await keyFile("/test/key-file"));
+  await dialog.getByRole("button", { name: "Check and connect" }).click();
+  await expect(page.getByText("Noon connected")).toBeVisible();
+  await expect(page.getByText("2 reports available, payouts included").first()).toBeVisible();
+  await expect(noon.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(noon.getByText(/Project PRJ000001/)).toBeVisible();
+
+  await noon.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByText("Noon answered")).toBeVisible();
+
+  // Disconnecting keeps the Noon countries.
+  await noon.getByRole("button", { name: "Disconnect" }).click();
+  await noon.getByRole("button", { name: "Click again to disconnect" }).click();
+  await expect(page.getByText("Noon disconnected")).toBeVisible();
+  await expect(noon.getByRole("button", { name: "Connect Noon's API" })).toBeVisible();
+  await expect(noon.getByText("Noon UAE")).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();
