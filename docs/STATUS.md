@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-08, phase 4c slice 1: Noon channels._
+_Last updated: 2026-10-08, phase 4c slice 2: connect Noon's API._
 
 ---
 
@@ -28,7 +28,7 @@ _Last updated: 2026-10-08, phase 4c slice 1: Noon channels._
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off) and slice 6 (bundles) done. Next: Noon (phase 4c), with bundles from day one |
-| 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slice 1 (Noon channels, added by hand, with who ships the orders) done. Next: the transaction view as payouts (upload first), then Noon's API (connection, orders, transactions), posting, channel profit, cost of goods sold and FBN stock. See §3 "Phase 4c" |
+| 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders) and 2 (connect Noon's API with the service-account key file) done. Next: the transaction view as payouts (by API and by upload), then orders, posting, channel profit, cost of goods sold and FBN stock. See §3 "Phase 4c" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1224,6 +1224,38 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   partial and full deliveries, over-receiving refused, cancel rules, tenant isolation), e2e
   "purchase orders: draft, send, a partial delivery, then the rest".
 
+### Phase 4c, slice 2: connect Noon's API
+
+- **Commerce → Channels → Noon → Noon's API** (admins): "Connect Noon's API" takes the
+  service-account **key file** (`.json`, chosen in the browser, read there and sent once to
+  `connectNoonAction`; never stored as it came). The dialog says how to make one: access.noon.
+  partners → User & Access → API Users → Add Service Account, a role that can download reports
+  (Project Owner or Project Admin), **no IP whitelist** (Vercel has no fixed address).
+- **Checked with Noon, then sealed:** core `parseNoonKeyFile` keeps `key_id`, `private_key` and
+  `project_code` (plain errors for other files); web `server/noon.ts` signs the login JWT (RS256,
+  `sub` = key ID, `iat` in whole seconds, a fresh `jti`; core `noonLoginClaims`), posts it with
+  the project code to `POST /identity/public/v1/api/login`, keeps the session cookies in memory
+  (a day; Noon keeps them 30) and lists `GET /impex/v1/export/category/list`. Every call sends
+  `User-Agent: Bookalyze/1.0` (Noon requires one). A stale session signs in again once; a 429
+  waits for `X-Ratelimit-Retry-After` once (up to 10 s). Errors read Noon's envelope
+  (`noonErrorDetail`: `{ error: { code, message, fields } }`).
+- **One Noon connection per company** (`provider = 'noon'`, `settings`: project code, the report
+  codes the key can download, `payoutsReport`). Connecting again replaces the key. It puts every
+  Noon channel on the connection, and a country added later joins it (`attachNoonChannels`,
+  `addNoonChannel`). The card shows Connected / Needs attention, the project, when it was last
+  checked and "N reports available, payouts included", with **Test connection** (signs in
+  afresh), **Replace key** and **Disconnect**. A key without the payouts report (the item-level
+  transaction view) gets a warning to give the account a finance role.
+- **Disconnecting** deletes the key; the Noon channels come off the connection and stay as they
+  are, with everything brought in (`disconnectNoon`). Noon connections are left out of Banking.
+- Schema (migration `0049_noon_connections`): `connections.provider` takes `noon`.
+- Tests: core `noon-api.test.ts`; db `noon.test.ts` (channels put on the connection, a later
+  country too, left out of Banking, disconnect keeps channels and orders); e2e "noon: connect
+  Noon's API with the key file, test it and disconnect" against `e2e/noon-mock.mjs`, which makes
+  its own key pair at start (no key in the repo) and checks the JWT's signature, `iat`, project
+  code and User-Agent like Noon. `NOON_API_URL` points the app at it in e2e; leave it unset in
+  production.
+
 ### Phase 4c, slice 1: Noon channels
 
 - **Built as a product** (PLAN decision log, 2026-10-08): all three Noon countries and both ways
@@ -1469,30 +1501,38 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 6. [x] **Bundles.** Done in slice 6 (a SKU linked to several products).
 
 ### Phase 4c: Noon (as a product: UAE, KSA, Egypt; FBN and FBP)
-What we know of Noon's partner API (its docs at noon-docs.noonpartners.dev couldn't be reached
-from the build container, so check each point there before relying on it):
-- Credentials: a **service account** (API user) made at access.noon.partners → User & Access → API
-  Users → Add Service Account. Noon gives a **JSON key file once** (key ID, secret, project code;
-  it looks like a Google service-account file). Keys carry the role of their user; guides say it
-  needs **Project Owner**. A 403 naming the project means the wrong project, not a bad key.
-- The docs have Auth (authentication, OAuth for integrators, API users), orders and fulfilment
-  (FBPI, with webhooks) and data/reports (3 endpoints).
-- Payouts: the **item-level transaction view** (export `noon_financeweb_transactionviewreportonitemlevel`,
-  from and to dates): every sale, fee, refund, subsidy and payout row. Columns include order,
-  item and **reference numbers**, SKU, date, transaction type, currency, net proceeds, referral
-  fee, fulfilment and logistics fee, shipping credits, other order fees, order subsidies and
-  non-order fees. A sale's row comes the same day; its fees arrive later on "Order Update" rows;
-  the statement later still. So re-read the last few weeks every time and key rows on the
-  reference number.
+Noon's partner API (docs: noon-docs.noonpartners.dev; its `llms.txt` lists every page, and the
+pages are plain Markdown at `<page>.md`). The build container can't reach that host, so pages are
+pasted in when needed:
+- **Base URL** `https://noon-api-gateway.noon.partners`. Every request needs a `User-Agent`.
+- **Credentials:** one service account per partner (access.noon.partners → User & Access → API
+  Users), up to 5 keys each, optional IP whitelist and expiry. The key file: `key_id`,
+  `private_key` (PEM), `project_code`, `channel_identifier`. Login: slice 2 above. Sessions
+  last 30 days.
+- **Rate limits** per project: a main and a burst window per endpoint (login and impex: 1,500 a
+  minute). 429 carries `X-Ratelimit-Retry-After`; every answer has `X-Request-Id`.
+- **Reports (impex):** `GET /impex/v1/export/category/list` (codes and their params), `POST
+  /impex/v1/export/create` `{ export_category_code, params }` → `export_code`, `POST
+  /impex/v1/export/status` `{ export_code }` → `export_status`, `download_url`. FBN orders and
+  payouts come this way (the order APIs are FBPI only, for sellers who ship themselves).
+- **FBN stock:** `ListWarehouses`, then `GetStock` (warehouse and partner SKU pairs).
+- **FBP (FBPI) orders:** `ListFbpiOrders` / `GetFbpiOrder` per warehouse, with webhooks.
+- **Payouts:** the **item-level transaction view** (export
+  `noon_financeweb_transactionviewreportonitemlevel`, from and to dates, per a third-party guide;
+  the category list shows it to a key with finance access): every sale, fee, refund, subsidy and
+  payout row. Columns include order, item and **reference numbers**, SKU, date, transaction type,
+  currency, net proceeds, referral fee, fulfilment and logistics fee, shipping credits, other
+  order fees, order subsidies and non-order fees. A sale's row comes the same day; its fees arrive
+  later on "Order Update" rows; the statement later still. So re-read the last few weeks every
+  time and key rows on the reference number.
 
 1. [x] **Noon channels.** Done in slice 1.
-2. [ ] **Payouts from the transaction view, by upload.** Seller Lab → Finance → Transaction view
-   (and the statement detail report, if it carries the statement number): rows kept by
-   reference number, grouped into payouts on Settlements, with Noon's own line names and groups.
-   Needs a real file's header row to confirm the columns (no amounts or names needed).
-3. [ ] **Connect Noon's API.** The JSON key file in the encrypted connection screen, checked with
-   Noon, attached to the company's Noon channels. Needs the Authentication page of the docs.
-4. [ ] **Orders and transactions by API**, daily with the other jobs.
+2. [x] **Connect Noon's API.** Done in slice 2.
+3. [ ] **Payouts from the transaction view**, by API (create the export, poll, download) and by
+   upload (the same file from Seller Lab): rows kept by reference number, grouped into payouts
+   on Settlements, with Noon's own line names and groups. Needs a real file's header row (or
+   one export by API) to confirm the columns.
+4. [ ] **Orders** (FBN: the orders export; FBP: the FBPI order APIs), daily with the other jobs.
 5. [ ] **Posting, deposit matching and channel profit** for Noon payouts (VAT on Noon's fees: a
    cost or recoverable, as for Amazon).
 6. [ ] **Cost of goods sold for Noon**, per month and marketplace, bundles included.
@@ -1757,6 +1797,6 @@ cases. These answers only help pick sensible defaults and test data:
    committed. Report any column or account it gets wrong.
 3. Roles: today every member can manage accounts and post entries. A future "accountant" or
    read-only role is a permissions change, not a data change.
-4. Noon (phase 4c): let the build environment reach `noon-docs.noonpartners.dev` (or paste its
-   Authentication and Reports pages), and share only the **header row** of a Seller Lab
-   transaction-view export (no amounts, orders or names). Both confirm what slices 2 and 3 read.
+4. Noon (phase 4c): connect Kazomo For Online Selling's Noon key (Commerce → Channels → Noon's
+   API) and say what "Test connection" lists; share only the **header row** of a Seller Lab
+   transaction-view export (no amounts, orders or names). Both confirm what slice 3 reads.

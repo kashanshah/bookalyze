@@ -10,7 +10,7 @@ import {
   prepareTransfer,
   transactionLines,
 } from "@bookalyze/core";
-import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, notInArray, or, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { findDuplicateOf, suggestDuplicate } from "./duplicates";
 import { fxRateOn } from "./fx";
@@ -76,7 +76,7 @@ export async function listConnections(tx: Transaction) {
     })
     .from(connections)
     // Marketplace connections live under Commerce.
-    .where(ne(connections.provider, "amazon_sp"))
+    .where(notInArray(connections.provider, ["amazon_sp", "noon"]))
     .orderBy(asc(connections.createdAt));
   const feeds = await tx
     .select({

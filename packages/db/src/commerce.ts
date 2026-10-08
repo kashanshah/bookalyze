@@ -115,10 +115,12 @@ export async function addNoonChannel(
     if (!row) throw new Error("The Noon channel couldn't be updated.");
     return { channel: row, created: false };
   }
+  const live = await getNoonConnection(tx);
   const [row] = await tx
     .insert(salesChannels)
     .values({
       organizationId: input.orgId,
+      connectionId: live && live.status !== "disconnected" ? live.id : null,
       kind: "noon",
       name: input.marketplace.name,
       marketplaceId: input.marketplace.id,
@@ -130,6 +132,42 @@ export async function addNoonChannel(
     .returning();
   if (!row) throw new Error("The Noon channel couldn't be added.");
   return { channel: row, created: true };
+}
+
+/** The company's Noon connection (the live one first, else the latest), without its secret. */
+export async function getNoonConnection(tx: Transaction) {
+  const [row] = await tx
+    .select({
+      id: connections.id,
+      name: connections.name,
+      status: connections.status,
+      settings: connections.settings,
+      hasSecret: sql<boolean>`${connections.secret} is not null`,
+      lastSyncedAt: connections.lastSyncedAt,
+      lastError: connections.lastError,
+    })
+    .from(connections)
+    .where(eq(connections.provider, "noon"))
+    .orderBy(sql`${connections.status} = 'disconnected'`, desc(connections.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Puts every Noon channel of the company on this connection (one Noon account per company). */
+export async function attachNoonChannels(tx: Transaction, connectionId: string) {
+  await tx.update(salesChannels).set({ connectionId }).where(eq(salesChannels.kind, "noon"));
+}
+
+/**
+ * Forgets Noon's key. Its channels come off the connection and stay as they are (switched on,
+ * with everything brought in), as if they'd been added by hand.
+ */
+export async function disconnectNoon(tx: Transaction, connectionId: string) {
+  await disconnectConnection(tx, connectionId);
+  await tx
+    .update(salesChannels)
+    .set({ connectionId: null })
+    .where(and(eq(salesChannels.kind, "noon"), eq(salesChannels.connectionId, connectionId)));
 }
 
 /** Who ships a channel's orders. */

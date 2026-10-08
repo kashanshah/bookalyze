@@ -1,10 +1,13 @@
 import { type AmazonOrder, noonMarketplace } from "@bookalyze/core";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createConnection } from "../banking";
+import { createConnection, listConnections, setConnectionSecret } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import {
   addNoonChannel,
+  attachNoonChannels,
+  disconnectNoon,
+  getNoonConnection,
   listNoonChannels,
   listOrders,
   saveAmazonChannels,
@@ -185,5 +188,65 @@ describe("Noon channels", () => {
         .where(eq(schema.salesChannels.marketplaceId, "A2VIGQ35RCS4UG")),
     );
     expect(channelId).toBe(amazonAe?.id);
+  });
+});
+
+describe("Noon's API connection", () => {
+  it("puts the Noon channels on the connection, and new ones too", async () => {
+    const connectionId = await scoped(async (tx) => {
+      const { id } = await createConnection(tx, {
+        orgId,
+        userId: null,
+        provider: "noon",
+        name: "Noon",
+        settings: { projectCode: "PRJ000001", reports: ["transactions"], payoutsReport: true },
+      });
+      await setConnectionSecret(tx, id, "sealed-synthetic");
+      await attachNoonChannels(tx, id);
+      return id;
+    });
+    const connection = await scoped((tx) => getNoonConnection(tx));
+    expect(connection).toMatchObject({ id: connectionId, status: "active", hasSecret: true });
+    expect(connection).not.toHaveProperty("secret");
+
+    const channels = await scoped((tx) => listNoonChannels(tx));
+    expect(channels.every((c) => c.connectionId === connectionId)).toBe(true);
+    const added = await scoped((tx) =>
+      addNoonChannel(tx, { orgId, marketplace: ksa, fulfilment: "marketplace" }),
+    );
+    expect(added.channel.connectionId).toBe(connectionId);
+
+    // Amazon Seller Central stays out of Banking, and so does Noon.
+    const banking = await scoped((tx) => listConnections(tx));
+    expect(banking.map((c) => c.provider)).not.toContain("noon");
+
+    // The other company's channels aren't touched.
+    const theirs = await scoped((tx) => listNoonChannels(tx), otherOrgId);
+    expect(theirs.every((c) => c.connectionId === null)).toBe(true);
+  });
+
+  it("disconnecting forgets the key and keeps the channels and their orders", async () => {
+    const connection = await scoped((tx) => getNoonConnection(tx));
+    await scoped((tx) => disconnectNoon(tx, connection?.id ?? ""));
+    expect(await scoped((tx) => getNoonConnection(tx))).toMatchObject({
+      status: "disconnected",
+      hasSecret: false,
+    });
+    const channels = await scoped((tx) => listNoonChannels(tx));
+    expect(channels.map((c) => [c.name, c.connectionId, c.isActive])).toEqual([
+      ["Noon KSA", null, true],
+      ["Noon UAE", null, true],
+    ]);
+    const list = await scoped((tx) =>
+      listOrders(tx, { timezone: "Asia/Dubai", limit: 10, offset: 0 }),
+    );
+    expect(list.rows.map((o) => o.externalId)).toEqual(["NAE00000000001"]);
+
+    // A channel added now isn't put on the old connection.
+    const egypt = noonMarketplace("noon-eg");
+    const added = await scoped((tx) =>
+      addNoonChannel(tx, { orgId, marketplace: egypt ?? ksa, fulfilment: "seller" }),
+    );
+    expect(added.channel.connectionId).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import "server-only";
+import type { NoonCredentials } from "@bookalyze/core";
 import { can } from "@bookalyze/core";
 import { connectionSecretContext, openSecret, sealSecret } from "@bookalyze/db";
 import { notFound } from "next/navigation";
@@ -43,4 +44,23 @@ export function openAmazonCredentials(
   return JSON.parse(
     openSecret(sealed, connectionSecretContext(orgId, connectionId), env().APP_ENCRYPTION_KEY),
   ) as AmazonCredentials;
+}
+
+/** Noon's key (ID, private key, project code), sealed like Amazon's credentials. */
+export function sealNoonCredentials(orgId: string, connectionId: string, creds: NoonCredentials) {
+  return sealSecret(
+    JSON.stringify(creds),
+    connectionSecretContext(orgId, connectionId),
+    env().APP_ENCRYPTION_KEY,
+  );
+}
+
+export function openNoonCredentials(
+  orgId: string,
+  connectionId: string,
+  sealed: string,
+): NoonCredentials {
+  return JSON.parse(
+    openSecret(sealed, connectionSecretContext(orgId, connectionId), env().APP_ENCRYPTION_KEY),
+  ) as NoonCredentials;
 }

@@ -39,6 +39,8 @@ const schema = z.object({
   /** Amazon's Login with Amazon token URL and SP-API base URL. Tests point them at a stand-in. */
   AMAZON_LWA_URL: z.url().optional(),
   AMAZON_SPAPI_URL: z.url().optional(),
+  /** Noon's partner API base URL. Tests point it at a stand-in; leave unset in production. */
+  NOON_API_URL: z.url().optional(),
   /** Secret Vercel Cron sends as a bearer token to scheduled routes (e.g. the daily FX sync). */
   CRON_SECRET: z.string().min(16).optional(),
   /** "s3", or "local" to keep files on disk (development and CI only). */
