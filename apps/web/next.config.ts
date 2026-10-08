@@ -11,6 +11,9 @@ config({ path: resolve(process.cwd(), "../../.env"), quiet: true });
 const nextConfig: NextConfig = {
   transpilePackages: ["@bookalyze/core", "@bookalyze/db"],
   poweredByHeader: false,
+  // Invoice PDFs read their Arabic font from disk (src/server/pdf-text.ts); ship it with every
+  // server function.
+  outputFileTracingIncludes: { "/**": ["./src/server/fonts/**"] },
 };
 
 export default nextConfig;

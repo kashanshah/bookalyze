@@ -175,7 +175,7 @@ the bank feed: "This deposit pays INV-0012?".
 
 ## 6. Order of work (each line is roughly one PR)
 
-1. **Now:** Arabic in invoice PDFs (embedded Noto fonts plus bidi). Customer invoices for UAE
+1. **Done:** Arabic in invoice PDFs (Noto Sans Arabic plus bidi; see STATUS.md). Customer invoices for UAE
    orders then show Arabic names and titles.
 2. **Brand settings plus letterhead**, applied to order invoices too.
 3. **Invoicing module, core:**
