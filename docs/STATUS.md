@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-08, phase 5 slice 1: products and SKU links._
+_Last updated: 2026-10-08, phase 5 slice 2: suppliers and purchase orders._
 
 ---
 
@@ -27,7 +27,7 @@ _Last updated: 2026-10-08, phase 5 slice 1: products and SKU links._
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
-| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet) done. Next: suppliers and purchase orders, then landed costs, FIFO lots and cost of goods sold |
+| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet) and slice 2 (purchase orders to suppliers, deliveries received in parts) done. Next: landed costs and FIFO lots, then cost of goods sold |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1187,9 +1187,41 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: db `inventory.test.ts` (create/edit/archive, duplicate own SKU, unlinked SKUs, linking,
   units sold, duplicate link refused, tenant isolation), e2e "inventory: products from the SKUs
   on orders, and a 2-pack linked by hand".
-- **Next (phase 5):** suppliers and purchase orders (Purchase orders goes back in the Inventory
-  nav then), landed costs, FIFO lots, the FBA inventory ledger import, bundles
+- **Next (phase 5):** landed costs, FIFO lots, the FBA inventory ledger import, bundles
   (`product_components`), and cost of goods sold posting.
+
+### Phase 5, slice 2: suppliers and purchase orders
+
+- **What it is:** Inventory → Purchase orders (feature `inventory.purchasing`). Suppliers are
+  vendor contacts (type vendor or both, not archived), so there's no second supplier list. A PO
+  has a supplier, a currency (the main one by default), order and expected dates, the supplier's
+  reference, notes, and lines of product × quantity × cost of one (4 decimal places). Line and
+  order totals are exact (`purchaseLineTotal`, `purchaseOrderTotal` in core
+  `inventory/purchasing.ts`), each line rounded to the currency's minor units.
+- **Life of a PO:** Draft (edit, delete, **Mark as sent**) → Ordered (**Record a delivery**,
+  **Cancel order**) → Partly received → Received; or Cancelled. Numbers are `PO-0001`… per
+  company (advisory lock + unique). A sent order is cancelled, never deleted, so its number stays
+  accounted for; it can't be cancelled once something arrived.
+- **Deliveries:** the dialog fills in everything still to come; lower a number for a partial
+  delivery. `receivePurchaseOrder` locks the PO row, refuses more than is still to come
+  (`receiptProblems`), a date before the order date, and an empty delivery, then sets the status
+  from what has arrived (`receivingStatus`). Each delivery is a `purchase_receipts` row with
+  `purchase_receipt_lines`; slice 3 turns these into FIFO lots with landed costs.
+- **Lists:** tabs Open (draft, ordered, partly received), Received, Cancelled, All; search by
+  supplier, reference or `PO-12`. Products shows "N on order" (sent, not yet arrived).
+- **Nothing posts to the books yet.** Costs reach the ledger with lots and landed costs.
+- **Schema** (migration `0042_purchase_orders`): `purchase_orders` (composite FK to `contacts`,
+  status check, expected ≥ order date), `purchase_order_lines` (composite FKs to the PO, cascade,
+  and `products`; quantity 1–10,000,000; cost ≥ 0), `purchase_receipts`,
+  `purchase_receipt_lines` (composite FKs, cascade; quantity > 0). All under RLS.
+- **Code:** db `purchasing.ts` (`listPurchaseOrders`, `getPurchaseOrder`, `createPurchaseOrder`,
+  `updatePurchaseOrder`, `markPurchaseOrderOrdered`, `cancelPurchaseOrder`,
+  `deletePurchaseOrder`, `receivePurchaseOrder`, `supplierOptions`, `unitsOnOrder`; errors are
+  `PurchasingError` with per-line messages), `lib/validation/purchasing.ts`,
+  `app/o/[slug]/inventory/purchase-orders/`. Every write is audited (`purchase_order.*`).
+- Tests: core `purchasing.test.ts`, db `purchasing.test.ts` (numbering, totals, draft-only edits,
+  partial and full deliveries, over-receiving refused, cancel rules, tenant isolation), e2e
+  "purchase orders: draft, send, a partial delivery, then the rest".
 
 ---
 
@@ -1249,8 +1281,7 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 
 ### Phase 5: inventory and cost of goods sold
 1. [x] **Products and SKU links.** Done in slice 1.
-2. [ ] **Suppliers and purchase orders:** suppliers (vendors from contacts), purchase orders
-   with lines per product, receiving, and the Purchase orders screen in the Inventory nav.
+2. [x] **Suppliers and purchase orders.** Done in slice 2.
 3. [ ] **Landed costs and FIFO lots:** freight, duty, brokerage and prep allocated by units,
    weight or value; one lot per receipt.
 4. [ ] **Inventory movements:** the FBA inventory ledger report, transfers, returns, removals.

@@ -1,4 +1,10 @@
-import { inventoryChannels, listProducts, UNITS_SOLD_DAYS, unlinkedSkus } from "@bookalyze/db";
+import {
+  inventoryChannels,
+  listProducts,
+  UNITS_SOLD_DAYS,
+  unitsOnOrder,
+  unlinkedSkus,
+} from "@bookalyze/db";
 import { Package, Pencil, Plus, Search } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -29,14 +35,14 @@ export default async function ProductsPage({
   const showArchived = sp.archived === "1";
   const ctx = await getInventoryContext(slug);
   const { locale } = ctx.profile;
-  const { products, channels, unlinked, active } = await inOrg(ctx, async (tx) => {
+  const { products, channels, unlinked, active, onOrder } = await inOrg(ctx, async (tx) => {
     const channels = await inventoryChannels(tx);
     const [products, unlinked, active] = [
       await listProducts(tx, { search: q || null, includeArchived: showArchived }),
       await unlinkedSkus(tx, { limit: UNLINKED_SHOWN }),
       q || showArchived ? await listProducts(tx) : null,
     ];
-    return { products, channels, unlinked, active };
+    return { products, channels, unlinked, active, onOrder: await unitsOnOrder(tx) };
   });
   const linkable = (active ?? products).filter((p) => !p.isArchived);
   const channelChoices = channels
@@ -182,6 +188,11 @@ export default async function ProductsPage({
                   <span className="block text-muted-foreground text-xs md:hidden">
                     sold in {UNITS_SOLD_DAYS} days
                   </span>
+                  {onOrder.get(p.id) ? (
+                    <span className="block text-primary text-xs">
+                      {number.format(onOrder.get(p.id) ?? 0)} on order
+                    </span>
+                  ) : null}
                 </p>
                 <div className="col-start-3 row-start-1 md:col-start-auto md:row-start-auto">
                   <ProductDialog

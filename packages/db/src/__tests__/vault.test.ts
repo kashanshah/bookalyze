@@ -23,7 +23,9 @@ describe("vault", () => {
       VaultError,
     );
     const parts = sealed.split(".");
-    const tampered = [...parts.slice(0, 3), `${parts[3]?.slice(0, -2)}AA`].join(".");
+    // Replace the last two characters with ones that differ (they're sometimes "AA" already).
+    const tail = parts[3]?.endsWith("AA") ? "BB" : "AA";
+    const tampered = [...parts.slice(0, 3), `${parts[3]?.slice(0, -2)}${tail}`].join(".");
     expect(() => openSecret(tampered, "connection:a:b", key)).toThrow(VaultError);
   });
 

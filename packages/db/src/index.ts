@@ -12,6 +12,7 @@ export * from "./inventory";
 export * from "./invoices";
 export * from "./ledger";
 export * from "./listings";
+export * from "./purchasing";
 export * from "./reconciliation";
 export * from "./reports";
 export * from "./reviews";
