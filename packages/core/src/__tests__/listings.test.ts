@@ -76,7 +76,16 @@ const base = (): ListingObservation => ({
     { category: "Kitchen & Dining", rank: 1200 },
     { category: "Coasters", rank: 40 },
   ],
-  reviewTopics: [{ topic: "easy to clean", sentiment: "positive", share: "12.0" }],
+  reviewTopics: [
+    {
+      topic: "easy to clean",
+      sentiment: "positive",
+      share: "12.0",
+      mentions: null,
+      starImpact: null,
+      snippets: [],
+    },
+  ],
   reviewNote: null,
 });
 
@@ -255,7 +264,16 @@ describe("listing changes", () => {
       { category: "Kitchen & Dining", rank: 1190 },
       { category: "Coasters", rank: 40 },
     ];
-    next.reviewTopics = [{ topic: "easy to clean", sentiment: "positive", share: "12.4" }];
+    next.reviewTopics = [
+      {
+        topic: "easy to clean",
+        sentiment: "positive",
+        share: "12.4",
+        mentions: null,
+        starImpact: null,
+        snippets: [],
+      },
+    ];
     expect(diffListing(base(), next, ["rank", "reviews"])).toEqual([]);
   });
 
@@ -263,8 +281,22 @@ describe("listing changes", () => {
     const next = base();
     next.ranks = [{ category: "Kitchen & Dining", rank: 800 }];
     next.reviewTopics = [
-      { topic: "easy to clean", sentiment: "positive", share: "12.0" },
-      { topic: "chipped", sentiment: "negative", share: "6.0" },
+      {
+        topic: "easy to clean",
+        sentiment: "positive",
+        share: "12.0",
+        mentions: null,
+        starImpact: null,
+        snippets: [],
+      },
+      {
+        topic: "chipped",
+        sentiment: "negative",
+        share: "6.0",
+        mentions: null,
+        starImpact: null,
+        snippets: [],
+      },
     ];
     const changes = diffListing(base(), next, ["rank", "reviews"], "en-CA");
     expect(changes.map((c) => c.field)).toEqual(["rank", "reviews"]);
