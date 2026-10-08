@@ -72,8 +72,13 @@ export async function saveOrderInvoiceAction(
       action: result.created ? "order_invoice.created" : "order_invoice.corrected",
       entityType: "order_invoice",
       entityId: result.id,
-      before: result.before,
-      after: { number: result.number, buyer },
+      // Which buyer details changed, not the details: audit rows can never be erased.
+      after: {
+        number: result.number,
+        changed: (Object.keys(buyer) as (keyof typeof buyer)[]).filter(
+          (k) => (result.before?.[k] ?? null) !== (buyer[k] ?? null),
+        ),
+      },
     }),
   );
   revalidatePath(`/o/${slug}/commerce/orders`, "layout");

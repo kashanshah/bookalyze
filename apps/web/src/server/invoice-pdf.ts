@@ -1,11 +1,5 @@
 import "server-only";
-import {
-  formatDecimal,
-  minorUnits,
-  type OrderInvoice,
-  parseDecimal,
-  roundUnits,
-} from "@bookalyze/core";
+import { csvAmount, type OrderInvoice } from "@bookalyze/core";
 import { PDFDocument, type PDFFont, rgb, StandardFonts } from "pdf-lib";
 
 const WIDTH = 595.28;
@@ -26,8 +20,8 @@ function longDate(iso: string): string {
 
 /** Amounts as "AED 1,250.00", so the PDF never depends on a currency symbol the font lacks. */
 function money(amount: string, currency: string, signed = false): string {
-  const digits = minorUnits(currency);
-  const rounded = formatDecimal(roundUnits(parseDecimal(amount), digits), digits);
+  // Rounded to the currency's minor units: "1250.0000" AED → "1250.00", JPY → "1250".
+  const rounded = csvAmount(amount, currency);
   const negative = rounded.startsWith("-");
   const [whole, fraction] = rounded.replace("-", "").split(".");
   const grouped = (whole ?? "0").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -35,14 +29,22 @@ function money(amount: string, currency: string, signed = false): string {
   return negative || signed ? `-${body}` : body;
 }
 
-function drawable(value: string, font: PDFFont, size: number): string {
-  const latin = value.replace(/[^\n\u0020-\u007e\u00a0-\u00ff]/g, "");
-  try {
-    font.widthOfTextAtSize(latin || " ", size);
-    return latin;
-  } catch {
-    return latin.replace(/[^\n\u0020-\u007e]/g, "");
+const charsets = new WeakMap<PDFFont, Set<number>>();
+
+/**
+ * The text the font can draw. The standard fonts cover Latin text and punctuation (’ – € …);
+ * anything else (Arabic, say) is left out rather than failing the whole PDF.
+ */
+function drawable(value: string, font: PDFFont, _size?: number): string {
+  let set = charsets.get(font);
+  if (!set) {
+    set = new Set(font.getCharacterSet());
+    charsets.set(font, set);
   }
+  const known = set;
+  return Array.from(value)
+    .filter((c) => c === "\n" || known.has(c.codePointAt(0) ?? 0))
+    .join("");
 }
 
 function wrap(value: string, font: PDFFont, size: number, width: number): string[] {
@@ -137,7 +139,7 @@ export async function renderOrderInvoicePdf(invoice: OrderInvoice): Promise<Uint
     invoice.buyer.company,
     invoice.buyer.taxNumber ? `Tax number ${invoice.buyer.taxNumber}` : null,
     invoice.buyer.address,
-  ].filter((line): line is string => Boolean(line));
+  ].filter((line): line is string => Boolean(line && drawable(line, font).trim()));
   if (buyerLines.length) {
     for (const line of buyerLines) text(line, { size: 11 });
   } else {

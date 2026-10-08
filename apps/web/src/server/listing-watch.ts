@@ -1,12 +1,16 @@
 import "server-only";
 import {
+  can,
   checkAgainAt,
   diffListing,
   EMPTY_OBSERVATION,
+  getPlan,
   isAmazonRegion,
+  isModuleKey,
   type ListingChange,
   type ListingCheck,
   type ListingObservation,
+  type ModuleKey,
   parseCatalogItem,
   parseItemOffers,
   parseReviewTopics,
@@ -236,29 +240,38 @@ export async function emailListingChanges(org: {
     items.length === 1
       ? `${items[0]?.title || items[0]?.asin} changed on ${items[0]?.channelName}`
       : `${items.length} products changed`;
+  let sent = 0;
   for (const { email } of recipients) {
-    await sendEmail({
-      to: email,
-      subject,
-      react: ListingChanges({
-        organizationName: org.name,
-        url,
-        items: items.map((item) => ({
-          title: item.title || item.asin,
-          channelName: item.channelName,
-          summary: item.summary,
-          href: `${url}/${item.watchId}`,
-        })),
-      }),
-    });
+    try {
+      await sendEmail({
+        to: email,
+        subject,
+        react: ListingChanges({
+          organizationName: org.name,
+          url,
+          items: items.map((item) => ({
+            title: item.title || item.asin,
+            channelName: item.channelName,
+            summary: item.summary,
+            href: `${url}/${item.watchId}`,
+          })),
+        }),
+      });
+      sent += 1;
+    } catch (error) {
+      // One bad address mustn't stop the others; the changes still show on the page.
+      console.error("Listing changes email failed", error);
+    }
   }
+  // Nobody reached: keep them for the next run rather than dropping them.
+  if (!sent) return 0;
   await withOrg(db, ctx, (tx) =>
     markListingChangesNotified(
       tx,
       items.flatMap((item) => item.changeIds),
     ),
   );
-  return recipients.length;
+  return sent;
 }
 
 /** Every company with a product due for a look, within a time budget. */
@@ -286,23 +299,34 @@ export async function checkDueListingWatches(budgetMs: number): Promise<{
       .from(schema.organization)
       .where(eq(schema.organization.id, org.organization_id));
     if (!company) continue;
-    const ids = await withOrg(db, { orgId: company.id, userId: null }, (tx) =>
-      dueListingWatchIds(tx, 20),
-    );
-    let throttled = false;
-    for (const id of ids) {
-      if (Date.now() - started > budgetMs) break;
-      const result = await checkListingWatch({ orgId: company.id, userId: null }, id, false);
-      checked += 1;
-      if (result.ok) changes += result.changes.length;
-      if (!result.ok && result.throttled) {
-        throttled = true;
-        break;
+    try {
+      const ids = await withOrg(db, { orgId: company.id, userId: null }, async (tx) => {
+        // Only companies that still have listing watch (Commerce on, and in their plan).
+        const [profile] = await tx
+          .select({ planKey: schema.organizationProfiles.planKey })
+          .from(schema.organizationProfiles)
+          .limit(1);
+        const enabled = (await tx.select().from(schema.organizationModules))
+          .filter((m) => m.enabled && isModuleKey(m.moduleKey))
+          .map((m) => m.moduleKey as ModuleKey);
+        if (!profile || !can(getPlan(profile.planKey), enabled, "commerce.listings")) return [];
+        return dueListingWatchIds(tx, 20);
+      });
+      if (!ids.length) continue;
+      for (const id of ids) {
+        if (Date.now() - started > budgetMs) break;
+        const result = await checkListingWatch({ orgId: company.id, userId: null }, id, false);
+        checked += 1;
+        if (result.ok) changes += result.changes.length;
+        // Amazon throttles each seller account on its own: this company waits, the rest go on.
+        if (!result.ok && result.throttled) break;
+        await sleep(400);
       }
-      await sleep(400);
+      emails += await emailListingChanges(company);
+    } catch (error) {
+      // One company's failure mustn't stop the others.
+      console.error("Listing watch failed for a company", error);
     }
-    emails += await emailListingChanges(company);
-    if (throttled) break;
   }
   return { checked, changes, emails };
 }
