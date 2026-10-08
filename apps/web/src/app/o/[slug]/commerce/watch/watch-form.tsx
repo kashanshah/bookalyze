@@ -6,6 +6,8 @@ import {
   type ListingCadence,
   type ListingCheck,
   listingWatchIssue,
+  reviewTopicsAvailableFor,
+  reviewTopicsUnavailableNote,
 } from "@bookalyze/core";
 import { Check } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -58,6 +60,8 @@ export function WatchForm({
   const [notify, setNotify] = useState(initial?.notify ?? true);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const issue = listingWatchIssue({ checks, cadence });
+  const channelName = channels.find((channel) => channel.id === channelId)?.name ?? "";
+  const reviewsHere = reviewTopicsAvailableFor(channelName);
 
   const toggle = (key: ListingCheck) => {
     setChecks((current) =>
@@ -159,19 +163,26 @@ export function WatchForm({
         <div className="grid gap-2">
           {LISTING_CHECKS.map((check) => {
             const on = checks.includes(check.key);
+            const blocked = check.key === "reviews" && !reviewsHere;
             return (
               <label
                 key={check.key}
                 className={cn(
-                  "flex cursor-pointer gap-3 rounded-xl border p-3.5 transition-colors",
+                  "flex gap-3 rounded-xl border p-3.5 transition-colors",
+                  blocked ? "cursor-default opacity-80" : "cursor-pointer",
                   on ? "border-primary/50 bg-primary/[0.03]" : "hover:bg-muted/40",
+                  blocked && !on && "hover:bg-transparent",
                 )}
               >
                 <input
                   type="checkbox"
                   className="sr-only"
                   checked={on}
-                  onChange={() => toggle(check.key)}
+                  disabled={blocked && !on}
+                  onChange={() => {
+                    if (blocked && !on) return;
+                    toggle(check.key);
+                  }}
                 />
                 <span
                   className={cn(
@@ -184,7 +195,7 @@ export function WatchForm({
                 <span className="min-w-0">
                   <span className="block font-medium text-sm">{check.label}</span>
                   <span className="mt-0.5 block text-muted-foreground text-xs leading-relaxed">
-                    {check.hint}
+                    {blocked ? reviewTopicsUnavailableNote(channelName) : check.hint}
                   </span>
                 </span>
               </label>

@@ -1,5 +1,6 @@
 import { formatMoney, minorUnits } from "../currency";
 import { formatDecimal, parseDecimal } from "../money";
+import { AMAZON_MARKETPLACES } from "./amazon";
 
 /**
  * Watching an Amazon product for changes Amazon will actually report: price, the featured
@@ -50,6 +51,35 @@ export const LISTING_CHECKS = [
 export type ListingCheck = (typeof LISTING_CHECKS)[number]["key"];
 
 export const LISTING_CHECK_KEYS: readonly ListingCheck[] = LISTING_CHECKS.map((c) => c.key);
+
+/**
+ * Stores where Amazon answers review topics. Amazon.ae, Saudi Arabia, Canada and the rest
+ * are not in this list: the call is refused there no matter which role the app has.
+ * https://developer-docs.amazon.com/sp-api/docs/role-mappings
+ */
+export const REVIEW_TOPIC_MARKETPLACES: ReadonlySet<string> = new Set([
+  "ATVPDKIKX0DER",
+  "A1F83G8C2ARO7P",
+  "A1PA6795UKMFR9",
+  "A13V1IB3VIYZZH",
+  "APJ6JRA9NG5V4",
+  "A1RKKUPIHCS9HS",
+  "A1VC38T7YXB528",
+]);
+
+export function reviewTopicsAvailable(marketplaceId: string): boolean {
+  return REVIEW_TOPIC_MARKETPLACES.has(marketplaceId);
+}
+
+/** Whether this store's name is one Amazon will answer review topics for. Unknown names are left open. */
+export function reviewTopicsAvailableFor(channelName: string): boolean {
+  const market = AMAZON_MARKETPLACES.find((item) => item.name === channelName);
+  return market ? reviewTopicsAvailable(market.id) : true;
+}
+
+export function reviewTopicsUnavailableNote(channelName: string): string {
+  return `Amazon doesn't share review topics on ${channelName}. It only shares them for Amazon.com, Amazon.co.uk, Amazon.de, Amazon.fr, Amazon.it, Amazon.es, and Amazon.co.jp.`;
+}
 
 /** Hourly checks are only these. Photos, words, rank and review topics move too slowly to ask every hour. */
 export const HOURLY_CHECKS: readonly ListingCheck[] = ["price", "featured", "offers"];

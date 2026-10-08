@@ -5,6 +5,8 @@ import {
   type ListingObservation,
   listingCheck,
   listingValues,
+  reviewTopicsAvailableFor,
+  reviewTopicsUnavailableNote,
 } from "@bookalyze/core";
 import { getListingWatch, listListingChanges } from "@bookalyze/db";
 import { ArrowLeft, ExternalLink, Pencil } from "lucide-react";
@@ -190,7 +192,11 @@ export default async function WatchPage({
                 What buyers mention, and how it moves the star rating. Amazon doesn't share the
                 overall average.
               </p>
-              {observed?.reviewNote ? (
+              {!reviewTopicsAvailableFor(watch.channelName) ? (
+                <p className="mt-3 text-muted-foreground text-sm">
+                  {reviewTopicsUnavailableNote(watch.channelName)}
+                </p>
+              ) : observed?.reviewNote ? (
                 <p className="mt-3 text-muted-foreground text-sm">{observed.reviewNote}</p>
               ) : observed?.reviewTopics.length ? (
                 <ul className="mt-4 grid gap-4">

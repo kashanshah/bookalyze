@@ -10,6 +10,8 @@ import {
   parseCatalogItem,
   parseItemOffers,
   parseReviewTopics,
+  reviewTopicsAvailable,
+  reviewTopicsUnavailableNote,
 } from "@bookalyze/core";
 import {
   dueListingWatchIds,
@@ -166,7 +168,12 @@ export async function checkListingWatch(
   }
 
   let reviews: { topics: ListingObservation["reviewTopics"]; note: string | null } | null = null;
-  if (checks.includes("reviews")) {
+  if (checks.includes("reviews") && !reviewTopicsAvailable(marketplaceId)) {
+    reviews = {
+      topics: [],
+      note: reviewTopicsUnavailableNote(found.channelName),
+    };
+  } else if (checks.includes("reviews")) {
     try {
       const answer = await reviewTopics(creds, region, found.watch.asin, marketplaceId);
       reviews = answer.unavailable

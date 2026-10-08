@@ -1113,8 +1113,11 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   offer, how many sellers), and Customer Feedback 2024-06-01 review topics. `sortBy=MENTIONS`
   is required; without it Amazon answers 400 and nothing comes back. The answer is what buyers
   mention, how many reviews say it, how that moves the star rating, and up to three quotes. A
-  204 is "not enough reviews"; a 400/403/404 is "Amazon isn't sharing review topics" (Selling
-  Partner Insights, and a child ASIN of a brand you sell), not a failed watch. The overall star
+  204 is "not enough reviews"; a 400/403/404 on a supported store is "Amazon isn't sharing
+  review topics" (Selling Partner Insights, and a child ASIN of a brand you sell), not a failed
+  watch. Amazon only answers this call for Amazon.com, Amazon.co.uk, Amazon.de, Amazon.fr,
+  Amazon.it, Amazon.es, and Amazon.co.jp. Amazon.ae is refused, so the page says so and does
+  not call Amazon. The overall star
   average, the total review count, Amazon's Choice and "bought in the past month" are not in
   the API and are not offered. Best seller rank is the number, reported when it moves by at
   least 5 places and about 10%.

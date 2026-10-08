@@ -11,6 +11,9 @@ import {
   parseCatalogItem,
   parseItemOffers,
   parseReviewTopics,
+  reviewTopicsAvailable,
+  reviewTopicsAvailableFor,
+  reviewTopicsUnavailableNote,
 } from "../commerce/listings";
 
 const catalog = {
@@ -303,6 +306,15 @@ describe("listing changes", () => {
     expect(changes[0]?.summary).toMatch(/800/);
     expect(changes[0]?.summary).toMatch(/No longer ranked in Coasters/);
     expect(changes[1]?.summary).toMatch(/chipped/);
+  });
+
+  it("only offers review topics on the stores Amazon lists", () => {
+    expect(reviewTopicsAvailable("ATVPDKIKX0DER")).toBe(true);
+    expect(reviewTopicsAvailable("A2VIGQ35RCS4UG")).toBe(false);
+    expect(reviewTopicsAvailableFor("Amazon.com")).toBe(true);
+    expect(reviewTopicsAvailableFor("Amazon.ae")).toBe(false);
+    expect(reviewTopicsUnavailableNote("Amazon.ae")).toMatch(/Amazon\.ae/);
+    expect(reviewTopicsUnavailableNote("Amazon.ae")).toMatch(/Amazon\.com/);
   });
 
   it("says when the main photo changes", () => {
