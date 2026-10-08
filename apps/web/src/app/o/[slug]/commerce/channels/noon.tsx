@@ -94,7 +94,7 @@ export function NoonChannels({
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <Store className="size-5" />
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-[calc(100%-3.25rem)] sm:basis-0">
           <h2 id="noon-heading" className="font-semibold">
             Noon
           </h2>
@@ -103,8 +103,14 @@ export function NoonChannels({
             linked to your products, bundles included.
           </p>
         </div>
-        {canManage && unused ? (
-          <Button variant="outline" size="sm" onClick={open} disabled={pending}>
+        {canManage && unused && channels.length ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ms-13 sm:ms-0"
+            onClick={open}
+            disabled={pending}
+          >
             <Plus />
             Add a Noon country
           </Button>

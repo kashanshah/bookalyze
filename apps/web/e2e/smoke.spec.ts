@@ -1990,15 +1990,17 @@ test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ p
 
   // A Canadian company is offered the UAE first; Noon ships the orders by default.
   const add = page.getByRole("dialog");
-  await expect(add.getByLabel("Country")).toContainText("Noon UAE");
-  await expect(add.getByLabel("Who ships the orders?")).toContainText("Fulfilled by Noon (FBN)");
+  await expect(add.getByRole("combobox", { name: "Country" })).toContainText("Noon UAE");
+  await expect(add.getByRole("combobox", { name: "Who ships the orders?" })).toContainText(
+    "Fulfilled by Noon (FBN)",
+  );
   await add.getByRole("button", { name: "Add country" }).click();
   await expect(page.getByText("Noon UAE added")).toBeVisible();
   await expect(noon.getByText("AE · AED")).toBeVisible();
 
   // The UAE can't be added twice; another country can.
   await noon.getByRole("button", { name: "Add a Noon country" }).click();
-  await page.getByLabel("Country").click();
+  await page.getByRole("combobox", { name: "Country" }).click();
   await expect(page.getByRole("option", { name: /Noon UAE/ })).toHaveAttribute(
     "aria-disabled",
     "true",
