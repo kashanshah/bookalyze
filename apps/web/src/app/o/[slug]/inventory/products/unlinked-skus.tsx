@@ -9,6 +9,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { Spinner } from "@/components/ui/spinner";
 import { createProductFromSkuAction, linkSkuFromOrdersAction } from "./actions";
 import { AmazonSkusButton } from "./amazon-skus-button";
+import { BundleDialog } from "./bundle-dialog";
 
 export type UnlinkedSkuView = {
   channelId: string;
@@ -140,6 +141,15 @@ function UnlinkedRow({
             disabled={pending}
             aria-label={`Link ${row.sku} to a product`}
             wrapperClassName="min-w-0 flex-1 sm:w-48 sm:flex-none"
+          />
+        ) : null}
+        {products.length >= 2 ? (
+          <BundleDialog
+            slug={slug}
+            channelId={row.channelId}
+            sku={row.sku}
+            title={row.title}
+            products={products}
           />
         ) : null}
       </div>

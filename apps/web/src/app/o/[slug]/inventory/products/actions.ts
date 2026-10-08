@@ -6,6 +6,7 @@ import {
   getProduct,
   InventoryError,
   inventoryChannels,
+  linkBundle,
   linkSku,
   schema,
   setProductArchived,
@@ -15,7 +16,12 @@ import {
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { productSchema, skuFromOrdersSchema, skuLinkSchema } from "@/lib/validation/inventory";
+import {
+  bundleSchema,
+  productSchema,
+  skuFromOrdersSchema,
+  skuLinkSchema,
+} from "@/lib/validation/inventory";
 import { inOrg } from "@/server/accounting";
 import { syncChannelSkus } from "@/server/amazon-skus";
 import { audit } from "@/server/audit";
@@ -153,7 +159,7 @@ export async function linkSkuFromOrdersAction(
 async function link(
   ctx: Awaited<ReturnType<typeof getInventoryContext>>,
   slug: string,
-  data: { productId: string; channelId: string; sku: string; units: number },
+  data: { productId: string; channelId: string; sku: string; units: number; bundle?: boolean },
 ): Promise<InventoryActionResult> {
   try {
     await inOrg(ctx, async (tx) => {
@@ -265,4 +271,37 @@ export async function syncAmazonSkusAction(
   revalidatePath(path(slug));
   if (error && !skus) return { ok: false, message: error };
   return { ok: true, skus, channels: synced };
+}
+
+/** Makes a SKU a bundle: one listing holds each of the chosen products. */
+export async function makeBundleAction(
+  slug: string,
+  input: unknown,
+): Promise<InventoryActionResult> {
+  const ctx = await getInventoryContext(slug);
+  const parsed = bundleSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Check the products." };
+  }
+  try {
+    await inOrg(ctx, async (tx) => {
+      const channels = await inventoryChannels(tx);
+      if (!channels.some((c) => c.id === parsed.data.channelId)) {
+        throw new InventoryError("Choose one of your marketplaces.");
+      }
+      await linkBundle(tx, { ...parsed.data, orgId: ctx.org.id, userId: ctx.session.user.id });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "product.bundle_linked",
+        entityType: "sales_channel",
+        entityId: parsed.data.channelId,
+        after: { sku: parsed.data.sku, components: parsed.data.components },
+      });
+    });
+    revalidatePath(path(slug));
+    return { ok: true };
+  } catch (error) {
+    return friendly(error);
+  }
 }

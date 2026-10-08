@@ -59,7 +59,10 @@ export const products = pgTable(
   ],
 );
 
-/** A marketplace seller SKU linked to a product: one listing unit is `units` of the product. */
+/**
+ * A marketplace seller SKU linked to a product: one listing unit is `units` of the product. A
+ * bundle (one listing holding several products) is the same SKU linked to each of them.
+ */
 export const productSkus = pgTable(
   "product_skus",
   {
@@ -77,7 +80,14 @@ export const productSkus = pgTable(
   },
   (t) => [
     unique("product_skus_org_id_key").on(t.organizationId, t.id),
-    unique("product_skus_channel_sku_key").on(t.organizationId, t.channelId, t.sku),
+    // One product per SKU, or several when the listing is a bundle.
+    unique("product_skus_channel_sku_product_key").on(
+      t.organizationId,
+      t.channelId,
+      t.sku,
+      t.productId,
+    ),
+    index("product_skus_channel_sku_idx").on(t.organizationId, t.channelId, t.sku),
     index("product_skus_product_idx").on(t.productId),
     foreignKey({
       name: "product_skus_product_fk",

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox } from "@/components/ui/combobox";
 import {
   Dialog,
@@ -33,6 +34,8 @@ export type LinkedSkuView = {
   channelName: string;
   sku: string;
   units: number;
+  /** The other products in the listing when it's a bundle. */
+  bundleWith: { productId: string; name: string; units: number }[];
 };
 
 export type EditableProduct = {
@@ -237,6 +240,7 @@ function SkuLinks({
   const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
   const [sku, setSku] = useState("");
   const [units, setUnits] = useState("1");
+  const [bundle, setBundle] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
   const [removing, setRemoving] = useState<string | null>(null);
@@ -271,6 +275,9 @@ function SkuLinks({
                 <span className="block text-muted-foreground text-xs">
                   {showChannel ? `${s.channelName} · ` : ""}
                   {s.units === 1 ? "1 unit per listing" : `${s.units} units per listing`}
+                  {s.bundleWith.length
+                    ? ` · bundle with ${s.bundleWith.map((b) => (b.units > 1 ? `${b.name} ×${b.units}` : b.name)).join(", ")}`
+                    : ""}
                 </span>
               </span>
               <Button
@@ -348,6 +355,20 @@ function SkuLinks({
               />
             </Field>
           </div>
+          <div className="flex items-start gap-2.5">
+            <Checkbox
+              checked={bundle}
+              onChange={() => setBundle((b) => !b)}
+              label="It's a bundle"
+              className="mt-0.5"
+            />
+            <div className="text-sm">
+              <p className="font-medium">It's a bundle</p>
+              <p className="text-muted-foreground text-xs">
+                The listing holds other products too: link this one alongside them.
+              </p>
+            </div>
+          </div>
           <Button
             type="button"
             variant="outline"
@@ -360,11 +381,13 @@ function SkuLinks({
                   channelId,
                   sku,
                   units,
+                  bundle,
                 });
                 if (result.ok) {
                   toast.success(`${sku.trim()} linked`);
                   setSku("");
                   setUnits("1");
+                  setBundle(false);
                   setErrors({});
                   router.refresh();
                 } else {

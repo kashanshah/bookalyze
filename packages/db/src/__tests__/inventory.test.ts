@@ -8,6 +8,7 @@ import {
   createProductFromSku,
   getProduct,
   InventoryError,
+  linkBundle,
   linkSku,
   listProducts,
   saveChannelSkus,
@@ -302,6 +303,69 @@ describe("products", () => {
     );
     expect(product.name).toBe("Maple mug, 500ml");
     expect((await scoped((tx) => unlinkedSkus(tx, { limit: 10 }))).total).toBe(3);
+  });
+
+  it("links one listing to several products as a bundle", async () => {
+    const mug = (await scoped((tx) => listProducts(tx))).find((p) => p.name === "Maple mug");
+    const box = await scoped((tx) =>
+      createProduct(tx, { orgId, userId: null, name: "Gift box", sku: null, notes: null }),
+    );
+    // Linking a second product to a linked SKU needs the bundle box ticked.
+    await scoped((tx) =>
+      linkSku(tx, {
+        orgId,
+        userId: null,
+        productId: box.id,
+        channelId,
+        sku: "PINE-CANDLE",
+        units: 1,
+      }),
+    );
+    await expect(
+      scoped((tx) =>
+        linkSku(tx, {
+          orgId,
+          userId: null,
+          productId: mug?.id ?? "",
+          channelId,
+          sku: "PINE-CANDLE",
+          units: 1,
+        }),
+      ),
+    ).rejects.toThrow(/It's a bundle/);
+    // The candle listing (2 sold yesterday) is one mug and two gift boxes.
+    await scoped((tx) =>
+      linkBundle(tx, {
+        orgId,
+        userId: null,
+        channelId,
+        sku: "PINE-CANDLE",
+        components: [
+          { productId: mug?.id ?? "", units: 1 },
+          { productId: box.id, units: 2 },
+        ],
+      }),
+    );
+    const giftBox = await scoped((tx) => getProduct(tx, box.id));
+    expect(giftBox?.unitsSold30d).toBe(4);
+    expect(giftBox?.skus.map((s) => [s.sku, s.units, s.bundleWith.map((b) => b.name)])).toEqual([
+      ["PINE-CANDLE", 2, ["Maple mug"]],
+    ]);
+    expect((await scoped((tx) => getProduct(tx, mug?.id ?? "")))?.unitsSold30d).toBe(3 + 2);
+    expect(
+      (await scoped((tx) => unlinkedSkus(tx, { limit: 10 }))).rows.map((r) => r.sku),
+    ).not.toContain("PINE-CANDLE");
+    await expect(
+      scoped((tx) =>
+        linkBundle(tx, {
+          orgId,
+          userId: null,
+          channelId,
+          sku: "PINE-CANDLE",
+          components: [{ productId: box.id, units: 1 }],
+        }),
+      ),
+    ).rejects.toThrow(/two or more/);
   });
 
   it("keeps products to their own company", async () => {

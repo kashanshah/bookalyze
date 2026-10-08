@@ -40,6 +40,8 @@ export const skuLinkSchema = z.object({
     .int("Use a whole number.")
     .min(1, "At least 1.")
     .max(1000, "At most 1,000."),
+  /** The listing is a bundle: link this product alongside the others already in it. */
+  bundle: z.boolean().optional(),
 });
 export type SkuLinkInput = z.input<typeof skuLinkSchema>;
 
@@ -47,4 +49,24 @@ export type SkuLinkInput = z.input<typeof skuLinkSchema>;
 export const skuFromOrdersSchema = z.object({
   channelId: z.uuid(),
   sku: z.string().min(1).max(200),
+});
+
+/** A listing that holds several products: each product and how many of it one listing holds. */
+export const bundleSchema = z.object({
+  channelId: z.uuid(),
+  sku: z.string().min(1).max(200),
+  components: z
+    .array(
+      z.object({
+        productId: z.uuid("Choose a product."),
+        units: z.coerce
+          .number({ message: "How many?" })
+          .int("Use a whole number.")
+          .min(1, "At least 1.")
+          .max(1000, "At most 1,000."),
+      }),
+    )
+    .min(2, "A bundle holds two or more products.")
+    .max(20, "Up to 20 products in a bundle.")
+    .refine((c) => new Set(c.map((x) => x.productId)).size === c.length, "Each product once."),
 });

@@ -34,6 +34,8 @@ export type LinkedSku = {
   channelName: string;
   sku: string;
   units: number;
+  /** When the listing is a bundle: the other products in it, and how many of each. */
+  bundleWith: { productId: string; name: string; units: number }[];
 };
 
 export type ProductRow = {
@@ -106,10 +108,37 @@ async function linkedSkus(tx: Transaction, productIds: readonly string[]) {
     .innerJoin(salesChannels, eq(salesChannels.id, productSkus.channelId))
     .where(inArray(productSkus.productId, [...productIds]))
     .orderBy(asc(salesChannels.name), asc(productSkus.sku));
+  // Other products sharing these SKUs: the rest of each bundle.
+  const partners = rows.length
+    ? await tx
+        .select({
+          productId: productSkus.productId,
+          name: products.name,
+          channelId: productSkus.channelId,
+          sku: productSkus.sku,
+          units: productSkus.units,
+        })
+        .from(productSkus)
+        .innerJoin(products, eq(products.id, productSkus.productId))
+        .where(
+          inArray(
+            sql`(${productSkus.channelId}, ${productSkus.sku})`,
+            rows.map((r) => sql`(${r.channelId}::uuid, ${r.sku})`),
+          ),
+        )
+        .orderBy(asc(products.name))
+    : [];
   const map = new Map<string, LinkedSku[]>();
   for (const { productId, ...sku } of rows) {
     const list = map.get(productId) ?? [];
-    list.push(sku);
+    list.push({
+      ...sku,
+      bundleWith: partners
+        .filter(
+          (p) => p.channelId === sku.channelId && p.sku === sku.sku && p.productId !== productId,
+        )
+        .map((p) => ({ productId: p.productId, name: p.name, units: p.units })),
+    });
     map.set(productId, list);
   }
   return map;
@@ -249,6 +278,8 @@ export async function linkSku(
     channelId: string;
     sku: string;
     units: number;
+    /** The listing is a bundle: link this product too, alongside the others already in it. */
+    bundle?: boolean;
   },
 ) {
   const [product] = await tx
@@ -256,7 +287,7 @@ export async function linkSku(
     .from(products)
     .where(eq(products.id, input.productId));
   if (!product) throw new InventoryError("This product no longer exists.");
-  const [existing] = await tx
+  const links = await tx
     .select({
       id: productSkus.id,
       productId: productSkus.productId,
@@ -265,9 +296,11 @@ export async function linkSku(
     .from(productSkus)
     .innerJoin(products, eq(products.id, productSkus.productId))
     .where(and(eq(productSkus.channelId, input.channelId), eq(productSkus.sku, input.sku)));
-  if (existing && existing.productId !== input.productId) {
+  const existing = links.find((l) => l.productId === input.productId);
+  const other = links.find((l) => l.productId !== input.productId);
+  if (other && !input.bundle) {
     throw new InventoryError(
-      `${input.sku} is already linked to ${existing.productName}. Unlink it there first.`,
+      `${input.sku} is already linked to ${other.productName}. Unlink it there first, or tick "It's a bundle" if the listing holds both.`,
       "linked",
     );
   }
@@ -296,10 +329,52 @@ export async function linkSku(
     return row;
   } catch (error) {
     if (isUniqueViolation(error)) {
-      throw new InventoryError(`${input.sku} is already linked to a product.`, "linked");
+      throw new InventoryError(`${input.sku} is already linked to this product.`, "linked");
     }
     throw error;
   }
+}
+
+/**
+ * Makes a SKU a bundle: one listing unit holds each of `components` (product × units). Replaces
+ * whatever the SKU was linked to.
+ */
+export async function linkBundle(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    userId: string | null;
+    channelId: string;
+    sku: string;
+    components: { productId: string; units: number }[];
+  },
+) {
+  const ids = [...new Set(input.components.map((c) => c.productId))];
+  if (ids.length < 2 || ids.length !== input.components.length) {
+    throw new InventoryError("A bundle holds two or more different products.");
+  }
+  const found = await tx
+    .select({ id: products.id })
+    .from(products)
+    .where(inArray(products.id, ids));
+  if (found.length !== ids.length)
+    throw new InventoryError("One of the products no longer exists.");
+  await tx
+    .delete(productSkus)
+    .where(and(eq(productSkus.channelId, input.channelId), eq(productSkus.sku, input.sku)));
+  return tx
+    .insert(productSkus)
+    .values(
+      input.components.map((c) => ({
+        organizationId: input.orgId,
+        productId: c.productId,
+        channelId: input.channelId,
+        sku: input.sku,
+        units: c.units,
+        createdBy: input.userId,
+      })),
+    )
+    .returning();
 }
 
 export async function unlinkSku(tx: Transaction, id: string) {
