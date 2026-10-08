@@ -203,6 +203,7 @@ export default async function ProductsPage({
                       name: p.name,
                       sku: p.sku,
                       notes: p.notes,
+                      unitWeight: p.unitWeight,
                       isArchived: p.isArchived,
                       skus: p.skus,
                     }}

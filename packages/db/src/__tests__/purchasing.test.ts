@@ -139,6 +139,7 @@ describe("purchase orders", () => {
       scoped((tx) =>
         receivePurchaseOrder(tx, {
           orgId,
+          baseCurrency: "USD",
           id,
           receivedOn: "2026-09-10",
           notes: null,
@@ -155,6 +156,7 @@ describe("purchase orders", () => {
     const part = await scoped((tx) =>
       receivePurchaseOrder(tx, {
         orgId,
+        baseCurrency: "USD",
         id,
         receivedOn: "2026-09-15",
         notes: "First pallet",
@@ -166,6 +168,7 @@ describe("purchase orders", () => {
     const over = await scoped((tx) =>
       receivePurchaseOrder(tx, {
         orgId,
+        baseCurrency: "USD",
         id,
         receivedOn: "2026-09-16",
         notes: null,
@@ -178,6 +181,7 @@ describe("purchase orders", () => {
       scoped((tx) =>
         receivePurchaseOrder(tx, {
           orgId,
+          baseCurrency: "USD",
           id,
           receivedOn: "2026-08-01",
           notes: null,
@@ -189,6 +193,7 @@ describe("purchase orders", () => {
     const rest = await scoped((tx) =>
       receivePurchaseOrder(tx, {
         orgId,
+        baseCurrency: "USD",
         id,
         receivedOn: "2026-09-20",
         notes: null,

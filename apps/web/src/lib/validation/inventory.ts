@@ -15,6 +15,15 @@ export const productSchema = z.object({
     .max(200, "Keep the name under 200 characters."),
   sku: optional(80, "Keep your SKU under 80 characters."),
   notes: optional(2000, "Keep notes under 2,000 characters."),
+  unitWeight: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => v?.replace(",", ".") || null)
+    .refine(
+      (v) => v === null || (/^\d+(\.\d{1,4})?$/.test(v) && Number(v) > 0 && Number(v) < 1e8),
+      "Enter a weight like 0.45, or leave it empty.",
+    ),
 });
 export type ProductFormInput = z.input<typeof productSchema>;
 

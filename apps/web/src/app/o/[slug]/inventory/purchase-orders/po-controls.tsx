@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { RateField } from "@/components/accounting/rate-field";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -92,6 +93,9 @@ export function PurchaseOrderActions({
   lines,
   today,
   orderDate,
+  currency,
+  baseCurrency,
+  locale,
 }: {
   slug: string;
   id: string;
@@ -100,6 +104,9 @@ export function PurchaseOrderActions({
   lines: { id: string; name: string; quantity: number; received: number }[];
   today: string;
   orderDate: string;
+  currency: string;
+  baseCurrency: string;
+  locale: string;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -182,6 +189,9 @@ export function PurchaseOrderActions({
           lines={lines}
           today={today}
           orderDate={orderDate}
+          currency={currency}
+          baseCurrency={baseCurrency}
+          locale={locale}
         />
       </div>
     );
@@ -196,6 +206,9 @@ function ReceiveDialog({
   lines,
   today,
   orderDate,
+  currency,
+  baseCurrency,
+  locale,
 }: {
   slug: string;
   id: string;
@@ -203,9 +216,13 @@ function ReceiveDialog({
   lines: { id: string; name: string; quantity: number; received: number }[];
   today: string;
   orderDate: string;
+  currency: string;
+  baseCurrency: string;
+  locale: string;
 }) {
   const router = useRouter();
   const formId = useId();
+  const [rate, setRate] = useState("");
   const open = lines.filter((line) => line.quantity > line.received);
   const remaining = () =>
     Object.fromEntries(open.map((line) => [line.id, String(line.quantity - line.received)]));
@@ -222,6 +239,7 @@ function ReceiveDialog({
       const result = await receiveAction(slug, id, {
         receivedOn,
         notes,
+        exchangeRate: currency === baseCurrency ? "" : rate,
         quantities: Object.fromEntries(
           Object.entries(quantities).map(([lineId, qty]) => [lineId, qty.trim() || "0"]),
         ),
@@ -308,6 +326,19 @@ function ReceiveDialog({
               onChange={(e) => setReceivedOn(e.target.value)}
             />
           </Field>
+          {currency !== baseCurrency ? (
+            <RateField
+              slug={slug}
+              id={`${formId}-rate`}
+              currency={currency}
+              baseCurrency={baseCurrency}
+              date={receivedOn}
+              value={rate}
+              onChange={setRate}
+              error={errors.exchangeRate}
+              locale={locale}
+            />
+          ) : null}
           <Field label="Note (optional)" htmlFor={`${formId}-notes`} error={errors.notes}>
             <Textarea
               id={`${formId}-notes`}

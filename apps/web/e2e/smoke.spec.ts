@@ -1510,6 +1510,44 @@ test("purchase orders: draft, send, a partial delivery, then the rest", async ({
   await expect(page.getByRole("link", { name: "PO-0001, Office Depot" })).toBeVisible();
 });
 
+test("landed cost: freight on a delivery, then the stock lots", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Purchase orders", exact: true }).click();
+  await page.getByRole("link", { name: "Received", exact: true }).click();
+  await page.getByRole("link", { name: "PO-0001, Office Depot" }).click();
+
+  // Both deliveries were costed at the order price when they arrived.
+  const costLinks = page.getByRole("link", { name: /^Landed cost of the delivery on/ });
+  await expect(costLinks).toHaveCount(2);
+  await expect(page.getByText("$171.50")).toBeVisible();
+  await costLinks.first().click();
+  await expect(
+    page.getByRole("heading", { name: /^Landed cost of the .* delivery$/ }),
+  ).toBeVisible();
+  await expect(page.getByText("No extra costs yet.")).toBeVisible();
+
+  // $35 of freight on the 70 mugs: split by units (the mug has no weight yet).
+  await page.getByRole("button", { name: "Add a cost" }).click();
+  await page.getByLabel("Amount 1", { exact: true }).fill("35");
+  const lot = page.getByRole("listitem", { name: "Lot: Maple leaf ceramic mug" });
+  await expect(lot.getByText("$2.95")).toBeVisible();
+  await page.getByRole("button", { name: "Save landed cost" }).click();
+  await expect(page.getByText("Landed cost saved")).toBeVisible();
+  await expect(page).toHaveURL(/\/purchase-orders\/[0-9a-f-]{36}$/);
+  await expect(page.getByText("$206.50")).toBeVisible();
+
+  // The stock lots: 50 at $2.45, then 70 at $2.95, oldest first.
+  await page.getByRole("link", { name: "Stock lots", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Stock lots", exact: true })).toBeVisible();
+  const mug = page.getByRole("region", { name: "Maple leaf ceramic mug" });
+  await expect(mug.getByText("120 units received")).toBeVisible();
+  await expect(mug.getByText("$2.7417")).toBeVisible();
+  const lots = mug.getByRole("listitem");
+  await expect(lots.nth(0)).toContainText("$2.45");
+  await expect(lots.nth(1)).toContainText("$2.95");
+});
+
 test("reviews: ask for a review by hand, then turn on automatic requests", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Features", exact: true }).click();

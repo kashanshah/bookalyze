@@ -74,8 +74,20 @@ export async function saveProductAction(
         action: id ? "product.updated" : "product.created",
         entityType: "product",
         entityId: saved.id,
-        before: before ? { name: before.name, sku: before.sku, notes: before.notes } : undefined,
-        after: { name: saved.name, sku: saved.sku, notes: saved.notes },
+        before: before
+          ? {
+              name: before.name,
+              sku: before.sku,
+              notes: before.notes,
+              unitWeight: before.unitWeight,
+            }
+          : undefined,
+        after: {
+          name: saved.name,
+          sku: saved.sku,
+          notes: saved.notes,
+          unitWeight: saved.unitWeight,
+        },
       });
       return saved;
     });

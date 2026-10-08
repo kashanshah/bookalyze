@@ -37,6 +37,8 @@ export const products = pgTable(
     /** The seller's own code for it, if they use one (unique per company, any case). */
     sku: text("sku"),
     notes: text("notes"),
+    /** Weight of one, in whatever unit the company uses for all products (to split freight). */
+    unitWeight: numeric("unit_weight", { precision: 12, scale: 4 }),
     isArchived: boolean("is_archived").notNull().default(false),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -52,6 +54,7 @@ export const products = pgTable(
       .where(sql`${t.sku} is not null`),
     check("products_name_present", sql`length(trim(${t.name})) > 0`),
     check("products_sku_present", sql`${t.sku} is null or length(trim(${t.sku})) > 0`),
+    check("products_weight_positive", sql`${t.unitWeight} is null or ${t.unitWeight} > 0`),
     tenantIsolationPolicy("products", t.organizationId),
   ],
 );
@@ -197,6 +200,8 @@ export const purchaseReceipts = pgTable(
     purchaseOrderId: uuid("purchase_order_id").notNull(),
     receivedOn: date("received_on").notNull(),
     notes: text("notes"),
+    /** Main-currency value of one unit of the PO's currency, for costing. Null if the same. */
+    exchangeRate: numeric("exchange_rate", { precision: 20, scale: 10 }),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -208,6 +213,10 @@ export const purchaseReceipts = pgTable(
       columns: [t.organizationId, t.purchaseOrderId],
       foreignColumns: [purchaseOrders.organizationId, purchaseOrders.id],
     }).onDelete("cascade"),
+    check(
+      "purchase_receipts_rate_positive",
+      sql`${t.exchangeRate} is null or ${t.exchangeRate} > 0`,
+    ),
     tenantIsolationPolicy("purchase_receipts", t.organizationId),
   ],
 );
@@ -225,6 +234,7 @@ export const purchaseReceiptLines = pgTable(
     quantity: integer("quantity").notNull(),
   },
   (t) => [
+    unique("purchase_receipt_lines_org_id_key").on(t.organizationId, t.id),
     unique("purchase_receipt_lines_receipt_line_key").on(t.receiptId, t.purchaseOrderLineId),
     index("purchase_receipt_lines_po_line_idx").on(t.purchaseOrderLineId),
     foreignKey({
@@ -239,5 +249,103 @@ export const purchaseReceiptLines = pgTable(
     }).onDelete("cascade"),
     check("purchase_receipt_lines_quantity_positive", sql`${t.quantity} > 0`),
     tenantIsolationPolicy("purchase_receipt_lines", t.organizationId),
+  ],
+);
+
+export const LANDED_COST_KINDS = ["freight", "duty", "brokerage", "prep", "other"] as const;
+export const ALLOCATION_METHODS = ["units", "value", "weight"] as const;
+
+/**
+ * An extra cost of a delivery (freight, duty, brokerage, prep), in any currency, split across
+ * the delivery's lines by units, value or weight. It feeds the landed cost of the lots.
+ */
+export const purchaseReceiptCosts = pgTable(
+  "purchase_receipt_costs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    receiptId: uuid("receipt_id").notNull(),
+    lineNo: integer("line_no").notNull(),
+    kind: text("kind", { enum: LANDED_COST_KINDS }).notNull(),
+    description: text("description"),
+    amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
+    currency: char("currency", { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    /** Main-currency value of one unit of `currency`. Null when it is the main currency. */
+    exchangeRate: numeric("exchange_rate", { precision: 20, scale: 10 }),
+    allocation: text("allocation", { enum: ALLOCATION_METHODS }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("purchase_receipt_costs_line_key").on(t.receiptId, t.lineNo),
+    foreignKey({
+      name: "purchase_receipt_costs_receipt_fk",
+      columns: [t.organizationId, t.receiptId],
+      foreignColumns: [purchaseReceipts.organizationId, purchaseReceipts.id],
+    }).onDelete("cascade"),
+    check(
+      "purchase_receipt_costs_kind_valid",
+      sql`${t.kind} in ('freight', 'duty', 'brokerage', 'prep', 'other')`,
+    ),
+    check(
+      "purchase_receipt_costs_allocation_valid",
+      sql`${t.allocation} in ('units', 'value', 'weight')`,
+    ),
+    check("purchase_receipt_costs_amount_positive", sql`${t.amount} > 0`),
+    check(
+      "purchase_receipt_costs_rate_positive",
+      sql`${t.exchangeRate} is null or ${t.exchangeRate} > 0`,
+    ),
+    tenantIsolationPolicy("purchase_receipt_costs", t.organizationId),
+  ],
+);
+
+/**
+ * A FIFO cost layer: the units of one product that arrived in one delivery, at their landed
+ * cost in the company's main currency. Rebuilt in place (same id) when the delivery's costs
+ * change. Sales will draw on the oldest lots first once cost of goods sold is posted.
+ */
+export const inventoryLots = pgTable(
+  "inventory_lots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").notNull(),
+    receiptLineId: uuid("receipt_line_id").notNull(),
+    receivedOn: date("received_on").notNull(),
+    quantity: integer("quantity").notNull(),
+    currency: char("currency", { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    productCost: numeric("product_cost", { precision: 20, scale: 4 }).notNull(),
+    landedCost: numeric("landed_cost", { precision: 20, scale: 4 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    unique("inventory_lots_org_id_key").on(t.organizationId, t.id),
+    unique("inventory_lots_receipt_line_key").on(t.receiptLineId),
+    index("inventory_lots_product_idx").on(t.organizationId, t.productId, t.receivedOn),
+    foreignKey({
+      name: "inventory_lots_product_fk",
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    foreignKey({
+      name: "inventory_lots_receipt_line_fk",
+      columns: [t.organizationId, t.receiptLineId],
+      foreignColumns: [purchaseReceiptLines.organizationId, purchaseReceiptLines.id],
+    }).onDelete("cascade"),
+    check("inventory_lots_quantity_positive", sql`${t.quantity} > 0`),
+    check("inventory_lots_costs_valid", sql`${t.productCost} >= 0 and ${t.landedCost} >= 0`),
+    tenantIsolationPolicy("inventory_lots", t.organizationId),
   ],
 );

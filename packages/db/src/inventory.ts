@@ -20,7 +20,13 @@ export class InventoryError extends Error {
   }
 }
 
-export type ProductInput = { name: string; sku: string | null; notes: string | null };
+export type ProductInput = {
+  name: string;
+  sku: string | null;
+  notes: string | null;
+  /** Weight of one, in any unit used for all products. Left as is when undefined. */
+  unitWeight?: string | null;
+};
 
 export type LinkedSku = {
   id: string;
@@ -35,6 +41,7 @@ export type ProductRow = {
   name: string;
   sku: string | null;
   notes: string | null;
+  unitWeight: string | null;
   isArchived: boolean;
   createdAt: Date;
   skus: LinkedSku[];
@@ -113,6 +120,7 @@ const productColumns = {
   name: products.name,
   sku: products.sku,
   notes: products.notes,
+  unitWeight: products.unitWeight,
   isArchived: products.isArchived,
   createdAt: products.createdAt,
 };
@@ -184,6 +192,7 @@ export async function createProduct(
         name: input.name,
         sku: input.sku,
         notes: input.notes,
+        unitWeight: input.unitWeight ?? null,
         createdBy: input.userId,
       })
       .returning();
@@ -200,7 +209,13 @@ export async function updateProduct(tx: Transaction, input: ProductInput & { id:
   try {
     const [row] = await tx
       .update(products)
-      .set({ name: input.name, sku: input.sku, notes: input.notes, updatedAt: new Date() })
+      .set({
+        name: input.name,
+        sku: input.sku,
+        notes: input.notes,
+        ...(input.unitWeight !== undefined ? { unitWeight: input.unitWeight } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(products.id, input.id))
       .returning();
     if (!row) throw new InventoryError("This product no longer exists.");

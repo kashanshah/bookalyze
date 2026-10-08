@@ -1,6 +1,6 @@
 import { purchaseOrderNumber } from "@bookalyze/core";
-import { getPurchaseOrder } from "@bookalyze/db";
-import { ArrowLeft, Truck } from "lucide-react";
+import { deliveryCostSummary, getPurchaseOrder } from "@bookalyze/db";
+import { ArrowLeft, ChevronRight, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -25,8 +25,17 @@ export default async function PurchaseOrderPage({
   if (!z.uuid().safeParse(id).success) notFound();
   const ctx = await getInventoryContext(slug, "inventory.purchasing");
   const { locale, timezone } = ctx.profile;
-  const po = await inOrg(ctx, (tx) => getPurchaseOrder(tx, id));
-  if (!po) notFound();
+  const found = await inOrg(ctx, async (tx) => {
+    const po = await getPurchaseOrder(tx, id);
+    if (!po) return null;
+    const costs = await deliveryCostSummary(
+      tx,
+      po.receipts.map((receipt) => receipt.id),
+    );
+    return { po, costs };
+  });
+  if (!found) notFound();
+  const { po, costs } = found;
   const number = purchaseOrderNumber(po.number);
   const names = new Map(po.lines.map((line) => [line.id, line.productName]));
   const units = po.lines.reduce((sum, line) => sum + line.quantity, 0);
@@ -66,6 +75,9 @@ export default async function PurchaseOrderPage({
             status={po.status}
             today={nowIn(timezone).date}
             orderDate={po.orderDate}
+            currency={po.currency}
+            baseCurrency={ctx.profile.baseCurrency}
+            locale={locale}
             lines={po.lines.map((line) => ({
               id: line.id,
               name: line.productName,
@@ -170,24 +182,50 @@ export default async function PurchaseOrderPage({
               </p>
             ) : (
               <ol className="mt-3 grid gap-3">
-                {po.receipts.map((receipt) => (
-                  <li key={receipt.id} className="border-success/50 border-s-2 ps-3">
-                    <p className="flex items-center gap-1.5 font-medium text-sm">
-                      <Truck className="size-3.5 text-muted-foreground" />
-                      {formatDate(receipt.receivedOn, locale)}
-                    </p>
-                    <ul className="mt-1 text-muted-foreground text-xs">
-                      {receipt.lines.map((line) => (
-                        <li key={line.purchaseOrderLineId}>
-                          {n.format(line.quantity)} × {names.get(line.purchaseOrderLineId)}
-                        </li>
-                      ))}
-                    </ul>
-                    {receipt.notes ? (
-                      <p className="mt-1 text-xs [overflow-wrap:anywhere]">{receipt.notes}</p>
-                    ) : null}
-                  </li>
-                ))}
+                {po.receipts.map((receipt) => {
+                  const cost = costs.get(receipt.id);
+                  return (
+                    <li key={receipt.id} className="border-success/50 border-s-2 ps-3">
+                      <p className="flex items-center gap-1.5 font-medium text-sm">
+                        <Truck className="size-3.5 text-muted-foreground" />
+                        {formatDate(receipt.receivedOn, locale)}
+                      </p>
+                      <ul className="mt-1 text-muted-foreground text-xs">
+                        {receipt.lines.map((line) => (
+                          <li key={line.purchaseOrderLineId}>
+                            {n.format(line.quantity)} × {names.get(line.purchaseOrderLineId)}
+                          </li>
+                        ))}
+                      </ul>
+                      {receipt.notes ? (
+                        <p className="mt-1 text-xs [overflow-wrap:anywhere]">{receipt.notes}</p>
+                      ) : null}
+                      <Link
+                        href={`${base}/${po.id}/deliveries/${receipt.id}`}
+                        aria-label={`Landed cost of the delivery on ${formatDate(receipt.receivedOn, locale)}`}
+                        className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs transition-colors hover:bg-accent"
+                      >
+                        {cost ? (
+                          <span>
+                            Landed{" "}
+                            <Amount
+                              value={cost.totalCost}
+                              currency={cost.currency}
+                              locale={locale}
+                              className="font-medium"
+                            />
+                            {Number(cost.landedCost) > 0 ? null : (
+                              <span className="text-muted-foreground"> · add freight, duty…</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="font-medium">Not costed yet</span>
+                        )}
+                        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground rtl:rotate-180" />
+                      </Link>
+                    </li>
+                  );
+                })}
               </ol>
             )}
           </section>
