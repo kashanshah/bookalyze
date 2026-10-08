@@ -185,7 +185,11 @@ function LotRowView({
       <span className="col-span-2 row-start-2 truncate text-muted-foreground text-xs sm:col-span-1 sm:row-start-auto sm:text-sm">
         {lot.source === "opening"
           ? `Opening stock${lot.notes ? ` · ${lot.notes}` : ""}`
-          : `${purchaseOrderNumber(lot.purchaseOrderNumber ?? 0)} · ${lot.supplierName ?? ""}`}
+          : lot.source === "return"
+            ? "Returned by customers"
+            : lot.source === "found"
+              ? "Found by Amazon"
+              : `${purchaseOrderNumber(lot.purchaseOrderNumber ?? 0)} · ${lot.supplierName ?? ""}`}
       </span>
       <span className="hidden text-end tabular-nums sm:block">
         {lot.consumed ? (
@@ -217,12 +221,12 @@ function LotRowView({
   );
   const grid =
     "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-0.5 px-5 py-3 text-sm sm:grid-cols-[2rem_8rem_minmax(0,1fr)_7rem_8rem]";
-  if (lot.source === "opening") {
+  if (lot.source !== "receipt") {
     return (
       <div className="flex items-center">
         <div className={`${grid} min-w-0 flex-1 pe-1`}>{cells}</div>
         <div className="w-11 shrink-0 pe-2">
-          {lot.consumed === 0 ? (
+          {lot.source === "opening" && lot.consumed === 0 ? (
             <RemoveOpeningStock
               slug={slug}
               lotId={lot.id}

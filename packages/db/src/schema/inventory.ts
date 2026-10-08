@@ -308,7 +308,7 @@ export const purchaseReceiptCosts = pgTable(
  * cost in the company's main currency. Rebuilt in place (same id) when the delivery's costs
  * change. Sales will draw on the oldest lots first once cost of goods sold is posted.
  */
-export const LOT_SOURCES = ["receipt", "opening"] as const;
+export const LOT_SOURCES = ["receipt", "opening", "return", "found"] as const;
 
 export const inventoryLots = pgTable(
   "inventory_lots",
@@ -318,12 +318,17 @@ export const inventoryLots = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     productId: uuid("product_id").notNull(),
-    /** "receipt": a delivery line; "opening": stock on hand before Bookalyze. */
+    /**
+     * "receipt": a delivery line; "opening": stock on hand before Bookalyze; "return" and
+     * "found": units customers sent back or Amazon found, added when their month is posted.
+     */
     source: text("source", { enum: LOT_SOURCES }).notNull().default("receipt"),
     /** The delivery line it came from (receipt lots only). */
     receiptLineId: uuid("receipt_line_id"),
     /** The entry that put an opening lot in the books (Dr Inventory / Cr Opening balance equity). */
     journalEntryId: uuid("journal_entry_id"),
+    /** The month whose posting added a return or found lot (undoing it removes the lot). */
+    cogsPeriodId: uuid("cogs_period_id"),
     notes: text("notes"),
     receivedOn: date("received_on").notNull(),
     quantity: integer("quantity").notNull(),
@@ -355,8 +360,13 @@ export const inventoryLots = pgTable(
     check("inventory_lots_quantity_positive", sql`${t.quantity} > 0`),
     check(
       "inventory_lots_source_valid",
-      sql`(${t.source} = 'receipt' and ${t.receiptLineId} is not null) or (${t.source} = 'opening' and ${t.receiptLineId} is null)`,
+      sql`(${t.source} = 'receipt') = (${t.receiptLineId} is not null) and (${t.source} in ('return', 'found')) = (${t.cogsPeriodId} is not null)`,
     ),
+    foreignKey({
+      name: "inventory_lots_cogs_period_fk",
+      columns: [t.organizationId, t.cogsPeriodId],
+      foreignColumns: [cogsPeriods.organizationId, cogsPeriods.id],
+    }).onDelete("cascade"),
     foreignKey({
       name: "inventory_lots_entry_fk",
       columns: [t.organizationId, t.journalEntryId],
@@ -384,6 +394,14 @@ export const cogsPeriods = pgTable(
     month: char("month", { length: 7 }).notNull(),
     units: integer("units").notNull(),
     cost: numeric("cost", { precision: 20, scale: 4 }).notNull(),
+    /** Customer returns that month (back into stock as return lots, out of cost of goods sold). */
+    returnedUnits: integer("returned_units").notNull().default(0),
+    returnedCost: numeric("returned_cost", { precision: 20, scale: 4 }).notNull().default("0"),
+    /** Net adjustments: lost, damaged or disposed (written off), or found (back into stock). */
+    lostUnits: integer("lost_units").notNull().default(0),
+    lostCost: numeric("lost_cost", { precision: 20, scale: 4 }).notNull().default("0"),
+    foundUnits: integer("found_units").notNull().default(0),
+    foundCost: numeric("found_cost", { precision: 20, scale: 4 }).notNull().default("0"),
     currency: char("currency", { length: 3 })
       .notNull()
       .references(() => currencies.code),
@@ -405,7 +423,10 @@ export const cogsPeriods = pgTable(
       foreignColumns: [journalEntries.organizationId, journalEntries.id],
     }),
     check("cogs_periods_month_valid", sql`${t.month} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
-    check("cogs_periods_units_valid", sql`${t.units} >= 0 and ${t.cost} >= 0`),
+    check(
+      "cogs_periods_units_valid",
+      sql`${t.units} >= 0 and ${t.cost} >= 0 and ${t.returnedUnits} >= 0 and ${t.returnedCost} >= 0 and ${t.lostUnits} >= 0 and ${t.lostCost} >= 0 and ${t.foundUnits} >= 0 and ${t.foundCost} >= 0`,
+    ),
     tenantIsolationPolicy("cogs_periods", t.organizationId),
   ],
 );
@@ -420,11 +441,16 @@ export const lotConsumptions = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     cogsPeriodId: uuid("cogs_period_id").notNull(),
     lotId: uuid("lot_id").notNull(),
+    /** "sale": shipped to a customer; "write_off": lost, damaged or disposed. */
+    kind: text("kind", { enum: ["sale", "write_off"] })
+      .notNull()
+      .default("sale"),
     quantity: integer("quantity").notNull(),
     cost: numeric("cost", { precision: 20, scale: 4 }).notNull(),
   },
   (t) => [
-    unique("lot_consumptions_period_lot_key").on(t.cogsPeriodId, t.lotId),
+    unique("lot_consumptions_period_lot_kind_key").on(t.cogsPeriodId, t.lotId, t.kind),
+    check("lot_consumptions_kind_valid", sql`${t.kind} in ('sale', 'write_off')`),
     index("lot_consumptions_lot_idx").on(t.lotId),
     foreignKey({
       name: "lot_consumptions_period_fk",
@@ -438,5 +464,47 @@ export const lotConsumptions = pgTable(
     }),
     check("lot_consumptions_quantity_positive", sql`${t.quantity} > 0 and ${t.cost} >= 0`),
     tenantIsolationPolicy("lot_consumptions", t.organizationId),
+  ],
+);
+
+/**
+ * One row of Amazon's FBA inventory ledger (detailed view): units of a SKU moving in or out of
+ * Amazon's stock. Brought in from the Reports API or an uploaded file; `key` keeps a row from
+ * coming in twice.
+ */
+export const inventoryLedgerEvents = pgTable(
+  "inventory_ledger_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    eventDate: date("event_date").notNull(),
+    sku: text("sku").notNull(),
+    fnsku: text("fnsku"),
+    asin: text("asin"),
+    eventType: text("event_type").notNull(),
+    referenceId: text("reference_id"),
+    quantity: integer("quantity").notNull(),
+    fulfillmentCenter: text("fulfillment_center"),
+    disposition: text("disposition"),
+    reason: text("reason"),
+    key: text("key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("inventory_ledger_events_channel_key").on(t.organizationId, t.channelId, t.key),
+    index("inventory_ledger_events_channel_date_idx").on(
+      t.organizationId,
+      t.channelId,
+      t.eventDate,
+    ),
+    foreignKey({
+      name: "inventory_ledger_events_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("inventory_ledger_events", t.organizationId),
   ],
 );

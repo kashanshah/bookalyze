@@ -252,6 +252,40 @@ function daysAgo(n) {
   return new Date(Date.now() - n * 86_400_000).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
+let ledgerReports = 0;
+
+/** The mug: one returned by a customer, two lost at the warehouse, one of them found again. */
+function ledgerReport() {
+  const day = (n) => {
+    const d = new Date(Date.now() - n * 86_400_000);
+    return `${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCDate()).padStart(2, "0")}/${d.getUTCFullYear()}`;
+  };
+  const head =
+    "Date\tFNSKU\tASIN\tMSKU\tTitle\tEvent Type\tReference ID\tQuantity\tFulfillment Center\tDisposition\tReason\tCountry";
+  const row = (n, type, qty, disposition, reason) =>
+    [
+      day(n),
+      "X00E2EMUG",
+      "B0E2EMUG01",
+      "MAPLE-MUG",
+      "Maple leaf ceramic mug",
+      type,
+      "",
+      qty,
+      "YYZ4",
+      disposition,
+      reason,
+      "CA",
+    ].join("\t");
+  return [
+    head,
+    row(2, "Shipments", -2, "SELLABLE", ""),
+    row(2, "CustomerReturns", 1, "SELLABLE", ""),
+    row(2, "Adjustments", -2, "SELLABLE", "M"),
+    row(2, "Adjustments", 1, "SELLABLE", "F"),
+  ].join("\n");
+}
+
 function json(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
@@ -261,6 +295,10 @@ createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${port}`);
   if (url.pathname === "/health") return json(res, 200, { ok: true });
   // The signed download link of a report document (no Amazon token goes with it).
+  if (url.pathname === "/report-files/ledger-1") {
+    res.writeHead(200, { "Content-Type": "text/tab-separated-values" });
+    return res.end(ledgerReport());
+  }
   if (url.pathname === "/report-files/settlement-1") {
     res.writeHead(200, { "Content-Type": "application/octet-stream" });
     return res.end(gzipSync(settlementReport()));
@@ -342,6 +380,31 @@ createServer((req, res) => {
       (e) => !after || (e.PostedDate >= after && e.PostedDate < before),
     );
     return json(res, 200, { payload: { FinancialEvents: { RefundEventList: matching } } });
+  }
+  // The FBA inventory ledger: asked for, made at once, downloaded as a plain TSV.
+  if (req.method === "POST" && url.pathname === "/reports/2021-06-30/reports") {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      const asked = JSON.parse(body || "{}");
+      if (asked.reportType !== "GET_LEDGER_DETAIL_VIEW_DATA") {
+        return json(res, 400, { errors: [{ code: "InvalidInput" }] });
+      }
+      ledgerReports += 1;
+      json(res, 202, { reportId: `6000${ledgerReports}` });
+    });
+    return;
+  }
+  if (/^\/reports\/2021-06-30\/reports\/6000\d+$/.test(url.pathname)) {
+    return json(res, 200, { processingStatus: "DONE", reportDocumentId: "ledger-doc-1" });
+  }
+  if (url.pathname === "/reports/2021-06-30/documents/ledger-doc-1") {
+    return json(res, 200, {
+      reportDocumentId: "ledger-doc-1",
+      url: `http://localhost:${port}/report-files/ledger-1`,
+    });
   }
   if (url.pathname === "/reports/2021-06-30/reports") {
     const types = url.searchParams.get("reportTypes");

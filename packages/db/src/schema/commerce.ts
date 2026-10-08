@@ -59,6 +59,12 @@ export const salesChannels = pgTable(
     refundsWindowEnd: timestamp("refunds_window_end", { withTimezone: true }),
     /** When the marketplace's SKUs (its FBA inventory) were last brought in. */
     skusSyncedAt: timestamp("skus_synced_at", { withTimezone: true }),
+    /** Amazon's FBA inventory ledger is in through this day. */
+    ledgerSyncedThrough: date("ledger_synced_through"),
+    /** A ledger report asked of Amazon and not downloaded yet, with the days it covers. */
+    ledgerReportId: text("ledger_report_id"),
+    ledgerReportFrom: date("ledger_report_from"),
+    ledgerReportTo: date("ledger_report_to"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

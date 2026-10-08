@@ -10,6 +10,7 @@ export * from "./entity";
 export * from "./fx";
 export * from "./imports";
 export * from "./inventory";
+export * from "./inventory-ledger";
 export * from "./invoices";
 export * from "./landed-costs";
 export * from "./ledger";

@@ -445,6 +445,7 @@ export async function downloadReport(
   creds: AmazonCredentials,
   region: AmazonRegion,
   reportDocumentId: string,
+  forbidden: string = FINANCE_ROLE,
 ): Promise<string> {
   const doc = parseReportDocument(
     await call(
@@ -452,7 +453,7 @@ export async function downloadReport(
       region,
       `/reports/2021-06-30/documents/${encodeURIComponent(reportDocumentId)}`,
       undefined,
-      { forbidden: FINANCE_ROLE },
+      { forbidden },
     ),
   );
   let response: Response;
@@ -473,6 +474,52 @@ export async function downloadReport(
   }
   const bytes = Buffer.from(await response.arrayBuffer());
   return new TextDecoder("utf-8").decode(doc.gzip ? gunzipSync(bytes) : bytes);
+}
+
+const LEDGER_REPORT_TYPE = "GET_LEDGER_DETAIL_VIEW_DATA";
+export const LEDGER_DENIED =
+  "Amazon didn't let us read your FBA inventory ledger. Give the app the Amazon Fulfillment role in Seller Central → Develop Apps, then authorize it again.";
+
+/** Asks Amazon for its FBA inventory ledger (detailed view) for [from, to], whole days. */
+export async function requestLedgerReport(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  query: { marketplaceId: string; from: string; to: string },
+): Promise<string> {
+  const body = await call(creds, region, "/reports/2021-06-30/reports", undefined, {
+    method: "POST",
+    body: {
+      reportType: LEDGER_REPORT_TYPE,
+      marketplaceIds: [query.marketplaceId],
+      dataStartTime: `${query.from}T00:00:00Z`,
+      dataEndTime: `${query.to}T23:59:59Z`,
+    },
+    forbidden: LEDGER_DENIED,
+  });
+  const id = (body as { reportId?: unknown })?.reportId;
+  if (typeof id !== "string" || !id) {
+    throw new AmazonError("Amazon didn't start the inventory ledger report.", "unexpected");
+  }
+  return id;
+}
+
+/** Where a requested report stands: still being made, ready (with its document), or not. */
+export async function reportStatus(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  reportId: string,
+): Promise<{ status: string; documentId: string | null }> {
+  const body = (await call(
+    creds,
+    region,
+    `/reports/2021-06-30/reports/${encodeURIComponent(reportId)}`,
+    undefined,
+    { forbidden: LEDGER_DENIED },
+  )) as { processingStatus?: unknown; reportDocumentId?: unknown };
+  return {
+    status: typeof body?.processingStatus === "string" ? body.processingStatus : "UNKNOWN",
+    documentId: typeof body?.reportDocumentId === "string" ? body.reportDocumentId : null,
+  };
 }
 
 const CATALOG_ROLE = roleMissing("Product Listing");

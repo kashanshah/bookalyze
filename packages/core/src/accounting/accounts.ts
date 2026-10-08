@@ -137,5 +137,6 @@ export const SYSTEM_ACCOUNT_KEYS = [
   "inventory",
   "cost_of_goods_sold",
   "opening_balance_equity",
+  "inventory_write_offs",
 ] as const;
 export type SystemAccountKey = (typeof SYSTEM_ACCOUNT_KEYS)[number];
