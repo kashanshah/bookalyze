@@ -433,9 +433,12 @@ export async function unlinkedSkus(
     select c.*, sc.name as channel_name
     from candidates c
     join ${salesChannels} sc on sc.id = c.channel_id
-    where exists (
-        select 1 from ${connections} cn
-        where cn.id = sc.connection_id and cn.status <> 'disconnected'
+    where (
+        sc.connection_id is null
+        or exists (
+          select 1 from ${connections} cn
+          where cn.id = sc.connection_id and cn.status <> 'disconnected'
+        )
       )
       and not exists (
         select 1 from ${productSkus} ps where ps.channel_id = c.channel_id and ps.sku = c.sku

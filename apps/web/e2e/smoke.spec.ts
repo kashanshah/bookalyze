@@ -1981,6 +1981,48 @@ test("amounts recorded in CAD on a USD account are corrected from the bank's PDF
   await expect(page.locator("li", { hasText: "1035" })).toContainText("US$100.00");
 });
 
+test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  const noon = page.getByRole("region", { name: "Noon", exact: true });
+  await noon.getByRole("button", { name: "Add a Noon country" }).click();
+
+  // A Canadian company is offered the UAE first; Noon ships the orders by default.
+  const add = page.getByRole("dialog");
+  await expect(add.getByRole("combobox", { name: "Country" })).toContainText("Noon UAE");
+  await expect(add.getByRole("combobox", { name: "Who ships the orders?" })).toContainText(
+    "Fulfilled by Noon (FBN)",
+  );
+  await add.getByRole("button", { name: "Add country" }).click();
+  await expect(page.getByText("Noon UAE added")).toBeVisible();
+  await expect(noon.getByText("AE · AED")).toBeVisible();
+
+  // The UAE can't be added twice; another country can.
+  await noon.getByRole("button", { name: "Add a Noon country" }).click();
+  await page.getByRole("combobox", { name: "Country" }).click();
+  await expect(page.getByRole("option", { name: /Noon UAE/ })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+
+  await choose(noon.getByLabel("Who ships Noon UAE orders"), "Both");
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+
+  // Its SKUs link to products like Amazon's.
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  const mug = page.getByRole("listitem", { name: "Maple leaf ceramic mug", exact: true });
+  await mug.getByRole("button", { name: "Edit Maple leaf ceramic mug" }).click();
+  const dialog = page.getByRole("dialog");
+  await choose(dialog.getByLabel("Marketplace", { exact: true }), "Noon UAE");
+  await dialog.getByLabel("Marketplace SKU", { exact: true }).fill("NOON-MAPLE-MUG");
+  await dialog.getByRole("button", { name: "Link SKU" }).click();
+  await expect(page.getByText("NOON-MAPLE-MUG linked")).toBeVisible();
+  await expect(dialog.getByText(/Noon UAE · 1 unit per listing/)).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

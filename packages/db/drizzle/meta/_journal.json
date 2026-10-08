@@ -337,6 +337,13 @@
       "when": 1791496393978,
       "tag": "0047_product_bundles",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791499008949,
+      "tag": "0048_noon_channels",
+      "breakpoints": true
     }
   ]
 }
