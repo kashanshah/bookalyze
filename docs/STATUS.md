@@ -751,6 +751,13 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   company, under an advisory lock). **Correct details** replaces the PDF and keeps the number.
   `order_invoices` (migration `0039_order_invoices`) stores the snapshot and the file. One
   invoice per order. Download: `/api/o/[slug]/invoices/[id]`.
+- **Arabic and English in one PDF** (`server/pdf-text.ts`): Latin text uses the standard
+  Helvetica; Arabic uses Noto Sans Arabic (regular and bold, `server/fonts/`, SIL OFL), embedded
+  as a subset so the letters join. Each line is put in reading order with the Unicode bidi
+  algorithm (`bidi-js`), so Arabic names, addresses and titles inside English lines read
+  correctly; characters neither font has are left out. Noto Sans (Latin) was tried and dropped:
+  pdf-lib's subsetting loses its glyphs. `next.config.ts` traces the font files into the server
+  functions.
 - **What's on it:** legal name, trade name, registered address, trade license, and the sales-tax
   number when the company has an active registration. Lines, shipping, discounts and the order
   total come from the order. "Tax invoice" only when the company is registered; otherwise
