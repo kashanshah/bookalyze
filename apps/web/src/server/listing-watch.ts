@@ -10,10 +10,12 @@ import {
   type ListingChange,
   type ListingCheck,
   type ListingObservation,
+  listingCheckLabel,
   type ModuleKey,
   parseCatalogItem,
   parseItemOffers,
   parseReviewTopics,
+  rankTrend,
   reviewTopicsAvailable,
   reviewTopicsUnavailableNote,
 } from "@bookalyze/core";
@@ -236,6 +238,7 @@ export async function emailListingChanges(org: {
   );
   if (!recipients.length) return 0;
   const url = `${env().BETTER_AUTH_URL}/o/${org.slug}/commerce/watch`;
+  const locale = await localeOf(org.id);
   const subject =
     items.length === 1
       ? `${items[0]?.title || items[0]?.asin} changed on ${items[0]?.channelName}`
@@ -252,8 +255,20 @@ export async function emailListingChanges(org: {
           items: items.map((item) => ({
             title: item.title || item.asin,
             channelName: item.channelName,
-            summary: item.summary,
+            asin: item.asin,
+            imageUrl: item.imageUrl,
             href: `${url}/${item.watchId}`,
+            changes: item.changes.map((change) => {
+              const trend = rankTrend(change);
+              return {
+                label: listingCheckLabel(change.field),
+                summary: change.summary,
+                trend: trend?.direction ?? null,
+                badge: trend
+                  ? `${trend.direction === "up" ? "▲" : "▼"} ${new Intl.NumberFormat(locale).format(trend.places)}`
+                  : null,
+              };
+            }),
           })),
         }),
       });

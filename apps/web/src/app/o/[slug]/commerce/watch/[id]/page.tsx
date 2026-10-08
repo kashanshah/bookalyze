@@ -5,11 +5,12 @@ import {
   type ListingObservation,
   listingCheck,
   listingValues,
+  rankTrend,
   reviewTopicsAvailableFor,
   reviewTopicsUnavailableNote,
 } from "@bookalyze/core";
 import { getListingWatch, listListingChanges } from "@bookalyze/db";
-import { ArrowLeft, ExternalLink, Pencil } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ExternalLink, Pencil } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -18,6 +19,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatAgo } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { ProductImage } from "../product-image";
@@ -60,6 +62,7 @@ export default async function WatchPage({
   const productUrl = amazonProductUrl(watch.channelName, watch.asin);
   const base = `/o/${slug}/commerce/watch`;
   const values = observed ? listingValues(observed, locale) : [];
+  const number = new Intl.NumberFormat(locale);
 
   return (
     <div className="grid gap-6">
@@ -260,17 +263,47 @@ export default async function WatchPage({
             </p>
           ) : (
             <ol className="mt-4 grid gap-4">
-              {changes.map((change) => (
-                <li key={change.id} className="border-primary/30 border-s-2 ps-3">
-                  <p className="text-sm">{change.summary}</p>
-                  {change.before && change.after ? (
-                    <p className="mt-1 text-muted-foreground text-xs">Was: {change.before}</p>
-                  ) : null}
-                  <p className="mt-1 text-muted-foreground text-xs">
-                    {moment.format(change.checkedAt)}
-                  </p>
-                </li>
-              ))}
+              {changes.map((change) => {
+                const trend = rankTrend(change);
+                const up = trend?.direction === "up";
+                return (
+                  <li
+                    key={change.id}
+                    className={cn(
+                      "border-s-2 ps-3",
+                      trend
+                        ? up
+                          ? "border-success/60"
+                          : "border-destructive/60"
+                        : "border-primary/30",
+                    )}
+                  >
+                    <p className="text-sm">
+                      {change.summary}
+                      {trend ? (
+                        <span
+                          className={cn(
+                            "ms-2 inline-flex items-center gap-0.5 rounded-full px-1.5 py-px align-middle font-medium text-xs",
+                            up
+                              ? "bg-success/10 text-success"
+                              : "bg-destructive/10 text-destructive",
+                          )}
+                          title={up ? "Climbed (a lower rank is better)" : "Fell"}
+                        >
+                          {up ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}
+                          {number.format(trend.places)}
+                        </span>
+                      ) : null}
+                    </p>
+                    {change.before && change.after && change.field !== "rank" ? (
+                      <p className="mt-1 text-muted-foreground text-xs">Was: {change.before}</p>
+                    ) : null}
+                    <p className="mt-1 text-muted-foreground text-xs">
+                      {moment.format(change.checkedAt)}
+                    </p>
+                  </li>
+                );
+              })}
             </ol>
           )}
         </section>

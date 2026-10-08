@@ -9,5 +9,10 @@ export const brand = {
   canvas: "#F4F4F8",
   card: "#FFFFFF",
   soft: "#ECEFFE",
+  /** Good news (a rank that climbed) and bad news (one that fell), with their soft backgrounds. */
+  up: "#067647",
+  upSoft: "#E7F6EC",
+  down: "#B42318",
+  downSoft: "#FDECEA",
   font: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
 };

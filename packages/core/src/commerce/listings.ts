@@ -586,28 +586,69 @@ function featuredSummary(before: FeaturedOffer | null, after: FeaturedOffer | nu
   return null;
 }
 
-function rankSummary(before: SalesRank[], after: SalesRank[], locale: string): string | null {
+/**
+ * One change per category whose best seller rank moved (at most three). `before` and `after`
+ * are the plain rank numbers ("1234"), so a list or an email can show which way it went.
+ */
+function rankChanges(before: SalesRank[], after: SalesRank[], locale: string): ListingChange[] {
   const previous = new Map(before.map((rank) => [rank.category.toLowerCase(), rank]));
   const next = new Map(after.map((rank) => [rank.category.toLowerCase(), rank]));
-  const lines: string[] = [];
-  const number = (n: number) => new Intl.NumberFormat(locale).format(n);
+  const changes: ListingChange[] = [];
+  const place = (n: number) => `#${new Intl.NumberFormat(locale).format(n)}`;
   for (const rank of after) {
     const old = previous.get(rank.category.toLowerCase());
     if (!old) {
-      lines.push(`Now ranked ${number(rank.rank)} in ${rank.category}.`);
+      changes.push({
+        field: "rank",
+        summary: `Now ranked ${place(rank.rank)} in ${rank.category}.`,
+        before: null,
+        after: String(rank.rank),
+      });
       continue;
     }
     if (rankMoved(old.rank, rank.rank)) {
-      lines.push(
-        `Best seller rank in ${rank.category} moved from ${number(old.rank)} to ${number(rank.rank)}.`,
-      );
+      const verb = rank.rank < old.rank ? "Climbed" : "Fell";
+      changes.push({
+        field: "rank",
+        summary: `${verb} from ${place(old.rank)} to ${place(rank.rank)} in ${rank.category}.`,
+        before: String(old.rank),
+        after: String(rank.rank),
+      });
     }
   }
   for (const rank of before) {
-    if (!next.has(rank.category.toLowerCase())) lines.push(`No longer ranked in ${rank.category}.`);
+    if (!next.has(rank.category.toLowerCase())) {
+      changes.push({
+        field: "rank",
+        summary: `No longer ranked in ${rank.category} (was ${place(rank.rank)}).`,
+        before: String(rank.rank),
+        after: null,
+      });
+    }
   }
-  if (!lines.length) return null;
-  return lines.slice(0, 3).join(" ");
+  return changes.slice(0, 3);
+}
+
+/**
+ * Which way a best seller rank went. A lower number is better, so "up" means it climbed. Null
+ * for anything that isn't a rank move with both numbers (and for rank changes saved before the
+ * numbers were kept).
+ */
+export function rankTrend(change: {
+  field: string;
+  before: string | null;
+  after: string | null;
+}): { direction: "up" | "down"; places: number } | null {
+  if (change.field !== "rank" || !change.before || !change.after) return null;
+  const before = Number(change.before);
+  const after = Number(change.after);
+  if (!Number.isInteger(before) || !Number.isInteger(after) || before === after) return null;
+  return { direction: after < before ? "up" : "down", places: Math.abs(before - after) };
+}
+
+/** "Best seller rank", "Price"…: the name of what a change is about. */
+export function listingCheckLabel(field: string): string {
+  return LISTING_CHECKS.find((check) => check.key === field)?.label ?? "Listing";
 }
 
 function reviewSummary(before: ReviewTopic[], after: ReviewTopic[]): string | null {
@@ -703,10 +744,7 @@ export function diffListing(
       });
     }
   }
-  if (on.has("rank")) {
-    const summary = rankSummary(previous.ranks, next.ranks, locale);
-    if (summary) changes.push({ field: "rank", summary, before: null, after: null });
-  }
+  if (on.has("rank")) changes.push(...rankChanges(previous.ranks, next.ranks, locale));
   if (on.has("reviews")) {
     const summary = reviewSummary(previous.reviewTopics, next.reviewTopics);
     if (summary) changes.push({ field: "reviews", summary, before: null, after: null });
