@@ -273,6 +273,11 @@ export async function importBankLines(
     userId?: string | null;
     baseCurrency: string;
     lines: readonly FeedLine[];
+    /**
+     * Post again the lines whose transaction was removed. Only for a statement the person
+     * uploads again; a bank sync leaves removed transactions removed.
+     */
+    restoreRemoved?: boolean;
   },
 ): Promise<ImportResult> {
   const result: ImportResult = {
@@ -311,9 +316,10 @@ export async function importBankLines(
     inserted.push(...rows);
   }
   const insertedIds = new Set(inserted.map((r) => r.externalId));
-  // Already known lines still pending (no rate yet, closed period) get another try, and so does
-  // a line whose transaction was removed. An edit or a merge points the line at the entry that
-  // still stands, so that one is not posted again.
+  // Already known lines still pending (no rate yet, closed period) get another try. A line whose
+  // transaction was removed comes back only when a statement is uploaded again (restoreRemoved);
+  // a sync leaves it removed. An edit or a merge points the line at the entry that still stands,
+  // so that one is never posted again.
   const known = input.lines.map((l) => l.externalId).filter((id) => !insertedIds.has(id));
   const removed = sql`exists (
     select 1 from ${journalEntries} e
@@ -326,7 +332,9 @@ export async function importBankLines(
         .where(
           and(
             inArray(bankLines.externalId, known),
-            or(eq(bankLines.status, "pending"), and(eq(bankLines.status, "posted"), removed)),
+            input.restoreRemoved
+              ? or(eq(bankLines.status, "pending"), and(eq(bankLines.status, "posted"), removed))
+              : eq(bankLines.status, "pending"),
           ),
         )
         // Two syncs at once: the second waits here, then skips what the first just posted.
