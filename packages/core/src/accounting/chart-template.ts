@@ -24,7 +24,14 @@ export const DEFAULT_CHART: readonly ChartTemplateAccount[] = [
     description: "Money customers owe you.",
     systemKey: "accounts_receivable",
   },
-  { code: "1200", name: "Inventory", type: "asset", subtype: "inventory" },
+  {
+    code: "1200",
+    name: "Inventory",
+    type: "asset",
+    subtype: "inventory",
+    description: "What your stock cost. Supplier payments go here; it goes down as units sell.",
+    systemKey: "inventory",
+  },
   { code: "1300", name: "Prepaid expenses", type: "asset", subtype: "vendor_prepayments" },
   { code: "1500", name: "Equipment", type: "asset", subtype: "fixed_assets" },
   {
@@ -62,6 +69,14 @@ export const DEFAULT_CHART: readonly ChartTemplateAccount[] = [
     subtype: "owner_equity",
   },
   {
+    code: "3050",
+    name: "Opening balance equity",
+    type: "equity",
+    subtype: "owner_equity",
+    description: "The other side of balances you started with, such as stock on hand.",
+    systemKey: "opening_balance_equity",
+  },
+  {
     code: "3900",
     name: "Retained earnings",
     type: "equity",
@@ -86,7 +101,14 @@ export const DEFAULT_CHART: readonly ChartTemplateAccount[] = [
     description: "Money in that hasn't been categorized yet.",
     systemKey: "uncategorized_income",
   },
-  { code: "5000", name: "Cost of goods sold", type: "expense", subtype: "cost_of_goods_sold" },
+  {
+    code: "5000",
+    name: "Cost of goods sold",
+    type: "expense",
+    subtype: "cost_of_goods_sold",
+    description: "What the units you sold cost you, at FIFO cost, posted each month.",
+    systemKey: "cost_of_goods_sold",
+  },
   {
     code: "6000",
     name: "Advertising and marketing",

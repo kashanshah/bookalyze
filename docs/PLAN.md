@@ -557,6 +557,7 @@ A domain like 3dboxstudio.com works well because it is *both* a memorable brand 
 | 2026-10-04 | UAE commerce (Amazon.ae + Noon) comes after the Canadian companies, as **phase 4b**. |
 | 2026-10-07 | VAT registration is a setting the company makes (the account tax on fees posts to), never inferred from turnover in the app. Noon moves to **phase 4c**, after phase 5. |
 | 2026-10-08 | A bank sync never brings back a transaction the user removed; only uploading the statement again does. |
+| 2026-10-08 | Inventory bookkeeping: supplier payments are categorised to the **Inventory** asset account; **cost of goods sold posts monthly per marketplace** (Dr Cost of goods sold / Cr Inventory, units shipped that month at FIFO cost); **opening stock** is booked Dr Inventory / Cr **Opening balance equity** on its date. |
 | 2026-10-08 | Purchase orders are **entered by hand**: no automatic import from supplier invoices or Alibaba orders for now. Focus stays on the core plan (opening stock, cost of goods sold, inventory movements). |
 | 2026-10-08 | Invoicing (plan in `docs/INVOICING.md`) keeps its place in the roadmap, with no rush. Arabic in invoice PDFs is a must-have and comes first. Stripe: **Teknoffice** pilots it, and each company connects its own Stripe account. |
 | 2026-10-08 | Launch markets: **USA, India, the Middle East and China**, as well as Canada and the UAE (see "Launch markets"). Nothing built may assume one country. |
