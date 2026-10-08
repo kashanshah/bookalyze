@@ -40,6 +40,7 @@ export type EditableProduct = {
   name: string;
   sku: string | null;
   notes: string | null;
+  unitWeight: string | null;
   isArchived: boolean;
   skus: LinkedSkuView[];
 };
@@ -102,7 +103,12 @@ function ProductForm({
         startTransition(async () => {
           const result = await saveProductAction(
             slug,
-            { name: text("name"), sku: text("sku"), notes: text("notes") },
+            {
+              name: text("name"),
+              sku: text("sku"),
+              notes: text("notes"),
+              unitWeight: text("unitWeight"),
+            },
             product?.id,
           );
           if (result.ok) {
@@ -147,6 +153,26 @@ function ProductForm({
             name="sku"
             defaultValue={product?.sku ?? ""}
             aria-invalid={Boolean(errors.sku)}
+          />
+        </Field>
+        <Field
+          label="Weight of one (optional)"
+          htmlFor="product-weight"
+          error={errors.unitWeight}
+          hint="Used to split freight by weight. Any unit (kg, lb…), as long as every product uses the same one."
+        >
+          <Input
+            id="product-weight"
+            name="unitWeight"
+            inputMode="decimal"
+            defaultValue={
+              product?.unitWeight
+                ? product.unitWeight.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")
+                : ""
+            }
+            placeholder="e.g. 0.45"
+            className="tabular-nums"
+            aria-invalid={Boolean(errors.unitWeight)}
           />
         </Field>
         <Field label="Notes (optional)" htmlFor="product-notes" error={errors.notes}>

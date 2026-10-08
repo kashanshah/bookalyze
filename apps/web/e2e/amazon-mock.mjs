@@ -310,6 +310,28 @@ createServer((req, res) => {
       payload: { Orders: matching, ...(more ? { NextToken: "e2e-page-2" } : {}) },
     });
   }
+  if (url.pathname === "/fba/inventory/v1/summaries") {
+    // Amazon's stock: the mug (sold) and a larger variation that has never been ordered.
+    return json(res, 200, {
+      pagination: {},
+      payload: {
+        inventorySummaries: [
+          {
+            asin: "B0E2EMUG01",
+            sellerSku: "MAPLE-MUG",
+            productName: "Maple leaf ceramic mug",
+            inventoryDetails: { fulfillableQuantity: 40 },
+          },
+          {
+            asin: "B0E2EMUG02",
+            sellerSku: "MAPLE-MUG-XL",
+            productName: "Maple leaf ceramic mug, large",
+            inventoryDetails: { fulfillableQuantity: 12 },
+          },
+        ],
+      },
+    });
+  }
   if (url.pathname === "/finances/v0/financialEvents") {
     const after = url.searchParams.get("PostedAfter");
     const before = url.searchParams.get("PostedBefore");

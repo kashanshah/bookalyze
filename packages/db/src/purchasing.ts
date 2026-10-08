@@ -6,6 +6,7 @@ import {
 } from "@bookalyze/core";
 import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
+import { buildLots } from "./landed-costs";
 import { contacts } from "./schema/accounting";
 import {
   products,
@@ -404,6 +405,10 @@ export async function receivePurchaseOrder(
     receivedOn: string;
     notes: string | null;
     quantities: Record<string, number>;
+    /** The company's main currency, which lots are costed in. */
+    baseCurrency: string;
+    /** Main-currency value of one unit of the PO's currency. Needed when they differ. */
+    exchangeRate?: string | null;
   },
 ): Promise<{ receiptId: string; status: "ordered" | "partial" | "received" }> {
   const po = await lockedOrder(tx, input.id);
@@ -419,6 +424,12 @@ export async function receivePurchaseOrder(
   }
   if (input.receivedOn < po.orderDate) {
     throw new PurchasingError("A delivery can't arrive before the order date.");
+  }
+  const foreign = po.currency !== input.baseCurrency;
+  if (foreign && !input.exchangeRate) {
+    throw new PurchasingError(
+      `Add the ${po.currency} to ${input.baseCurrency} exchange rate, so the stock is costed.`,
+    );
   }
   const lines = await tx
     .select({ id: purchaseOrderLines.id, quantity: purchaseOrderLines.quantity })
@@ -440,6 +451,7 @@ export async function receivePurchaseOrder(
       purchaseOrderId: input.id,
       receivedOn: input.receivedOn,
       notes: input.notes,
+      exchangeRate: foreign ? (input.exchangeRate ?? null) : null,
       createdBy: input.userId ?? null,
     })
     .returning({ id: purchaseReceipts.id });
@@ -463,6 +475,13 @@ export async function receivePurchaseOrder(
     .update(purchaseOrders)
     .set({ status, updatedAt: new Date() })
     .where(eq(purchaseOrders.id, input.id));
+  // One FIFO lot per line that arrived, at the PO cost; extra costs are added on the delivery.
+  const costing = await buildLots(tx, {
+    orgId: input.orgId,
+    receiptId: receipt.id,
+    baseCurrency: input.baseCurrency,
+  });
+  if (!costing.ok) throw new PurchasingError(costing.problem);
   return { receiptId: receipt.id, status };
 }
 

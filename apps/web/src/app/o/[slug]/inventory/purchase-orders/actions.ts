@@ -9,11 +9,16 @@ import {
   markPurchaseOrderOrdered,
   PurchasingError,
   receivePurchaseOrder,
+  saveDeliveryCosts,
   updatePurchaseOrder,
 } from "@bookalyze/db";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { purchaseOrderSchema, receiveSchema } from "@/lib/validation/purchasing";
+import {
+  deliveryCostsSchema,
+  purchaseOrderSchema,
+  receiveSchema,
+} from "@/lib/validation/purchasing";
 import { inOrg } from "@/server/accounting";
 import { audit } from "@/server/audit";
 import { getInventoryContext } from "@/server/inventory";
@@ -167,6 +172,7 @@ export async function receiveAction(
     const result = await inOrg(ctx, async (tx) => {
       const received = await receivePurchaseOrder(tx, {
         ...parsed.data,
+        baseCurrency: ctx.profile.baseCurrency,
         id,
         orgId: ctx.org.id,
         userId: ctx.session.user.id,
@@ -194,6 +200,68 @@ export async function receiveAction(
           ? "Everything on this order has arrived."
           : "The rest is still to come.",
     };
+  } catch (error) {
+    return friendly(error);
+  }
+}
+
+/** Saves a delivery's exchange rate and extra costs (freight, duty…), re-costing its lots. */
+export async function saveDeliveryCostsAction(
+  slug: string,
+  receiptId: string,
+  input: unknown,
+): Promise<PurchaseOrderActionResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  if (!validId(receiptId)) return { ok: false, message: "This delivery no longer exists." };
+  const parsed = deliveryCostsSchema.safeParse(input);
+  if (!parsed.success) {
+    const errors: Record<string, string> = {};
+    const lineErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const [first, index, field] = issue.path;
+      if (first === "costs" && typeof index === "number") {
+        lineErrors[`${index}.${String(field ?? "")}`] ??= issue.message;
+      } else {
+        errors[String(first ?? "form")] ??= issue.message;
+      }
+    }
+    return { ok: false, message: "Check the highlighted fields.", errors, lineErrors };
+  }
+  const { baseCurrency } = ctx.profile;
+  const missingRate = parsed.data.costs.findIndex(
+    (cost) => cost.currency !== baseCurrency && !cost.exchangeRate,
+  );
+  if (missingRate !== -1) {
+    return {
+      ok: false,
+      message: "Check the highlighted fields.",
+      lineErrors: { [`${missingRate}.exchangeRate`]: "Enter the exchange rate." },
+    };
+  }
+  try {
+    const costing = await inOrg(ctx, async (tx) => {
+      const result = await saveDeliveryCosts(tx, {
+        ...parsed.data,
+        orgId: ctx.org.id,
+        receiptId,
+        baseCurrency,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "purchase_receipt.costs_saved",
+        entityType: "purchase_receipt",
+        entityId: receiptId,
+        after: {
+          exchangeRate: parsed.data.exchangeRate,
+          costs: parsed.data.costs.length,
+          landedCost: result.landedCost,
+        },
+      });
+      return result;
+    });
+    revalidatePath(`/o/${slug}/inventory`, "layout");
+    return { ok: true, message: costing.totalCost };
   } catch (error) {
     return friendly(error);
   }

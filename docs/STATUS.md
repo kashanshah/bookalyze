@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-08, phase 5 slice 2: suppliers and purchase orders._
+_Last updated: 2026-10-08, phase 5 slice 3: landed costs and FIFO stock lots._
 
 ---
 
@@ -27,7 +27,7 @@ _Last updated: 2026-10-08, phase 5 slice 2: suppliers and purchase orders._
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
-| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet) and slice 2 (purchase orders to suppliers, deliveries received in parts) done. Next: landed costs and FIFO lots, then cost of goods sold |
+| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts) and slice 3 (landed costs, FIFO stock lots) done. Next: opening stock and cost of goods sold, then inventory movements (FBA ledger) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1223,6 +1223,60 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   partial and full deliveries, over-receiving refused, cancel rules, tenant isolation), e2e
   "purchase orders: draft, send, a partial delivery, then the rest".
 
+### Products: every Amazon SKU, and wide titles
+
+- **Every SKU, sold or not:** the "SKUs that aren't linked to a product yet" list was built only
+  from orders, so a variation with no orders since the orders start date (or whose order items
+  were still being fetched) never showed. Now it also lists every SKU Amazon holds stock for: the
+  FBA Inventory API (`getInventorySummaries`, needs the **Amazon Fulfillment** role), saved in
+  `channel_skus` (migration `0044_channel_skus`) with ASIN, title and units that can be sold.
+  Brought in once a day at the end of the orders sync (`syncChannelSkus`, step 4, only with time
+  to spare) and with **Check Amazon for all SKUs** on Products. A never-ordered SKU shows
+  "No orders yet · N at Amazon"; **Create product** names it after the listing title.
+  Merchant-fulfilled SKUs with no FBA stock and no orders still need the Reports API later.
+- **Layout:** a long title cut with "…" made its section as wide as the title, pushing the page
+  past its column. `globals.css` lets every page section shrink (`main > .grid > * { min-width:
+  0 }`), on every screen.
+- Tests: core `fba-inventory.test.ts`, db `inventory.test.ts` (listed-only SKUs after ordered
+  ones, order title wins, product from a listing), e2e inventory test ("Check Amazon for all
+  SKUs" brings in a variation never ordered).
+
+### Phase 5, slice 3: landed costs and FIFO stock lots
+
+- **What it is:** each line of a delivery becomes one **stock lot** (`inventory_lots`): that
+  product's units from that delivery, at its landed cost in the company's **main currency**. The
+  lot's cost is the PO price (converted at the delivery's exchange rate) plus its share of the
+  delivery's **extra costs**: freight, duty and import taxes, customs brokerage, prep and
+  labelling, other. Sales will draw on the oldest lots first once cost of goods sold is posted.
+- **Exchange rates:** a delivery on a PO in another currency asks for the rate (prefilled with
+  the Bank of Canada suggestion through `RateField`); `receivePurchaseOrder` refuses it without
+  one. Each extra cost has its own currency and rate.
+- **Splitting:** by units, by value (the converted order price) or by weight (products have an
+  optional **Weight of one**, in any unit used for all products, so nothing assumes kg or lb).
+  `costDelivery` and `splitByWeights` in core `inventory/landed.ts` split to the minor unit by
+  largest remainder, so shares always add up to the cost. Defaults: freight by weight (units if a
+  product has no weight), duty and brokerage by value, prep and other by units.
+- **Screens:** each delivery on a PO shows its landed total and links to **Landed cost of the
+  … delivery** (`purchase-orders/[id]/deliveries/[receiptId]`): the rate, the extra costs, and a
+  live preview of the lots (order price, extra, cost of one). **Inventory → Stock lots** lists
+  lots per product, oldest first, with cost of one and the average.
+- **Rebuilt in place:** saving costs or a new rate re-costs the delivery's lots with the same
+  ids (upsert on `receipt_line_id`), so later consumption can point at them. Deliveries recorded
+  before this slice have no lots until their costs page is saved ("Not costed yet").
+- **Nothing posts to the books yet.** Decide in the COGS slice: supplier payments go to an
+  Inventory asset account (today they're categorised by hand), and COGS moves FIFO cost out of
+  it per settlement period.
+- **Schema** (migration `0043_landed_costs_lots`): `products.unit_weight`,
+  `purchase_receipts.exchange_rate`, `purchase_receipt_costs` (kind, amount, currency, rate,
+  allocation; cascade from the receipt), `inventory_lots` (composite FKs to products and receipt
+  lines; quantity > 0; costs ≥ 0), a unique (org, id) on `purchase_receipt_lines`. All under RLS.
+- **Code:** core `inventory/landed.ts`; db `landed-costs.ts` (`getDeliveryCosting`,
+  `buildLots`, `saveDeliveryCosts`, `deliveryCostSummary`, `listLots`); action
+  `saveDeliveryCostsAction` (audited `purchase_receipt.costs_saved`); `app/o/[slug]/inventory/lots`.
+- Tests: core `landed.test.ts` (splits, rates, JPY, problems), db `landed-costs.test.ts` (rate
+  required, lots at PO cost, weight and value splits, rebuilt in place, rate change, missing
+  weight, tenant isolation), e2e "landed cost: freight on a delivery, then the stock lots".
+
 ---
 
 ## 3. Next up (in order)
@@ -1282,10 +1336,9 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 ### Phase 5: inventory and cost of goods sold
 1. [x] **Products and SKU links.** Done in slice 1.
 2. [x] **Suppliers and purchase orders.** Done in slice 2.
-3. [ ] **Landed costs and FIFO lots:** freight, duty, brokerage and prep allocated by units,
-   weight or value; one lot per receipt.
+3. [x] **Landed costs and FIFO lots.** Done in slice 3.
 4. [ ] **Inventory movements:** the FBA inventory ledger report, transfers, returns, removals.
-5. [ ] **Cost of goods sold** posted per settlement period at FIFO cost; bundles
+5. [ ] **Opening stock and cost of goods sold** (lots for stock on hand before Bookalyze), posted per settlement period at FIFO cost; bundles
    (`product_components`).
 
 ### Phase 0 leftovers

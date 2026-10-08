@@ -302,6 +302,20 @@
       "when": 1791486913086,
       "tag": "0042_purchase_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791489441680,
+      "tag": "0043_landed_costs_lots",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791491154901,
+      "tag": "0044_channel_skus",
+      "breakpoints": true
     }
   ]
 }

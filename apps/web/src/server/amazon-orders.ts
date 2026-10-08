@@ -17,6 +17,7 @@ import {
 } from "@bookalyze/db";
 import { sql } from "drizzle-orm";
 import { AmazonError, orderItems, ordersPage, refundsPage } from "./amazon";
+import { SKU_SYNC_EVERY_MS, syncChannelSkus } from "./amazon-skus";
 import { openAmazonCredentials } from "./commerce";
 
 /**
@@ -251,6 +252,12 @@ export async function syncChannelOrders(
     await withOrg(db, ctx, (tx) =>
       recordConnectionSync(tx, connection.id, { at: new Date(), error: null }),
     );
+
+    // 4. Once a day, with time to spare: every SKU Amazon holds stock for, sold or not. Its
+    // problems (a missing role) show on the Products screen, not as an orders sync error.
+    if (!result.more && deadline - Date.now() > 20_000) {
+      await syncChannelSkus(ctx, channelId, { deadline, ifOlderThanMs: SKU_SYNC_EVERY_MS });
+    }
   } catch (error) {
     if (!(error instanceof AmazonError) && !(error instanceof VaultError)) throw error;
     // Amazon's own words don't say which marketplace or call: add it.

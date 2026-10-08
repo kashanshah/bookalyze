@@ -1424,12 +1424,18 @@ test("inventory: products from the SKUs on orders, and a 2-pack linked by hand",
 
   // The SKUs on the orders brought in earlier wait to be linked.
   const unlinked = page.getByRole("region", {
-    name: "SKUs from your orders that aren't linked yet",
+    name: "SKUs that aren't linked to a product yet",
   });
   const sku = (name: string) => unlinked.getByRole("listitem", { name, exact: true });
   await expect(sku("MAPLE-MUG")).toBeVisible();
   await expect(sku("PINE-CANDLE")).toBeVisible();
   await expect(sku("BIRCH-COASTER")).toBeVisible();
+
+  // Amazon's stock brings in a variation that has never been ordered.
+  await unlinked.getByRole("button", { name: "Check Amazon for all SKUs" }).click();
+  await expect(page.getByText("2 SKUs checked with Amazon")).toBeVisible();
+  await expect(sku("MAPLE-MUG-XL")).toContainText("No orders yet · 12 at Amazon");
+  await expect(sku("MAPLE-MUG")).toContainText("40 at Amazon");
 
   // One click makes a product named after the listing, with the SKU linked.
   await sku("MAPLE-MUG").getByRole("button", { name: "Create product" }).click();
@@ -1508,6 +1514,44 @@ test("purchase orders: draft, send, a partial delivery, then the rest", async ({
   await page.getByRole("link", { name: "Received", exact: true }).click();
   await expect(page).toHaveURL(/status=received/);
   await expect(page.getByRole("link", { name: "PO-0001, Office Depot" })).toBeVisible();
+});
+
+test("landed cost: freight on a delivery, then the stock lots", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Purchase orders", exact: true }).click();
+  await page.getByRole("link", { name: "Received", exact: true }).click();
+  await page.getByRole("link", { name: "PO-0001, Office Depot" }).click();
+
+  // Both deliveries were costed at the order price when they arrived.
+  const costLinks = page.getByRole("link", { name: /^Landed cost of the delivery on/ });
+  await expect(costLinks).toHaveCount(2);
+  await expect(page.getByText("$171.50")).toBeVisible();
+  await costLinks.first().click();
+  await expect(
+    page.getByRole("heading", { name: /^Landed cost of the .* delivery$/ }),
+  ).toBeVisible();
+  await expect(page.getByText("No extra costs yet.")).toBeVisible();
+
+  // $35 of freight on the 70 mugs: split by units (the mug has no weight yet).
+  await page.getByRole("button", { name: "Add a cost" }).click();
+  await page.getByLabel("Amount 1", { exact: true }).fill("35");
+  const lot = page.getByRole("listitem", { name: "Lot: Maple leaf ceramic mug" });
+  await expect(lot.getByText("$2.95")).toBeVisible();
+  await page.getByRole("button", { name: "Save landed cost" }).click();
+  await expect(page.getByText("Landed cost saved")).toBeVisible();
+  await expect(page).toHaveURL(/\/purchase-orders\/[0-9a-f-]{36}$/);
+  await expect(page.getByText("$206.50")).toBeVisible();
+
+  // The stock lots: 50 at $2.45, then 70 at $2.95, oldest first.
+  await page.getByRole("link", { name: "Stock lots", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Stock lots", exact: true })).toBeVisible();
+  const mug = page.getByRole("region", { name: "Maple leaf ceramic mug" });
+  await expect(mug.getByText("120 units received")).toBeVisible();
+  await expect(mug.getByText("$2.7417")).toBeVisible();
+  const lots = mug.getByRole("listitem");
+  await expect(lots.nth(0)).toContainText("$2.45");
+  await expect(lots.nth(1)).toContainText("$2.95");
 });
 
 test("reviews: ask for a review by hand, then turn on automatic requests", async ({ page }) => {

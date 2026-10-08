@@ -57,6 +57,8 @@ export const salesChannels = pgTable(
     refundsSyncedThrough: timestamp("refunds_synced_through", { withTimezone: true }),
     refundsNextToken: text("refunds_next_token"),
     refundsWindowEnd: timestamp("refunds_window_end", { withTimezone: true }),
+    /** When the marketplace's SKUs (its FBA inventory) were last brought in. */
+    skusSyncedAt: timestamp("skus_synced_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -70,6 +72,38 @@ export const salesChannels = pgTable(
     }),
     check("sales_channels_kind_valid", sql`${t.kind} in ('amazon')`),
     tenantIsolationPolicy("sales_channels", t.organizationId),
+  ],
+);
+
+/**
+ * A seller SKU the marketplace lists for the company (from its FBA inventory), sold or not, so
+ * every variation can be linked to a product before its first order.
+ */
+export const channelSkus = pgTable(
+  "channel_skus",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    sku: text("sku").notNull(),
+    asin: text("asin"),
+    title: text("title"),
+    /** Units Amazon holds that can be sold, when last seen. */
+    fulfillable: integer("fulfillable"),
+    seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("channel_skus_channel_sku_key").on(t.channelId, t.sku),
+    index("channel_skus_org_idx").on(t.organizationId),
+    foreignKey({
+      name: "channel_skus_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    check("channel_skus_sku_present", sql`length(trim(${t.sku})) > 0`),
+    tenantIsolationPolicy("channel_skus", t.organizationId),
   ],
 );
 

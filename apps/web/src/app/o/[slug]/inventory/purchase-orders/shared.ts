@@ -10,9 +10,14 @@ export async function formOptions(tx: Transaction, baseCurrency: string) {
     products: products
       .filter((p) => !p.isArchived)
       .map((p) => ({ id: p.id, name: p.name, sku: p.sku })),
-    currencies: [
-      ...currencies.filter((c) => c.code === baseCurrency),
-      ...currencies.filter((c) => c.code !== baseCurrency),
-    ].map((c) => ({ code: c.code, name: c.name })),
+    currencies: currencyOptions(baseCurrency),
   };
+}
+
+/** Every currency, the company's main one first. */
+export function currencyOptions(baseCurrency: string) {
+  return [
+    ...currencies.filter((c) => c.code === baseCurrency),
+    ...currencies.filter((c) => c.code !== baseCurrency),
+  ].map((c) => ({ code: c.code, name: c.name }));
 }

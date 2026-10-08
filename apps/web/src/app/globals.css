@@ -99,6 +99,14 @@
   html {
     -webkit-tap-highlight-color: transparent;
   }
+  /*
+   * Page sections may shrink to the page's width. Without this, a grid item's minimum width is
+   * its content's, so one long line kept on a single line (a marketplace title cut with "…")
+   * makes the whole section wider than the page.
+   */
+  main > .grid > * {
+    min-width: 0;
+  }
   /* Tailwind v4 no longer gives buttons a pointer cursor; restore it for everything clickable. */
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
