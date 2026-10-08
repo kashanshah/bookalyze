@@ -5,12 +5,14 @@ import {
   checkAgainAt,
   diffListing,
   type ListingObservation,
+  listingCheckLabel,
   listingValues,
   listingWatchIssue,
   normalizeAsin,
   parseCatalogItem,
   parseItemOffers,
   parseReviewTopics,
+  rankTrend,
   reviewTopicsAvailable,
   reviewTopicsAvailableFor,
   reviewTopicsUnavailableNote,
@@ -302,10 +304,34 @@ describe("listing changes", () => {
       },
     ];
     const changes = diffListing(base(), next, ["rank", "reviews"], "en-CA");
-    expect(changes.map((c) => c.field)).toEqual(["rank", "reviews"]);
-    expect(changes[0]?.summary).toMatch(/800/);
-    expect(changes[0]?.summary).toMatch(/No longer ranked in Coasters/);
-    expect(changes[1]?.summary).toMatch(/chipped/);
+    expect(changes.map((c) => c.field)).toEqual(["rank", "rank", "reviews"]);
+    expect(changes[0]).toMatchObject({
+      summary: "Climbed from #1,200 to #800 in Kitchen & Dining.",
+      before: "1200",
+      after: "800",
+    });
+    expect(changes[1]).toMatchObject({
+      summary: "No longer ranked in Coasters (was #40).",
+      before: "40",
+      after: null,
+    });
+    expect(changes[2]?.summary).toMatch(/chipped/);
+  });
+
+  it("tells which way a best seller rank went", () => {
+    expect(rankTrend({ field: "rank", before: "1200", after: "800" })).toEqual({
+      direction: "up",
+      places: 400,
+    });
+    expect(rankTrend({ field: "rank", before: "800", after: "1200" })).toEqual({
+      direction: "down",
+      places: 400,
+    });
+    // A rank change saved before the numbers were kept, a new rank, and other fields: no arrow.
+    expect(rankTrend({ field: "rank", before: null, after: null })).toBeNull();
+    expect(rankTrend({ field: "rank", before: null, after: "50" })).toBeNull();
+    expect(rankTrend({ field: "price", before: "19.99", after: "17.49" })).toBeNull();
+    expect(listingCheckLabel("rank")).toBe("Best seller rank");
   });
 
   it("only offers review topics on the stores Amazon lists", () => {

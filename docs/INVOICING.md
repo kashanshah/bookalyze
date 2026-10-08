@@ -111,6 +111,14 @@ the same everywhere.
 holds funds, and refunds and disputes stay in the company's Stripe dashboard. An optional
 platform fee can come later as a SaaS revenue line.
 
+**Pilot company: Teknoffice.** Every company already has its own Stripe account. All the
+accounts sit under one Stripe login, which Connect allows: each Bookalyze company connects its own
+account.
+
+**Not only Stripe.** Payments sit behind one provider interface. Stripe comes first, then the
+providers the launch markets need: Razorpay (India: UPI, netbanking), Tap Payments or
+Checkout.com (Gulf), and Alipay/WeChat Pay for China. See "Launch markets" in PLAN.md.
+
 **Two ways to collect.** We'd offer one by default and the other as a switch:
 
 | | **A. Our invoice + Stripe Checkout** (recommended default) | **B. Stripe Invoicing** |
@@ -184,11 +192,12 @@ the bank feed: "This deposit pays INV-0012?".
 8. **Later:** Stripe Invoicing as an option, custom HTML templates, UAE e-invoicing (Peppol PINT
    AE) export, and a customer portal (all of a customer's invoices).
 
-## 7. Open questions for the owner
+## 7. Decisions and open questions
 
-- **Placement:** where invoicing goes relative to phase 5 (inventory and COGS). It was planned
-  for phase 8 because no company used Wave invoicing, and now it's wanted sooner.
-- **Fees:** whether the free generator and invoicing stay free while Stripe payments carry a
-  small platform fee, or invoicing becomes part of a paid plan.
-- **Stripe accounts:** which companies would use Stripe first, and whether they already have
-  accounts (Kazomo Inc. in CAD, Kazomo For Online Selling in AED).
+- **Decided 2026-10-08:**
+  - Invoicing keeps its place in the roadmap, with no rush. Arabic PDFs come first.
+  - Teknoffice pilots Stripe, and each company connects its own Stripe account.
+  - Launch markets are the USA, India, the Middle East and China, so country rules (US sales tax,
+    India GST and e-invoicing, Saudi ZATCA, the Chinese fapiao) come in as data and tax packs.
+- **Open:** whether the free generator and invoicing stay free while Stripe payments carry a small
+  platform fee, or invoicing becomes part of a paid plan.

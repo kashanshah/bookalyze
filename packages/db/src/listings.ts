@@ -328,7 +328,11 @@ export type ListingChangeMail = {
   title: string | null;
   asin: string;
   channelName: string;
+  imageUrl: string | null;
+  /** The first changes in one line, for a subject or a preview. */
   summary: string;
+  /** Each change on its own, newest first. */
+  changes: { field: string; summary: string; before: string | null; after: string | null }[];
   changeIds: string[];
 };
 
@@ -338,9 +342,13 @@ export async function unnotifiedListingChanges(tx: Transaction): Promise<Listing
     .select({
       id: listingChanges.id,
       watchId: listingChanges.watchId,
+      field: listingChanges.field,
       summary: listingChanges.summary,
+      before: listingChanges.before,
+      after: listingChanges.after,
       title: listingWatches.title,
       asin: listingWatches.asin,
+      imageUrl: listingWatches.imageUrl,
       channelName: salesChannels.name,
     })
     .from(listingChanges)
@@ -350,6 +358,12 @@ export async function unnotifiedListingChanges(tx: Transaction): Promise<Listing
     .orderBy(desc(listingChanges.checkedAt));
   const grouped = new Map<string, ListingChangeMail>();
   for (const row of rows) {
+    const change = {
+      field: row.field,
+      summary: row.summary,
+      before: row.before,
+      after: row.after,
+    };
     const current = grouped.get(row.watchId);
     if (!current) {
       grouped.set(row.watchId, {
@@ -357,11 +371,14 @@ export async function unnotifiedListingChanges(tx: Transaction): Promise<Listing
         title: row.title,
         asin: row.asin,
         channelName: row.channelName,
+        imageUrl: row.imageUrl,
         summary: row.summary,
+        changes: [change],
         changeIds: [row.id],
       });
       continue;
     }
+    current.changes.push(change);
     current.changeIds.push(row.id);
     if (current.changeIds.length === 2) current.summary = `${current.summary} ${row.summary}`;
     else if (current.changeIds.length === 3) current.summary = `${current.summary} And more.`;
