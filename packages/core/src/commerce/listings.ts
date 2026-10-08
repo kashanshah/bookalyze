@@ -351,6 +351,65 @@ export function parseReviewTopics(json: unknown): ReviewTopic[] {
   ];
 }
 
+export type ListingValue = { label: string; value: string };
+
+/**
+ * The latest look, as short labeled values. Price, the featured offer, how many sellers,
+ * each best seller rank, and a short note of the words on the page when `content` is set.
+ */
+export function listingValues(
+  observed: ListingObservation,
+  locale: string,
+  options?: { content?: boolean },
+): ListingValue[] {
+  const values: ListingValue[] = [];
+  if (observed.price && observed.currency) {
+    values.push({
+      label: "Price",
+      value: moneyLabel(observed.price, observed.currency, locale),
+    });
+  }
+  if (observed.featured) {
+    const amount =
+      observed.featured.price && observed.featured.currency
+        ? moneyLabel(observed.featured.price, observed.featured.currency, locale)
+        : null;
+    const parts = [amount, observed.featured.prime ? "Prime" : null].filter(
+      (part): part is string => Boolean(part),
+    );
+    values.push({ label: "Featured offer", value: parts.length ? parts.join(" · ") : "Listed" });
+  } else if (observed.price || observed.offerCount !== null) {
+    values.push({ label: "Featured offer", value: "None right now" });
+  }
+  if (observed.offerCount !== null) {
+    values.push({
+      label: "Other sellers",
+      value: observed.offerCount === 1 ? "1 seller" : `${observed.offerCount} sellers`,
+    });
+  }
+  const number = new Intl.NumberFormat(locale);
+  for (const rank of observed.ranks ?? []) {
+    values.push({
+      label: "Best seller rank",
+      value: `#${number.format(rank.rank)} in ${rank.category}`,
+    });
+  }
+  if (options?.content) {
+    const words = contentValue(observed);
+    if (words) values.push({ label: "Title and description", value: words });
+  }
+  return values;
+}
+
+function contentValue(observed: ListingObservation): string | null {
+  const parts: string[] = [];
+  if (observed.bullets?.length === 1) parts.push("1 bullet");
+  else if (observed.bullets?.length) parts.push(`${observed.bullets.length} bullets`);
+  const description = observed.description ? clip(observed.description, 80) : "";
+  if (description) parts.push(description);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 export const EMPTY_OBSERVATION: ListingObservation = {
   title: null,
   bullets: [],

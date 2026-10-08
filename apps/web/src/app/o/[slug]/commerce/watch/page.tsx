@@ -1,4 +1,10 @@
-import { LISTING_CADENCES, type ListingCheck, listingCheck } from "@bookalyze/core";
+import {
+  LISTING_CADENCES,
+  type ListingCheck,
+  type ListingObservation,
+  listingCheck,
+  listingValues,
+} from "@bookalyze/core";
 import { listAmazonConnections, listListingWatches } from "@bookalyze/db";
 import { Binoculars, Plus, Search } from "lucide-react";
 import type { Metadata } from "next";
@@ -108,6 +114,8 @@ export default async function ListingWatchPage({
             <ul className="divide-y overflow-hidden rounded-2xl border bg-card shadow-xs">
               {watches.map((watch) => {
                 const cadence = LISTING_CADENCES.find((c) => c.key === watch.cadence)?.label;
+                const observed = watch.observed as ListingObservation | null;
+                const values = observed ? listingValues(observed, locale, { content: true }) : [];
                 const watching = (watch.checks as ListingCheck[]).flatMap((key) => {
                   const label = listingCheck(key)?.label;
                   return label ? [label] : [];
@@ -116,7 +124,7 @@ export default async function ListingWatchPage({
                   <li key={watch.id}>
                     <Link
                       href={`${base}/${watch.id}`}
-                      className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:px-5"
+                      className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:px-5"
                     >
                       <ProductImage src={watch.imageUrl} alt="" className="size-14" />
                       <span className="min-w-0">
@@ -152,9 +160,20 @@ export default async function ListingWatchPage({
                             <span className="text-muted-foreground">Not checked yet</span>
                           )}
                         </span>
-                        <span className="mt-1 block truncate text-muted-foreground text-xs">
-                          {watching.join(" · ")}
-                        </span>
+                        {values.length ? (
+                          <span className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                            {values.map((fact) => (
+                              <span key={`${fact.label}-${fact.value}`} className="text-xs">
+                                <span className="text-muted-foreground">{fact.label}</span>{" "}
+                                <span className="font-medium">{fact.value}</span>
+                              </span>
+                            ))}
+                          </span>
+                        ) : (
+                          <span className="mt-1 block truncate text-muted-foreground text-xs">
+                            {watching.join(" · ")}
+                          </span>
+                        )}
                       </span>
                     </Link>
                   </li>

@@ -5,6 +5,7 @@ import {
   checkAgainAt,
   diffListing,
   type ListingObservation,
+  listingValues,
   listingWatchIssue,
   normalizeAsin,
   parseCatalogItem,
@@ -101,6 +102,54 @@ describe("listing watch input", () => {
     expect(checkAgainAt("hourly", from).toISOString()).toBe("2026-10-06T16:00:00.000Z");
     expect(checkAgainAt("daily", from).toISOString()).toBe("2026-10-07T15:00:00.000Z");
     expect(checkAgainAt("weekly", from).toISOString()).toBe("2026-10-13T15:00:00.000Z");
+  });
+});
+
+describe("listing values", () => {
+  const observed: ListingObservation = {
+    title: "Stone coaster",
+    bullets: ["Cork back"],
+    description: "A heavy coaster.",
+    images: [],
+    price: "19.9900",
+    currency: "USD",
+    featured: { sellerId: "A1SELLER", price: "19.9900", currency: "USD", prime: true },
+    offerCount: 4,
+    ranks: [
+      { category: "Kitchen & Dining", rank: 1200 },
+      { category: "Coasters", rank: 40 },
+    ],
+    reviewTopics: [],
+    reviewNote: null,
+  };
+
+  it("shows the price, featured offer, sellers and ranks", () => {
+    const values = listingValues(observed, "en-CA");
+    expect(values.map((v) => v.label)).toEqual([
+      "Price",
+      "Featured offer",
+      "Other sellers",
+      "Best seller rank",
+      "Best seller rank",
+    ]);
+    expect(values[0]?.value).toContain("19.99");
+    expect(values[1]?.value).toContain("Prime");
+    expect(values[1]?.value).toContain("19.99");
+    expect(values[2]?.value).toBe("4 sellers");
+    expect(values[3]?.value).toBe("#1,200 in Kitchen & Dining");
+    expect(values[4]?.value).toBe("#40 in Coasters");
+  });
+
+  it("adds a short note of the words when asked", () => {
+    const words = listingValues(observed, "en-CA", { content: true }).find(
+      (v) => v.label === "Title and description",
+    );
+    expect(words?.value).toBe("1 bullet · A heavy coaster.");
+  });
+
+  it("says when there is no featured offer", () => {
+    const values = listingValues({ ...observed, featured: null, ranks: [], bullets: [] }, "en-CA");
+    expect(values.find((v) => v.label === "Featured offer")?.value).toBe("None right now");
   });
 });
 

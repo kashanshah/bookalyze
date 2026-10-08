@@ -1104,7 +1104,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **What it is:** Commerce → Listing watch. Pick an ASIN on a connected marketplace, choose what
   to compare, how often, and whether owners and admins get one email when something changes.
   The first look is the baseline and does not email. Later checks write a timeline on the
-  product and, when email is on, one digest (not one email per product).
+  product and, when email is on, one digest (not one email per product). The list and the
+  product page show the latest price, featured offer (with its price and Prime), seller count
+  and best seller rank. The list also shows a short note of the title and description.
 - **Only Amazon's official API.** Catalog Items 2022-04-01 (title, bullets, description, photos,
   best seller rank), Product Pricing v0 item offers for New (price with shipping, featured
   offer, how many sellers), and Customer Feedback 2024-06-01 review topics when Amazon shares

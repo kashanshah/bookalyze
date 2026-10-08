@@ -1,10 +1,10 @@
 import {
   amazonProductUrl,
-  formatMoney,
   LISTING_CADENCES,
   type ListingCheck,
   type ListingObservation,
   listingCheck,
+  listingValues,
 } from "@bookalyze/core";
 import { getListingWatch, listListingChanges } from "@bookalyze/db";
 import { ArrowLeft, ExternalLink, Pencil } from "lucide-react";
@@ -57,10 +57,7 @@ export default async function WatchPage({
   });
   const productUrl = amazonProductUrl(watch.channelName, watch.asin);
   const base = `/o/${slug}/commerce/watch`;
-  const price =
-    observed?.price && observed.currency
-      ? formatMoney(observed.price, observed.currency, locale)
-      : null;
+  const values = observed ? listingValues(observed, locale) : [];
 
   return (
     <div className="grid gap-6">
@@ -112,58 +109,30 @@ export default async function WatchPage({
                 : "Not checked yet"}
               {watch.paused ? "" : ` · Next check ${formatAgo(watch.nextCheckAt, now, locale)}`}
             </p>
-            {observed ? (
+            {values.length ? (
               <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-                <div>
-                  <dt className="text-muted-foreground text-xs">Price</dt>
-                  <dd className="tabular mt-0.5 font-medium">{price ?? "Not listed"}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground text-xs">Featured offer</dt>
-                  <dd className="mt-0.5">
-                    {observed.featured
-                      ? observed.featured.prime
-                        ? "Listed · Prime"
-                        : "Listed"
-                      : "None right now"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground text-xs">Other sellers</dt>
-                  <dd className="mt-0.5">
-                    {observed.offerCount === null
-                      ? "Not reported"
-                      : observed.offerCount === 1
-                        ? "1 seller"
-                        : `${observed.offerCount} sellers`}
-                  </dd>
-                </div>
+                {values.map((fact) => (
+                  <div key={`${fact.label}-${fact.value}`}>
+                    <dt className="text-muted-foreground text-xs">{fact.label}</dt>
+                    <dd className="mt-0.5 font-medium text-sm">{fact.value}</dd>
+                  </div>
+                ))}
                 <div>
                   <dt className="text-muted-foreground text-xs">Watching</dt>
                   <dd className="mt-0.5 text-sm">{checks.join(", ")}</dd>
                 </div>
               </dl>
+            ) : observed ? (
+              <p className="mt-4 text-muted-foreground text-sm">
+                Amazon didn't report a price, rank, or featured offer on this look.
+                {checks.length ? ` Still watching ${checks.join(", ")}.` : ""}
+              </p>
             ) : (
               <p className="mt-4 text-muted-foreground text-sm">
                 The first look hasn't come back yet. Use Check now, or wait for the next scheduled
                 check.
               </p>
             )}
-            {observed?.ranks.length ? (
-              <div className="mt-5 border-t pt-4">
-                <h3 className="text-muted-foreground text-xs">Best seller rank</h3>
-                <ul className="mt-2 grid gap-1 text-sm">
-                  {observed.ranks.map((rank) => (
-                    <li key={rank.category} className="flex justify-between gap-4">
-                      <span className="min-w-0 truncate">{rank.category}</span>
-                      <span className="tabular">
-                        {new Intl.NumberFormat(locale).format(rank.rank)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
             {productUrl ? (
               <a
                 href={productUrl}
