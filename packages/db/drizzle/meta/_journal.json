@@ -281,6 +281,13 @@
       "when": 1791396757147,
       "tag": "0039_order_invoices",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791438290268,
+      "tag": "0040_getting_started_hidden",
+      "breakpoints": true
     }
   ]
 }

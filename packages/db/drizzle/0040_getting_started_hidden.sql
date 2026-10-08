@@ -1,0 +1,1 @@
+ALTER TABLE "organization_profiles" ADD COLUMN "getting_started_hidden" boolean DEFAULT false NOT NULL;

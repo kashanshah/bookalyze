@@ -80,3 +80,30 @@ export async function updateProfileAction(
   revalidatePath(`/o/${slug}`, "layout");
   return { saved: true };
 }
+
+/** Shows or hides the setup checklist on this company's home page. */
+export async function setGettingStartedHiddenAction(
+  slug: string,
+  hidden: boolean,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const ctx = await getOrgContext(slug);
+  if (!isOrgAdmin(ctx)) {
+    return { ok: false, message: "Only owners and admins can change the home page." };
+  }
+  if (!ctx.profile) return { ok: false, message: "Set up the company first." };
+  await withOrg(getDb(), { orgId: ctx.org.id, userId: ctx.session.user.id }, async (tx) => {
+    await tx.update(schema.organizationProfiles).set({ gettingStartedHidden: hidden });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: hidden ? "organization.getting_started_hidden" : "organization.getting_started_shown",
+      entityType: "organization_profile",
+      entityId: ctx.org.id,
+      before: { gettingStartedHidden: ctx.profile?.gettingStartedHidden ?? false },
+      after: { gettingStartedHidden: hidden },
+    });
+  });
+  revalidatePath(`/o/${slug}`);
+  revalidatePath(`/o/${slug}/settings/general`);
+  return { ok: true };
+}

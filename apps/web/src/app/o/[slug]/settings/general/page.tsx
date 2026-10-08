@@ -7,6 +7,7 @@ import { referenceOptions } from "@/lib/reference-options";
 import { fiscalConfigOf, getOrgContext, isOrgAdmin } from "@/server/org";
 import { BooksLock } from "./books-lock";
 import { GeneralSettingsForm } from "./general-form";
+import { GettingStartedSetting } from "./getting-started-setting";
 
 function lastDayOfPreviousMonth(date: string): string {
   const [y, m] = date.split("-").map(Number) as [number, number];
@@ -58,6 +59,13 @@ export default async function GeneralSettingsPage({
           currencyLocked={hasEntries}
           {...referenceOptions()}
         />
+        {profile ? (
+          <GettingStartedSetting
+            slug={slug}
+            hidden={profile.gettingStartedHidden}
+            canEdit={isOrgAdmin(ctx)}
+          />
+        ) : null}
         {showBooksLock && profile ? (
           <BooksLock
             slug={slug}

@@ -1,9 +1,11 @@
-import type {
-  AmazonOrder,
-  AmazonOrderItem,
-  AmazonRefund,
-  BuyerClaim,
-  MarketplaceParticipation,
+import {
+  type AmazonOrder,
+  type AmazonOrderItem,
+  type AmazonRefund,
+  type BuyerClaim,
+  formatDecimal,
+  type MarketplaceParticipation,
+  parseDecimal,
 } from "@bookalyze/core";
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { disconnectConnection } from "./banking";
@@ -535,6 +537,39 @@ export async function getOrder(tx: Transaction, orderId: string) {
     )
     .orderBy(asc(orders.purchasedAt));
   return { ...row, items, refunds, replaces, replacedBy };
+}
+
+/**
+ * Orders placed each day, per currency, for the home page. Canceled orders are left out, matching
+ * the Orders screen. A pending order still counts, even when Amazon hasn't priced it yet.
+ */
+export async function orderGlance(
+  tx: Transaction,
+  input: { timezone: string; from: string; to: string },
+) {
+  const day = sql`(${orders.purchasedAt} at time zone ${input.timezone})::date`;
+  const placed = sql`${orders.status} not in ('Canceled', 'Unfulfillable')`;
+  const rows = await tx
+    .select({
+      date: sql<string>`${day}::text`,
+      currency: sql<string>`coalesce(${orders.currency}, ${salesChannels.currency})`,
+      orders: sql<number>`count(*)::int`,
+      units: sql<number>`coalesce(sum(${orders.itemsShipped} + ${orders.itemsUnshipped}), 0)::int`,
+      sales: sql<string>`coalesce(sum(${orders.total}), 0)::text`,
+    })
+    .from(orders)
+    .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
+    .where(
+      and(
+        connectedOrder,
+        placed,
+        sql`${day} >= ${input.from}::date`,
+        sql`${day} <= ${input.to}::date`,
+      ),
+    )
+    .groupBy(sql`1`, sql`2`)
+    .orderBy(sql`1`);
+  return rows.map((row) => ({ ...row, sales: formatDecimal(parseDecimal(String(row.sales))) }));
 }
 
 /** Whether the company has any orders from connected marketplaces (for the empty state). */

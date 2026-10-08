@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-07, customer invoices on Amazon orders._
+_Last updated: 2026-10-08, home page order glance and hiding the setup checklist._
 
 ---
 
@@ -623,7 +623,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   (`emails/compliance-reminder.tsx`) to owners and admins for items due in 30, 7, 1 or 0 days,
   each lead time once (`compliance_reminders`); a missed run sends the latest one.
 - **Home:** a "Coming up" card (next 60 days, overdue first) and the getting-started steps now
-  link to the Wave import and bank accounts.
+  link to the Wave import and bank accounts. Owners and admins can hide "Get started with
+  Bookalyze" from the card or from Company settings (`getting_started_hidden` on the company
+  profile, migration `0040_getting_started_hidden`); it stays hidden until someone shows it again.
 - Migration `0024_entity_compliance` (also allows `entity_document` in `attachment_links`).
 
 
@@ -682,6 +684,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 
 ### Phase 3, slice 2: Amazon orders
 
+- **Home glance** (the company home page, when Commerce is on): orders, units and sales for the
+  last 7, 30 or 90 days, one chart each. Sales stay in each order currency and are not added
+  together. Canceled orders are left out; a pending order counts even when it has no price yet.
+  The figures come from orders already brought in (`orderGlance`).
 - **Orders screen** (`/commerce/orders`, sidebar Commerce → Orders; `/commerce` opens it): tabs
   All / Open / Shipped / Cancelled, marketplace (when more than one), placed-from/to dates and a
   search over order number, SKU, ASIN and product title. A sales card per currency (cancelled

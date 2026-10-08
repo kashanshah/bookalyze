@@ -1,6 +1,13 @@
-import { addDaysIso, daysBetween, fiscalYearFor, modules } from "@bookalyze/core";
+import {
+  addDaysIso,
+  buildSalesGlance,
+  daysBetween,
+  fiscalYearFor,
+  glanceRange,
+  modules,
+} from "@bookalyze/core";
 import { getCountry, getSubdivision } from "@bookalyze/core/reference-data";
-import { getDb, schema, withOrg } from "@bookalyze/db";
+import { getDb, orderGlance, schema, withOrg } from "@bookalyze/db";
 import { and, count, eq, gt, like } from "drizzle-orm";
 import { ArrowRight, CalendarClock, CalendarRange, Check, Coins, Lock, MapPin } from "lucide-react";
 import Link from "next/link";
@@ -11,7 +18,9 @@ import { formatDate, nowIn } from "@/lib/dates";
 import { timezoneLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { dueIn, loadCalendar } from "@/server/compliance";
-import { fiscalConfigOf, getOrgContext } from "@/server/org";
+import { fiscalConfigOf, getOrgContext, isOrgAdmin } from "@/server/org";
+import { HideGettingStarted } from "./hide-getting-started";
+import { SalesGlance } from "./sales-glance";
 
 function greeting(hour: number) {
   if (hour < 12) return "Good morning";
@@ -19,8 +28,15 @@ function greeting(hour: number) {
   return "Good evening";
 }
 
-export default async function OrgHomePage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function OrgHomePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ glance?: string }>;
+}) {
   const { slug } = await params;
+  const { glance: glanceParam } = await searchParams;
   const ctx = await getOrgContext(slug);
   const p = ctx.profile;
   const now = nowIn(p?.timezone ?? "UTC");
@@ -43,7 +59,10 @@ export default async function OrgHomePage({ params }: { params: Promise<{ slug: 
 
   const db = getDb();
   const showCompliance = Boolean(p) && ctx.activeModules.includes("entity");
-  const [[members], [invites], moduleChanges, setup, comingUp] = await Promise.all([
+  const showCommerce = Boolean(p) && ctx.activeModules.includes("commerce");
+  const range = glanceRange(glanceParam);
+  const glanceFrom = addDaysIso(now.date, -(range - 1));
+  const [[members], [invites], moduleChanges, setup, comingUp, glanceRows] = await Promise.all([
     db
       .select({ n: count() })
       .from(schema.member)
@@ -73,6 +92,11 @@ export default async function OrgHomePage({ params }: { params: Promise<{ slug: 
       ? withOrg(db, { orgId: ctx.org.id }, (tx) =>
           loadCalendar(tx, p, { from: addDaysIso(now.date, -90), to: addDaysIso(now.date, 60) }),
         ).then((items) => items.filter((i) => !i.done).slice(0, 5))
+      : Promise.resolve([]),
+    showCommerce && p
+      ? withOrg(db, { orgId: ctx.org.id, userId: ctx.session.user.id }, (tx) =>
+          orderGlance(tx, { timezone: p.timezone, from: glanceFrom, to: now.date }),
+        )
       : Promise.resolve([]),
   ]);
 
@@ -169,6 +193,16 @@ export default async function OrgHomePage({ params }: { params: Promise<{ slug: 
         </StatCard>
       </div>
 
+      {showCommerce && p ? (
+        <SalesGlance
+          glance={buildSalesGlance(glanceFrom, now.date, glanceRows)}
+          range={range}
+          locale={p.locale}
+          homeHref={base}
+          ordersHref={`${base}/commerce/orders`}
+        />
+      ) : null}
+
       {showCompliance ? (
         <section className="rounded-2xl border bg-card shadow-xs">
           <div className="flex flex-wrap items-center gap-3 border-b px-5 py-4 sm:px-6">
@@ -215,86 +249,90 @@ export default async function OrgHomePage({ params }: { params: Promise<{ slug: 
         </section>
       ) : null}
 
-      <section className="rounded-2xl border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.03),0_4px_16px_-8px_rgb(0_0_0/0.06)]">
-        <div className="flex items-center gap-4 border-b p-5 sm:p-6">
-          <div className="relative">
-            <ProgressRing value={doneCount / actionable} />
-            <span className="tabular absolute inset-0 flex items-center justify-center font-semibold text-xs">
-              {doneCount}/{actionable}
-            </span>
+      {p?.gettingStartedHidden ? null : (
+        <section className="rounded-2xl border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.03),0_4px_16px_-8px_rgb(0_0_0/0.06)]">
+          <div className="flex flex-wrap items-center gap-4 border-b p-5 sm:p-6">
+            <div className="relative">
+              <ProgressRing value={doneCount / actionable} />
+              <span className="tabular absolute inset-0 flex items-center justify-center font-semibold text-xs">
+                {doneCount}/{actionable}
+              </span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="font-semibold">
+                {doneCount === actionable ? "You're all set" : "Get started with Bookalyze"}
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                {doneCount === actionable
+                  ? "Everything's in place. Keep an eye on what's coming up."
+                  : `A few steps to get ${ctx.org.name} ready.`}
+              </p>
+            </div>
+            {p && isOrgAdmin(ctx) ? <HideGettingStarted slug={slug} /> : null}
           </div>
-          <div>
-            <h2 className="font-semibold">
-              {doneCount === actionable ? "You're all set" : "Get started with Bookalyze"}
-            </h2>
-            <p className="text-muted-foreground text-sm">
-              {doneCount === actionable
-                ? "Everything's in place. Keep an eye on what's coming up."
-                : `A few steps to get ${ctx.org.name} ready.`}
-            </p>
-          </div>
-        </div>
-        <ul className="divide-y">
-          {steps.map((s) => {
-            const content = (
-              <>
-                <span
-                  className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-full border transition-colors",
-                    s.done && "border-success bg-success text-white",
-                    s.soon && "border-dashed text-muted-foreground",
-                  )}
-                >
-                  {s.done ? (
-                    <Check className="size-4" strokeWidth={2.5} />
-                  ) : s.soon ? (
-                    <Lock className="size-3.5" />
-                  ) : null}
-                </span>
-                <span className="min-w-0 flex-1">
+          <ul className="divide-y">
+            {steps.map((s) => {
+              const content = (
+                <>
                   <span
                     className={cn(
-                      "block font-medium text-sm",
-                      s.done && "text-muted-foreground line-through decoration-muted-foreground/40",
+                      "flex size-7 shrink-0 items-center justify-center rounded-full border transition-colors",
+                      s.done && "border-success bg-success text-white",
+                      s.soon && "border-dashed text-muted-foreground",
                     )}
                   >
-                    {s.title}
+                    {s.done ? (
+                      <Check className="size-4" strokeWidth={2.5} />
+                    ) : s.soon ? (
+                      <Lock className="size-3.5" />
+                    ) : null}
                   </span>
-                  <span className="block text-muted-foreground text-sm">{s.body}</span>
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className={cn(
+                        "block font-medium text-sm",
+                        s.done &&
+                          "text-muted-foreground line-through decoration-muted-foreground/40",
+                      )}
+                    >
+                      {s.title}
+                    </span>
+                    <span className="block text-muted-foreground text-sm">{s.body}</span>
+                    {s.soon ? (
+                      <Badge variant="outline" className="mt-2 sm:hidden">
+                        Coming in {s.soon}
+                      </Badge>
+                    ) : null}
+                  </span>
                   {s.soon ? (
-                    <Badge variant="outline" className="mt-2 sm:hidden">
+                    <Badge variant="outline" className="hidden sm:inline-flex">
                       Coming in {s.soon}
                     </Badge>
-                  ) : null}
-                </span>
-                {s.soon ? (
-                  <Badge variant="outline" className="hidden sm:inline-flex">
-                    Coming in {s.soon}
-                  </Badge>
-                ) : (
-                  <ArrowRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
-                )}
-              </>
-            );
-            return (
-              <li key={s.title}>
-                {s.href ? (
-                  <Link
-                    href={s.href}
-                    className="group flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/40 sm:px-6"
-                  >
-                    {content}
-                  </Link>
-                ) : (
-                  <div className="flex items-center gap-4 px-5 py-4 opacity-75 sm:px-6">
-                    {content}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+                  ) : (
+                    <ArrowRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
+                  )}
+                </>
+              );
+              return (
+                <li key={s.title}>
+                  {s.href ? (
+                    <Link
+                      href={s.href}
+                      className="group flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/40 sm:px-6"
+                    >
+                      {content}
+                    </Link>
+                  ) : (
+                    <div className="flex items-center gap-4 px-5 py-4 opacity-75 sm:px-6">
+                      {content}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className="grid gap-4">
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">

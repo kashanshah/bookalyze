@@ -58,6 +58,8 @@ export const organizationProfiles = pgTable(
      * (enforced by a trigger, see migration 0006_period_locks). Null means nothing is closed.
      */
     booksLockedThrough: date("books_locked_through"),
+    /** The home page hides "Get started with Bookalyze" when this is on. */
+    gettingStartedHidden: boolean("getting_started_hidden").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()

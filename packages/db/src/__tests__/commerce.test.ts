@@ -9,6 +9,7 @@ import {
   disconnectAmazon,
   getOrder,
   listOrders,
+  orderGlance,
   ordersNeedingItems,
   saveAmazonChannels,
   saveOrderCursor,
@@ -553,5 +554,48 @@ describe("orders", () => {
     expect(corrected?.invoiceNumber).toBe(1);
     expect(corrected?.snapshot.number).toBe("INV-0001");
     expect(corrected?.snapshot.buyer.company).toBe("Corrected Co");
+  });
+});
+
+describe("order glance", () => {
+  it("counts a day's orders, units and sales, and skips canceled ones", async () => {
+    await scoped((tx) =>
+      upsertOrders(tx, {
+        orgId,
+        channelId,
+        from: "2026-01-01",
+        orders: [
+          order("702-glance-1", {
+            purchasedAt: "2026-01-10T12:00:00Z",
+            lastUpdatedAt: "2026-01-10T12:00:00Z",
+            total: "10.5000",
+            itemsShipped: 2,
+            itemsUnshipped: 1,
+          }),
+          order("702-glance-2", {
+            purchasedAt: "2026-01-10T18:00:00Z",
+            lastUpdatedAt: "2026-01-10T18:00:00Z",
+            status: "Canceled",
+            total: "99.0000",
+            itemsShipped: 5,
+          }),
+          order("702-glance-3", {
+            purchasedAt: "2026-01-11T08:00:00Z",
+            lastUpdatedAt: "2026-01-11T08:00:00Z",
+            status: "Pending",
+            total: null,
+            itemsShipped: 0,
+            itemsUnshipped: 1,
+          }),
+        ],
+      }),
+    );
+    const rows = await scoped((tx) =>
+      orderGlance(tx, { timezone: "UTC", from: "2026-01-10", to: "2026-01-11" }),
+    );
+    expect(rows).toEqual([
+      { date: "2026-01-10", currency: "CAD", orders: 1, units: 3, sales: "10.5000" },
+      { date: "2026-01-11", currency: "CAD", orders: 1, units: 1, sales: "0.0000" },
+    ]);
   });
 });
