@@ -1457,6 +1457,59 @@ test("inventory: products from the SKUs on orders, and a 2-pack linked by hand",
   await expect(sku("BIRCH-COASTER")).toBeVisible();
 });
 
+test("purchase orders: draft, send, a partial delivery, then the rest", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await expect(page).toHaveURL(/\/inventory\/products/);
+  await page.getByRole("link", { name: "Purchase orders", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Purchase orders", exact: true })).toBeVisible();
+  await expect(page.getByText("Nothing on order")).toBeVisible();
+
+  // A draft: 120 mugs at 2.45 from the vendor added earlier, with a supplier reference.
+  await page.getByRole("link", { name: "New purchase order" }).click();
+  await expect(page).toHaveURL(/\/purchase-orders\/new/);
+  await choose(page.getByLabel("Supplier", { exact: true }), "Office Depot");
+  await page.getByLabel("Supplier's reference (optional)").fill("PI-2026-118");
+  await choose(page.getByLabel("Product 1", { exact: true }), "Maple leaf ceramic mug");
+  await page.getByLabel("Quantity 1", { exact: true }).fill("120");
+  await page.getByLabel("Cost of one 1", { exact: true }).fill("2.45");
+  await expect(page.getByText("$294.00").first()).toBeVisible();
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("PO-0001 created")).toBeVisible();
+  await expect(page).toHaveURL(/\/purchase-orders\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("heading", { name: "PO-0001 · Office Depot" })).toBeVisible();
+
+  // Sent to the supplier, then 50 arrive.
+  await page.getByRole("button", { name: "Mark as sent" }).click();
+  await expect(page.getByText("PO-0001 marked as sent")).toBeVisible();
+  await page.getByRole("button", { name: "Record a delivery" }).click();
+  const delivery = page.getByRole("dialog");
+  await expect(delivery.getByText("120 still to come")).toBeVisible();
+  await delivery.getByLabel("Arrived: Maple leaf ceramic mug").fill("50");
+  await delivery.getByRole("button", { name: "Record delivery" }).click();
+  await expect(page.getByText("Delivery recorded")).toBeVisible();
+  await expect(page.getByText("50 of 120 units have arrived.")).toBeVisible();
+
+  // More than is still to come is refused; the rest arrives.
+  await page.getByRole("button", { name: "Record a delivery" }).click();
+  await expect(delivery.getByText("70 still to come")).toBeVisible();
+  await delivery.getByLabel("Arrived: Maple leaf ceramic mug").fill("71");
+  await delivery.getByRole("button", { name: "Record delivery" }).click();
+  await expect(delivery.getByText("Only 70 still to come.")).toBeVisible();
+  await delivery.getByLabel("Arrived: Maple leaf ceramic mug").fill("70");
+  await delivery.getByRole("button", { name: "Record delivery" }).click();
+  await expect(page.getByText("Everything on this order has arrived.").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Record a delivery" })).toHaveCount(0);
+
+  // It's in the Received tab, not Open.
+  await page.getByRole("link", { name: "Purchase orders", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/purchase-orders$/);
+  await expect(page.getByText("Nothing on order")).toBeVisible();
+  await page.getByRole("link", { name: "Received", exact: true }).click();
+  await expect(page).toHaveURL(/status=received/);
+  await expect(page.getByRole("link", { name: "PO-0001, Office Depot" })).toBeVisible();
+});
+
 test("reviews: ask for a review by hand, then turn on automatic requests", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Features", exact: true }).click();

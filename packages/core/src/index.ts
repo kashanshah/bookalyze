@@ -5,6 +5,7 @@ export * from "./currency";
 export * from "./entity";
 export * from "./fiscal";
 export * from "./import";
+export * from "./inventory";
 export * from "./modules/entitlements";
 export * from "./modules/registry";
 export * from "./money";

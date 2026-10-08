@@ -1,0 +1,65 @@
+import { decimalPlaces, isDecimal } from "@bookalyze/core";
+import { getCurrency } from "@bookalyze/core/reference-data";
+import { z } from "zod";
+import { isIsoDate } from "@/lib/dates";
+
+const optionalText = (max: number, message: string) =>
+  z
+    .string()
+    .trim()
+    .max(max, message)
+    .optional()
+    .transform((v) => v || null);
+
+const isoDate = (message: string) => z.string().refine(isIsoDate, message);
+
+export const purchaseLineSchema = z.object({
+  productId: z.uuid("Choose a product."),
+  quantity: z.coerce
+    .number({ message: "Enter how many." })
+    .int("Use a whole number.")
+    .min(1, "At least 1.")
+    .max(10_000_000, "That's more than one order can hold."),
+  unitCost: z
+    .string()
+    .trim()
+    .refine((v) => isDecimal(v) && !v.startsWith("-"), "Enter the cost of one, e.g. 2.45.")
+    .refine((v) => !isDecimal(v) || decimalPlaces(v) <= 4, "Use at most 4 decimal places."),
+});
+
+export const purchaseOrderSchema = z
+  .object({
+    supplierId: z.uuid("Choose a supplier."),
+    currency: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .refine((c) => Boolean(getCurrency(c)), "Choose a currency."),
+    orderDate: isoDate("Choose the order date."),
+    expectedDate: z
+      .string()
+      .optional()
+      .transform((v) => v || null)
+      .refine((v) => v === null || isIsoDate(v), "Choose a date, or leave it empty."),
+    reference: optionalText(80, "Keep the reference under 80 characters."),
+    notes: optionalText(2000, "Keep notes under 2,000 characters."),
+    lines: z
+      .array(purchaseLineSchema)
+      .min(1, "Add at least one product.")
+      .max(200, "Split this into two orders (200 lines at most)."),
+  })
+  .refine((v) => v.expectedDate === null || v.expectedDate >= v.orderDate, {
+    path: ["expectedDate"],
+    message: "Expected on or after the order date.",
+  });
+export type PurchaseOrderFormInput = z.input<typeof purchaseOrderSchema>;
+
+export const receiveSchema = z.object({
+  receivedOn: isoDate("Choose the day it arrived."),
+  notes: optionalText(500, "Keep the note under 500 characters."),
+  quantities: z.record(
+    z.uuid(),
+    z.coerce.number().int("Use a whole number.").min(0, "Use 0 or more."),
+  ),
+});
+export type ReceiveFormInput = z.input<typeof receiveSchema>;
