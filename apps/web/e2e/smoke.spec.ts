@@ -1131,6 +1131,8 @@ test("transfers: match a suggested pair, unmatch it, match two by hand", async (
     memo: string,
     category: string,
   ) => {
+    // The previous "Transaction added" toast must be gone, or the next check sees two.
+    await expect(page.getByText("Transaction added")).toHaveCount(0, { timeout: 10_000 });
     await page.getByRole("button", { name: `Add ${kind}` }).click();
     await choose(page.locator("#tx-money"), account);
     await page.locator("#tx-memo").fill(memo);
@@ -1405,6 +1407,54 @@ test("commerce: bring in Amazon orders, find one by SKU and open it", async ({ p
   await page.getByRole("link", { name: "Orders", exact: true }).first().click();
   await page.getByRole("button", { name: "Bring in new orders" }).click();
   await expect(page.getByText("Your orders are up to date")).toBeVisible({ timeout: 30_000 });
+});
+
+test("inventory: products from the SKUs on orders, and a 2-pack linked by hand", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Features", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/modules/);
+  await page.locator("#module-inventory").click();
+  await expect(page.getByText("Inventory switched on")).toBeVisible();
+  // The sidebar shows a module's pages once you're in it: Inventory opens on Products.
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await expect(page).toHaveURL(/\/inventory\/products/);
+  await expect(page.getByRole("heading", { name: "Products", exact: true })).toBeVisible();
+
+  // The SKUs on the orders brought in earlier wait to be linked.
+  const unlinked = page.getByRole("region", {
+    name: "SKUs from your orders that aren't linked yet",
+  });
+  const sku = (name: string) => unlinked.getByRole("listitem", { name, exact: true });
+  await expect(sku("MAPLE-MUG")).toBeVisible();
+  await expect(sku("PINE-CANDLE")).toBeVisible();
+  await expect(sku("BIRCH-COASTER")).toBeVisible();
+
+  // One click makes a product named after the listing, with the SKU linked.
+  await sku("MAPLE-MUG").getByRole("button", { name: "Create product" }).click();
+  await expect(page.getByText("Maple leaf ceramic mug added")).toBeVisible();
+  await expect(sku("MAPLE-MUG")).toHaveCount(0);
+  const mug = page.getByRole("listitem", { name: "Maple leaf ceramic mug", exact: true });
+  await expect(mug.getByText("MAPLE-MUG", { exact: true }).first()).toBeVisible();
+
+  // Link the candle listing to it by hand, as a 2-pack.
+  await mug.getByRole("button", { name: "Edit Maple leaf ceramic mug" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Marketplace SKU", { exact: true }).fill("PINE-CANDLE");
+  await dialog.getByLabel("Units in one listing", { exact: true }).fill("2");
+  await dialog.getByRole("button", { name: "Link SKU" }).click();
+  await expect(page.getByText("PINE-CANDLE linked")).toBeVisible();
+  await expect(dialog.getByText("2 units per listing")).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // Both show on the product (the pack as ×2); 2 mugs + one 2-pack sold = 4 units.
+  await expect(mug.getByText("×2")).toBeVisible();
+  await expect(mug.getByText(/PINE-CANDLE/)).toBeVisible();
+  await expect(mug.getByText("4", { exact: true })).toBeVisible();
+  await expect(sku("PINE-CANDLE")).toHaveCount(0);
+  await expect(sku("BIRCH-COASTER")).toBeVisible();
 });
 
 test("reviews: ask for a review by hand, then turn on automatic requests", async ({ page }) => {

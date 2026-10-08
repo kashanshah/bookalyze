@@ -8,6 +8,7 @@ export * from "./duplicates";
 export * from "./entity";
 export * from "./fx";
 export * from "./imports";
+export * from "./inventory";
 export * from "./invoices";
 export * from "./ledger";
 export * from "./listings";

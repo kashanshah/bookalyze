@@ -288,6 +288,13 @@
       "when": 1791438290268,
       "tag": "0040_getting_started_hidden",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791482668819,
+      "tag": "0041_inventory_products",
+      "breakpoints": true
     }
   ]
 }

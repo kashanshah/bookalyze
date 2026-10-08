@@ -5,6 +5,7 @@ export * from "./commerce";
 export * from "./entity";
 export * from "./files";
 export * from "./imports";
+export * from "./inventory";
 export * from "./organization";
 export * from "./reconciliation";
 export * from "./reference";

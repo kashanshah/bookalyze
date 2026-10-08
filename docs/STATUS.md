@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-08, home page order glance and hiding the setup checklist._
+_Last updated: 2026-10-08, phase 5 slice 1: products and SKU links._
 
 ---
 
@@ -27,6 +27,7 @@ _Last updated: 2026-10-08, home page order glance and hiding the setup checklist
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
+| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet) done. Next: suppliers and purchase orders, then landed costs, FIFO lots and cost of goods sold |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -396,7 +397,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   statement upload will hash its rows the same way). Syncing again, overlapping windows or
   uploading the same file twice can't add it twice. Status `posted` (`journal_entry_id`) or
   `pending` (`reason`, e.g. no rate yet; retried every sync). A posted line whose transaction was
-  removed is posted again on the next sync or upload. If that second post can't be made (an
+  removed stays removed on a sync; only uploading the statement again posts it again
+  (`importBankLines(…, { restoreRemoved: true })`, decided 2026-10-08). If that second post can't be made (an
   archived account, a currency the account no longer holds), the line goes back to pending and
   drops the link to the removed entry, so the sync doesn't fail the page. Editing a bank transaction
   (`replaceJournalEntry`) or merging it moves the link to the entry that stands for it now
@@ -1112,7 +1114,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **What it is:** Commerce → Listing watch. Pick an ASIN on a connected marketplace, choose what
   to compare, how often, and whether owners and admins get one email when something changes.
   The first look is the baseline and does not email. Later checks write a timeline on the
-  product and, when email is on, one digest (not one email per product). The list and the
+  product and, when email is on, one digest (not one email per product). The digest has a card
+  per product (photo, title, marketplace, ASIN) with a labelled row per change, at most four,
+  and a green ▲ / red ▼ pill on best seller rank moves (`rankTrend()`: a lower rank is better).
+  Each category's rank move is its own change, with `before`/`after` the plain rank numbers. The list and the
   product page show the latest price, featured offer (with its price and Prime), seller count
   and best seller rank. The list also shows a short note of the title and description. An icon
   on each product, and on its page, opens that product on Amazon.
@@ -1142,6 +1147,42 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   also need **Selling Partner Insights**, and Amazon only returns them for a child ASIN of a
   brand the seller sells.
 - Tests: core `listings.test.ts`, db `listings.test.ts`.
+
+### Phase 5, slice 1: products and SKU links
+
+- **What it is:** Inventory → Products (the Inventory module is now available; it needs
+  Accounting and Commerce). A product is a thing the company sells: a name, the seller's own
+  SKU (optional, unique per company in any case) and notes. Each marketplace seller SKU links to
+  one product, with how many units of the product one listing unit holds (a 2-pack is 2;
+  1 to 1,000). The list shows each product's linked SKUs as badges (`×2` for packs, the
+  marketplace named only when links span more than one) and the product units sold in the last
+  30 days (order quantity × units, cancelled and unfulfillable orders left out). Search covers
+  names, own SKUs and linked SKUs; archived products are hidden unless "Show archived".
+- **SKUs from orders:** above the list, a card lists seller SKUs seen on orders (of connected
+  marketplaces) that aren't linked yet, most recently ordered first (10 shown, with the total):
+  marketplace, SKU, latest title and order count. "Create product" makes a product named after
+  the latest title, with the seller SKU as its own code (unless another product already uses
+  it) and the SKU linked as 1 unit; "Link to…" (a `Combobox` of products) links it as 1 unit.
+- **Edit dialog:** name, own SKU, notes, archive or restore, and the product's marketplace SKUs:
+  unlink, or link another (marketplace `Combobox` when more than one is switched on, SKU, units).
+  Linking a SKU again to the same product changes its units; a SKU linked to another product is
+  refused ("… is already linked to …. Unlink it there first.").
+- **Schema** (migration `0041_inventory_products`): `products` (unique `(organization_id, id)`,
+  partial unique index on `lower(sku)`, trimmed non-empty name) and `product_skus` (composite FKs
+  to `products` and `sales_channels`, both cascade; unique per company, channel and SKU; units
+  check 1–1000; index on `product_id`). Both have `tenantIsolationPolicy`.
+- **Code:** db `inventory.ts` (`listProducts`, `getProduct`, `createProduct`, `updateProduct`,
+  `setProductArchived`, `linkSku`, `unlinkSku`, `unlinkedSkus`, `createProductFromSku`,
+  `inventoryChannels`; friendly errors are `InventoryError`), web `server/inventory.ts`
+  (`getInventoryContext`, gated on `inventory.products`), `lib/validation/inventory.ts`, and
+  `app/o/[slug]/inventory/products/`. Any member can manage products (like listing watch);
+  every write is audited (`product.*`).
+- Tests: db `inventory.test.ts` (create/edit/archive, duplicate own SKU, unlinked SKUs, linking,
+  units sold, duplicate link refused, tenant isolation), e2e "inventory: products from the SKUs
+  on orders, and a 2-pack linked by hand".
+- **Next (phase 5):** suppliers and purchase orders (Purchase orders goes back in the Inventory
+  nav then), landed costs, FIFO lots, the FBA inventory ledger import, bundles
+  (`product_components`), and cost of goods sold posting.
 
 ---
 
@@ -1198,6 +1239,16 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
      dates a year earlier (month ends kept). Each account shows this period, the earlier one and
      the change with a percentage; accounts only active earlier still get a row. Core
      `accounting/compare.ts`; the CSV gets the same columns.
+
+### Phase 5: inventory and cost of goods sold
+1. [x] **Products and SKU links.** Done in slice 1.
+2. [ ] **Suppliers and purchase orders:** suppliers (vendors from contacts), purchase orders
+   with lines per product, receiving, and the Purchase orders screen in the Inventory nav.
+3. [ ] **Landed costs and FIFO lots:** freight, duty, brokerage and prep allocated by units,
+   weight or value; one lot per receipt.
+4. [ ] **Inventory movements:** the FBA inventory ledger report, transfers, returns, removals.
+5. [ ] **Cost of goods sold** posted per settlement period at FIFO cost; bundles
+   (`product_components`).
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.
