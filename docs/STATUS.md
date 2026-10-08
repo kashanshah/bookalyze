@@ -27,7 +27,7 @@ _Last updated: 2026-10-08, phase 5 slice 3: landed costs and FIFO stock lots._
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
-| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts) and slice 3 (landed costs, FIFO stock lots) done. Next: importing supplier orders (Alibaba PDFs) and inventory movements, then cost of goods sold |
+| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts) and slice 3 (landed costs, FIFO stock lots) done. Next: opening stock and cost of goods sold, then inventory movements (FBA ledger) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1319,11 +1319,8 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 1. [x] **Products and SKU links.** Done in slice 1.
 2. [x] **Suppliers and purchase orders.** Done in slice 2.
 3. [x] **Landed costs and FIFO lots.** Done in slice 3.
-4. [ ] **Import supplier orders:** drop an Alibaba (or any supplier's) order PDF or screenshot;
-   AI fills a draft PO (supplier, items, prices, shipping as freight), item titles matched to
-   products and remembered per supplier. Needs an AI provider key in the encrypted settings.
-5. [ ] **Inventory movements:** the FBA inventory ledger report, transfers, returns, removals.
-6. [ ] **Opening stock and cost of goods sold** (lots for stock on hand before Bookalyze), posted per settlement period at FIFO cost; bundles
+4. [ ] **Inventory movements:** the FBA inventory ledger report, transfers, returns, removals.
+5. [ ] **Opening stock and cost of goods sold** (lots for stock on hand before Bookalyze), posted per settlement period at FIFO cost; bundles
    (`product_components`).
 
 ### Phase 0 leftovers
