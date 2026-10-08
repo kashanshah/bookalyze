@@ -1378,9 +1378,13 @@ test("commerce: bring in Amazon orders, find one by SKU and open it", async ({ p
   await expect(page.getByText("Maple leaf ceramic mug")).toBeVisible();
   await expect(page.getByText("Pine forest candle")).toHaveCount(0);
 
+  // Wait for each page before the next step: typing into the Refunded page's search while
+  // "All orders" is still loading would search the refunded orders.
   await page.getByRole("link", { name: "All orders", exact: true }).click();
+  await expect(page).not.toHaveURL(/status=/);
   await page.getByLabel("Search orders").fill("PINE-CANDLE");
   await page.getByLabel("Search orders").press("Enter");
+  await expect(page).toHaveURL(/q=PINE-CANDLE/);
   await expect(page.getByText("Maple leaf ceramic mug")).toHaveCount(0);
   await expect(page.getByText("Pine forest candle")).toBeVisible();
 

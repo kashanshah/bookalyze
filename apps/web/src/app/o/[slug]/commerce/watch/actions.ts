@@ -42,6 +42,9 @@ export async function saveListingWatchAction(
   id?: string,
 ): Promise<Result<{ id: string; checkError: string | null }>> {
   const ctx = await context(slug);
+  if (id !== undefined && !z.uuid().safeParse(id).success) {
+    return { ok: false, message: "This product is no longer being watched." };
+  }
   const parsed = listingWatchSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, message: "Check the highlighted fields.", errors: issues(parsed.error) };
@@ -80,7 +83,10 @@ export async function saveListingWatchAction(
       true,
     );
     if (checked.ok && checked.changes.length && parsed.data.notify) {
-      await emailListingChanges({ id: ctx.org.id, name: ctx.org.name, slug: ctx.org.slug });
+      // Saved either way; an email that fails goes out with the next hourly run.
+      await emailListingChanges({ id: ctx.org.id, name: ctx.org.name, slug: ctx.org.slug }).catch(
+        (error) => console.error("Listing changes email failed", error),
+      );
     }
     revalidatePath(base(slug));
     revalidatePath(`${base(slug)}/${watchId}`);

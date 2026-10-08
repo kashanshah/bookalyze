@@ -172,8 +172,9 @@ export function CategoryPicker({
 
 /** Types a category can be, likeliest first. Bank, card and cash accounts aren't categories. */
 const CATEGORY_TYPES: AccountType[] = ["expense", "income", "asset", "liability", "equity"];
-const categorySubtypes = (type: AccountType) =>
-  subtypesOf(type).filter((s) => !isMoneyAccountSubtype(s.key));
+/** `keep` is a money subtype the caller asked for, e.g. "Money in transit" for Amazon clearing. */
+const categorySubtypes = (type: AccountType, keep?: string) =>
+  subtypesOf(type).filter((s) => s.key === keep || !isMoneyAccountSubtype(s.key));
 
 export function NewAccountForm({
   slug,
@@ -199,7 +200,7 @@ export function NewAccountForm({
   onCancel: () => void;
   onSaved: (category: NewCategory) => void;
 }) {
-  const subtypes = categorySubtypes(defaultType);
+  const subtypes = categorySubtypes(defaultType, defaultSubtype);
   const [type, setType] = useState<AccountType>(defaultType);
   const [subtype, setSubtype] = useState(
     defaultSubtype && subtypes.some((s) => s.key === defaultSubtype)
@@ -213,7 +214,7 @@ export function NewAccountForm({
 
   function chooseType(next: AccountType) {
     setType(next);
-    setSubtype(categorySubtypes(next)[0]?.key ?? "");
+    setSubtype(categorySubtypes(next, defaultSubtype)[0]?.key ?? "");
     setErrors({});
   }
 
@@ -285,7 +286,10 @@ export function NewAccountForm({
             id="new-category-subtype"
             value={subtype}
             onChange={setSubtype}
-            options={categorySubtypes(type).map((s) => ({ value: s.key, label: s.label }))}
+            options={categorySubtypes(type, defaultSubtype).map((s) => ({
+              value: s.key,
+              label: s.label,
+            }))}
           />
         </Field>
 

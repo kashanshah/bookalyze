@@ -206,6 +206,13 @@ export async function updateListingWatch(
   if (input.cadence === "hourly" && current.cadence !== "hourly") {
     assertHourlyRoom((await counts(tx)).hourly);
   }
+  // Another product, marketplace or set of checks: the last look isn't comparable, so the next
+  // check takes a fresh baseline instead of reporting everything as changed.
+  const sameChecks =
+    current.checks.length === input.checks.length &&
+    input.checks.every((c) => current.checks.includes(c));
+  const rebaseline =
+    current.asin !== input.asin || current.channelId !== input.channelId || !sameChecks;
   try {
     const [row] = await tx
       .update(listingWatches)
@@ -215,6 +222,8 @@ export async function updateListingWatch(
         checks: input.checks,
         cadence: input.cadence,
         notify: input.notify,
+        ...(rebaseline ? { observed: null } : {}),
+        ...(input.cadence !== current.cadence ? { nextCheckAt: new Date() } : {}),
         updatedAt: new Date(),
       })
       .where(eq(listingWatches.id, input.id))
