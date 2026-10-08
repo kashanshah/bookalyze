@@ -283,7 +283,7 @@ export type LotRow = {
   productId: string;
   productName: string;
   productSku: string | null;
-  source: "receipt" | "opening";
+  source: "receipt" | "opening" | "return" | "found";
   receivedOn: string;
   quantity: number;
   /** Units already in cost of goods sold. */

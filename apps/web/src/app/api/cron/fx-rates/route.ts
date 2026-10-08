@@ -1,3 +1,4 @@
+import { syncAllLedgers } from "@/server/amazon-ledger";
 import { syncAllSettlements } from "@/server/amazon-settlements";
 import { syncAllConnections } from "@/server/banking";
 import { sendComplianceReminders } from "@/server/compliance";
@@ -10,7 +11,8 @@ import { autoPostSettlements } from "@/server/settlement-posting";
  * "Authorization: Bearer $CRON_SECRET"; anything else is refused. It re-fetches the last ten
  * days of exchange rates (late corrections, missed runs), then syncs every bank connection, so
  * foreign-currency bank lines find their rate. Then it brings in new Amazon settlement reports and
- * posts them (with their deposits) where automatic posting is on, and last it emails compliance
+ * posts them (with their deposits) where automatic posting is on, brings in each marketplace's FBA
+ * inventory ledger (returns, losses), and last it emails compliance
  * reminders. Amazon orders have their own job (/api/cron/orders).
  */
 export const maxDuration = 300;
@@ -28,11 +30,14 @@ export async function GET(request: Request) {
   const settlements = await syncAllSettlements(90_000).catch((error: unknown) => ({
     error: (error as Error).message,
   }));
+  const ledgers = await syncAllLedgers(60_000).catch((error: unknown) => ({
+    error: (error as Error).message,
+  }));
   const posting = await autoPostSettlements().catch((error: unknown) => ({
     error: (error as Error).message,
   }));
   const compliance = await sendComplianceReminders().catch((error: unknown) => ({
     error: (error as Error).message,
   }));
-  return Response.json({ stored, banking, settlements, posting, compliance });
+  return Response.json({ stored, banking, settlements, ledgers, posting, compliance });
 }

@@ -15,6 +15,7 @@ import {
 } from "../cogs";
 import { saveAmazonChannels, saveOrderItems, upsertOrders } from "../commerce";
 import { createProduct, linkSku } from "../inventory";
+import { importLedgerEvents } from "../inventory-ledger";
 import { listLots } from "../landed-costs";
 import { accountBalances, createDefaultChart } from "../ledger";
 import * as schema from "../schema";
@@ -145,7 +146,9 @@ afterAll(async () => {
   await app.pool.end();
 });
 
-const balance = async (key: "inventory" | "cost_of_goods_sold" | "opening_balance_equity") => {
+const balance = async (
+  key: "inventory" | "cost_of_goods_sold" | "opening_balance_equity" | "inventory_write_offs",
+) => {
   const id = await scoped((tx) => ensureSystemAccount(tx, orgId, key));
   const rows = await scoped((tx) => accountBalances(tx, {}));
   return rows.find((r) => r.accountId === id)?.balance ?? "0";
@@ -166,7 +169,7 @@ describe("cost of goods sold", () => {
       previewCogs(tx, { channelId, month: "2026-08", ...where }),
     );
     expect(preview.problems).toEqual([
-      "Mug: 5 sold, but only 0 in stock lots by the month's end. Add opening stock or record the delivery.",
+      "Mug: 5 went out, but only 0 were in stock lots by the month's end. Add opening stock or record the delivery.",
     ]);
   });
 
@@ -226,6 +229,122 @@ describe("cost of goods sold", () => {
     await scoped((tx) => undoCogs(tx, { ...ctx, periodId: sep?.id ?? "" }));
     expect(await balance("cost_of_goods_sold")).toBe("11.0000");
     expect((await scoped((tx) => listLots(tx)))[1]?.consumed).toBe(1);
+  });
+
+  it("counts the ledger: returns come back as lots, losses net of units found are written off", async () => {
+    const ledger = (date: string, sku: string, eventType: string, quantity: number, n: number) => ({
+      date,
+      sku,
+      fnsku: null,
+      asin: null,
+      title: null,
+      eventType: eventType as "Adjustments",
+      referenceId: null,
+      quantity,
+      fulfillmentCenter: "YYZ4",
+      disposition: "SELLABLE",
+      reason: null,
+      country: "CA",
+      key: `${date}|${sku}|${eventType}|${n}`,
+    });
+    await scoped((tx) =>
+      importLedgerEvents(tx, {
+        orgId,
+        channelId,
+        events: [
+          ledger("2026-09-12", "MUG", "CustomerReturns", 1, 1),
+          ledger("2026-09-20", "MUG", "Adjustments", -2, 2),
+          ledger("2026-09-25", "MUG-2PK", "Adjustments", 1, 3),
+          ledger("2026-09-28", "MUG", "VendorReturns", -3, 4),
+        ],
+        through: "2026-09-20",
+      }),
+    );
+    // In through the 20th only: September waits for the rest.
+    const early = await scoped((tx) => previewCogs(tx, { channelId, month: "2026-09", ...where }));
+    expect(early.problems[0]).toMatch(/in through 2026-09-20/);
+    const again = await scoped((tx) =>
+      importLedgerEvents(tx, {
+        orgId,
+        channelId,
+        events: [ledger("2026-09-12", "MUG", "CustomerReturns", 1, 1)],
+        through: "2026-09-30",
+      }),
+    );
+    expect(again.added).toBe(0);
+
+    const months = await scoped((tx) => salesByMonth(tx, { timezone: where.timezone }));
+    expect(months.find((m) => m.month === "2026-09")).toMatchObject({ returned: 1, adjusted: -1 });
+    const preview = await scoped((tx) =>
+      previewCogs(tx, { channelId, month: "2026-09", ...where }),
+    );
+    // Sales 4 at 3.00; lost 2 (−2) but the 2-pack found counts 2 units (+2): net nothing lost.
+    expect(preview).toMatchObject({
+      problems: [],
+      units: 4,
+      cost: "12.0000",
+      returned: 1,
+      returnedCost: "3.0000",
+      lost: 0,
+      found: 0,
+    });
+    await scoped((tx) =>
+      postCogs(tx, { ...ctx, channelId, month: "2026-09", ...where, currentMonth: "2026-10" }),
+    );
+    // August 11.00 + September 12.00 − 3.00 returned.
+    expect(await balance("cost_of_goods_sold")).toBe("20.0000");
+    expect(await balance("inventory")).toBe("18.0000");
+    const lots = await scoped((tx) => listLots(tx));
+    expect(lots.map((l) => [l.source, l.receivedOn, l.quantity, l.consumed])).toEqual([
+      ["opening", "2026-07-31", 4, 4],
+      ["opening", "2026-08-15", 10, 5],
+      ["return", "2026-09-30", 1, 0],
+    ]);
+
+    // Undoing September removes its return lot too.
+    const sep = (await scoped((tx) => listCogsPeriods(tx))).find((p) => p.month === "2026-09");
+    await scoped((tx) => undoCogs(tx, { ...ctx, periodId: sep?.id ?? "" }));
+    expect((await scoped((tx) => listLots(tx))).map((l) => l.source)).toEqual([
+      "opening",
+      "opening",
+    ]);
+  });
+
+  it("writes off units lost at FIFO cost", async () => {
+    await scoped((tx) =>
+      importLedgerEvents(tx, {
+        orgId,
+        channelId,
+        events: [
+          {
+            date: "2026-09-21",
+            sku: "MUG",
+            fnsku: null,
+            asin: null,
+            title: null,
+            eventType: "Adjustments",
+            referenceId: null,
+            quantity: -2,
+            fulfillmentCenter: "YYZ4",
+            disposition: "SELLABLE",
+            reason: "M",
+            country: "CA",
+            key: "lost-more",
+          },
+        ],
+        through: "2026-09-30",
+      }),
+    );
+    const preview = await scoped((tx) =>
+      previewCogs(tx, { channelId, month: "2026-09", ...where }),
+    );
+    // In product units: −2 −2 +2 (the 2-pack found) = 2 lost, after 4 sold from the 9 left.
+    expect(preview).toMatchObject({ problems: [], lost: 2, lostCost: "6.0000", found: 0 });
+    await scoped((tx) =>
+      postCogs(tx, { ...ctx, channelId, month: "2026-09", ...where, currentMonth: "2026-10" }),
+    );
+    expect(await balance("inventory_write_offs")).toBe("6.0000");
+    expect(await balance("inventory")).toBe("12.0000");
   });
 
   it("adopts an existing account for a company set up before the system keys", async () => {

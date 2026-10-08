@@ -110,6 +110,14 @@ export const DEFAULT_CHART: readonly ChartTemplateAccount[] = [
     systemKey: "cost_of_goods_sold",
   },
   {
+    code: "5050",
+    name: "Inventory losses and write-offs",
+    type: "expense",
+    subtype: "cost_of_goods_sold",
+    description: "Stock lost, damaged or disposed of (net of units found), at FIFO cost.",
+    systemKey: "inventory_write_offs",
+  },
+  {
     code: "6000",
     name: "Advertising and marketing",
     type: "expense",

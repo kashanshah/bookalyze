@@ -1593,6 +1593,38 @@ test("cost of goods sold: opening stock, then each month by marketplace", async 
   await expect(mug.getByText("120 units received")).toBeVisible();
 });
 
+test("stock movements: Amazon's inventory ledger, returns and losses", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Stock movements", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Stock movements", exact: true })).toBeVisible();
+  await expect(page.getByText(/Not brought in yet/)).toBeVisible();
+
+  // Amazon makes the report, and its rows come in once (asking again adds nothing).
+  await page.getByRole("button", { name: "Bring in from Amazon" }).click();
+  await expect(page.getByText("4 movements brought in")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/^In through .* · 4 movements$/)).toBeVisible();
+  const mug = page
+    .getByRole("region", { name: /^Movements in / })
+    .first()
+    .getByRole("listitem", { name: "MAPLE-MUG", exact: true });
+  await expect(mug).toContainText("Maple leaf ceramic mug");
+  await expect(mug).toContainText("+1");
+  await expect(mug).toContainText("-2");
+  await page.getByRole("button", { name: "Bring in from Amazon" }).click();
+  await expect(page.getByText("Ledger up to date")).toBeVisible({ timeout: 30_000 });
+
+  // What your lots say against what Amazon holds to sell (from its FBA inventory).
+  const compare = page.getByRole("region", { name: "Your stock against Amazon's" });
+  const row = compare.getByRole("listitem", { name: "Maple leaf ceramic mug", exact: true });
+  await expect(row).toContainText("120");
+  await expect(row).toContainText("40");
+
+  // The month on Cost of goods sold counts the return and the net loss.
+  await page.getByRole("link", { name: "Cost of goods sold", exact: true }).click();
+  await expect(page.getByText(/1 returned · 1 lost or damaged/).first()).toBeVisible();
+});
+
 test("reviews: ask for a review by hand, then turn on automatic requests", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Features", exact: true }).click();

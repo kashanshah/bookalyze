@@ -107,6 +107,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
       { label: "Products", href: "/inventory/products" },
       { label: "Purchase orders", href: "/inventory/purchase-orders" },
       { label: "Stock lots", href: "/inventory/lots" },
+      { label: "Stock movements", href: "/inventory/movements" },
       { label: "Cost of goods sold", href: "/inventory/cogs" },
     ],
     status: "available",

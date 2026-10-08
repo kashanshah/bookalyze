@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-08, phase 5 slice 4: opening stock and cost of goods sold._
+_Last updated: 2026-10-08, phase 5 slice 5: Amazon's FBA inventory ledger (returns, losses)._
 
 ---
 
@@ -27,7 +27,7 @@ _Last updated: 2026-10-08, phase 5 slice 4: opening stock and cost of goods sold
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
-| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) and slice 4 (opening stock, monthly cost of goods sold) done. Next: inventory movements (FBA ledger: returns, removals, reimbursements), then bundles |
+| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) and slice 5 (FBA inventory ledger: returns back into stock, losses written off) done. Next: bundles, then Noon (phase 4c) |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1223,6 +1223,47 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   partial and full deliveries, over-receiving refused, cancel rules, tenant isolation), e2e
   "purchase orders: draft, send, a partial delivery, then the rest".
 
+### Phase 5, slice 5: Amazon's FBA inventory ledger
+
+- **Inventory → Stock movements** (`/inventory/movements`, feature `inventory.cogs`): each
+  marketplace's ledger state ("In through Sep 30 · 412 movements", or "Amazon is making a
+  report"), **Bring in from Amazon** and **Upload a ledger file** (Seller Central → Reports →
+  Fulfillment → Inventory Ledger, Detailed view, CSV or TSV, read in the browser and sent 2,000
+  rows at a time with the day the report runs to), **Your stock against Amazon's** (units left in
+  lots against what Amazon holds to sell, from the FBA inventory brought in on Products), and the
+  last six months per SKU: shipped, returned, lost or found (net adjustments), removed, received.
+- **From Amazon** (`server/amazon-ledger.ts`): the Reports API, `GET_LEDGER_DETAIL_VIEW_DATA`, a
+  calendar month at a time from the day after "in through" (or the orders start date) to
+  yesterday. A report is asked for (`requestLedgerReport`), its id kept on the channel
+  (`ledger_report_id/from/to`), polled (`reportStatus`) and downloaded; a run that ends while
+  Amazon is still making it leaves it for the next. CANCELLED means no movements (the days count
+  as in). Needs the **Amazon Fulfillment** role. Daily with the settlements job
+  (`syncAllLedgers`, 60 s), and on the button (50 s).
+- **Parsing:** core `parseInventoryLedger` (`commerce/inventory-ledger.ts`) reads the detailed
+  view; each row's `key` (its fields, numbered when identical rows repeat) keeps it from coming in
+  twice (`inventory_ledger_events` unique per marketplace and key).
+- **In cost of goods sold** (once a marketplace's ledger has been brought in at all, a month waits
+  until it's in through the month's end):
+  - **Customer returns** (any condition: the units are yours again) come back as a `return` lot on
+    the month's last day, at this month's sales cost per unit (else the last costed unit, else the
+    lots' average), out of cost of goods sold.
+  - **Adjustments** net per product: negative (lost, damaged, disposed) is taken from the lots,
+    oldest first after the month's sales, and written off; positive (found) comes back as a
+    `found` lot. Condition changes (sellable → unsellable) net to zero.
+  - Removals, receipts and transfers don't change what you own. Shipments still come from orders.
+  - One entry per month: Cost of goods sold (sales − returns), **Inventory losses and
+    write-offs** (losses − found; new system account `inventory_write_offs`, 5050, in the cost of
+    goods sold section), Inventory the other way. Undo removes the month's return and found lots.
+- **Schema** (migration `0046_inventory_ledger`): `inventory_ledger_events`; `sales_channels.
+  ledger_synced_through` and the pending report columns; `inventory_lots.cogs_period_id`
+  (cascade) and sources `return` / `found`; `lot_consumptions.kind` (`sale` / `write_off`);
+  `cogs_periods` returned, lost and found units and costs.
+- Tests: core `inventory-ledger.test.ts`; db `cogs.test.ts` (ledger coverage, returns as lots,
+  found offsetting losses, write-offs at FIFO cost, undo removing return lots); e2e "stock
+  movements: Amazon's inventory ledger, returns and losses".
+- **Not yet:** Amazon's reimbursements stay settlement lines (posted with settlements); removal
+  orders don't track where the units went.
+
 ### Phase 5, slice 4: opening stock and cost of goods sold
 
 - **Decisions** (PLAN decision log, 2026-10-08): supplier payments are categorised to
@@ -1379,7 +1420,7 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 1. [x] **Products and SKU links.** Done in slice 1.
 2. [x] **Suppliers and purchase orders.** Done in slice 2.
 3. [x] **Landed costs and FIFO lots.** Done in slice 3.
-4. [ ] **Inventory movements:** the FBA inventory ledger report, transfers, returns, removals.
+4. [x] **Inventory movements.** Done in slice 5 (the FBA inventory ledger: returns, losses, found).
 5. [x] **Opening stock and cost of goods sold.** Done in slice 4 (monthly per marketplace).
 6. [ ] **Bundles** (`product_components`): one listing that is several products.
 

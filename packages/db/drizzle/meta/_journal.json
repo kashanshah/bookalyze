@@ -323,6 +323,13 @@
       "when": 1791492564743,
       "tag": "0045_cogs",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1791494641000,
+      "tag": "0046_inventory_ledger",
+      "breakpoints": true
     }
   ]
 }

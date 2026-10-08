@@ -165,6 +165,16 @@ function MonthRow({
       <span>
         <Amount value={period.cost} currency={period.currency} locale={locale} /> for {period.units}{" "}
         units
+        <Extras
+          returned={period.returnedUnits}
+          returnedCost={period.returnedCost}
+          lost={period.lostUnits}
+          lostCost={period.lostCost}
+          found={period.foundUnits}
+          foundCost={period.foundCost}
+          currency={period.currency}
+          locale={locale}
+        />
         {period.journalEntryId ? (
           <>
             {" · "}
@@ -187,11 +197,25 @@ function MonthRow({
       </Badge>
     );
     detail = "Posts once the month is over.";
-  } else if (preview && !preview.problems.length && preview.units > 0) {
+  } else if (
+    preview &&
+    !preview.problems.length &&
+    (preview.units || preview.returned || preview.lost || preview.found)
+  ) {
     status = <Badge variant="default">Ready</Badge>;
     detail = (
       <span>
         <Amount value={preview.cost} currency={baseCurrency} locale={locale} /> at FIFO cost
+        <Extras
+          returned={preview.returned}
+          returnedCost={preview.returnedCost}
+          lost={preview.lost}
+          lostCost={preview.lostCost}
+          found={preview.found}
+          foundCost={preview.foundCost}
+          currency={baseCurrency}
+          locale={locale}
+        />
         {preview.lines.length ? (
           <span className="block text-xs">
             {preview.lines.map((line) => `${line.productName} × ${line.units}`).join(" · ")}
@@ -237,6 +261,9 @@ function MonthRow({
         <p className="font-medium text-sm">{sale.channelName}</p>
         <p className="text-muted-foreground text-xs">
           {units} units shipped
+          {sale.returned ? ` · ${sale.returned} returned` : ""}
+          {sale.adjusted < 0 ? ` · ${-sale.adjusted} lost or damaged` : ""}
+          {sale.adjusted > 0 ? ` · ${sale.adjusted} found` : ""}
           {sale.unlinkedUnits ? ` · ${sale.unlinkedUnits} on unlinked SKUs` : ""}
         </p>
       </div>
@@ -246,5 +273,45 @@ function MonthRow({
       </div>
       <div className="flex justify-end">{action}</div>
     </li>
+  );
+}
+
+/** Returns, losses and units found, after the month's cost: only the ones that happened. */
+function Extras({
+  returned,
+  returnedCost,
+  lost,
+  lostCost,
+  found,
+  foundCost,
+  currency,
+  locale,
+}: {
+  returned: number;
+  returnedCost: string;
+  lost: number;
+  lostCost: string;
+  found: number;
+  foundCost: string;
+  currency: string;
+  locale: string;
+}) {
+  const parts = [
+    returned
+      ? { key: "r", label: `${returned} returned back into stock`, amount: returnedCost }
+      : null,
+    lost ? { key: "l", label: `${lost} lost or damaged, written off`, amount: lostCost } : null,
+    found ? { key: "f", label: `${found} found back into stock`, amount: foundCost } : null,
+  ].filter((p) => p !== null);
+  if (!parts.length) return null;
+  return (
+    <span className="block text-xs">
+      {parts.map((p, i) => (
+        <span key={p.key}>
+          {i ? " · " : ""}
+          {p.label} (<Amount value={p.amount} currency={currency} locale={locale} />)
+        </span>
+      ))}
+    </span>
   );
 }

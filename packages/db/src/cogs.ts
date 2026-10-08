@@ -1,6 +1,7 @@
 import {
   AMOUNT_SCALE,
   DEFAULT_CHART,
+  divRound,
   type FifoLot,
   formatDecimal,
   type LedgerAccount,
@@ -13,7 +14,7 @@ import {
   type SystemAccountKey,
   takeFifo,
 } from "@bookalyze/core";
-import { and, asc, eq, gt, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { postJournalEntry, reverseJournalEntry } from "./ledger";
 import { accounts } from "./schema/accounting";
@@ -43,7 +44,7 @@ const cancelled = sql.raw(ORDER_STATUS_GROUPS.cancelled.map((s) => `'${s}'`).joi
 
 type InventoryKey = Extract<
   SystemAccountKey,
-  "inventory" | "cost_of_goods_sold" | "opening_balance_equity"
+  "inventory" | "cost_of_goods_sold" | "opening_balance_equity" | "inventory_write_offs"
 >;
 
 /**
@@ -62,8 +63,9 @@ export async function ensureSystemAccount(
   if (found) return found.id;
   const template = DEFAULT_CHART.find((a) => a.systemKey === key);
   if (!template) throw new Error(`No template account for ${key}`);
-  // Opening balance equity shares its subtype with share capital, so it's never adopted.
-  if (key !== "opening_balance_equity") {
+  // Opening balance equity shares its subtype with share capital, and write-offs theirs with
+  // cost of goods sold, so those are never adopted.
+  if (key === "inventory" || key === "cost_of_goods_sold") {
     const [adopt] = await tx
       .select({ id: accounts.id })
       .from(accounts)
@@ -101,8 +103,8 @@ export async function ensureSystemAccount(
   return row.id;
 }
 
-/** Posts a two-line entry in the main currency (debit one account, credit the other). */
-async function postPair(
+/** Posts an entry in the main currency from signed amounts per account (+ debit, − credit). */
+async function postLines(
   tx: Transaction,
   input: {
     orgId: string;
@@ -112,11 +114,11 @@ async function postPair(
     memo: string;
     source: "cogs" | "opening_stock";
     sourceId: string;
-    debit: string;
-    credit: string;
-    amount: string;
+    lines: { accountId: string; amount: bigint }[];
   },
-): Promise<string> {
+): Promise<string | null> {
+  const lines = input.lines.filter((l) => l.amount !== 0n);
+  if (!lines.length) return null;
   const all = await tx
     .select({
       id: accounts.id,
@@ -125,16 +127,22 @@ async function postPair(
       isArchived: accounts.isArchived,
     })
     .from(accounts)
-    .where(inArray(accounts.id, [input.debit, input.credit]));
+    .where(
+      inArray(
+        accounts.id,
+        lines.map((l) => l.accountId),
+      ),
+    );
   const ledger = new Map<string, LedgerAccount>(all.map((a) => [a.id, a]));
   const prepared = prepareJournalEntry(
     {
       currency: input.baseCurrency,
       baseCurrency: input.baseCurrency,
-      lines: [
-        { accountId: input.debit, description: input.memo, debit: input.amount },
-        { accountId: input.credit, description: input.memo, credit: input.amount },
-      ],
+      lines: lines.map((l) =>
+        l.amount > 0n
+          ? { accountId: l.accountId, description: input.memo, debit: formatDecimal(l.amount) }
+          : { accountId: l.accountId, description: input.memo, credit: formatDecimal(-l.amount) },
+      ),
     },
     ledger,
   );
@@ -157,7 +165,7 @@ async function postPair(
   return entry.id;
 }
 
-// ─── What sold ────────────────────────────────────────────────────────────────
+// ─── What sold, came back, or went missing ────────────────────────────────────
 
 export type MonthSales = {
   channelId: string;
@@ -168,14 +176,20 @@ export type MonthSales = {
   /** Listing units shipped from SKUs not linked to a product (they can't be costed). */
   unlinkedUnits: number;
   unlinkedSkus: string[];
+  /** From Amazon's inventory ledger, in listing units: customer returns, net adjustments. */
+  returned: number;
+  adjusted: number;
 };
 
-/** Units shipped per marketplace and month, newest first. */
+/** The month a ledger day or an order falls in, as SQL. */
+const ledgerMonth = sql`to_char(e.event_date, 'YYYY-MM')`;
+
+/** Units shipped (orders) and moved (ledger) per marketplace and month, newest first. */
 export async function salesByMonth(
   tx: Transaction,
   options: { timezone: string },
 ): Promise<MonthSales[]> {
-  const rows = await tx.execute<{
+  const sold = await tx.execute<{
     channel_id: string;
     channel_name: string;
     month: string;
@@ -193,16 +207,62 @@ export async function salesByMonth(
     join sales_channels sc on sc.id = o.channel_id
     left join product_skus ps on ps.channel_id = o.channel_id and ps.sku = oi.sku
     where oi.quantity_shipped > 0 and o.status not in (${cancelled})
-    group by o.channel_id, sc.name, 3
-    order by 3 desc, sc.name`);
-  return rows.rows.map((r) => ({
-    channelId: r.channel_id,
-    channelName: r.channel_name,
-    month: r.month,
-    units: Number(r.units),
-    unlinkedUnits: Number(r.unlinked_units),
-    unlinkedSkus: (r.unlinked_skus ?? []).filter(Boolean).sort(),
-  }));
+    group by o.channel_id, sc.name, 3`);
+  const moved = await tx.execute<{
+    channel_id: string;
+    channel_name: string;
+    month: string;
+    returned: number;
+    adjusted: number;
+    unlinked_skus: string[] | null;
+  }>(sql`
+    select e.channel_id, sc.name as channel_name, ${ledgerMonth} as month,
+      coalesce(sum(e.quantity) filter (where e.event_type = 'CustomerReturns' and e.quantity > 0), 0)::int as returned,
+      coalesce(sum(e.quantity) filter (where e.event_type = 'Adjustments'), 0)::int as adjusted,
+      array_agg(distinct e.sku) filter (where ps.id is null) as unlinked_skus
+    from inventory_ledger_events e
+    join sales_channels sc on sc.id = e.channel_id
+    left join product_skus ps on ps.channel_id = e.channel_id and ps.sku = e.sku
+    where e.event_type in ('CustomerReturns', 'Adjustments')
+    group by e.channel_id, sc.name, 3`);
+  const map = new Map<string, MonthSales>();
+  const entry = (channelId: string, channelName: string, month: string) => {
+    const key = `${channelId}:${month}`;
+    let m = map.get(key);
+    if (!m) {
+      m = {
+        channelId,
+        channelName,
+        month,
+        units: 0,
+        unlinkedUnits: 0,
+        unlinkedSkus: [],
+        returned: 0,
+        adjusted: 0,
+      };
+      map.set(key, m);
+    }
+    return m;
+  };
+  for (const r of sold.rows) {
+    const m = entry(r.channel_id, r.channel_name, r.month);
+    m.units = Number(r.units);
+    m.unlinkedUnits = Number(r.unlinked_units);
+    m.unlinkedSkus.push(...(r.unlinked_skus ?? []).filter(Boolean));
+  }
+  for (const r of moved.rows) {
+    const m = entry(r.channel_id, r.channel_name, r.month);
+    m.returned = Number(r.returned);
+    m.adjusted = Number(r.adjusted);
+    // An unlinked SKU only matters to the ledger if it moved stock that month.
+    if (m.returned || m.adjusted) m.unlinkedSkus.push(...(r.unlinked_skus ?? []).filter(Boolean));
+  }
+  return [...map.values()]
+    .filter((m) => m.units || m.unlinkedUnits || m.returned || m.adjusted)
+    .map((m) => ({ ...m, unlinkedSkus: [...new Set(m.unlinkedSkus)].sort() }))
+    .sort((a, b) =>
+      a.month === b.month ? a.channelName.localeCompare(b.channelName) : a.month < b.month ? 1 : -1,
+    );
 }
 
 /** Product units shipped on one marketplace in one month. */
@@ -220,6 +280,29 @@ async function unitsByProduct(
       and to_char(o.purchased_at at time zone ${input.timezone}, 'YYYY-MM') = ${input.month}
     group by ps.product_id`);
   return new Map(rows.rows.map((r) => [r.product_id, Number(r.units)]));
+}
+
+/** Product units customers returned, and net adjustments, on one marketplace in one month. */
+async function ledgerByProduct(
+  tx: Transaction,
+  input: { channelId: string; month: string },
+): Promise<Map<string, { returned: number; adjusted: number }>> {
+  const rows = await tx.execute<{ product_id: string; returned: number; adjusted: number }>(sql`
+    select ps.product_id,
+      coalesce(sum(e.quantity * ps.units) filter (where e.event_type = 'CustomerReturns' and e.quantity > 0), 0)::int as returned,
+      coalesce(sum(e.quantity * ps.units) filter (where e.event_type = 'Adjustments'), 0)::int as adjusted
+    from inventory_ledger_events e
+    join product_skus ps on ps.channel_id = e.channel_id and ps.sku = e.sku
+    where e.channel_id = ${input.channelId}
+      and e.event_type in ('CustomerReturns', 'Adjustments')
+      and ${ledgerMonth} = ${input.month}
+    group by ps.product_id`);
+  return new Map(
+    rows.rows.map((r) => [
+      r.product_id,
+      { returned: Number(r.returned), adjusted: Number(r.adjusted) },
+    ]),
+  );
 }
 
 // ─── Lots as they stand ───────────────────────────────────────────────────────
@@ -262,14 +345,54 @@ async function availableLots(
   return map;
 }
 
+/**
+ * Cost of one for units coming back into stock (returns, found): this month's sales cost per
+ * unit, else the product's most recent costed unit, else the average of its lots. Null when
+ * the product has no cost at all yet.
+ */
+async function costOfOne(
+  tx: Transaction,
+  productId: string,
+  lots: readonly FifoLot[],
+  soldUnits: number,
+  soldCost: bigint,
+): Promise<bigint | null> {
+  if (soldUnits > 0) return divRound(soldCost, BigInt(soldUnits));
+  const [last] = await tx
+    .select({ quantity: lotConsumptions.quantity, cost: lotConsumptions.cost })
+    .from(lotConsumptions)
+    .innerJoin(cogsPeriods, eq(cogsPeriods.id, lotConsumptions.cogsPeriodId))
+    .innerJoin(inventoryLots, eq(inventoryLots.id, lotConsumptions.lotId))
+    .where(and(eq(inventoryLots.productId, productId), eq(lotConsumptions.kind, "sale")))
+    .orderBy(desc(cogsPeriods.month), desc(lotConsumptions.id))
+    .limit(1);
+  if (last && last.quantity > 0) return divRound(parseDecimal(last.cost), BigInt(last.quantity));
+  const units = lots.reduce((sum, l) => sum + l.quantity, 0);
+  if (!units) return null;
+  const total = lots.reduce((sum, l) => sum + parseDecimal(l.totalCost), 0n);
+  return divRound(total, BigInt(units));
+}
+
+type Take = { lotId: string; quantity: number; cost: string };
+
 export type CogsLine = {
   productId: string;
   productName: string;
+  /** Shipped to customers, and what they cost at FIFO. */
   units: number;
   cost: string;
-  /** Units no lot received by the month's end could cover. */
+  /** Units no lot received by the month's end could cover (sales and losses). */
   short: number;
-  takes: { lotId: string; quantity: number; cost: string }[];
+  takes: Take[];
+  /** Returned by customers: back into stock at `returnedCost`. */
+  returned: number;
+  returnedCost: string;
+  /** Net adjustments: lost, damaged or disposed (taken from lots), or found (back into stock). */
+  lost: number;
+  lostCost: string;
+  writeOffs: Take[];
+  found: number;
+  foundCost: string;
 };
 
 export type CogsPreview = {
@@ -278,18 +401,37 @@ export type CogsPreview = {
   lines: CogsLine[];
   units: number;
   cost: string;
+  returned: number;
+  returnedCost: string;
+  lost: number;
+  lostCost: string;
+  found: number;
+  foundCost: string;
   unlinkedSkus: string[];
+  /** Amazon's inventory ledger is in through this day (null: never brought in). */
+  ledgerThrough: string | null;
   /** Plain-language reasons it can't be posted yet; empty when it can. */
   problems: string[];
 };
+
+const roundTo = (units: bigint, currency: string) =>
+  roundUnits(units, Math.min(minorUnits(currency), AMOUNT_SCALE));
 
 /** What posting a marketplace's month would take from the lots, and what's in the way. */
 export async function previewCogs(
   tx: Transaction,
   input: { channelId: string; month: string; timezone: string; baseCurrency: string },
 ): Promise<CogsPreview> {
+  const currency = input.baseCurrency;
+  const monthEnd = monthBounds(input.month).to;
+  const [channel] = await tx
+    .select({ ledgerThrough: salesChannels.ledgerSyncedThrough })
+    .from(salesChannels)
+    .where(eq(salesChannels.id, input.channelId));
+  const ledgerThrough = channel?.ledgerThrough ?? null;
   const sold = await unitsByProduct(tx, input);
-  const ids = [...sold.keys()];
+  const moved = ledgerThrough ? await ledgerByProduct(tx, input) : new Map();
+  const ids = [...new Set([...sold.keys(), ...moved.keys()])];
   const names = ids.length
     ? new Map(
         (
@@ -300,44 +442,97 @@ export async function previewCogs(
         ).map((p) => [p.id, p.name]),
       )
     : new Map<string, string>();
-  const lots = await availableLots(tx, ids, monthBounds(input.month).to);
-  const lines: CogsLine[] = ids
-    .map((productId) => {
-      const units = sold.get(productId) ?? 0;
-      const taken = takeFifo(lots.get(productId) ?? [], units, input.baseCurrency);
-      return {
+  const lotsByProduct = await availableLots(tx, ids, monthEnd);
+  const problems: string[] = [];
+  const lines: CogsLine[] = [];
+  for (const productId of ids) {
+    const name = names.get(productId) ?? "A product";
+    const lots = lotsByProduct.get(productId) ?? [];
+    const units = sold.get(productId) ?? 0;
+    const sales = takeFifo(lots, units, currency);
+    // Losses come out of what's left after this month's sales.
+    const after = lots.map((lot) => ({
+      ...lot,
+      consumed:
+        lot.consumed +
+        sales.takes.filter((t) => t.lotId === lot.id).reduce((s, t) => s + t.quantity, 0),
+    }));
+    const change = moved.get(productId) ?? { returned: 0, adjusted: 0 };
+    const lost = Math.max(0, -change.adjusted);
+    const found = Math.max(0, change.adjusted);
+    const losses = takeFifo(after, lost, currency);
+    let returnedCost = 0n;
+    let foundCost = 0n;
+    if (change.returned || found) {
+      const one = await costOfOne(
+        tx,
         productId,
-        productName: names.get(productId) ?? "A product",
-        units,
-        cost: taken.cost,
-        short: taken.short,
-        takes: taken.takes,
-      };
-    })
-    .sort((a, b) => a.productName.localeCompare(b.productName));
+        lots,
+        units - sales.short,
+        parseDecimal(sales.cost),
+      );
+      if (one === null) {
+        problems.push(
+          `${name}: units came back, but there's no cost for it yet. Add opening stock or record a delivery.`,
+        );
+      } else {
+        returnedCost = roundTo(one * BigInt(change.returned), currency);
+        foundCost = roundTo(one * BigInt(found), currency);
+      }
+    }
+    lines.push({
+      productId,
+      productName: name,
+      units,
+      cost: sales.cost,
+      short: sales.short + losses.short,
+      takes: sales.takes,
+      returned: change.returned,
+      returnedCost: formatDecimal(returnedCost),
+      lost,
+      lostCost: losses.cost,
+      writeOffs: losses.takes,
+      found,
+      foundCost: formatDecimal(foundCost),
+    });
+  }
+  lines.sort((a, b) => a.productName.localeCompare(b.productName));
   const month = (await salesByMonth(tx, { timezone: input.timezone })).find(
     (m) => m.channelId === input.channelId && m.month === input.month,
   );
-  const problems: string[] = [];
   const unlinkedSkus = month?.unlinkedSkus ?? [];
+  if (ledgerThrough && ledgerThrough < monthEnd) {
+    problems.unshift(
+      `Amazon's inventory ledger is in through ${ledgerThrough}. Bring it in through ${monthEnd} first (Inventory → Stock movements), so returns and losses are counted.`,
+    );
+  }
   if (unlinkedSkus.length) {
-    problems.push(
-      `${unlinkedSkus.length === 1 ? "1 SKU sold" : `${unlinkedSkus.length} SKUs sold`} this month ${unlinkedSkus.length === 1 ? "isn't" : "aren't"} linked to a product: ${unlinkedSkus.slice(0, 5).join(", ")}${unlinkedSkus.length > 5 ? "…" : ""}. Link ${unlinkedSkus.length === 1 ? "it" : "them"} under Products.`,
+    problems.unshift(
+      `${unlinkedSkus.length === 1 ? "1 SKU" : `${unlinkedSkus.length} SKUs`} sold or moved this month ${unlinkedSkus.length === 1 ? "isn't" : "aren't"} linked to a product: ${unlinkedSkus.slice(0, 5).join(", ")}${unlinkedSkus.length > 5 ? "…" : ""}. Link ${unlinkedSkus.length === 1 ? "it" : "them"} under Products.`,
     );
   }
   for (const line of lines.filter((l) => l.short > 0)) {
     problems.push(
-      `${line.productName}: ${line.units} sold, but only ${line.units - line.short} in stock lots by the month's end. Add opening stock or record the delivery.`,
+      `${line.productName}: ${line.units + line.lost} went out, but only ${line.units + line.lost - line.short} were in stock lots by the month's end. Add opening stock or record the delivery.`,
     );
   }
-  const cost = lines.reduce((sum, l) => sum + parseDecimal(l.cost), 0n);
+  const sum = (pick: (l: CogsLine) => string) =>
+    formatDecimal(lines.reduce((s, l) => s + parseDecimal(pick(l)), 0n));
+  const count = (pick: (l: CogsLine) => number) => lines.reduce((s, l) => s + pick(l), 0);
   return {
     channelId: input.channelId,
     month: input.month,
     lines,
-    units: lines.reduce((sum, l) => sum + l.units, 0),
-    cost: formatDecimal(cost),
+    units: count((l) => l.units),
+    cost: sum((l) => l.cost),
+    returned: count((l) => l.returned),
+    returnedCost: sum((l) => l.returnedCost),
+    lost: count((l) => l.lost),
+    lostCost: sum((l) => l.lostCost),
+    found: count((l) => l.found),
+    foundCost: sum((l) => l.foundCost),
     unlinkedSkus,
+    ledgerThrough,
     problems,
   };
 }
@@ -357,7 +552,11 @@ const MONTH_NAME = (month: string) =>
     timeZone: "UTC",
   });
 
-/** Posts a marketplace's month: takes the units from the lots and books the cost. */
+/**
+ * Posts a marketplace's month: sales and losses leave the lots, returns and found units come
+ * back as lots, and one entry books it (cost of goods sold net of returns, write-offs net of
+ * units found, inventory the other way).
+ */
 export async function postCogs(
   tx: Transaction,
   input: {
@@ -404,7 +603,9 @@ export async function postCogs(
   }
   const preview = await previewCogs(tx, input);
   if (preview.problems.length) throw new CogsError(preview.problems[0] ?? "", "invalid");
-  if (!preview.units) throw new CogsError("Nothing shipped on this marketplace that month.");
+  if (!preview.units && !preview.returned && !preview.lost && !preview.found) {
+    throw new CogsError("Nothing shipped or moved on this marketplace that month.");
+  }
 
   const [period] = await tx
     .insert(cogsPeriods)
@@ -414,36 +615,98 @@ export async function postCogs(
       month: input.month,
       units: preview.units,
       cost: preview.cost,
+      returnedUnits: preview.returned,
+      returnedCost: preview.returnedCost,
+      lostUnits: preview.lost,
+      lostCost: preview.lostCost,
+      foundUnits: preview.found,
+      foundCost: preview.foundCost,
       currency: input.baseCurrency,
       createdBy: input.userId,
     })
     .returning({ id: cogsPeriods.id });
   if (!period) throw new CogsError("The month couldn't be saved.");
-  const takes = preview.lines.flatMap((line) => line.takes);
-  if (takes.length) {
+  const consumptions = preview.lines.flatMap((line) => [
+    ...line.takes.map((t) => ({ ...t, kind: "sale" as const })),
+    ...line.writeOffs.map((t) => ({ ...t, kind: "write_off" as const })),
+  ]);
+  if (consumptions.length) {
     await tx.insert(lotConsumptions).values(
-      takes.map((take) => ({
+      consumptions.map((take) => ({
         organizationId: input.orgId,
         cogsPeriodId: period.id,
         lotId: take.lotId,
+        kind: take.kind,
         quantity: take.quantity,
         cost: take.cost,
       })),
     );
   }
-  if (parseDecimal(preview.cost) > 0n) {
-    const entryId = await postPair(tx, {
-      orgId: input.orgId,
-      userId: input.userId,
-      baseCurrency: input.baseCurrency,
-      date: monthBounds(input.month).to,
-      memo: `Cost of goods sold · ${channel.name} · ${MONTH_NAME(input.month)}`,
-      source: "cogs",
-      sourceId: period.id,
-      debit: await ensureSystemAccount(tx, input.orgId, "cost_of_goods_sold"),
-      credit: await ensureSystemAccount(tx, input.orgId, "inventory"),
-      amount: preview.cost,
-    });
+  const monthEnd = monthBounds(input.month).to;
+  const backIn = preview.lines.flatMap((line) => [
+    ...(line.returned
+      ? [
+          {
+            productId: line.productId,
+            source: "return" as const,
+            quantity: line.returned,
+            cost: line.returnedCost,
+          },
+        ]
+      : []),
+    ...(line.found
+      ? [
+          {
+            productId: line.productId,
+            source: "found" as const,
+            quantity: line.found,
+            cost: line.foundCost,
+          },
+        ]
+      : []),
+  ]);
+  if (backIn.length) {
+    await tx.insert(inventoryLots).values(
+      backIn.map((lot) => ({
+        organizationId: input.orgId,
+        productId: lot.productId,
+        source: lot.source,
+        cogsPeriodId: period.id,
+        receivedOn: monthEnd,
+        quantity: lot.quantity,
+        currency: input.baseCurrency,
+        productCost: lot.cost,
+        landedCost: "0",
+        notes: lot.source === "return" ? "Returned by customers" : "Found by Amazon",
+      })),
+    );
+  }
+  const p = (v: string) => parseDecimal(v);
+  const cogs = p(preview.cost) - p(preview.returnedCost);
+  const writeOffs = p(preview.lostCost) - p(preview.foundCost);
+  const accountsNeeded = {
+    cogs: await ensureSystemAccount(tx, input.orgId, "cost_of_goods_sold"),
+    inventory: await ensureSystemAccount(tx, input.orgId, "inventory"),
+    writeOffs:
+      writeOffs !== 0n ? await ensureSystemAccount(tx, input.orgId, "inventory_write_offs") : null,
+  };
+  const entryId = await postLines(tx, {
+    orgId: input.orgId,
+    userId: input.userId,
+    baseCurrency: input.baseCurrency,
+    date: monthEnd,
+    memo: `Cost of goods sold · ${channel.name} · ${MONTH_NAME(input.month)}`,
+    source: "cogs",
+    sourceId: period.id,
+    lines: [
+      { accountId: accountsNeeded.cogs, amount: cogs },
+      ...(accountsNeeded.writeOffs
+        ? [{ accountId: accountsNeeded.writeOffs, amount: writeOffs }]
+        : []),
+      { accountId: accountsNeeded.inventory, amount: -(cogs + writeOffs) },
+    ],
+  });
+  if (entryId) {
     await tx
       .update(cogsPeriods)
       .set({ journalEntryId: entryId })
@@ -541,7 +804,7 @@ export async function addOpeningStock(
     .returning({ id: inventoryLots.id });
   if (!lot) throw new CogsError("The opening stock couldn't be saved.");
   if (parseDecimal(total) > 0n) {
-    const entryId = await postPair(tx, {
+    const entryId = await postLines(tx, {
       orgId: input.orgId,
       userId: input.userId,
       baseCurrency: input.baseCurrency,
@@ -549,9 +812,16 @@ export async function addOpeningStock(
       memo: `Opening stock · ${product.name} × ${input.quantity}`,
       source: "opening_stock",
       sourceId: lot.id,
-      debit: await ensureSystemAccount(tx, input.orgId, "inventory"),
-      credit: await ensureSystemAccount(tx, input.orgId, "opening_balance_equity"),
-      amount: total,
+      lines: [
+        {
+          accountId: await ensureSystemAccount(tx, input.orgId, "inventory"),
+          amount: parseDecimal(total),
+        },
+        {
+          accountId: await ensureSystemAccount(tx, input.orgId, "opening_balance_equity"),
+          amount: -parseDecimal(total),
+        },
+      ],
     });
     await tx
       .update(inventoryLots)
