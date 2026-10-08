@@ -10,6 +10,7 @@ import {
   amazonErrorDetail,
   type MarketplaceParticipation,
   parseBuyerInfo,
+  parseFbaInventoryPage,
   parseMarketplaceParticipations,
   parseOrderItemsPage,
   parseOrdersPage,
@@ -240,6 +241,32 @@ export async function ordersPage(
     params.MaxResultsPerPage = "100";
   }
   return parseOrdersPage(await call(creds, region, "/orders/v0/orders", params));
+}
+
+const FBA_INVENTORY_DENIED =
+  "Amazon didn't let us read your FBA inventory. Give the app the Amazon Fulfillment role in Seller Central → Develop Apps, then authorize it again.";
+
+/**
+ * One page of the marketplace's FBA inventory: every seller SKU Amazon holds stock for (sold or
+ * not), with what can be sold now. Amazon answers up to 50 at a time.
+ */
+export async function fbaInventoryPage(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  query: { marketplaceId: string; nextToken?: string | null },
+) {
+  const params: Record<string, string> = {
+    details: "true",
+    granularityType: "Marketplace",
+    granularityId: query.marketplaceId,
+    marketplaceIds: query.marketplaceId,
+  };
+  if (query.nextToken) params.nextToken = query.nextToken;
+  return parseFbaInventoryPage(
+    await call(creds, region, "/fba/inventory/v1/summaries", params, {
+      forbidden: FBA_INVENTORY_DENIED,
+    }),
+  );
 }
 
 /**

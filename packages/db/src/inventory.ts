@@ -2,7 +2,7 @@ import { ORDER_STATUS_GROUPS } from "@bookalyze/core";
 import { and, asc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { connections } from "./schema/banking";
-import { orderItems, orders, salesChannels } from "./schema/commerce";
+import { channelSkus, orderItems, orders, salesChannels } from "./schema/commerce";
 import { productSkus, products } from "./schema/inventory";
 
 /**
@@ -312,66 +312,122 @@ export type UnlinkedSku = {
   channelId: string;
   channelName: string;
   sku: string;
-  /** The product title on the most recent order. */
+  /** The product title on the most recent order, or the marketplace's listing title. */
   title: string | null;
   orders: number;
   /** Listing units ordered (cancelled orders left out). */
   units: number;
-  lastOrderedAt: Date;
+  /** Null for a SKU the marketplace lists that hasn't been ordered yet. */
+  lastOrderedAt: Date | null;
+  /** Units the marketplace holds that can be sold (FBA), when its SKUs were last brought in. */
+  fulfillable: number | null;
 };
 
-/** Orders of marketplaces still connected, as on the Orders screen. */
-const connectedChannel = sql`exists (select 1 from connections c where c.id = ${salesChannels.connectionId} and c.status <> 'disconnected')`;
-
 /**
- * Seller SKUs seen on orders that aren't linked to a product yet, most recently ordered first,
- * with how many there are in all.
+ * Seller SKUs that aren't linked to a product yet, on marketplaces still connected: every SKU
+ * seen on orders, and every SKU the marketplace lists (its FBA inventory) even if never sold.
+ * Most recently ordered first, then the never-ordered ones by title; with how many in all.
  */
 export async function unlinkedSkus(
   tx: Transaction,
   options: { limit: number },
 ): Promise<{ rows: UnlinkedSku[]; total: number }> {
-  const where = and(
-    sql`${orderItems.sku} is not null and length(trim(${orderItems.sku})) > 0`,
-    connectedChannel,
-    sql`not exists (select 1 from ${productSkus} ps where ps.channel_id = ${orders.channelId} and ps.sku = ${orderItems.sku})`,
+  const candidates = sql`
+    with seen as (
+      select o.channel_id, oi.sku,
+        (array_agg(oi.title order by o.purchased_at desc) filter (where oi.title is not null))[1] as title,
+        count(distinct o.id)::int as orders,
+        coalesce(sum(oi.quantity_ordered) filter (where o.status not in (${cancelled})), 0)::int as units,
+        max(o.purchased_at) as last_ordered_at
+      from ${orderItems} oi
+      join ${orders} o on o.id = oi.order_id
+      where oi.sku is not null and length(trim(oi.sku)) > 0
+      group by o.channel_id, oi.sku
+    ),
+    candidates as (
+      select coalesce(s.channel_id, l.channel_id) as channel_id,
+        coalesce(s.sku, l.sku) as sku,
+        coalesce(s.title, l.title) as title,
+        coalesce(s.orders, 0) as orders,
+        coalesce(s.units, 0) as units,
+        s.last_ordered_at,
+        l.fulfillable
+      from seen s
+      full outer join ${channelSkus} l on l.channel_id = s.channel_id and l.sku = s.sku
+    )
+    select c.*, sc.name as channel_name
+    from candidates c
+    join ${salesChannels} sc on sc.id = c.channel_id
+    where exists (
+        select 1 from ${connections} cn
+        where cn.id = sc.connection_id and cn.status <> 'disconnected'
+      )
+      and not exists (
+        select 1 from ${productSkus} ps where ps.channel_id = c.channel_id and ps.sku = c.sku
+      )`;
+  const rows = await tx.execute<{
+    channel_id: string;
+    channel_name: string;
+    sku: string;
+    title: string | null;
+    orders: number;
+    units: number;
+    last_ordered_at: string | Date | null;
+    fulfillable: number | null;
+  }>(sql`${candidates}
+    order by c.last_ordered_at desc nulls last, lower(coalesce(c.title, c.sku)), c.sku
+    limit ${options.limit}`);
+  const count = await tx.execute<{ total: number }>(
+    sql`select count(*)::int as total from (${candidates}) x`,
   );
-  const rows = await tx
-    .select({
-      channelId: orders.channelId,
-      channelName: salesChannels.name,
-      sku: sql<string>`${orderItems.sku}`,
-      title: sql<
-        string | null
-      >`(array_agg(${orderItems.title} order by ${orders.purchasedAt} desc) filter (where ${orderItems.title} is not null))[1]`,
-      orders: sql<number>`count(distinct ${orders.id})::int`,
-      units: sql<number>`coalesce(sum(${orderItems.quantityOrdered}) filter (where ${orders.status} not in (${cancelled})), 0)::int`,
-      lastOrderedAt: sql<Date>`max(${orders.purchasedAt})`,
-    })
-    .from(orderItems)
-    .innerJoin(orders, eq(orders.id, orderItems.orderId))
-    .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
-    .where(where)
-    .groupBy(orders.channelId, salesChannels.name, orderItems.sku)
-    .orderBy(sql`max(${orders.purchasedAt}) desc`, asc(orderItems.sku))
-    .limit(options.limit);
-  const [count] = await tx
-    .select({
-      total: sql<number>`count(distinct (${orders.channelId}, ${orderItems.sku}))::int`,
-    })
-    .from(orderItems)
-    .innerJoin(orders, eq(orders.id, orderItems.orderId))
-    .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
-    .where(where);
   return {
-    rows: rows.map((r) => ({
-      ...r,
+    rows: rows.rows.map((r) => ({
+      channelId: r.channel_id,
+      channelName: r.channel_name,
+      sku: r.sku,
+      title: r.title,
       orders: Number(r.orders),
       units: Number(r.units),
-      lastOrderedAt: new Date(r.lastOrderedAt),
+      lastOrderedAt: r.last_ordered_at ? new Date(r.last_ordered_at) : null,
+      fulfillable: r.fulfillable === null ? null : Number(r.fulfillable),
     })),
-    total: Number(count?.total ?? 0),
+    total: Number(count.rows[0]?.total ?? 0),
   };
+}
+
+export type ListedSku = {
+  sku: string;
+  asin: string | null;
+  title: string | null;
+  fulfillable: number | null;
+};
+
+/** Saves the SKUs a marketplace lists (from its FBA inventory) and when they were brought in. */
+export async function saveChannelSkus(
+  tx: Transaction,
+  input: { orgId: string; channelId: string; skus: ListedSku[]; at?: Date },
+): Promise<number> {
+  const at = input.at ?? new Date();
+  const unique = new Map(input.skus.filter((s) => s.sku.trim()).map((s) => [s.sku, s] as const));
+  for (const sku of unique.values()) {
+    await tx
+      .insert(channelSkus)
+      .values({ organizationId: input.orgId, channelId: input.channelId, ...sku, seenAt: at })
+      .onConflictDoUpdate({
+        target: [channelSkus.channelId, channelSkus.sku],
+        set: {
+          asin: sku.asin,
+          title: sku.title,
+          fulfillable: sku.fulfillable,
+          seenAt: at,
+        },
+      });
+  }
+  await tx
+    .update(salesChannels)
+    .set({ skusSyncedAt: at })
+    .where(eq(salesChannels.id, input.channelId));
+  return unique.size;
 }
 
 /**
@@ -390,11 +446,16 @@ export async function createProductFromSku(
     .where(and(eq(orders.channelId, input.channelId), eq(orderItems.sku, input.sku)))
     .orderBy(sql`(${orderItems.title} is null)`, sql`${orders.purchasedAt} desc`)
     .limit(1);
-  if (!seen) throw new InventoryError("No orders have this SKU any more.");
+  const [listed] = await tx
+    .select({ title: channelSkus.title })
+    .from(channelSkus)
+    .where(and(eq(channelSkus.channelId, input.channelId), eq(channelSkus.sku, input.sku)));
+  if (!seen && !listed)
+    throw new InventoryError("This SKU isn't on any order or listing any more.");
   const product = await createProduct(tx, {
     orgId: input.orgId,
     userId: input.userId,
-    name: seen.title?.trim() || input.sku,
+    name: seen?.title?.trim() || listed?.title?.trim() || input.sku,
     sku: (await ownSkuTaken(tx, input.sku)) ? null : input.sku,
     notes: null,
   });

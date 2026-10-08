@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
 import { getInventoryContext } from "@/server/inventory";
+import { AmazonSkusButton } from "./amazon-skus-button";
 import { ProductDialog } from "./product-dialog";
 import { UnlinkedSkus } from "./unlinked-skus";
 
@@ -88,6 +89,7 @@ export default async function ProductsPage({
             sku: r.sku,
             title: r.title,
             orders: r.orders,
+            fulfillable: r.fulfillable,
           }))}
           total={unlinked.total}
           products={linkable.map((p) => ({ id: p.id, name: p.name }))}
@@ -119,6 +121,11 @@ export default async function ProductsPage({
         >
           {showArchived ? "Hide archived" : "Show archived"}
         </Link>
+        {!unlinked.rows.length && channelChoices.length ? (
+          <div className="flex w-full justify-end sm:w-auto">
+            <AmazonSkusButton slug={slug} />
+          </div>
+        ) : null}
       </div>
 
       {products.length === 0 ? (

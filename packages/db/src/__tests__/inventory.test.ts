@@ -10,6 +10,7 @@ import {
   InventoryError,
   linkSku,
   listProducts,
+  saveChannelSkus,
   setProductArchived,
   unlinkedSkus,
   unlinkSku,
@@ -268,6 +269,39 @@ describe("products", () => {
     await expect(scoped((tx) => unlinkSku(tx, link?.id ?? ""))).rejects.toBeInstanceOf(
       InventoryError,
     );
+  });
+
+  it("lists SKUs the marketplace has that were never ordered, after the ordered ones", async () => {
+    // FBA inventory: one SKU already on orders (PINE-CANDLE), two variations never sold.
+    const saved = await scoped((tx) =>
+      saveChannelSkus(tx, {
+        orgId,
+        channelId,
+        skus: [
+          { sku: "PINE-CANDLE", asin: "B0PINE", title: "Pine candle (listing)", fulfillable: 4 },
+          { sku: "MUG-500", asin: "B0MUG5", title: "Maple mug, 500ml", fulfillable: 12 },
+          { sku: "MUG-100", asin: "B0MUG1", title: "Maple mug, 100ml", fulfillable: 0 },
+        ],
+      }),
+    );
+    expect(saved).toBe(3);
+    const list = await scoped((tx) => unlinkedSkus(tx, { limit: 10 }));
+    expect(list.rows.map((r) => [r.sku, r.orders, r.fulfillable])).toEqual([
+      ["PINE-CANDLE", 1, 4],
+      ["MAPLE-MUG-2PK", 1, null],
+      ["MUG-100", 0, 0],
+      ["MUG-500", 0, 12],
+    ]);
+    // The order title wins over the listing's; a never-ordered SKU uses the listing's.
+    expect(list.rows[0]?.title).toBe("Pine candle");
+    expect(list.rows[2]?.lastOrderedAt).toBeNull();
+    expect(list.total).toBe(4);
+
+    const { product } = await scoped((tx) =>
+      createProductFromSku(tx, { orgId, userId: null, channelId, sku: "MUG-500" }),
+    );
+    expect(product.name).toBe("Maple mug, 500ml");
+    expect((await scoped((tx) => unlinkedSkus(tx, { limit: 10 }))).total).toBe(3);
   });
 
   it("keeps products to their own company", async () => {

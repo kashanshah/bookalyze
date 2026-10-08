@@ -1424,12 +1424,18 @@ test("inventory: products from the SKUs on orders, and a 2-pack linked by hand",
 
   // The SKUs on the orders brought in earlier wait to be linked.
   const unlinked = page.getByRole("region", {
-    name: "SKUs from your orders that aren't linked yet",
+    name: "SKUs that aren't linked to a product yet",
   });
   const sku = (name: string) => unlinked.getByRole("listitem", { name, exact: true });
   await expect(sku("MAPLE-MUG")).toBeVisible();
   await expect(sku("PINE-CANDLE")).toBeVisible();
   await expect(sku("BIRCH-COASTER")).toBeVisible();
+
+  // Amazon's stock brings in a variation that has never been ordered.
+  await unlinked.getByRole("button", { name: "Check Amazon for all SKUs" }).click();
+  await expect(page.getByText("2 SKUs checked with Amazon")).toBeVisible();
+  await expect(sku("MAPLE-MUG-XL")).toContainText("No orders yet · 12 at Amazon");
+  await expect(sku("MAPLE-MUG")).toContainText("40 at Amazon");
 
   // One click makes a product named after the listing, with the SKU linked.
   await sku("MAPLE-MUG").getByRole("button", { name: "Create product" }).click();

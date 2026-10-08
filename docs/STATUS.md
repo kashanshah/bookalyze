@@ -1223,6 +1223,24 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   partial and full deliveries, over-receiving refused, cancel rules, tenant isolation), e2e
   "purchase orders: draft, send, a partial delivery, then the rest".
 
+### Products: every Amazon SKU, and wide titles
+
+- **Every SKU, sold or not:** the "SKUs that aren't linked to a product yet" list was built only
+  from orders, so a variation with no orders since the orders start date (or whose order items
+  were still being fetched) never showed. Now it also lists every SKU Amazon holds stock for: the
+  FBA Inventory API (`getInventorySummaries`, needs the **Amazon Fulfillment** role), saved in
+  `channel_skus` (migration `0044_channel_skus`) with ASIN, title and units that can be sold.
+  Brought in once a day at the end of the orders sync (`syncChannelSkus`, step 4, only with time
+  to spare) and with **Check Amazon for all SKUs** on Products. A never-ordered SKU shows
+  "No orders yet · N at Amazon"; **Create product** names it after the listing title.
+  Merchant-fulfilled SKUs with no FBA stock and no orders still need the Reports API later.
+- **Layout:** a long title cut with "…" made its section as wide as the title, pushing the page
+  past its column. `globals.css` lets every page section shrink (`main > .grid > * { min-width:
+  0 }`), on every screen.
+- Tests: core `fba-inventory.test.ts`, db `inventory.test.ts` (listed-only SKUs after ordered
+  ones, order title wins, product from a listing), e2e inventory test ("Check Amazon for all
+  SKUs" brings in a variation never ordered).
+
 ### Phase 5, slice 3: landed costs and FIFO stock lots
 
 - **What it is:** each line of a delivery becomes one **stock lot** (`inventory_lots`): that

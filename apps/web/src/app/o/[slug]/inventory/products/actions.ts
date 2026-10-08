@@ -5,6 +5,7 @@ import {
   createProductFromSku,
   getProduct,
   InventoryError,
+  inventoryChannels,
   linkSku,
   schema,
   setProductArchived,
@@ -16,6 +17,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { productSchema, skuFromOrdersSchema, skuLinkSchema } from "@/lib/validation/inventory";
 import { inOrg } from "@/server/accounting";
+import { syncChannelSkus } from "@/server/amazon-skus";
 import { audit } from "@/server/audit";
 import { getInventoryContext } from "@/server/inventory";
 
@@ -238,4 +240,29 @@ export async function createProductFromSkuAction(
   } catch (error) {
     return friendly(error);
   }
+}
+
+/** Brings in every SKU Amazon holds stock for, sold or not, on each active marketplace. */
+export async function syncAmazonSkusAction(
+  slug: string,
+): Promise<{ ok: true; skus: number; channels: number } | { ok: false; message: string }> {
+  const ctx = await getInventoryContext(slug);
+  const channels = (await inOrg(ctx, (tx) => inventoryChannels(tx))).filter((c) => c.isActive);
+  const deadline = Date.now() + 50_000;
+  let skus = 0;
+  let synced = 0;
+  let error: string | null = null;
+  for (const channel of channels) {
+    const result = await syncChannelSkus(
+      { orgId: ctx.org.id, userId: ctx.session.user.id },
+      channel.id,
+      { deadline },
+    );
+    if (result.error) error ??= result.error;
+    else if (result.skus) synced++;
+    skus += result.skus;
+  }
+  revalidatePath(path(slug));
+  if (error && !skus) return { ok: false, message: error };
+  return { ok: true, skus, channels: synced };
 }

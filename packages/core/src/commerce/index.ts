@@ -1,4 +1,5 @@
 export * from "./amazon";
+export * from "./fba-inventory";
 export * from "./glance";
 export * from "./invoices";
 export * from "./listings";
