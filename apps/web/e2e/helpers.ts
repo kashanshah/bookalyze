@@ -97,14 +97,18 @@ export async function openTransaction(page: Page, text: string) {
 export async function choose(trigger: Locator, option: string | RegExp) {
   await trigger.click();
   const page = trigger.page();
-  const search = page.locator('input[role="combobox"][aria-autocomplete="list"]');
-  await expect(page.getByRole("listbox")).toBeVisible();
+  // The list this trigger opened (by its aria-controls): another list can still be closing,
+  // e.g. right after picking with the keyboard, so "the" listbox on the page isn't enough.
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  const listId = await trigger.getAttribute("aria-controls");
+  const list = listId ? page.locator(`[id="${listId}"]`) : page.getByRole("listbox");
+  await expect(list).toBeVisible();
+  const search = page.locator(
+    `input[role="combobox"][aria-autocomplete="list"][aria-controls="${listId}"]`,
+  );
   if (typeof option === "string" && (await search.count()) > 0) {
     await search.fill(option.replace(/ \(.*\)$/, ""));
   }
-  await page
-    .getByRole("listbox")
-    .getByRole("option", { name: option, exact: typeof option === "string" })
-    .click();
-  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await list.getByRole("option", { name: option, exact: typeof option === "string" }).click();
+  await expect(list).toHaveCount(0);
 }
