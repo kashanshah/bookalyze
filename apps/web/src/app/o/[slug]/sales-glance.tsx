@@ -18,6 +18,10 @@ function countLabel(value: number, locale: string) {
   return new Intl.NumberFormat(locale).format(value);
 }
 
+function countPhrase(value: number, locale: string, one: string, many: string) {
+  return value === 1 ? `1 ${one}` : `${countLabel(value, locale)} ${many}`;
+}
+
 /** Orders, units and sales for a quick look, when Commerce is switched on. */
 export function SalesGlance({
   glance,
@@ -81,8 +85,13 @@ export function SalesGlance({
               {countLabel(glance.orders.total, locale)}
             </p>
             <TrendChart
-              values={glance.orders.points.map((point) => point.value)}
+              locale={locale}
               label={`Orders each day for the last ${RANGE_LABEL[range]}`}
+              points={glance.orders.points.map((point) => ({
+                date: point.date,
+                value: point.value,
+                text: countPhrase(point.value, locale, "order", "orders"),
+              }))}
             />
           </GlanceCard>
           <GlanceCard label="Units" hint="Items on those orders">
@@ -90,8 +99,13 @@ export function SalesGlance({
               {countLabel(glance.units.total, locale)}
             </p>
             <TrendChart
-              values={glance.units.points.map((point) => point.value)}
+              locale={locale}
               label={`Units each day for the last ${RANGE_LABEL[range]}`}
+              points={glance.units.points.map((point) => ({
+                date: point.date,
+                value: point.value,
+                text: countPhrase(point.value, locale, "unit", "units"),
+              }))}
             />
           </GlanceCard>
           {glance.sales.map((series) => (
@@ -100,8 +114,13 @@ export function SalesGlance({
                 {formatMoney(series.total, series.currency, locale)}
               </p>
               <TrendChart
-                amounts={series.points.map((point) => point.amount)}
+                locale={locale}
                 label={`Sales in ${series.currency} each day for the last ${RANGE_LABEL[range]}`}
+                points={series.points.map((point) => ({
+                  date: point.date,
+                  amount: point.amount,
+                  text: formatMoney(point.amount, series.currency, locale),
+                }))}
               />
             </GlanceCard>
           ))}

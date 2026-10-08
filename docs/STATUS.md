@@ -685,7 +685,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 ### Phase 3, slice 2: Amazon orders
 
 - **Home glance** (the company home page, when Commerce is on): orders, units and sales for the
-  last 7, 30 or 90 days, one chart each. Sales stay in each order currency and are not added
+  last 7, 30 or 90 days, one chart each. Pointing at a day shows that day's figure. Sales stay in each order currency and are not added
   together. Canceled orders are left out; a pending order counts even when it has no price yet.
   The figures come from orders already brought in (`orderGlance`).
 - **Orders screen** (`/commerce/orders`, sidebar Commerce → Orders; `/commerce` opens it): tabs
