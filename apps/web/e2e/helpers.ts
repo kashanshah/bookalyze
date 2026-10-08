@@ -95,12 +95,15 @@ export async function openTransaction(page: Page, text: string) {
  * search box, and clicks the option with this exact label.
  */
 export async function choose(trigger: Locator, option: string | RegExp) {
-  await trigger.click();
   const page = trigger.page();
+  // The trigger button itself: once open, its list carries the same label, so a label locator
+  // would match both.
+  const button = trigger.and(page.locator('button[role="combobox"]'));
+  await button.click();
   // The list this trigger opened (by its aria-controls): another list can still be closing,
   // e.g. right after picking with the keyboard, so "the" listbox on the page isn't enough.
-  await expect(trigger).toHaveAttribute("aria-expanded", "true");
-  const listId = await trigger.getAttribute("aria-controls");
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+  const listId = await button.getAttribute("aria-controls");
   const list = listId ? page.locator(`[id="${listId}"]`) : page.getByRole("listbox");
   await expect(list).toBeVisible();
   const search = page.locator(
