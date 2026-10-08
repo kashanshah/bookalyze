@@ -329,6 +329,8 @@ export async function importBankLines(
             or(eq(bankLines.status, "pending"), and(eq(bankLines.status, "posted"), removed)),
           ),
         )
+        // Two syncs at once: the second waits here, then skips what the first just posted.
+        .for("update")
     : [];
   result.duplicates = input.lines.length - inserted.length - retry.length;
 

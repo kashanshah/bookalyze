@@ -91,6 +91,7 @@ export async function setGettingStartedHiddenAction(
     return { ok: false, message: "Only owners and admins can change the home page." };
   }
   if (!ctx.profile) return { ok: false, message: "Set up the company first." };
+  if (!z.boolean().safeParse(hidden).success) return { ok: false, message: "Choose show or hide." };
   await withOrg(getDb(), { orgId: ctx.org.id, userId: ctx.session.user.id }, async (tx) => {
     await tx.update(schema.organizationProfiles).set({ gettingStartedHidden: hidden });
     await audit(tx, {

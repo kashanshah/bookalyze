@@ -384,7 +384,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   - Unique `(organization_id, source_id)` where `source = 'bank_import'` and the entry is still
     in the books (migration `0038_reimport_removed_bank`): a bank line is posted once while it
     stands. Removing it frees the id, so the next sync or statement upload brings it back. An
-    edit or a merge keeps the id on the entry that stands for it, so that one is not posted again.
+    edit or a merge moves the bank line's link to the entry that stands for it, so that one is not posted again.
   - `syncable_connections()` (SECURITY DEFINER) gives the daily job organization and connection
     IDs only; each sync then runs inside `withOrg()`.
 - **Core** (`banking/`): `parseWiseProfiles/Balances/Statement` (JSON numbers become exact
