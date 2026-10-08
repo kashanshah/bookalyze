@@ -97,16 +97,14 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
   inventory: {
     key: "inventory",
     label: "Inventory",
-    description: "Products, purchase orders, landed costs, FIFO lots and cost of goods sold.",
+    description:
+      "The products you sell, linked to your marketplace SKUs. Purchase orders, landed costs and cost of goods sold come next.",
     basePath: "/inventory",
     phase: "5",
     requires: ["accounting", "commerce"],
     features: ["inventory.products", "inventory.purchasing", "inventory.cogs"],
-    nav: [
-      { label: "Products", href: "/inventory/products" },
-      { label: "Purchase orders", href: "/inventory/purchase-orders" },
-    ],
-    status: "coming_soon",
+    nav: [{ label: "Products", href: "/inventory/products" }],
+    status: "available",
   },
   reviews: {
     key: "reviews",
