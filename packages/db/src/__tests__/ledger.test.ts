@@ -274,7 +274,7 @@ describe("ledger helpers", () => {
 
   it("creates the default chart once, with bank accounts in the base currency", async () => {
     expect(await scoped((tx) => createDefaultChart(tx, { orgId: orgC, baseCurrency: "CAD" }))).toBe(
-      31,
+      32,
     );
     expect(await scoped((tx) => createDefaultChart(tx, { orgId: orgC, baseCurrency: "CAD" }))).toBe(
       0,

@@ -122,7 +122,8 @@ export function subtypesOf(type: AccountType): AccountSubtypeInfo[] {
 }
 
 /**
- * Accounts the system relies on (posting uncategorized bank lines, closing the year, FX).
+ * Accounts the system relies on (posting uncategorized bank lines, closing the year, FX, stock
+ * and cost of goods sold).
  * They can be renamed but not archived.
  */
 export const SYSTEM_ACCOUNT_KEYS = [
@@ -133,5 +134,8 @@ export const SYSTEM_ACCOUNT_KEYS = [
   "uncategorized_expense",
   "fx_gain",
   "fx_loss",
+  "inventory",
+  "cost_of_goods_sold",
+  "opening_balance_equity",
 ] as const;
 export type SystemAccountKey = (typeof SYSTEM_ACCOUNT_KEYS)[number];

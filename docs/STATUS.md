@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-08, phase 5 slice 3: landed costs and FIFO stock lots._
+_Last updated: 2026-10-08, phase 5 slice 4: opening stock and cost of goods sold._
 
 ---
 
@@ -27,7 +27,7 @@ _Last updated: 2026-10-08, phase 5 slice 3: landed costs and FIFO stock lots._
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
-| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts) and slice 3 (landed costs, FIFO stock lots) done. Next: opening stock and cost of goods sold, then inventory movements (FBA ledger) |
+| 5. Inventory & COGS | **In progress.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) and slice 4 (opening stock, monthly cost of goods sold) done. Next: inventory movements (FBA ledger: returns, removals, reimbursements), then bundles |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1223,6 +1223,48 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   partial and full deliveries, over-receiving refused, cancel rules, tenant isolation), e2e
   "purchase orders: draft, send, a partial delivery, then the rest".
 
+### Phase 5, slice 4: opening stock and cost of goods sold
+
+- **Decisions** (PLAN decision log, 2026-10-08): supplier payments are categorised to
+  **Inventory**; cost of goods sold posts **monthly per marketplace**; opening stock is booked
+  against **Opening balance equity**.
+- **Inventory → Cost of goods sold** (`/inventory/cogs`, feature `inventory.cogs`): each month
+  with sales, newest first, and each marketplace in it. A row is **Posted** (cost, units, a link
+  to the entry, **Undo** on the latest month), **Ready** (cost at FIFO, products × units,
+  **Post**), **Needs attention** (an unlinked SKU sold, or more sold than the lots hold by the
+  month's end), **Waiting** (an earlier month first) or **In progress** (the current month).
+- **Units sold:** order lines' `quantity_shipped` × the linked SKU's units per listing,
+  cancelled orders left out, by purchase date in the company's time zone (orders carry no ship
+  date). Refunds and returns don't come back into lots yet: that's the FBA ledger slice.
+- **FIFO:** core `takeFifo` (`inventory/cogs.ts`) takes units from lots received by the month's
+  end, oldest first; a lot's cost is shared so its takes add up to it exactly once used up.
+  `postCogs` writes `cogs_periods` and `lot_consumptions` and posts Dr Cost of goods sold / Cr
+  Inventory on the month's last day (source `cogs`). Months post in order across marketplaces
+  (an advisory lock per company), only once over; `undoCogs` reverses the entry and gives the
+  units back, newest month first. A delivery whose stock is already costed can't have its
+  landed costs changed until those months are undone.
+- **Opening stock** (Stock lots → **Add opening stock**): product, how many, cost of one, the day
+  it was counted, a note. A lot with `source = 'opening'`, posted Dr Inventory / Cr Opening
+  balance equity (source `opening_stock`); removable (entry reversed) until something is sold
+  from it. Not allowed on or before a month already posted.
+- **System accounts:** new keys `inventory`, `cost_of_goods_sold`, `opening_balance_equity`. The
+  chart template tags 1200 Inventory and 5000 Cost of goods sold and adds 3050 Opening balance
+  equity. Existing companies: `ensureSystemAccount` adopts their template Inventory / Cost of
+  goods sold account (same type and subtype, no key yet) or creates it; Opening balance equity is
+  always created, never adopted (it shares a subtype with share capital).
+- **Stock lots** now shows units left per lot ("38 of 50 left") and per product.
+- **Schema** (migration `0045_cogs`): `cogs_periods` (unique per company, marketplace and month),
+  `lot_consumptions` (cascade from the period), `inventory_lots.source`, `journal_entry_id`,
+  `notes` and a nullable `receipt_line_id` (checked against the source); the system key and
+  journal source checks gain the new values. All under RLS.
+- **Code:** core `inventory/cogs.ts`; db `cogs.ts` (`salesByMonth`, `previewCogs`, `postCogs`,
+  `undoCogs`, `addOpeningStock`, `removeOpeningStock`, `ensureSystemAccount`, `lotsConsumed`);
+  `app/o/[slug]/inventory/cogs/`, `inventory/lots/opening-stock.tsx`. Audited as `cogs.*` and
+  `inventory_lot.opening_*`.
+- Tests: core `cogs.test.ts`; db `cogs.test.ts` (units with packs, unlinked SKUs, shortfall,
+  opening stock in the books, posting in order, oldest first, undo newest first, adoption,
+  tenant isolation); e2e "cost of goods sold: opening stock, then each month by marketplace".
+
 ### Products: every Amazon SKU, and wide titles
 
 - **Every SKU, sold or not:** the "SKUs that aren't linked to a product yet" list was built only
@@ -1338,8 +1380,8 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 2. [x] **Suppliers and purchase orders.** Done in slice 2.
 3. [x] **Landed costs and FIFO lots.** Done in slice 3.
 4. [ ] **Inventory movements:** the FBA inventory ledger report, transfers, returns, removals.
-5. [ ] **Opening stock and cost of goods sold** (lots for stock on hand before Bookalyze), posted per settlement period at FIFO cost; bundles
-   (`product_components`).
+5. [x] **Opening stock and cost of goods sold.** Done in slice 4 (monthly per marketplace).
+6. [ ] **Bundles** (`product_components`): one listing that is several products.
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.

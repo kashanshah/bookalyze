@@ -15,7 +15,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { contacts } from "./accounting";
+import { contacts, journalEntries } from "./accounting";
 import { organization, user } from "./auth";
 import { salesChannels } from "./commerce";
 import { currencies } from "./reference";
@@ -308,6 +308,8 @@ export const purchaseReceiptCosts = pgTable(
  * cost in the company's main currency. Rebuilt in place (same id) when the delivery's costs
  * change. Sales will draw on the oldest lots first once cost of goods sold is posted.
  */
+export const LOT_SOURCES = ["receipt", "opening"] as const;
+
 export const inventoryLots = pgTable(
   "inventory_lots",
   {
@@ -316,7 +318,13 @@ export const inventoryLots = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     productId: uuid("product_id").notNull(),
-    receiptLineId: uuid("receipt_line_id").notNull(),
+    /** "receipt": a delivery line; "opening": stock on hand before Bookalyze. */
+    source: text("source", { enum: LOT_SOURCES }).notNull().default("receipt"),
+    /** The delivery line it came from (receipt lots only). */
+    receiptLineId: uuid("receipt_line_id"),
+    /** The entry that put an opening lot in the books (Dr Inventory / Cr Opening balance equity). */
+    journalEntryId: uuid("journal_entry_id"),
+    notes: text("notes"),
     receivedOn: date("received_on").notNull(),
     quantity: integer("quantity").notNull(),
     currency: char("currency", { length: 3 })
@@ -345,7 +353,90 @@ export const inventoryLots = pgTable(
       foreignColumns: [purchaseReceiptLines.organizationId, purchaseReceiptLines.id],
     }).onDelete("cascade"),
     check("inventory_lots_quantity_positive", sql`${t.quantity} > 0`),
+    check(
+      "inventory_lots_source_valid",
+      sql`(${t.source} = 'receipt' and ${t.receiptLineId} is not null) or (${t.source} = 'opening' and ${t.receiptLineId} is null)`,
+    ),
+    foreignKey({
+      name: "inventory_lots_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
     check("inventory_lots_costs_valid", sql`${t.productCost} >= 0 and ${t.landedCost} >= 0`),
     tenantIsolationPolicy("inventory_lots", t.organizationId),
+  ],
+);
+
+/**
+ * A month's cost of goods sold on one marketplace: the units shipped that month, costed from the
+ * oldest lots, and the entry that posted it (Dr Cost of goods sold / Cr Inventory). Undoing it
+ * reverses the entry and deletes the row, which gives its units back to the lots.
+ */
+export const cogsPeriods = pgTable(
+  "cogs_periods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    /** "2026-09". */
+    month: char("month", { length: 7 }).notNull(),
+    units: integer("units").notNull(),
+    cost: numeric("cost", { precision: 20, scale: 4 }).notNull(),
+    currency: char("currency", { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    journalEntryId: uuid("journal_entry_id"),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("cogs_periods_org_id_key").on(t.organizationId, t.id),
+    unique("cogs_periods_channel_month_key").on(t.organizationId, t.channelId, t.month),
+    foreignKey({
+      name: "cogs_periods_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }),
+    foreignKey({
+      name: "cogs_periods_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    check("cogs_periods_month_valid", sql`${t.month} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
+    check("cogs_periods_units_valid", sql`${t.units} >= 0 and ${t.cost} >= 0`),
+    tenantIsolationPolicy("cogs_periods", t.organizationId),
+  ],
+);
+
+/** Units a month's cost of goods sold took from one lot, and what they cost. */
+export const lotConsumptions = pgTable(
+  "lot_consumptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    cogsPeriodId: uuid("cogs_period_id").notNull(),
+    lotId: uuid("lot_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    cost: numeric("cost", { precision: 20, scale: 4 }).notNull(),
+  },
+  (t) => [
+    unique("lot_consumptions_period_lot_key").on(t.cogsPeriodId, t.lotId),
+    index("lot_consumptions_lot_idx").on(t.lotId),
+    foreignKey({
+      name: "lot_consumptions_period_fk",
+      columns: [t.organizationId, t.cogsPeriodId],
+      foreignColumns: [cogsPeriods.organizationId, cogsPeriods.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "lot_consumptions_lot_fk",
+      columns: [t.organizationId, t.lotId],
+      foreignColumns: [inventoryLots.organizationId, inventoryLots.id],
+    }),
+    check("lot_consumptions_quantity_positive", sql`${t.quantity} > 0 and ${t.cost} >= 0`),
+    tenantIsolationPolicy("lot_consumptions", t.organizationId),
   ],
 );

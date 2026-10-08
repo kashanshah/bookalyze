@@ -316,6 +316,13 @@
       "when": 1791491154901,
       "tag": "0044_channel_skus",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1791492564743,
+      "tag": "0045_cogs",
+      "breakpoints": true
     }
   ]
 }

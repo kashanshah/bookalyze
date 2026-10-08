@@ -44,6 +44,10 @@ export const JOURNAL_SOURCES = [
   "import",
   /** An Amazon settlement (commerce settlements). */
   "settlement",
+  /** A month's cost of goods sold on one marketplace (inventory cogs_periods). */
+  "cogs",
+  /** Stock on hand before Bookalyze, valued as an opening lot (inventory_lots). */
+  "opening_stock",
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 

@@ -1554,6 +1554,45 @@ test("landed cost: freight on a delivery, then the stock lots", async ({ page })
   await expect(lots.nth(1)).toContainText("$2.95");
 });
 
+test("cost of goods sold: opening stock, then each month by marketplace", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Stock lots", exact: true }).click();
+
+  // Stock on hand before Bookalyze: 10 mugs at $2.00, counted at the start of the year.
+  await page.getByRole("button", { name: "Add opening stock" }).click();
+  const dialog = page.getByRole("dialog");
+  await choose(dialog.getByLabel("Product", { exact: true }), "Maple leaf ceramic mug");
+  await dialog.getByLabel("How many", { exact: true }).fill("10");
+  await dialog.getByLabel("Cost of one (CAD)", { exact: true }).fill("2");
+  await dialog.getByLabel("Counted on", { exact: true }).fill("2026-01-01");
+  await dialog.getByLabel("Note (optional)", { exact: true }).fill("FBA count");
+  await dialog.getByRole("button", { name: "Add stock" }).click();
+  await expect(page.getByText("Opening stock added")).toBeVisible();
+  const mug = page.getByRole("region", { name: "Maple leaf ceramic mug" });
+  await expect(mug.getByText("130 units received")).toBeVisible();
+  const opening = mug.getByRole("listitem").first();
+  await expect(opening).toContainText("Opening stock · FBA count");
+  await expect(opening).toContainText("$2.00");
+
+  // The months with sales, each marketplace with where it stands.
+  await page.getByRole("link", { name: "Cost of goods sold", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Cost of goods sold", exact: true }),
+  ).toBeVisible();
+  const row = page.getByRole("listitem", { name: /on Amazon\.ca$/ }).first();
+  await expect(row).toBeVisible();
+  await expect(row.getByText(/In progress|Ready|Needs attention|Waiting/)).toBeVisible();
+  // The coaster is sold but not linked: it's named wherever a month is checked.
+  await expect(page.getByText(/on unlinked SKUs/).first()).toBeVisible();
+
+  // Opening stock nothing was sold from yet can be removed again.
+  await page.getByRole("link", { name: "Stock lots", exact: true }).click();
+  await page.getByRole("button", { name: /^Remove opening stock from/ }).click();
+  await expect(page.getByText("Opening stock removed")).toBeVisible();
+  await expect(mug.getByText("120 units received")).toBeVisible();
+});
+
 test("reviews: ask for a review by hand, then turn on automatic requests", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Features", exact: true }).click();

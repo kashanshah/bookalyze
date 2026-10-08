@@ -6,6 +6,7 @@ import {
 } from "@bookalyze/core";
 import { asc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
+import { lotsConsumed } from "./cogs";
 import { PurchasingError } from "./purchasing";
 import { contacts } from "./schema/accounting";
 import {
@@ -212,6 +213,21 @@ export async function saveDeliveryCosts(
     .for("update");
   if (!po) throw new PurchasingError("This purchase order no longer exists.", "not_found");
   if (input.costs.length > 20) throw new PurchasingError("Up to 20 costs per delivery.");
+  const lots = await tx
+    .select({ id: inventoryLots.id })
+    .from(inventoryLots)
+    .innerJoin(purchaseReceiptLines, eq(purchaseReceiptLines.id, inventoryLots.receiptLineId))
+    .where(eq(purchaseReceiptLines.receiptId, input.receiptId));
+  const usedIn = await lotsConsumed(
+    tx,
+    lots.map((lot) => lot.id),
+  );
+  if (usedIn) {
+    throw new PurchasingError(
+      `Some of this delivery's stock is already in cost of goods sold (${usedIn}). Undo that month first to change its costs.`,
+      "state",
+    );
+  }
   await tx
     .update(purchaseReceipts)
     .set({ exchangeRate: po.currency === input.baseCurrency ? null : input.exchangeRate })
@@ -267,38 +283,46 @@ export type LotRow = {
   productId: string;
   productName: string;
   productSku: string | null;
+  source: "receipt" | "opening";
   receivedOn: string;
   quantity: number;
+  /** Units already in cost of goods sold. */
+  consumed: number;
   currency: string;
   productCost: string;
   landedCost: string;
-  purchaseOrderId: string;
-  purchaseOrderNumber: number;
-  supplierName: string;
-  receiptId: string;
+  notes: string | null;
+  /** Receipt lots only. */
+  purchaseOrderId: string | null;
+  purchaseOrderNumber: number | null;
+  supplierName: string | null;
+  receiptId: string | null;
 };
 
 function like(search: string) {
   return `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
 
-/** Lots by product, oldest first within each (the order sales will use them in). */
+/** Lots by product, oldest first within each (the order sales use them in). */
 export async function listLots(
   tx: Transaction,
   options: { search?: string } = {},
 ): Promise<LotRow[]> {
   const search = options.search?.trim();
-  return tx
+  const rows = await tx
     .select({
       id: inventoryLots.id,
       productId: inventoryLots.productId,
       productName: products.name,
       productSku: products.sku,
+      source: inventoryLots.source,
       receivedOn: inventoryLots.receivedOn,
       quantity: inventoryLots.quantity,
+      consumed: sql<number>`coalesce((select sum(c.quantity) from lot_consumptions c where c.lot_id = "inventory_lots"."id"), 0)::int`,
       currency: inventoryLots.currency,
       productCost: inventoryLots.productCost,
       landedCost: inventoryLots.landedCost,
+      notes: inventoryLots.notes,
       purchaseOrderId: purchaseOrders.id,
       purchaseOrderNumber: purchaseOrders.number,
       supplierName: contacts.name,
@@ -306,10 +330,10 @@ export async function listLots(
     })
     .from(inventoryLots)
     .innerJoin(products, eq(products.id, inventoryLots.productId))
-    .innerJoin(purchaseReceiptLines, eq(purchaseReceiptLines.id, inventoryLots.receiptLineId))
-    .innerJoin(purchaseReceipts, eq(purchaseReceipts.id, purchaseReceiptLines.receiptId))
-    .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseReceipts.purchaseOrderId))
-    .innerJoin(contacts, eq(contacts.id, purchaseOrders.supplierId))
+    .leftJoin(purchaseReceiptLines, eq(purchaseReceiptLines.id, inventoryLots.receiptLineId))
+    .leftJoin(purchaseReceipts, eq(purchaseReceipts.id, purchaseReceiptLines.receiptId))
+    .leftJoin(purchaseOrders, eq(purchaseOrders.id, purchaseReceipts.purchaseOrderId))
+    .leftJoin(contacts, eq(contacts.id, purchaseOrders.supplierId))
     .where(
       search
         ? or(
@@ -326,4 +350,5 @@ export async function listLots(
       asc(inventoryLots.createdAt),
     )
     .limit(1000);
+  return rows.map((row) => ({ ...row, consumed: Number(row.consumed) }));
 }
