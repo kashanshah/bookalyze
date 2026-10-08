@@ -396,7 +396,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   statement upload will hash its rows the same way). Syncing again, overlapping windows or
   uploading the same file twice can't add it twice. Status `posted` (`journal_entry_id`) or
   `pending` (`reason`, e.g. no rate yet; retried every sync). A posted line whose transaction was
-  removed is posted again on the next sync or upload. Editing a bank transaction
+  removed is posted again on the next sync or upload. If that second post can't be made (an
+  archived account, a currency the account no longer holds), the line goes back to pending and
+  drops the link to the removed entry, so the sync doesn't fail the page. Editing a bank transaction
   (`replaceJournalEntry`) or merging it moves the link to the entry that stands for it now
   (`carryEntryLinks`), and an edited one keeps source `bank_import`.
 - **DB** (`banking.ts`): connections and feeds, and `importBankLines()`: stores the lines, then

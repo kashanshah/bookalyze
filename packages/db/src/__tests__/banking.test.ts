@@ -607,6 +607,58 @@ describe("bank connections", () => {
     expect(await sync(rows)).toMatchObject({ posted: 0, duplicates: 1 });
   });
 
+  it("leaves a removed transaction pending when it can't be posted again", async () => {
+    const feed = await inOrg(orgA, (tx) =>
+      statementFeedFor(tx, {
+        orgId: orgA,
+        accountId: cadBank,
+        accountName: "Bank statements",
+        currency: "CAD",
+        firstDate: "2027-08-20",
+      }),
+    );
+    const row = line({
+      feedId: feed.feedId,
+      externalId: `csv:${cadBank}:2027-08-20:-8.0000:cc:0`,
+      date: "2027-08-20",
+      amount: "-8.0000",
+    });
+    expect(await sync([row])).toMatchObject({ posted: 1, duplicates: 0 });
+    const [posted] = await inOrg(orgA, (tx) =>
+      tx.select().from(schema.bankLines).where(eq(schema.bankLines.externalId, row.externalId)),
+    );
+    const [expense] = await inOrg(orgA, (tx) =>
+      tx
+        .select({ id: schema.accounts.id })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.systemKey, "uncategorized_expense")),
+    );
+    await inOrg(orgA, async (tx) => {
+      await voidJournalEntry(tx, { orgId: orgA, entryId: posted?.journalEntryId ?? "" });
+      await tx
+        .update(schema.accounts)
+        .set({ isArchived: true })
+        .where(eq(schema.accounts.id, expense?.id ?? ""));
+    });
+    try {
+      const again = await sync([row]);
+      expect(again.posted).toBe(0);
+      expect(again.skipped[0]?.reason).toMatch(/archived/);
+      const [held] = await inOrg(orgA, (tx) =>
+        tx.select().from(schema.bankLines).where(eq(schema.bankLines.externalId, row.externalId)),
+      );
+      expect(held?.status).toBe("pending");
+      expect(held?.journalEntryId).toBeNull();
+    } finally {
+      await inOrg(orgA, (tx) =>
+        tx
+          .update(schema.accounts)
+          .set({ isArchived: false })
+          .where(eq(schema.accounts.id, expense?.id ?? "")),
+      );
+    }
+  });
+
   it("categorizes bank lines with rules as they arrive, and uncategorized ones on request", async () => {
     const all = await inOrg(orgA, (tx) => tx.select().from(schema.accounts));
     const phone = all.find((a) => a.code === "6350")?.id as string;

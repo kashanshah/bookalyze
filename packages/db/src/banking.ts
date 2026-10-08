@@ -3,6 +3,7 @@ import {
   bankMemo,
   bankTransactionInput,
   firstMatchingRule,
+  type JournalErrors,
   type LedgerAccount,
   pairConversions,
   prepareJournalEntry,
@@ -424,13 +425,10 @@ async function postBankLines(
     rule?: { id: string; contactId: string | null } | null,
   ) => {
     const line = rows[0] as BankLineRow;
+    let postedId: string | null = null;
     try {
       const prepared = await build();
-      if (!prepared.ok) {
-        throw new SkipLine(
-          prepared.errors.form ?? prepared.errors.fxRate ?? "It doesn't add up as an entry.",
-        );
-      }
+      if (!prepared.ok) throw new SkipLine(postingProblem(prepared.errors));
       const entry = await tx.transaction((sp) =>
         postJournalEntry(sp, {
           orgId: input.orgId,
@@ -444,6 +442,7 @@ async function postBankLines(
           entry: prepared.entry,
         }),
       );
+      postedId = entry.id;
       await mark(rows, { status: "posted", journalEntryId: entry.id, reason: null });
       result.posted++;
       if (rule) {
@@ -462,11 +461,17 @@ async function postBankLines(
         result.flagged++;
       }
     } catch (error) {
+      // The entry is already in the books. Keep the line posted to it.
+      if (postedId) {
+        await mark(rows, { status: "posted", journalEntryId: postedId, reason: null });
+        return;
+      }
       const reason =
         error instanceof SkipLine || error instanceof LedgerError
           ? error.message
           : "It couldn't be saved.";
-      await mark(rows, { status: "pending", reason });
+      // A removed transaction still points at its old entry. Pending requires that link gone.
+      await mark(rows, { status: "pending", journalEntryId: null, reason });
       for (const r of rows) result.skipped.push({ externalId: r.externalId, date: r.date, reason });
     }
   };
@@ -552,6 +557,12 @@ async function postBankLines(
 }
 
 class SkipLine extends Error {}
+
+/** The first plain-language reason a bank line could not become a journal entry. */
+function postingProblem(errors: JournalErrors): string {
+  const line = errors.lines ? Object.values(errors.lines).find((message) => message) : undefined;
+  return errors.form ?? errors.fxRate ?? line ?? "It doesn't add up as an entry.";
+}
 
 /**
  * Keeps what the bank says a feed's account holds (Wise's balance, a statement's closing
