@@ -59,12 +59,13 @@ const line = (over: Partial<FeedLine>): FeedLine => ({
   ...over,
 });
 
-async function sync(lines: FeedLine[]) {
+async function sync(lines: FeedLine[], options: { restoreRemoved?: boolean } = {}) {
   return inOrg(orgA, (tx) =>
     importBankLines(tx, {
       orgId: orgA,
       baseCurrency: "CAD",
       lines,
+      ...options,
     }),
   );
 }
@@ -591,7 +592,9 @@ describe("bank connections", () => {
     await inOrg(orgA, (tx) =>
       voidJournalEntry(tx, { orgId: orgA, entryId: posted?.journalEntryId ?? "" }),
     );
-    expect(await sync(rows)).toMatchObject({ posted: 1, duplicates: 0 });
+    // A sync leaves it removed; only uploading the statement again brings it back.
+    expect(await sync(rows)).toMatchObject({ posted: 0, duplicates: 1 });
+    expect(await sync(rows, { restoreRemoved: true })).toMatchObject({ posted: 1, duplicates: 0 });
     const [restored] = await inOrg(orgA, (tx) =>
       tx.select().from(schema.bankLines).where(eq(schema.bankLines.externalId, row.externalId)),
     );
@@ -641,7 +644,7 @@ describe("bank connections", () => {
         .where(eq(schema.accounts.id, expense?.id ?? ""));
     });
     try {
-      const again = await sync([row]);
+      const again = await sync([row], { restoreRemoved: true });
       expect(again.posted).toBe(0);
       expect(again.skipped[0]?.reason).toMatch(/archived/);
       const [held] = await inOrg(orgA, (tx) =>

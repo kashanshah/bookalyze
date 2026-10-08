@@ -394,6 +394,8 @@ export async function uploadStatementAction(
       orgId: ctx.org.id,
       userId: ctx.session.user.id,
       baseCurrency: base,
+      // Uploading a statement again brings back transactions removed from it.
+      restoreRemoved: true,
       lines: lines.map((l) => ({
         feedId: feed.feedId,
         externalId: l.externalId,
