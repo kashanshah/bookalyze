@@ -75,6 +75,29 @@ Everything location-specific is **data**, so a business anywhere in the world ca
 - **Tax registrations** per org: any number of them (GST/HST #, QST #, UAE TRN, NTN/STRN…) with jurisdiction and effective date.
 - Tax reports group by jurisdiction and rate for any country's filing periods.
 
+### Launch markets (decided 2026-10-08)
+
+Canada and the UAE are where the first companies are. At launch, Bookalyze is for any business.
+Four markets are targeted, so nothing built now should assume Canada or the UAE:
+- **USA:** the most traffic and the best chance of converting.
+- **India** and **the Middle East:** price-sensitive markets, a strong pull for a cheaper option
+  and good early users to polish the app with.
+- **China.**
+
+| Market | Tax and invoices | Money and formats | Payments (for invoices) | Watch out for |
+|---|---|---|---|---|
+| **USA** | **Sales tax per state** (and county/city): rates by address, plus **nexus**, meaning which states the company must collect in. Marketplaces (Amazon, Etsy) collect for their own sales (marketplace facilitator rules). There is no VAT, so a plain "Invoice". | USD; `MM/DD/YYYY`; 1099 forms for contractors (later). | Stripe (cards, ACH). | Rates come from data (a tax pack or a rate API such as TaxJar or Avalara later), never from code. LLC and S-corp entity types. |
+| **India** | **GST:** CGST + SGST within a state, IGST between states (place of supply). GSTIN on invoices, HSN/SAC codes per line. **E-invoicing (IRN + QR)** above a turnover threshold. TDS/TCS. | INR; **lakh/crore grouping** (`12,34,567.00`, already supported through `Intl`); Hindi later. | **Razorpay** (UPI, cards, netbanking). Stripe is limited for Indian businesses. | Low prices expected: regional pricing. GSTR-1/3B filing views. |
+| **Middle East** | **VAT:** UAE 5%, **Saudi Arabia 15% with ZATCA e-invoicing (Fatoora: QR code, phase 2 integration)**, Bahrain, Oman. Qatar and Kuwait have no VAT yet. TRN on tax invoices; Arabic or bilingual invoices are common. | AED, SAR, BHD/OMR/KWD (**3 decimals**, already supported); Arabic **RTL** UI. | Stripe (UAE), **Tap Payments** or Checkout.com (Gulf-wide), plus bank transfer. | E-invoicing rules (UAE Peppol from 2026–27, KSA now). |
+| **China** | **Fapiao:** official VAT invoices are issued only through the state tax system, so Bookalyze can record them and attach the PDF but **can't issue** them. 6/9/13% VAT. | CNY; Simplified Chinese UI; `YYYY-MM-DD`. | **Alipay / WeChat Pay** (through Stripe for cross-border sellers, or local providers). Stripe doesn't serve China-based companies. | Hosting reachability behind the Great Firewall (Google sign-in and some CDNs are blocked), PIPL data rules. Best first target: **Chinese sellers on Amazon US/EU**, a large group with needs much like Kazomo's. |
+
+**What this means for the build now:**
+- **Countries and taxes stay as data.** No `if country === "CA"`. Tax packs (US states, India GST, KSA and GCC VAT) are added as seed data.
+- **Language:** every user-facing text goes through one place so it can be translated. The order is English, then Arabic (RTL), Hindi and Simplified Chinese. Layouts already use logical properties.
+- **Payment providers sit behind one interface** (Stripe first; Razorpay and Tap later), so invoices and payment links don't depend on Stripe.
+- **Pricing:** regional pricing for India and the Middle East when SaaS billing comes (phase 8).
+- **SEO pages and the free invoice generator** get a page per market: "GST invoice format India", "ZATCA e-invoice", "US invoice template", "UAE tax invoice".
+
 ### Organization settings (all editable in Settings → General)
 
 - **Location, currency, timezone, locale:** see above.
@@ -533,6 +556,9 @@ A domain like 3dboxstudio.com works well because it is *both* a memorable brand 
 | 2026-10-04 | No Wave invoicing in use, so invoices/bills/AR/AP move to phase 8 (public launch). |
 | 2026-10-04 | UAE commerce (Amazon.ae + Noon) comes after the Canadian companies, as **phase 4b**. |
 | 2026-10-07 | VAT registration is a setting the company makes (the account tax on fees posts to), never inferred from turnover in the app. Noon moves to **phase 4c**, after phase 5. |
+| 2026-10-08 | A bank sync never brings back a transaction the user removed; only uploading the statement again does. |
+| 2026-10-08 | Invoicing (plan in `docs/INVOICING.md`) keeps its place in the roadmap, with no rush. Arabic in invoice PDFs is a must-have and comes first. Stripe: **Teknoffice** pilots it, and each company connects its own Stripe account. |
+| 2026-10-08 | Launch markets: **USA, India, the Middle East and China**, as well as Canada and the UAE (see "Launch markets"). Nothing built may assume one country. |
 | 2026-10-07 | Amazon customer invoices are PDFs on the order, not ledger invoices. Creating one may ask Amazon for that order's buyer name and tax number only (never email). Sending the PDF through Amazon waits on Buyer Communication. |
 
 | 2026-10-04 | Name: **Bookalyze** (`bookalyze.com`). |
