@@ -11,13 +11,16 @@ const MAX_STACK_LINES = 12;
 
 /** Removes what looks like a credential from free text (an error message, a response body). */
 export function scrub(text: string): string {
-  return text
-    .replace(/-----BEGIN [A-Z ]+-----[\s\S]*?(-----END [A-Z ]+-----|$)/g, "[pem]")
-    .replace(/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, "$1 [redacted]")
-    .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]+/g, "[jwt]")
-    .replace(/\b(Atz[ar]\|)[\w|+/=-]+/g, "$1[redacted]")
-    .replace(/\b([\w.+-])[\w.+-]*@([\w-]+\.[\w.-]+)\b/g, "$1…@$2")
-    .slice(0, MAX_STRING);
+  return (
+    text
+      .replace(/-----BEGIN [A-Z ]+-----[\s\S]*?(-----END [A-Z ]+-----|$)/g, "[pem]")
+      .replace(/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, "$1 [redacted]")
+      .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]+/g, "[jwt]")
+      .replace(/\b(Atz[ar]\|)[\w|+/=-]+/g, "$1[redacted]")
+      // An email: the domain ends in a real top-level domain, so "next@16.3.8" in a path isn't one.
+      .replace(/\b([\w.+-])[\w.+-]*@((?:[\w-]+\.)+[A-Za-z]{2,})\b/g, "$1…@$2")
+      .slice(0, MAX_STRING)
+  );
 }
 
 /** A value fit for a log line: secret-sounding keys replaced, strings scrubbed, depth capped. */

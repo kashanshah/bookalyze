@@ -16,6 +16,11 @@ describe("scrub", () => {
     );
   });
 
+  it("leaves package versions in stack paths alone", () => {
+    const path = "node_modules/.pnpm/next@16.3.8_@playwright+test@1.63.0/node_modules/next/dist";
+    expect(scrub(path)).toBe(path);
+  });
+
   it("keeps ordinary messages as they are, and long ones short", () => {
     expect(scrub("Amazon answered with an error (400).")).toBe(
       "Amazon answered with an error (400).",

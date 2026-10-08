@@ -6,6 +6,9 @@ import type { Instrumentation } from "next";
  * "error reference", so a screenshot leads straight to the log line.
  */
 export const onRequestError: Instrumentation.onRequestError = async (error, request, context) => {
+  // The browser left before the page finished (a cancelled prefetch, a quick click away): not
+  // a failure, and common enough to bury real ones.
+  if (error instanceof Error && error.message === "The destination stream closed early.") return;
   const { logError } = await import("./server/log");
   logError("request.failed", error, {
     // The path only: query strings and headers (cookies) stay out of the logs.
