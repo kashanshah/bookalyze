@@ -21,6 +21,7 @@ import { nowIn } from "@/lib/dates";
 import { audit } from "./audit";
 import { env } from "./env";
 import { syncBankOfCanada } from "./fx";
+import { logError, logWarn } from "./log";
 import { WiseError, wiseBalances, wiseStatement } from "./wise";
 
 /**
@@ -64,7 +65,10 @@ export async function ensureRates(
     const from = new Date(new Date(`${first}T00:00:00Z`).getTime() - 7 * DAY)
       .toISOString()
       .slice(0, 10);
-    await syncBankOfCanada(from, last).catch(() => 0);
+    // Rates fetched later fill the gap; the failure itself is logged in syncBankOfCanada.
+    await syncBankOfCanada(from, last).catch((error) =>
+      logWarn("fx.bank_rates_for_sync_failed", { baseCurrency, from, to: last }, error),
+    );
   }
 }
 
@@ -120,11 +124,15 @@ export async function syncConnection(ctx: SyncContext, connectionId: string): Pr
     // What Wise says each balance holds now, to show beside the balance in the books.
     try {
       for (const b of await wiseBalances(token, profileId)) balances.set(String(b.id), b.amount);
-    } catch {
+    } catch (e) {
       // Not worth failing the sync over; the last figure stays.
+      logWarn("wise.balances_failed", { orgId: ctx.orgId, connectionId }, e);
     }
   } catch (e) {
     error = e instanceof WiseError || e instanceof Error ? e.message : "The sync failed.";
+    // A WiseError is logged where Wise answered; anything else (a bug, the database) only here.
+    if (!(e instanceof WiseError))
+      logError("bank_sync.failed", e, { orgId: ctx.orgId, connectionId });
   }
 
   await ensureRates(profile.baseCurrency, lines);
@@ -191,7 +199,22 @@ export async function syncAllConnections(): Promise<{
     const summary = await syncConnection(
       { orgId: row.organization_id, userId: null },
       row.connection_id,
-    ).catch(() => ({ posted: 0, error: "failed" }));
+    ).catch((error) => {
+      logError("job.bank_sync_failed", error, {
+        orgId: row.organization_id,
+        connectionId: row.connection_id,
+      });
+      return { posted: 0, error: "failed" };
+    });
+    // Handled failures (a refused key, a missing role) are saved on the connection and shown in
+    // the app; log them too, so a run's problems can be read in one place.
+    if (summary.error && summary.error !== "failed") {
+      logWarn("job.bank_sync_problem", {
+        orgId: row.organization_id,
+        connectionId: row.connection_id,
+        problem: summary.error,
+      });
+    }
     posted += summary.posted;
     if (summary.error) failed++;
   }

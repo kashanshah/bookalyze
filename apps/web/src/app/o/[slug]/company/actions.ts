@@ -28,7 +28,7 @@ import { inOrg } from "@/server/accounting";
 import { audit } from "@/server/audit";
 import { getEntityContext } from "@/server/compliance";
 import { isOrgAdmin } from "@/server/org";
-import { deleteStoredFile } from "@/server/storage";
+import { removeStoredFile } from "@/server/storage";
 
 export type EntityResult =
   | { ok: true }
@@ -326,7 +326,7 @@ export async function deleteDocumentAction(
     });
     return storageKey;
   });
-  if (key) await deleteStoredFile(key).catch(() => {});
+  if (key) await removeStoredFile(key);
   revalidate(slug);
   return { ok: true };
 }

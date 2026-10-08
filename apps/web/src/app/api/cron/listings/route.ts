@@ -1,5 +1,6 @@
 import { env } from "@/server/env";
 import { checkDueListingWatches } from "@/server/listing-watch";
+import { jobStep, logInfo } from "@/server/log";
 
 /**
  * The listing watch job, hourly (vercel.json). Vercel Cron calls it with
@@ -13,8 +14,8 @@ export async function GET(request: Request) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return new Response("Unauthorized", { status: 401 });
   }
-  const listings = await checkDueListingWatches(45_000).catch((error: unknown) => ({
-    error: (error as Error).message,
-  }));
+  const started = Date.now();
+  const listings = await jobStep("listings", "run", () => checkDueListingWatches(45_000));
+  logInfo("job.listings", { ms: Date.now() - started, listings });
   return Response.json({ listings });
 }

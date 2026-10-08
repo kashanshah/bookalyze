@@ -16,6 +16,7 @@ import { eq } from "drizzle-orm";
 import { formatDate } from "@/lib/dates";
 import { audit } from "./audit";
 import { suggestRate } from "./fx";
+import { logWarn } from "./log";
 
 /**
  * Posting settlements outside a page: the entry's date and memo (shared with the Settlements
@@ -102,6 +103,7 @@ export async function autoPostSettlements(): Promise<AutoPostResult> {
       } catch (error) {
         if (!(error instanceof LedgerError)) throw error;
         // No rate yet, a closed period…: it waits on the list for a person.
+        logWarn("settlement.auto_post_skipped", { orgId: org.id, settlementId: id }, error);
         result.failed++;
       }
     }
@@ -133,6 +135,11 @@ export async function autoPostSettlements(): Promise<AutoPostResult> {
         result.matched++;
       } catch (error) {
         if (!(error instanceof LedgerError)) throw error;
+        logWarn(
+          "settlement.auto_match_skipped",
+          { orgId: org.id, settlementId: f.settlementId, entryId: d.entryId },
+          error,
+        );
         result.failed++;
       }
     }

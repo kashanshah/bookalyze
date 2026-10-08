@@ -25,7 +25,7 @@ import { audit } from "@/server/audit";
 import {
   attachmentKey,
   createUploadTarget,
-  deleteStoredFile,
+  removeStoredFile,
   storageDriver,
   storedSize,
 } from "@/server/storage";
@@ -110,7 +110,7 @@ export async function completeUploadAction(
   if (!attachment) return { ok: false, message: "This upload no longer exists." };
   const size = await storedSize(attachment.storageKey);
   if (size === null || size !== attachment.sizeBytes) {
-    await deleteStoredFile(attachment.storageKey).catch(() => {});
+    await removeStoredFile(attachment.storageKey);
     await inOrg(ctx, (tx) => deleteAttachment(tx, id));
     return { ok: false, message: `${attachment.fileName} didn't upload completely. Try again.` };
   }
@@ -221,7 +221,7 @@ export async function deleteAttachmentAction(
     return { key };
   });
   if ("error" in result) return { ok: false, message: result.error ?? "Can't delete this file." };
-  if (result.key) await deleteStoredFile(result.key).catch(() => {});
+  if (result.key) await removeStoredFile(result.key);
   revalidate(slug);
   return { ok: true, data: null };
 }
@@ -278,7 +278,7 @@ export async function deleteAttachmentsAction(
     }
     return { keys, deleted, kept: linked.size };
   });
-  await Promise.all(keys.map((key) => deleteStoredFile(key).catch(() => {})));
+  await Promise.all(keys.map(removeStoredFile));
   revalidate(slug);
   return { ok: true, data: { deleted, kept } };
 }

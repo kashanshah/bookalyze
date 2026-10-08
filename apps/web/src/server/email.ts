@@ -4,6 +4,7 @@ import { render } from "@react-email/render";
 import type { ReactElement } from "react";
 import { Resend } from "resend";
 import { env } from "./env";
+import { logError } from "./log";
 
 export type Email = { to: string; subject: string; react: ReactElement };
 
@@ -18,7 +19,7 @@ export async function sendEmail({ to, subject, react }: Email): Promise<void> {
 
   if (!RESEND_API_KEY || EMAIL_DEV_LOG) {
     if (NODE_ENV === "production" && !EMAIL_DEV_LOG) {
-      console.error(`RESEND_API_KEY is not set; email "${subject}" to ${to} was not sent`);
+      logError("email.not_configured", new Error("RESEND_API_KEY is not set"), { subject, to });
       return;
     }
     const entry = `--- ${new Date().toISOString()}\nTo: ${to}\nSubject: ${subject}\n\n${text}\n`;
@@ -29,5 +30,10 @@ export async function sendEmail({ to, subject, react }: Email): Promise<void> {
 
   const resend = new Resend(RESEND_API_KEY);
   const { error } = await resend.emails.send({ from: EMAIL_FROM, to, subject, html, text });
-  if (error) throw new Error(`Failed to send email: ${error.message}`);
+  if (error) {
+    // Resend's error name says why (validation_error, rate_limit_exceeded…). The address is
+    // masked in the log.
+    logError("email.send_failed", error, { subject, to, resendError: error.name });
+    throw new Error(`Failed to send email: ${error.message}`);
+  }
 }

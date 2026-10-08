@@ -1641,6 +1641,24 @@ screenshots work well).
 
 ### Recipes
 
+**Logging:** use `logError` / `logWarn` / `logInfo` from `apps/web/src/server/log.ts`, never
+`console.*`.
+- One JSON line per event: `event` (a dotted name, e.g. `noon.request_failed`), the error (name,
+  message, code, cause chain, stack) and context. Give context as IDs: `orgId`, `connectionId`,
+  `channelId`, `settlementId`, a path, an HTTP status and the provider's `requestId`
+  (`requestIdOf(response)`).
+- `logError` for what someone must fix (a bug, a job failing); `logWarn` for what the app handled
+  (a refused key, a skipped row); `logInfo` for job summaries.
+- Never log credentials, response bodies that may carry them, or personal data. Redaction (core
+  `redactForLog`, `scrub`) replaces secret-sounding keys and takes PEM blocks, bearer tokens,
+  JWTs and refresh tokens out of strings, and masks email addresses. It's a safety net, not
+  permission.
+- A catch that swallows or converts an error logs it first (or the error was logged where it was
+  thrown: Amazon, Noon and Wise errors are logged in their clients with the request ID). Job
+  steps run through `jobStep(job, step, fn)`, which logs a failure and lets the other steps run.
+- Unhandled server errors are logged once by `src/instrumentation.ts` (`onRequestError`, event
+  `request.failed`, with the route and Next's `digest`).
+
 **Dropdowns:** use `Combobox` from `src/components/ui/combobox.tsx` for every choice list.
 - Options are `{ value, label, group?, description?, keywords?, disabled? }`.
 - `group` lists options under headings (account types, "All time zones").
@@ -1686,6 +1704,12 @@ screenshots work well).
 
 ## 6. Gotchas
 
+- **Finding what went wrong:** Vercel → the project → Logs. Every line Bookalyze writes is JSON
+  with an `event`; search for it, a company ID, or the **error reference** a person saw on the
+  error page (it's Next's digest, logged as `error.digest` with `request.failed`). Jobs log a
+  summary each run (`job.daily`, `job.orders`, `job.review_requests`, `job.listings`) and a line
+  for each company or connection that failed (`job.<name>_failed`, `job.<name>_problem`).
+  Amazon, Noon and Wise failures carry the provider's `requestId` for their support.
 - **Amazon's 4xx answers carry the reason.** SP-API errors come as
   `{"errors":[{"code","message","details"}]}`; `send()` in `server/amazon.ts` keeps that line
   (`amazonErrorDetail` in core), and the order sync adds the marketplace and step ("Amazon.ae,

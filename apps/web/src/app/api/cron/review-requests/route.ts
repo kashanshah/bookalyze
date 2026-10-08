@@ -1,4 +1,5 @@
 import { env } from "@/server/env";
+import { jobStep, logInfo } from "@/server/log";
 import { runAllReviewRequests } from "@/server/reviews";
 
 /**
@@ -13,8 +14,8 @@ export async function GET(request: Request) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return new Response("Unauthorized", { status: 401 });
   }
-  const reviews = await runAllReviewRequests(240_000).catch((error: unknown) => ({
-    error: (error as Error).message,
-  }));
+  const started = Date.now();
+  const reviews = await jobStep("review_requests", "run", () => runAllReviewRequests(240_000));
+  logInfo("job.review_requests", { ms: Date.now() - started, reviews });
   return Response.json({ reviews });
 }

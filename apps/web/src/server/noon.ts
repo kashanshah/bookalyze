@@ -12,6 +12,7 @@ import {
   parseExportCategories,
 } from "@bookalyze/core";
 import { env } from "./env";
+import { logError, logWarn, requestIdOf } from "./log";
 
 /**
  * Noon's partner API with the company's own service-account key. A login signs a JWT with the
@@ -24,8 +25,10 @@ export class NoonError extends Error {
   constructor(
     message: string,
     readonly code: "unauthorized" | "forbidden" | "throttled" | "unavailable" | "unexpected",
+    options?: { cause?: unknown },
   ) {
-    super(message);
+    super(message, options);
+    this.name = "NoonError";
   }
 }
 
@@ -61,13 +64,26 @@ async function request(path: string, init: RequestInit): Promise<Response> {
       cache: "no-store",
       signal: AbortSignal.timeout(30_000),
     });
-  } catch {
-    throw new NoonError("Noon couldn't be reached. Try again in a minute.", "unavailable");
+  } catch (cause) {
+    logError("noon.unreachable", cause, { path, method: init.method ?? "GET" });
+    throw new NoonError("Noon couldn't be reached. Try again in a minute.", "unavailable", {
+      cause,
+    });
   }
 }
 
-const detail = async (response: Response) =>
-  noonErrorDetail(await response.json().catch(() => null));
+/** Noon's own words for a failed response, logged with its request ID (for Noon's support). */
+async function detail(response: Response, path: string, projectCode: string) {
+  const why = noonErrorDetail(await response.json().catch(() => null));
+  logWarn("noon.request_failed", {
+    path,
+    status: response.status,
+    requestId: requestIdOf(response),
+    projectCode,
+    detail: why,
+  });
+  return why;
+}
 
 async function login(creds: NoonCredentials): Promise<string> {
   const cached = sessions.get(creds.keyId);
@@ -77,18 +93,27 @@ async function login(creds: NoonCredentials): Promise<string> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token: signNoonToken(creds), default_project_code: creds.projectCode }),
   });
-  if (response.status >= 500) {
-    throw new NoonError("Noon's sign-in service is having trouble. Try again soon.", "unavailable");
-  }
   if (!response.ok) {
-    const why = await detail(response);
+    const why = await detail(response, NOON_LOGIN_PATH, creds.projectCode);
+    if (response.status >= 500) {
+      throw new NoonError(
+        "Noon's sign-in service is having trouble. Try again soon.",
+        "unavailable",
+      );
+    }
     throw new NoonError(
       `Noon didn't accept this key${why ? ` (${why})` : ""}. It may have been deactivated, have expired, or be limited to other IP addresses. Add a new key for the service account in access.noon.partners → User & Access → API Users and upload it here.`,
       "unauthorized",
     );
   }
   const cookie = noonCookieHeader(response.headers.getSetCookie());
-  if (!cookie) throw new NoonError("Noon signed in but sent no session. Try again.", "unexpected");
+  if (!cookie) {
+    logWarn("noon.no_session", {
+      requestId: requestIdOf(response),
+      projectCode: creds.projectCode,
+    });
+    throw new NoonError("Noon signed in but sent no session. Try again.", "unexpected");
+  }
   sessions.set(creds.keyId, { cookie, expires: Date.now() + SESSION_MS });
   return cookie;
 }
@@ -124,7 +149,7 @@ async function call(
       }
     }
     if (response.ok) return response.json().catch(() => ({}));
-    const why = await detail(response);
+    const why = await detail(response, path, creds.projectCode);
     if (response.status === 401) {
       sessions.delete(creds.keyId);
       throw new NoonError("Noon ended the session and didn't take the key again.", "unauthorized");

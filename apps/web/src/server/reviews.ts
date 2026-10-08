@@ -45,6 +45,7 @@ import {
   requestReview,
 } from "./amazon";
 import { openAmazonCredentials } from "./commerce";
+import { logError, logWarn } from "./log";
 
 /**
  * Amazon review requests, sent with Amazon's own "Request a Review" (one standard message per
@@ -182,7 +183,13 @@ function reviewSender(ctx: Ctx, deadline: number) {
     let refunds: ReturnType<typeof parseRefundEventsPage>["refunds"] = [];
     try {
       refunds = parseRefundEventsPage(json).refunds;
-    } catch {}
+    } catch (error) {
+      logWarn(
+        "amazon.refund_events_unreadable",
+        { orgId: ctx.orgId, order: target.externalId },
+        error,
+      );
+    }
     await withOrg(getDb(), ctx, (tx) =>
       saveOrderFinance(tx, {
         orgId: ctx.orgId,
@@ -513,7 +520,15 @@ export async function runAllReviewRequests(budgetMs: number) {
     const r = await runOrgReviewRequests(
       { orgId: row.organization_id, userId: null },
       Math.min(deadline, Date.now() + 60_000),
-    ).catch(() => ({ sent: 0, error: "failed" }));
+    ).catch((error) => {
+      logError("job.review_requests_failed", error, { orgId: row.organization_id });
+      return { sent: 0, error: "failed" };
+    });
+    // Handled failures (a refused key, a missing role) are saved on the connection and shown in
+    // the app; log them too, so a run's problems can be read in one place.
+    if (r.error && r.error !== "failed") {
+      logWarn("job.review_requests_problem", { orgId: row.organization_id, problem: r.error });
+    }
     sent += r.sent;
     if (r.error) failed++;
   }

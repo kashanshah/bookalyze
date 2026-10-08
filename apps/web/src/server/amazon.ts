@@ -22,6 +22,7 @@ import {
   SETTLEMENT_REPORT_TYPE,
 } from "@bookalyze/core";
 import { env } from "./env";
+import { logError, logWarn, requestIdOf } from "./log";
 
 /**
  * Amazon's Selling Partner API, with the company's own developer app ("bring your own app"):
@@ -36,8 +37,10 @@ export class AmazonError extends Error {
   constructor(
     message: string,
     readonly code: "unauthorized" | "forbidden" | "throttled" | "unavailable" | "unexpected",
+    options?: { cause?: unknown },
   ) {
-    super(message);
+    super(message, options);
+    this.name = "AmazonError";
   }
 }
 
@@ -60,10 +63,14 @@ async function accessToken(creds: AmazonCredentials): Promise<string> {
       cache: "no-store",
       signal: AbortSignal.timeout(30_000),
     });
-  } catch {
-    throw new AmazonError("Amazon couldn't be reached. Try again in a minute.", "unavailable");
+  } catch (cause) {
+    logError("amazon.lwa_unreachable", cause);
+    throw new AmazonError("Amazon couldn't be reached. Try again in a minute.", "unavailable", {
+      cause,
+    });
   }
   if (response.status >= 500) {
+    logWarn("amazon.lwa_failed", { status: response.status, requestId: requestIdOf(response) });
     throw new AmazonError(
       "Amazon's sign-in service is having trouble. Try again soon.",
       "unavailable",
@@ -73,8 +80,16 @@ async function accessToken(creds: AmazonCredentials): Promise<string> {
     access_token?: string;
     expires_in?: number;
     error?: string;
+    error_description?: string;
   };
   if (!response.ok || !body.access_token) {
+    // Amazon's error code and description name the problem; neither carries a credential.
+    logWarn("amazon.lwa_refused", {
+      status: response.status,
+      requestId: requestIdOf(response),
+      amazonError: body.error,
+      amazonDescription: body.error_description,
+    });
     throw new AmazonError(
       body.error === "invalid_client"
         ? "Amazon didn't accept the app's client ID or client secret. Copy them again from Seller Central → Develop Apps."
@@ -145,16 +160,32 @@ async function send(
       cache: "no-store",
       signal: AbortSignal.timeout(30_000),
     });
-  } catch {
-    throw new AmazonError("Amazon couldn't be reached. Try again in a minute.", "unavailable");
+  } catch (cause) {
+    logError("amazon.unreachable", cause, { path, region, method: options.method ?? "GET" });
+    throw new AmazonError("Amazon couldn't be reached. Try again in a minute.", "unavailable", {
+      cause,
+    });
   }
   if (options.allow?.includes(response.status)) return response;
+  if (!response.ok) {
+    // Path, status, Amazon's request ID and own words only: the access token stays in the header.
+    const detail = amazonErrorDetail(
+      await response
+        .clone()
+        .json()
+        .catch(() => null),
+    );
+    logWarn("amazon.request_failed", {
+      path,
+      region,
+      method: options.method ?? "GET",
+      status: response.status,
+      requestId: requestIdOf(response),
+      detail,
+    });
+  }
   if (response.status === 401 || response.status === 403) {
     const detail = amazonErrorDetail(await response.json().catch(() => null));
-    // Path and Amazon's own words only. The access token stays in the request header.
-    console.error(
-      `Amazon SP-API ${response.status} ${options.method ?? "GET"} ${path} (${region})${detail ? `: ${detail}` : ""}`,
-    );
     const base = options.forbidden ?? FORBIDDEN;
     throw new AmazonError(detail ? `${base} Amazon said: ${detail}` : base, "forbidden");
   }
@@ -460,13 +491,21 @@ export async function downloadReport(
   try {
     // A short-lived signed link: no Amazon token goes with it.
     response = await fetch(doc.url, { cache: "no-store", signal: AbortSignal.timeout(60_000) });
-  } catch {
+  } catch (cause) {
+    logError("amazon.report_download_unreachable", cause, { reportDocumentId, region });
     throw new AmazonError(
       "Amazon's report couldn't be downloaded. Try again in a minute.",
       "unavailable",
+      { cause },
     );
   }
   if (!response.ok) {
+    logWarn("amazon.report_download_failed", {
+      reportDocumentId,
+      region,
+      status: response.status,
+      requestId: requestIdOf(response),
+    });
     throw new AmazonError(
       `Amazon's report couldn't be downloaded (${response.status}).`,
       "unexpected",

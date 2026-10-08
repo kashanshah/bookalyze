@@ -11,6 +11,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env } from "./env";
+import { logWarn } from "./log";
 
 /**
  * File storage for receipts and documents. Production uses a private S3 bucket: browsers upload
@@ -153,7 +154,11 @@ export async function storedSize(key: string): Promise<number | null> {
         new HeadObjectCommand({ Bucket: env().AWS_S3_BUCKET, Key: key }),
       );
       return head.ContentLength ?? null;
-    } catch {
+    } catch (error) {
+      // Not found is the expected answer for an upload that never arrived; log anything else.
+      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+        ?.httpStatusCode;
+      if (status !== 404) logWarn("storage.head_failed", { key, status }, error);
       return null;
     }
   }
@@ -187,6 +192,14 @@ export async function downloadUrl(input: {
 
 export async function readLocalFile(key: string): Promise<Buffer> {
   return readFile(localPath(key));
+}
+
+/**
+ * Deletes a file when losing it isn't worth failing over (a replaced invoice PDF, a discarded
+ * receipt): a failure is logged, so orphaned files can be found, and never thrown.
+ */
+export async function removeStoredFile(key: string) {
+  await deleteStoredFile(key).catch((error) => logWarn("storage.delete_failed", { key }, error));
 }
 
 export async function deleteStoredFile(key: string) {

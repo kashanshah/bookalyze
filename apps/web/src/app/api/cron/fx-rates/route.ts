@@ -4,6 +4,7 @@ import { syncAllConnections } from "@/server/banking";
 import { sendComplianceReminders } from "@/server/compliance";
 import { env } from "@/server/env";
 import { syncBankOfCanada } from "@/server/fx";
+import { jobStep, logInfo } from "@/server/log";
 import { autoPostSettlements } from "@/server/settlement-posting";
 
 /**
@@ -25,19 +26,23 @@ export async function GET(request: Request) {
   const end = new Date().toISOString().slice(0, 10);
   const startDate = new Date();
   startDate.setUTCDate(startDate.getUTCDate() - 10);
-  const stored = await syncBankOfCanada(startDate.toISOString().slice(0, 10), end).catch(() => 0);
-  const banking = await syncAllConnections();
-  const settlements = await syncAllSettlements(90_000).catch((error: unknown) => ({
-    error: (error as Error).message,
-  }));
-  const ledgers = await syncAllLedgers(60_000).catch((error: unknown) => ({
-    error: (error as Error).message,
-  }));
-  const posting = await autoPostSettlements().catch((error: unknown) => ({
-    error: (error as Error).message,
-  }));
-  const compliance = await sendComplianceReminders().catch((error: unknown) => ({
-    error: (error as Error).message,
-  }));
+  const started = Date.now();
+  const stored = await jobStep("daily", "fx_rates", () =>
+    syncBankOfCanada(startDate.toISOString().slice(0, 10), end),
+  );
+  const banking = await jobStep("daily", "banking", () => syncAllConnections());
+  const settlements = await jobStep("daily", "settlements", () => syncAllSettlements(90_000));
+  const ledgers = await jobStep("daily", "ledgers", () => syncAllLedgers(60_000));
+  const posting = await jobStep("daily", "posting", () => autoPostSettlements());
+  const compliance = await jobStep("daily", "compliance", () => sendComplianceReminders());
+  logInfo("job.daily", {
+    ms: Date.now() - started,
+    stored,
+    banking,
+    settlements,
+    ledgers,
+    posting,
+    compliance,
+  });
   return Response.json({ stored, banking, settlements, ledgers, posting, compliance });
 }

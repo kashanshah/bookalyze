@@ -17,6 +17,7 @@ import {
   requestLedgerReport,
 } from "./amazon";
 import { openAmazonCredentials } from "./commerce";
+import { logError, logWarn } from "./log";
 
 /**
  * Amazon's FBA inventory ledger, a month at a time: ask Amazon for the report, wait for it
@@ -165,7 +166,22 @@ export async function syncAllLedgers(budgetMs: number) {
       { orgId: row.organization_id, userId: null },
       row.channel_id,
       Math.min(deadline, Date.now() + 45_000),
-    ).catch(() => ({ added: 0, error: "failed" }));
+    ).catch((error) => {
+      logError("job.amazon_ledger_failed", error, {
+        orgId: row.organization_id,
+        channelId: row.channel_id,
+      });
+      return { added: 0, error: "failed" };
+    });
+    // Handled failures (a refused key, a missing role) are saved on the connection and shown in
+    // the app; log them too, so a run's problems can be read in one place.
+    if (r.error && r.error !== "failed") {
+      logWarn("job.amazon_ledger_problem", {
+        orgId: row.organization_id,
+        channelId: row.channel_id,
+        problem: r.error,
+      });
+    }
     added += r.added;
     if (r.error) failed++;
   }

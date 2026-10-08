@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { getAuth } from "@/server/auth";
+import { logWarn } from "@/server/log";
 import { requireSession } from "@/server/session";
 
 export type SetPasswordState = { error?: string; done?: boolean };
@@ -32,6 +33,7 @@ export async function setPasswordAction(
       headers: await headers(),
     });
   } catch (error) {
+    logWarn("account.set_password_failed", {}, error);
     return { error: error instanceof Error ? error.message : "Could not set the password." };
   }
   revalidatePath("/account/security");

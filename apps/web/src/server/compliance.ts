@@ -26,6 +26,7 @@ import { ComplianceReminder } from "@/emails/compliance-reminder";
 import { formatDate, nowIn } from "@/lib/dates";
 import { sendEmail } from "./email";
 import { env } from "./env";
+import { logError } from "./log";
 import { getOrgContext, type OrgContext, type OrgProfile } from "./org";
 
 export type EntityContext = OrgContext & { profile: OrgProfile };
@@ -78,7 +79,11 @@ export function dueIn(today: string, dueDate: string): string {
  * admins one digest of what's due in 30, 7 and 1 days, and today. Each lead time goes out once
  * per item (a missed run sends the latest one); items ticked done are skipped.
  */
-export async function sendComplianceReminders(): Promise<{ companies: number; emails: number }> {
+export async function sendComplianceReminders(): Promise<{
+  companies: number;
+  emails: number;
+  failed: number;
+}> {
   const db = getDb();
   const orgs = await db
     .select({
@@ -89,77 +94,84 @@ export async function sendComplianceReminders(): Promise<{ companies: number; em
     .from(schema.organization);
   let companies = 0;
   let emails = 0;
+  let failed = 0;
   for (const org of orgs) {
-    const due = await withOrg(db, { orgId: org.id, userId: null }, async (tx) => {
-      const [profile] = await tx.select().from(schema.organizationProfiles).limit(1);
-      const modules = await tx.select().from(schema.organizationModules);
-      const enabled = modules
-        .filter((m) => m.enabled && isModuleKey(m.moduleKey))
-        .map((m) => m.moduleKey);
-      if (!profile || !enabled.includes("entity")) return null;
-      const today = nowIn(profile.timezone).date;
-      const items = (
-        await loadCalendar(tx, profile, {
-          from: today,
-          to: addDaysIso(today, Math.max(...COMPLIANCE_LEAD_DAYS)),
-        })
-      ).filter((i) => !i.done);
-      const sent = await sentReminders(
-        tx,
-        items.map((i) => i.key),
-      );
-      const picked = items.flatMap((item) => {
-        const lead = reminderDue(
-          item.dueDate,
-          today,
-          COMPLIANCE_LEAD_DAYS,
-          sent.get(item.occurrence) ?? new Set(),
+    try {
+      const due = await withOrg(db, { orgId: org.id, userId: null }, async (tx) => {
+        const [profile] = await tx.select().from(schema.organizationProfiles).limit(1);
+        const modules = await tx.select().from(schema.organizationModules);
+        const enabled = modules
+          .filter((m) => m.enabled && isModuleKey(m.moduleKey))
+          .map((m) => m.moduleKey);
+        if (!profile || !enabled.includes("entity")) return null;
+        const today = nowIn(profile.timezone).date;
+        const items = (
+          await loadCalendar(tx, profile, {
+            from: today,
+            to: addDaysIso(today, Math.max(...COMPLIANCE_LEAD_DAYS)),
+          })
+        ).filter((i) => !i.done);
+        const sent = await sentReminders(
+          tx,
+          items.map((i) => i.key),
         );
-        return lead === null ? [] : [{ item, lead }];
-      });
-      return picked.length ? { profile, today, picked } : null;
-    });
-    if (!due) continue;
-    companies++;
-    const recipients = await db
-      .select({ email: schema.user.email })
-      .from(schema.member)
-      .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-      .where(
-        and(
-          eq(schema.member.organizationId, org.id),
-          inArray(schema.member.role, ["owner", "admin"]),
-        ),
-      );
-    const props = {
-      organizationName: org.name,
-      url: `${env().BETTER_AUTH_URL}/o/${org.slug}/company/calendar`,
-      items: due.picked.map(({ item }) => ({
-        title: item.title,
-        due: formatDate(item.dueDate, due.profile.locale, "long"),
-        when: dueIn(due.today, item.dueDate),
-        ...(item.hint ? { hint: item.hint } : {}),
-      })),
-    };
-    const subject =
-      due.picked.length === 1
-        ? `${due.picked[0]?.item.title}: due ${props.items[0]?.when}`
-        : `${due.picked.length} deadlines coming up for ${org.name}`;
-    for (const { email } of recipients) {
-      await sendEmail({ to: email, subject, react: ComplianceReminder(props) });
-      emails++;
-    }
-    // Recorded after sending, so a failed send is retried on the next run.
-    await withOrg(db, { orgId: org.id, userId: null }, async (tx) => {
-      for (const { item, lead } of due.picked) {
-        await recordReminder(tx, {
-          orgId: org.id,
-          itemKey: item.key,
-          dueDate: item.dueDate,
-          leadDays: lead,
+        const picked = items.flatMap((item) => {
+          const lead = reminderDue(
+            item.dueDate,
+            today,
+            COMPLIANCE_LEAD_DAYS,
+            sent.get(item.occurrence) ?? new Set(),
+          );
+          return lead === null ? [] : [{ item, lead }];
         });
+        return picked.length ? { profile, today, picked } : null;
+      });
+      if (!due) continue;
+      companies++;
+      const recipients = await db
+        .select({ email: schema.user.email })
+        .from(schema.member)
+        .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+        .where(
+          and(
+            eq(schema.member.organizationId, org.id),
+            inArray(schema.member.role, ["owner", "admin"]),
+          ),
+        );
+      const props = {
+        organizationName: org.name,
+        url: `${env().BETTER_AUTH_URL}/o/${org.slug}/company/calendar`,
+        items: due.picked.map(({ item }) => ({
+          title: item.title,
+          due: formatDate(item.dueDate, due.profile.locale, "long"),
+          when: dueIn(due.today, item.dueDate),
+          ...(item.hint ? { hint: item.hint } : {}),
+        })),
+      };
+      const subject =
+        due.picked.length === 1
+          ? `${due.picked[0]?.item.title}: due ${props.items[0]?.when}`
+          : `${due.picked.length} deadlines coming up for ${org.name}`;
+      for (const { email } of recipients) {
+        await sendEmail({ to: email, subject, react: ComplianceReminder(props) });
+        emails++;
       }
-    });
+      // Recorded after sending, so a failed send is retried on the next run.
+      await withOrg(db, { orgId: org.id, userId: null }, async (tx) => {
+        for (const { item, lead } of due.picked) {
+          await recordReminder(tx, {
+            orgId: org.id,
+            itemKey: item.key,
+            dueDate: item.dueDate,
+            leadDays: lead,
+          });
+        }
+      });
+    } catch (error) {
+      // One company's failure mustn't stop the others' reminders; it's retried on the next run.
+      failed++;
+      logError("compliance.reminders_failed", error, { orgId: org.id });
+    }
   }
-  return { companies, emails };
+  return { companies, emails, failed };
 }
