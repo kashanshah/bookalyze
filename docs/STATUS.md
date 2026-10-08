@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-08, phase 4c slice 2: connect Noon's API._
+_Last updated: 2026-10-08, error logging (after phase 4c slice 2: connect Noon's API)._
 
 ---
 
@@ -1223,6 +1223,37 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `purchasing.test.ts`, db `purchasing.test.ts` (numbering, totals, draft-only edits,
   partial and full deliveries, over-receiving refused, cancel rules, tenant isolation), e2e
   "purchase orders: draft, send, a partial delivery, then the rest".
+
+### Error logging
+
+- **Why:** a failure (a provider refusing, a job breaking for one company, a bug) has to be found
+  and fixed fast. Before this, most errors were turned into a message or swallowed, and almost
+  nothing reached the logs.
+- **`apps/web/src/server/log.ts`:** `logError` / `logWarn` / `logInfo` write one JSON line per
+  event; `jobStep` runs a job step and logs its failure; `requestIdOf` reads a provider's request
+  ID. Redaction and error shaping are in core (`log-format.ts`: `scrub`, `redactForLog`,
+  `describeError`, which keeps the cause chain). Recipe in §5 "Logging"; where to read them in §6.
+- **Unhandled errors:** `src/instrumentation.ts` (`onRequestError`) logs `request.failed` with the
+  route and Next's digest. New error pages (`app/error.tsx`, `app/o/[slug]/error.tsx`,
+  `app/global-error.tsx`) say "Something went wrong" and show the digest as the **error
+  reference**, with Try again. Cancelled page loads ("The destination stream closed early.") are
+  skipped: they aren't failures.
+- **Providers:** Amazon (LWA and SP-API, every non-OK answer, report downloads), Noon and Wise log
+  the path, status, the provider's request ID and its own words; network failures keep their
+  cause (`AmazonError`, `NoonError`, `WiseError` take `{ cause }`). Bank of Canada fetches have a
+  timeout and log; Resend failures log with the address masked; S3 head and delete failures log
+  (`removeStoredFile` replaces the silent `deleteStoredFile(…).catch(() => {})`).
+- **Jobs:** every cron route runs its steps through `jobStep` and logs a summary (`job.daily`,
+  `job.orders`, `job.review_requests`, `job.listings`); a throw in one step no longer skips the
+  rest of the daily job. Each `syncAll*` logs a company's or connection's failure with its IDs
+  (`job.<name>_failed`) and handled problems (`job.<name>_problem`). Compliance reminders now
+  isolate each company (one failure used to stop them all) and count `failed`.
+- **Silent catches now log:** unreadable settlement reports, unreadable refund events, order
+  items Amazon won't list, Wise balances, invoice file saves and their rollback, buyer lookups,
+  auto-posting and deposit matching skips, listing-watch check failures, missing local files,
+  vault (encryption key) problems, member and password errors.
+- Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
+  paths kept, cause chains, Postgres codes and digests).
 
 ### Phase 4c, slice 2: connect Noon's API
 
