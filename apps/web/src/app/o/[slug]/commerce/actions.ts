@@ -9,6 +9,7 @@ import {
   NOON_TRANSACTIONS_EXPORT,
   type NoonExportCategory,
   noonMarketplace,
+  noonPayoutsParams,
   parseNoonKeyFile,
   previewReport,
   type ReportPreview,
@@ -581,22 +582,6 @@ export async function disconnectNoonAction(slug: string): Promise<CommerceResult
   return { ok: true };
 }
 
-/**
- * The payouts report's inputs for a date range, named as Noon names them: a "from"/"start"
- * param gets the first day and a "to"/"end" param the last (YYYY-MM-DD). Without Noon's own
- * description, from_date and to_date.
- */
-function payoutsParams(spec: unknown, from: string, to: string): Record<string, string> {
-  const names =
-    spec && typeof spec === "object" ? Object.keys(spec as Record<string, unknown>) : [];
-  const params: Record<string, string> = {};
-  for (const name of names) {
-    if (/from|start/i.test(name)) params[name] = from;
-    else if (/(^|_)to($|_)|end|until/i.test(name)) params[name] = to;
-  }
-  return Object.keys(params).length ? params : { from_date: from, to_date: to };
-}
-
 export type NoonReportCheck =
   | { state: "working"; exportCode: string; status: string; from: string; to: string }
   | {
@@ -644,7 +629,7 @@ export async function checkNoonPayoutsReportAction(
       (await createNoonExport(
         creds,
         NOON_TRANSACTIONS_EXPORT,
-        payoutsParams(connection.settings.payoutsParams, from, to),
+        noonPayoutsParams(connection.settings.payoutsParams, from, to),
       ));
     const deadline = Date.now() + 25_000;
     for (;;) {

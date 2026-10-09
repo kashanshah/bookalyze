@@ -43,14 +43,38 @@ const categories = {
   ],
 };
 
-// Exports: made "in the background" (the first status call says PROCESSING), then a link to a
-// gzipped CSV. Synthetic rows; the header is what the test checks.
+// Exports: made "in the background", then a link to a gzipped CSV of Noon's transaction view
+// (its real header) for the days asked for. Synthetic rows: in each month, a sale on the 2nd, a
+// late fee on it on the 3rd and a storage fee on the 20th.
 const exports = new Map();
-const TRANSACTIONS_CSV = [
-  "Reference Number,Order Number,Item Number,SKU,Transaction Type,Transaction Date,Currency,Net Proceeds,Referral Fee,Fulfilment Fee",
-  "REF-0001,NAE00000000001,ITEM-1,NOON-MAPLE-MUG,Order,2026-10-01,AED,100.00,-8.00,-6.50",
-  "REF-0002,NAE00000000001,ITEM-1,NOON-MAPLE-MUG,Order Update,2026-10-03,AED,0.00,-0.40,0.00",
-].join("\r\n");
+const HEADER =
+  "Contract,Contract Title,Reference Nr,Order Nr,Item Nr,Order Date,Transaction Date,Title,SKUs,Partner SKUs,Transaction Type,Currency,Net Proceeds,Referral Fee including VAT,Fullfilment & Logistics Fees including VAT,Shipping Credits including VAT,Other Order Fees including VAT,Order Subsidies including VAT,Non-Order Fees including VAT,Non-Order Subsidies including VAT,Others including VAT,Total";
+
+function transactionsCsv(from, to) {
+  const rows = [HEADER];
+  const start = new Date(`${from.slice(0, 7)}-01T00:00:00Z`);
+  for (let month = start; month.toISOString().slice(0, 10) <= to; ) {
+    const ym = month.toISOString().slice(0, 7);
+    const order = `NAE${ym.replace("-", "")}0001`;
+    const lines = [
+      [
+        `${ym}-02`,
+        `C1,Noon UAE,REF-${ym}-1,${order},ITEM-1,${ym}-01,${ym}-02,"Maple mug, large",Z1,NOON-MAPLE-MUG,Order,AED,100.00,-8.40,-6.30,0,0,2.00,0,0,0,87.30`,
+      ],
+      [
+        `${ym}-03`,
+        `C1,Noon UAE,REF-${ym}-1,${order},ITEM-1,${ym}-01,${ym}-03,,Z1,NOON-MAPLE-MUG,Order Update,AED,0,-0.50,0,0,0,0,0,0,0,-0.50`,
+      ],
+      [
+        `${ym}-20`,
+        `C1,Noon UAE,REF-${ym}-9,,,,20/${ym.slice(5, 7)}/${ym.slice(0, 4)},,,,Storage Fee,AED,0,0,0,0,0,0,-12.00,0,0,-12.00`,
+      ],
+    ];
+    for (const [day, line] of lines) if (day >= from && day <= to) rows.push(line);
+    month = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1));
+  }
+  return rows.join("\r\n");
+}
 
 const error = (code, message) => ({
   error: { status_id: 16, code, message, fields: [], doc_url: "https://example.com/errors" },
@@ -88,8 +112,10 @@ createServer((req, res) => {
     }
     // The download link is signed, like Noon's: no session needed.
     if (url.pathname.startsWith("/download/")) {
+      const found = exports.get(url.pathname.slice("/download/".length).replace(/\.csv\.gz$/, ""));
+      if (!found) return send(res, 404, error("NOT_FOUND", "Export not found"));
       res.writeHead(200, { "Content-Type": "text/csv", "Content-Encoding": "identity" });
-      return res.end(gzipSync(TRANSACTIONS_CSV));
+      return res.end(gzipSync(transactionsCsv(found.from, found.to)));
     }
     if (!req.headers["user-agent"])
       return send(res, 400, error("INVALID_ARGUMENT", "User-Agent required"));
@@ -124,7 +150,14 @@ createServer((req, res) => {
         });
       }
       const code = `EXP-${exports.size + 1}`;
-      exports.set(code, { checks: 0, category: body.export_category_code });
+      // The first export is still being made at the first status check (so the app's waiting
+      // is exercised); later ones are ready at once, so a year comes in quickly.
+      exports.set(code, {
+        checks: exports.size ? 1 : 0,
+        category: body.export_category_code,
+        from: params.from_date,
+        to: String(params.to_date ?? params.from_date),
+      });
       return send(res, 200, { export_code: code });
     }
     if (req.method === "POST" && url.pathname === "/impex/v1/export/status") {

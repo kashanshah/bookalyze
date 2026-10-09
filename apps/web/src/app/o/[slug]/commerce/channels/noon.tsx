@@ -7,6 +7,7 @@ import {
   NOON_MARKETPLACES,
 } from "@bookalyze/core";
 import {
+  ArrowRight,
   CircleAlert,
   Copy,
   FileKey,
@@ -14,10 +15,12 @@ import {
   KeyRound,
   PlugZap,
   Plus,
+  ReceiptText,
   RefreshCw,
   Store,
   Unplug,
 } from "lucide-react";
+import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -199,6 +202,22 @@ export function NoonChannels({
           )}
         </div>
       )}
+      {channels.length || connection ? (
+        <Link
+          href={`/o/${slug}/commerce/noon`}
+          className="group flex items-center gap-3 border-t px-5 py-3.5 text-sm transition-colors hover:bg-muted/40"
+        >
+          <ReceiptText className="size-4 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">Noon transactions</span>
+            <span className="block text-muted-foreground text-xs">
+              Every sale, fee and subsidy Noon paid or charged, month by month: bring in the past
+              year from Noon's API, or upload the transaction view.
+            </span>
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
+        </Link>
+      ) : null}
 
       <Dialog open={adding} onOpenChange={setAdding}>
         <DialogContent>

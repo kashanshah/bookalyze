@@ -665,3 +665,62 @@ export const orderInvoices = pgTable(
     tenantIsolationPolicy("order_invoices", t.organizationId),
   ],
 );
+
+/**
+ * A row of Noon's item-level transaction view: a sale, update, fee, refund or subsidy, on the
+ * Noon channel of its currency. Amounts include VAT; `total` is what the row adds to (or takes
+ * from) the payouts. Kept one by one (Noon gives no payout number) and keyed so bringing the same
+ * rows in again changes nothing but their amounts.
+ */
+export const noonTransactions = pgTable(
+  "noon_transactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    key: text("key").notNull(),
+    contract: text("contract"),
+    referenceNr: text("reference_nr").notNull(),
+    orderNr: text("order_nr"),
+    itemNr: text("item_nr"),
+    orderDate: date("order_date"),
+    transactionDate: date("transaction_date").notNull(),
+    title: text("title"),
+    sku: text("sku"),
+    partnerSku: text("partner_sku"),
+    transactionType: text("transaction_type").notNull(),
+    currency: char("currency", { length: 3 }).notNull(),
+    netProceeds: numeric("net_proceeds", { precision: 20, scale: 4 }).notNull(),
+    referralFee: numeric("referral_fee", { precision: 20, scale: 4 }).notNull(),
+    fulfilmentFee: numeric("fulfilment_fee", { precision: 20, scale: 4 }).notNull(),
+    shippingCredits: numeric("shipping_credits", { precision: 20, scale: 4 }).notNull(),
+    otherOrderFees: numeric("other_order_fees", { precision: 20, scale: 4 }).notNull(),
+    orderSubsidies: numeric("order_subsidies", { precision: 20, scale: 4 }).notNull(),
+    nonOrderFees: numeric("non_order_fees", { precision: 20, scale: 4 }).notNull(),
+    nonOrderSubsidies: numeric("non_order_subsidies", { precision: 20, scale: 4 }).notNull(),
+    others: numeric("others", { precision: 20, scale: 4 }).notNull(),
+    total: numeric("total", { precision: 20, scale: 4 }).notNull(),
+    /** The money columns add up to `total`. */
+    balanced: boolean("balanced").notNull(),
+    source: text("source", { enum: ["api", "upload"] }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("noon_transactions_channel_key").on(t.organizationId, t.channelId, t.key),
+    index("noon_transactions_channel_date_idx").on(
+      t.organizationId,
+      t.channelId,
+      t.transactionDate,
+    ),
+    foreignKey({
+      name: "noon_transactions_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    check("noon_transactions_source_valid", sql`${t.source} in ('api', 'upload')`),
+    tenantIsolationPolicy("noon_transactions", t.organizationId),
+  ],
+);

@@ -6,6 +6,7 @@ export * from "./invoices";
 export * from "./listings";
 export * from "./noon";
 export * from "./noon-api";
+export * from "./noon-transactions";
 export * from "./orders";
 export * from "./refunds";
 export * from "./reviews";
