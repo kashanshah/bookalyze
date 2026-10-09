@@ -82,6 +82,11 @@ export default async function WatchPage({
             {watch.paused ? <Badge variant="secondary">Paused</Badge> : null}
             {cadence ? <Badge variant="outline">{cadence.label}</Badge> : null}
             <Badge variant="outline">{watch.notify ? "Email on" : "Email off"}</Badge>
+            {watch.notifyEmails.length ? (
+              <span className="min-w-0 text-sm [overflow-wrap:anywhere]">
+                · Also emails {watch.notifyEmails.join(" and ")}
+              </span>
+            ) : null}
           </span>
         }
         actions={

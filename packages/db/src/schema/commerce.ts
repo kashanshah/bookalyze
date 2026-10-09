@@ -550,6 +550,8 @@ export const listingWatches = pgTable(
     cadence: text("cadence", { enum: ["hourly", "daily", "weekly"] }).notNull(),
     /** Owners and admins get an email when a check finds a change. */
     notify: boolean("notify").notNull().default(true),
+    /** Up to two more people emailed about this product's changes (lower case). */
+    notifyEmails: text("notify_emails").array().notNull().default(sql`'{}'::text[]`),
     paused: boolean("paused").notNull().default(false),
     observed: jsonb("observed").$type<ListingObservation | null>(),
     lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
@@ -575,6 +577,7 @@ export const listingWatches = pgTable(
       foreignColumns: [salesChannels.organizationId, salesChannels.id],
     }).onDelete("cascade"),
     check("listing_watches_cadence_valid", sql`${t.cadence} in ('hourly', 'daily', 'weekly')`),
+    check("listing_watches_notify_emails_max", sql`cardinality(${t.notifyEmails}) <= 2`),
     check("listing_watches_asin_valid", sql`${t.asin} ~ '^[A-Z0-9]{10}$'`),
     check(
       "listing_watches_checks_valid",

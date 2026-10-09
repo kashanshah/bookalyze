@@ -1,0 +1,2 @@
+ALTER TABLE "listing_watches" ADD COLUMN "notify_emails" text[] DEFAULT '{}'::text[] NOT NULL;--> statement-breakpoint
+ALTER TABLE "listing_watches" ADD CONSTRAINT "listing_watches_notify_emails_max" CHECK (cardinality("listing_watches"."notify_emails") <= 2);

@@ -9,7 +9,7 @@ import {
   reviewTopicsAvailableFor,
   reviewTopicsUnavailableNote,
 } from "@bookalyze/core";
-import { Check } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -30,7 +30,12 @@ export type WatchDraft = {
   checks: ListingCheck[];
   cadence: ListingCadence;
   notify: boolean;
+  /** Up to two more people emailed about this product's changes. */
+  notifyEmails: string[];
 };
+
+/** How many extra people one product can email. */
+const MAX_EXTRA_EMAILS = 2;
 
 const DEFAULT_CHECKS: ListingCheck[] = [
   "price",
@@ -58,6 +63,7 @@ export function WatchForm({
   const [checks, setChecks] = useState<ListingCheck[]>(initial?.checks ?? DEFAULT_CHECKS);
   const [cadence, setCadence] = useState<ListingCadence>(initial?.cadence ?? "daily");
   const [notify, setNotify] = useState(initial?.notify ?? true);
+  const [emails, setEmails] = useState<string[]>(initial?.notifyEmails ?? []);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const issue = listingWatchIssue({ checks, cadence });
   const channelName = channels.find((channel) => channel.id === channelId)?.name ?? "";
@@ -74,7 +80,14 @@ export function WatchForm({
     startTransition(async () => {
       const result = await saveListingWatchAction(
         slug,
-        { channelId, asin, checks, cadence, notify },
+        {
+          channelId,
+          asin,
+          checks,
+          cadence,
+          notify,
+          notifyEmails: emails.map((email) => email.trim()).filter(Boolean),
+        },
         initial?.id,
       );
       if (!result.ok) {
@@ -241,6 +254,68 @@ export function WatchForm({
             onCheckedChange={setNotify}
             aria-label="Email when something changes"
           />
+        </div>
+        <div className="grid gap-3 rounded-xl border p-4">
+          <span>
+            <span className="block font-medium text-sm">Also email (optional)</span>
+            <span className="mt-0.5 block text-muted-foreground text-xs leading-relaxed">
+              Up to {MAX_EXTRA_EMAILS} more people, such as a teammate or your sourcing agent. They
+              get this product's changes only, even with the switch above off.
+            </span>
+          </span>
+          {emails.map((email, index) => {
+            const error = errors[`notifyEmails.${index}`];
+            return (
+              // biome-ignore lint/suspicious/noArrayIndexKey: rows have no id; order is stable.
+              <div key={index} className="fade-in-0 grid animate-in gap-1">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    aria-label={`Extra email ${index + 1}`}
+                    value={email}
+                    placeholder="name@example.com"
+                    aria-invalid={Boolean(error)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setEmails((current) => current.map((e, i) => (i === index ? value : e)));
+                      setErrors((current) => ({ ...current, [`notifyEmails.${index}`]: "" }));
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Remove extra email ${index + 1}`}
+                    onClick={() => {
+                      setEmails((current) => current.filter((_, i) => i !== index));
+                      setErrors((current) => ({
+                        ...current,
+                        "notifyEmails.0": "",
+                        "notifyEmails.1": "",
+                      }));
+                    }}
+                  >
+                    <X />
+                  </Button>
+                </div>
+                {error ? <p className="text-destructive text-xs">{error}</p> : null}
+              </div>
+            );
+          })}
+          {emails.length < MAX_EXTRA_EMAILS ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="justify-self-start"
+              onClick={() => setEmails((current) => [...current, ""])}
+            >
+              <Plus />
+              {emails.length ? "Add another person" : "Add a person"}
+            </Button>
+          ) : null}
         </div>
       </section>
 

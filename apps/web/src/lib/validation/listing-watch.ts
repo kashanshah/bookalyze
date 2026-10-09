@@ -18,6 +18,12 @@ export const listingWatchSchema = z
     checks: z.array(z.enum(checkKeys)).min(1, "Choose at least one thing to watch."),
     cadence: z.enum(cadenceKeys),
     notify: z.boolean(),
+    /** Up to two more people to email about this product (blank rows are dropped). */
+    notifyEmails: z
+      .array(z.string().trim().toLowerCase())
+      .max(2, "Up to two more people.")
+      .optional()
+      .transform((list) => [...new Set((list ?? []).filter(Boolean))]),
   })
   .superRefine((value, ctx) => {
     const asin = normalizeAsin(value.asin);
@@ -28,6 +34,15 @@ export const listingWatchSchema = z
         message: "Enter the 10-character ASIN from the product page. It looks like B0XXXXXXXX.",
       });
     }
+    value.notifyEmails.forEach((email, index) => {
+      if (!z.email().safeParse(email).success) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["notifyEmails", index],
+          message: "Enter an email address like name@example.com.",
+        });
+      }
+    });
     const issue = listingWatchIssue({ checks: value.checks, cadence: value.cadence });
     if (issue && asin) {
       ctx.addIssue({ code: "custom", path: ["cadence"], message: issue });
