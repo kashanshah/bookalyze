@@ -4,7 +4,12 @@ import {
   noonErrorDetail,
   noonLoginClaims,
   parseExportCategories,
+  parseExportCreated,
+  parseExportStatus,
   parseNoonKeyFile,
+  previewReport,
+  splitDelimitedLine,
+  zipEntryNames,
 } from "../commerce/noon-api";
 
 // Synthetic: not a real key, only shaped like one (built so scanners don't take it for one).
@@ -108,9 +113,140 @@ describe("parseExportCategories", () => {
       {
         code: "noon_financeweb_transactionviewreportonitemlevel",
         params: ["from_date", "to_date"],
+        spec: { from_date: "date", to_date: "date" },
       },
-      { code: "catalog", params: [] },
+      { code: "catalog", params: [], spec: {} },
     ]);
     expect(() => parseExportCategories({})).toThrow(/Unexpected/);
   });
 });
+
+describe("exports", () => {
+  it("reads the export's code, and refuses an answer without one", () => {
+    expect(parseExportCreated({ export_code: " EXP-1 " })).toBe("EXP-1");
+    expect(() => parseExportCreated({})).toThrow(/didn't say/);
+  });
+
+  it("is ready once there's a link, failed when Noon says so, working otherwise", () => {
+    expect(
+      parseExportStatus({
+        export_code: "E1",
+        export_status: "COMPLETED",
+        download_url: "https://x/y",
+      }),
+    ).toMatchObject({ state: "ready", downloadUrl: "https://x/y", status: "COMPLETED" });
+    expect(
+      parseExportStatus({ export_code: "E1", export_status: "PROCESSING", download_url: null }),
+    ).toMatchObject({ state: "working", downloadUrl: null });
+    expect(
+      parseExportStatus({
+        export_code: "E1",
+        export_status: "FAILED",
+        download_url: "https://x/y",
+      }),
+    ).toMatchObject({ state: "failed", downloadUrl: null });
+  });
+});
+
+describe("previewReport", () => {
+  const bytes = (text: string) => new TextEncoder().encode(text);
+
+  it("reads a CSV's header, quoted cells included, and counts its rows", () => {
+    const csv =
+      '\uFEFFReference Number,"Order Nr",Net Proceeds,"Fee, referral"\r\nR1,N1,10,1\r\nR2,N2,20,2\r\n';
+    expect(previewReport(bytes(csv))).toEqual({
+      kind: "csv",
+      columns: ["Reference Number", "Order Nr", "Net Proceeds", "Fee, referral"],
+      rows: 2,
+      gzip: false,
+    });
+  });
+
+  it("tells a TSV and JSON apart from a CSV", () => {
+    expect(previewReport(bytes("a\tb\tc\n1\t2\t3\n"))).toMatchObject({
+      kind: "tsv",
+      columns: ["a", "b", "c"],
+      rows: 1,
+    });
+    expect(previewReport(bytes('[{"sku":"A","amount":1}]'))).toMatchObject({
+      kind: "json",
+      columns: ["sku", "amount"],
+    });
+  });
+
+  it("splits quoted cells with doubled quotes", () => {
+    expect(splitDelimitedLine('a,"b ""c"", d",e', ",")).toEqual(["a", 'b "c", d', "e"]);
+  });
+
+  it("lists the files in a zip, and knows an Excel file by its sheets", () => {
+    const zip = storedZip(["xl/workbook.xml", "xl/worksheets/sheet1.xml", "[Content_Types].xml"]);
+    expect(zipEntryNames(zip)).toEqual([
+      "xl/workbook.xml",
+      "xl/worksheets/sheet1.xml",
+      "[Content_Types].xml",
+    ]);
+    expect(previewReport(zip)).toMatchObject({ kind: "xlsx", rows: null });
+    expect(previewReport(storedZip(["report.csv"]))).toMatchObject({
+      kind: "zip",
+      columns: ["report.csv"],
+    });
+  });
+});
+
+/** A minimal zip (empty, stored files): just enough central directory to read names from. */
+function storedZip(names: string[]): Uint8Array {
+  const enc = new TextEncoder();
+  const parts: number[] = [];
+  const central: number[] = [];
+  const u16 = (n: number) => [n & 0xff, (n >> 8) & 0xff];
+  const u32 = (n: number) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >>> 24) & 0xff];
+  for (const name of names) {
+    const offset = parts.length;
+    const n = [...enc.encode(name)];
+    parts.push(
+      ...u32(0x04034b50),
+      ...u16(20),
+      ...u16(0),
+      ...u16(0),
+      ...u32(0),
+      ...u32(0),
+      ...u32(0),
+      ...u32(0),
+      ...u16(n.length),
+      ...u16(0),
+      ...n,
+    );
+    central.push(
+      ...u32(0x02014b50),
+      ...u16(20),
+      ...u16(20),
+      ...u16(0),
+      ...u16(0),
+      ...u32(0),
+      ...u32(0),
+      ...u32(0),
+      ...u32(0),
+      ...u16(n.length),
+      ...u16(0),
+      ...u16(0),
+      ...u16(0),
+      ...u16(0),
+      ...u32(0),
+      ...u32(offset),
+      ...n,
+    );
+  }
+  const start = parts.length;
+  return new Uint8Array([
+    ...parts,
+    ...central,
+    ...u32(0x06054b50),
+    ...u16(0),
+    ...u16(0),
+    ...u16(names.length),
+    ...u16(names.length),
+    ...u32(central.length),
+    ...u32(start),
+    ...u16(0),
+  ]);
+}

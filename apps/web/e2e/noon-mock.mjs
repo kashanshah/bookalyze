@@ -4,6 +4,7 @@
 // way Noon checks them: an RS256 JWT signed by the key, `iat` within five minutes, a User-Agent.
 import { createVerify, generateKeyPairSync } from "node:crypto";
 import { createServer } from "node:http";
+import { gzipSync } from "node:zlib";
 
 const port = Number(process.env.NOON_MOCK_PORT ?? 4012);
 const KEY_ID = "e2e-key-0001";
@@ -42,6 +43,15 @@ const categories = {
   ],
 };
 
+// Exports: made "in the background" (the first status call says PROCESSING), then a link to a
+// gzipped CSV. Synthetic rows; the header is what the test checks.
+const exports = new Map();
+const TRANSACTIONS_CSV = [
+  "Reference Number,Order Number,Item Number,SKU,Transaction Type,Transaction Date,Currency,Net Proceeds,Referral Fee,Fulfilment Fee",
+  "REF-0001,NAE00000000001,ITEM-1,NOON-MAPLE-MUG,Order,2026-10-01,AED,100.00,-8.00,-6.50",
+  "REF-0002,NAE00000000001,ITEM-1,NOON-MAPLE-MUG,Order Update,2026-10-03,AED,0.00,-0.40,0.00",
+].join("\r\n");
+
 const error = (code, message) => ({
   error: { status_id: 16, code, message, fields: [], doc_url: "https://example.com/errors" },
 });
@@ -76,6 +86,11 @@ createServer((req, res) => {
     if (url.pathname === "/test/unknown-key-file") {
       return send(res, 200, JSON.parse(keyFile(unknown)));
     }
+    // The download link is signed, like Noon's: no session needed.
+    if (url.pathname.startsWith("/download/")) {
+      res.writeHead(200, { "Content-Type": "text/csv", "Content-Encoding": "identity" });
+      return res.end(gzipSync(TRANSACTIONS_CSV));
+    }
     if (!req.headers["user-agent"])
       return send(res, 400, error("INVALID_ARGUMENT", "User-Agent required"));
 
@@ -91,6 +106,44 @@ createServer((req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/impex/v1/export/category/list") {
       return send(res, 200, categories);
+    }
+    if (req.method === "POST" && url.pathname === "/impex/v1/export/create") {
+      const body = raw ? JSON.parse(raw) : {};
+      const known = categories.export_categories.find(
+        (c) => c.export_category_code === body.export_category_code,
+      );
+      const params = body.params ?? {};
+      if (!known || !/^\d{4}-\d{2}-\d{2}$/.test(String(params.from_date ?? ""))) {
+        return send(res, 400, {
+          error: {
+            status_id: 3,
+            code: "INVALID_ARGUMENT",
+            message: "Invalid argument.",
+            fields: [{ name: "params.from_date", descriptions: ["must be YYYY-MM-DD"] }],
+          },
+        });
+      }
+      const code = `EXP-${exports.size + 1}`;
+      exports.set(code, { checks: 0, category: body.export_category_code });
+      return send(res, 200, { export_code: code });
+    }
+    if (req.method === "POST" && url.pathname === "/impex/v1/export/status") {
+      const body = raw ? JSON.parse(raw) : {};
+      const found = exports.get(body.export_code);
+      if (!found) return send(res, 404, error("NOT_FOUND", "Export not found"));
+      found.checks++;
+      const done = found.checks > 1;
+      return send(res, 200, {
+        export_code: body.export_code,
+        export_category_code: found.category,
+        export_status: done ? "COMPLETED" : "PROCESSING",
+        params: "{}",
+        project_code: PROJECT,
+        created_by: "e2e",
+        download_url: done ? `http://localhost:${port}/download/${body.export_code}.csv.gz` : null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
     }
     return send(res, 404, error("NOT_FOUND", "Not found"));
   });

@@ -1,15 +1,21 @@
 import "server-only";
 import { createPrivateKey, randomUUID, sign } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import {
   NOON_API_URL,
   NOON_EXPORT_CATEGORIES_PATH,
+  NOON_EXPORT_CREATE_PATH,
+  NOON_EXPORT_STATUS_PATH,
   NOON_LOGIN_PATH,
   type NoonCredentials,
   type NoonExportCategory,
+  type NoonExportStatus,
   noonCookieHeader,
   noonErrorDetail,
   noonLoginClaims,
   parseExportCategories,
+  parseExportCreated,
+  parseExportStatus,
 } from "@bookalyze/core";
 import { env } from "./env";
 import { logError, logWarn, requestIdOf } from "./log";
@@ -180,4 +186,85 @@ async function call(
 export async function checkNoonKey(creds: NoonCredentials): Promise<NoonExportCategory[]> {
   sessions.delete(creds.keyId);
   return parseExportCategories(await call(creds, NOON_EXPORT_CATEGORIES_PATH));
+}
+
+/** Asks Noon to make a report (an "export"); it's made in the background. Returns its code. */
+export async function createNoonExport(
+  creds: NoonCredentials,
+  category: string,
+  params: Record<string, string>,
+): Promise<string> {
+  return parseExportCreated(
+    await call(creds, NOON_EXPORT_CREATE_PATH, {
+      method: "POST",
+      body: { export_category_code: category, params },
+    }),
+  );
+}
+
+export async function noonExportStatus(
+  creds: NoonCredentials,
+  exportCode: string,
+): Promise<NoonExportStatus> {
+  return parseExportStatus(
+    await call(creds, NOON_EXPORT_STATUS_PATH, {
+      method: "POST",
+      body: { export_code: exportCode },
+    }),
+  );
+}
+
+/** Up to 50 MB: a year of a busy seller's transactions fits easily. */
+const MAX_REPORT_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Downloads a finished export. The link is usually signed (no session needed); when Noon
+ * refuses it, it's tried once more with the session. Gzipped files are unpacked.
+ */
+export async function downloadNoonExport(
+  creds: NoonCredentials,
+  url: string,
+): Promise<{ bytes: Uint8Array; gzip: boolean; contentType: string }> {
+  const get = async (cookie?: string) => {
+    try {
+      return await fetch(url, {
+        headers: { "User-Agent": USER_AGENT, ...(cookie ? { Cookie: cookie } : {}) },
+        cache: "no-store",
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (cause) {
+      logError("noon.export_download_unreachable", cause, { host: new URL(url).host });
+      throw new NoonError(
+        "Noon's report couldn't be downloaded. Try again in a minute.",
+        "unavailable",
+        {
+          cause,
+        },
+      );
+    }
+  };
+  let response = await get();
+  if (response.status === 401 || response.status === 403) response = await get(await login(creds));
+  if (!response.ok) {
+    logWarn("noon.export_download_failed", {
+      host: new URL(url).host,
+      status: response.status,
+      requestId: requestIdOf(response),
+      projectCode: creds.projectCode,
+    });
+    throw new NoonError(`Noon's report couldn't be downloaded (${response.status}).`, "unexpected");
+  }
+  const raw = new Uint8Array(await response.arrayBuffer());
+  if (raw.length > MAX_REPORT_BYTES) {
+    throw new NoonError(
+      "Noon's report is too large to bring in at once. Choose fewer days.",
+      "unexpected",
+    );
+  }
+  const gzip = raw[0] === 0x1f && raw[1] === 0x8b;
+  return {
+    bytes: gzip ? new Uint8Array(gunzipSync(raw)) : raw,
+    gzip,
+    contentType: response.headers.get("content-type") ?? "",
+  };
 }
