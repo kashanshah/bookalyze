@@ -2171,6 +2171,7 @@ test("noon: choose how Noon posts, post a month and check the Noon balance", asy
   await expect(
     page.getByRole("combobox", { name: "Noon balance (what Noon holds for you)" }),
   ).toContainText("Noon balance");
+  await page.getByRole("switch", { name: "Post Noon automatically" }).click();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Noon posts with these accounts from now on.")).toBeVisible();
 
@@ -2191,6 +2192,15 @@ test("noon: choose how Noon posts, post a month and check the Noon balance", asy
   await month.getByRole("button", { name: `Click again to take ${label} out` }).click();
   await expect(page.getByText(`${label} is out of your books`)).toBeVisible();
   await expect(month.getByText("Ready to post")).toBeVisible();
+
+  // Noon has its own column in Channel profit, from its rows.
+  const slug = new URL(page.url()).pathname.split("/")[2];
+  await page.goto(`/o/${slug}/commerce/profit?from=${lastDay.slice(0, 8)}01&to=${lastDay}`);
+  await expect(page.getByRole("columnheader", { name: /Noon UAE/ })).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: /Noon UAE.*Noon transactions/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "Promotions and subsidies" })).toBeVisible();
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {

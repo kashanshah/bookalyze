@@ -147,7 +147,11 @@ export default async function NoonTransactionsPage({
       <CalendarClock className="mt-0.5 size-4 shrink-0" />
       <span>
         {sync?.through
-          ? `In through ${formatDate(sync.through, locale)}. Bringing in again adds new days and reads the last three weeks again, for Noon's late fees and updates.`
+          ? `In through ${formatDate(sync.through, locale)}. ${
+              settings.autoPost
+                ? "New days come in every evening (the last three weeks are read again, for Noon's late fees), and finished months post by themselves."
+                : "Bringing in again adds new days and reads the last three weeks again, for Noon's late fees and updates."
+            }`
           : "Bringing in starts a year back and goes a month at a time. Noon makes each month's report in the background, so a full year takes a few minutes."}
       </span>
     </p>

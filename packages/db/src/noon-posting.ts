@@ -60,13 +60,19 @@ export async function getNoonAccounts(tx: Transaction): Promise<NoonAccounts> {
 
 export async function getNoonSettings(tx: Transaction) {
   const [row] = await tx.select().from(noonSettings).limit(1);
-  return { postFrom: row?.postFrom ?? null };
+  return { postFrom: row?.postFrom ?? null, autoPost: row?.autoPost ?? false };
 }
 
 /** Saves the accounts (all of them: kinds left out are cleared) and the month posting starts. */
 export async function saveNoonSetup(
   tx: Transaction,
-  input: { orgId: string; userId: string | null; accounts: NoonAccounts; postFrom: string },
+  input: {
+    orgId: string;
+    userId: string | null;
+    accounts: NoonAccounts;
+    postFrom: string;
+    autoPost?: boolean;
+  },
 ) {
   await tx.delete(noonAccounts);
   const rows = Object.entries(input.accounts).filter(
@@ -77,7 +83,12 @@ export async function saveNoonSetup(
       .insert(noonAccounts)
       .values(rows.map(([key, accountId]) => ({ organizationId: input.orgId, key, accountId })));
   }
-  const values = { postFrom: input.postFrom, updatedBy: input.userId, updatedAt: new Date() };
+  const values = {
+    postFrom: input.postFrom,
+    autoPost: input.autoPost ?? false,
+    updatedBy: input.userId,
+    updatedAt: new Date(),
+  };
   await tx
     .insert(noonSettings)
     .values({ organizationId: input.orgId, ...values })
@@ -104,7 +115,7 @@ const AMOUNT_COLUMNS: Record<NoonAmountField, (typeof noonTransactions)[NoonAmou
 };
 
 /** Rows summed per channel, month, type and "advertising": what core groups. */
-async function monthSums(tx: Transaction, only?: { channelId: string; month: string }) {
+async function monthSums(tx: Transaction, range?: { from: string; to: string }) {
   const rows = await tx
     .select({
       channelId: noonTransactions.channelId,
@@ -120,8 +131,8 @@ async function monthSums(tx: Transaction, only?: { channelId: string; month: str
     })
     .from(noonTransactions)
     .where(
-      only
-        ? and(eq(noonTransactions.channelId, only.channelId), sql`${month} = ${only.month}`)
+      range
+        ? sql`${noonTransactions.transactionDate} between ${range.from}::date and ${range.to}::date`
         : undefined,
     )
     .groupBy(
@@ -255,6 +266,46 @@ export async function noonMonths(tx: Transaction, today: string): Promise<NoonMo
       };
     })
     .sort((a, b) => b.month.localeCompare(a.month) || a.channelId.localeCompare(b.channelId));
+}
+
+/**
+ * Noon's rows between two days (by transaction date), summed per country and month, with the
+ * rate each month posted at (null when it isn't in the books): what Channel profit adds up.
+ */
+export async function noonMonthsForProfit(tx: Transaction, range: { from: string; to: string }) {
+  const [posted, channels] = await Promise.all([
+    tx
+      .select({
+        channelId: noonPeriods.channelId,
+        month: noonPeriods.month,
+        rate: noonPeriods.postedFxRate,
+      })
+      .from(noonPeriods)
+      .innerJoin(
+        journalEntries,
+        and(
+          eq(journalEntries.id, noonPeriods.journalEntryId),
+          sql`${journalEntries.reversedByEntryId} is null`,
+        ),
+      ),
+    tx
+      .select({ id: salesChannels.id, name: salesChannels.name })
+      .from(salesChannels)
+      .where(eq(salesChannels.kind, "noon")),
+  ]);
+  const rates = new Map(posted.map((p) => [`${p.channelId}|${p.month}`, p.rate]));
+  const names = new Map(channels.map((c) => [c.id, c.name]));
+  return group(await monthSums(tx, range))
+    .sort((a, b) => a.month.localeCompare(b.month) || a.channelId.localeCompare(b.channelId))
+    .map((g) => ({
+      channelId: g.channelId,
+      channelName: names.get(g.channelId) ?? "Noon",
+      currency: g.currency,
+      month: g.month,
+      rows: g.rows,
+      sums: g.sums,
+      postedFxRate: rates.get(`${g.channelId}|${g.month}`) ?? null,
+    }));
 }
 
 /**
