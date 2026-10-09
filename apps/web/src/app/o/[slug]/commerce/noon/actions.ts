@@ -170,6 +170,7 @@ const setupSchema = z.object({
   postFrom: z
     .string()
     .refine((v) => isIsoDate(v) && v.endsWith("-01"), "Choose the month posting starts."),
+  autoPost: z.boolean().optional(),
 });
 
 /** Saves the account for each kind of Noon amount, the Noon balance account and the start month. */
@@ -203,13 +204,14 @@ export async function saveNoonSetupAction(
       userId: ctx.session.user.id,
       accounts,
       postFrom: parsed.data.postFrom,
+      autoPost: parsed.data.autoPost ?? false,
     });
     await audit(tx, {
       orgId: ctx.org.id,
       actorUserId: ctx.session.user.id,
       action: "noon.accounts_updated",
       entityType: "noon_settings",
-      after: { accounts, postFrom: parsed.data.postFrom },
+      after: { accounts, postFrom: parsed.data.postFrom, autoPost: parsed.data.autoPost ?? false },
     });
     return "ok";
   });

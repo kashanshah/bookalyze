@@ -5,6 +5,7 @@ import {
   type NoonSum,
   noonGroupTotals,
   noonMonthState,
+  noonProfitTotals,
   noonTypeKey,
 } from "../commerce/noon-posting";
 import { NOON_AMOUNT_FIELDS } from "../commerce/noon-transactions";
@@ -132,5 +133,26 @@ describe("noonMonthState", () => {
       "empty",
     );
     expect(monthEnd("2028-02")).toBe("2028-02-29");
+  });
+});
+
+describe("noonProfitTotals", () => {
+  it("puts Noon's groups in Channel profit's rows, paid out as Noon paid it", async () => {
+    const { channelProfit } = await import("../commerce/settlements");
+    const totals = noonProfitTotals(MONTH);
+    expect(totals).toMatchObject({
+      sales: u("100"),
+      refunds: u("-25"),
+      promotions: u("2"),
+      fees: u("-9.70"),
+      advertising: u("-30"),
+      other: u("-12"),
+      reserve: u("24.70"), // paid out 50, earned 25.30
+    });
+    expect(channelProfit(totals)).toMatchObject({
+      netSales: "77.0000",
+      net: "25.3000",
+      payout: "50.0000",
+    });
   });
 });

@@ -814,6 +814,8 @@ export const noonSettings = pgTable(
       .primaryKey()
       .references(() => organization.id, { onDelete: "cascade" }),
     postFrom: date("post_from").notNull(),
+    /** The daily job posts finished months and matches payouts that fit one deposit exactly. */
+    autoPost: boolean("auto_post").notNull().default(false),
     updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
