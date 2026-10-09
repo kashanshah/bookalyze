@@ -2062,12 +2062,29 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   // columns are shown.
   await noon.getByRole("button", { name: "Check the payouts report" }).click();
   await expect(page.getByText("Noon's payouts report checked")).toBeVisible({ timeout: 30_000 });
-  await expect(noon.getByText(/CSV file, compressed · 10 columns · 2 rows/)).toBeVisible();
+  await expect(noon.getByText(/CSV file, compressed · 22 columns · \d+ rows/)).toBeVisible();
   const columns = noon.getByRole("list", { name: "Columns in Noon's payouts report" });
-  await expect(columns.getByText("Reference Number", { exact: true })).toBeVisible();
+  await expect(columns.getByText("Reference Nr", { exact: true })).toBeVisible();
   await expect(columns.getByText("Net Proceeds", { exact: true })).toBeVisible();
   // Nothing from the rows is shown.
-  await expect(noon.getByText("REF-0001")).toHaveCount(0);
+  await expect(noon.getByText(/REF-\d{4}-\d{2}-1/)).toHaveCount(0);
+
+  // A year of Noon's transactions, a month at a time; bringing in again finds nothing new.
+  await noon.getByRole("link", { name: /Noon transactions/ }).click();
+  await expect(page.getByRole("heading", { name: "Noon transactions" })).toBeVisible();
+  await expect(page.getByText(/starts a year back/)).toBeVisible();
+  await page.getByRole("button", { name: "Bring in from Noon" }).click();
+  await expect(page.getByText(/\d+ transactions brought in/)).toBeVisible({ timeout: 60_000 });
+  const uae = page.getByRole("region", { name: "Noon UAE" });
+  await expect(uae.getByText("3 transactions").first()).toBeVisible();
+  await expect(page.getByText(/In through/)).toBeVisible();
+  await uae.getByText(/Transaction types Noon uses \(3\)/).click();
+  await expect(uae.getByText("Storage Fee", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Bring in from Noon" }).click();
+  await expect(page.getByText("Noon's transactions are up to date")).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
 
   // Disconnecting keeps the Noon countries.
   await noon.getByRole("button", { name: "Disconnect" }).click();
@@ -2075,6 +2092,41 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await expect(page.getByText("Noon disconnected")).toBeVisible();
   await expect(noon.getByRole("button", { name: "Connect Noon's API" })).toBeVisible();
   await expect(noon.getByText("Noon UAE")).toBeVisible();
+});
+
+test("noon: upload Noon's transaction view", async ({ page }) => {
+  // Last month's sale, already brought in from Noon's API, and a sale in Saudi Arabia.
+  const d = new Date();
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1));
+  const ym = last.toISOString().slice(0, 7);
+  const file = [
+    "Contract,Contract Title,Reference Nr,Order Nr,Item Nr,Order Date,Transaction Date,Title,SKUs,Partner SKUs,Transaction Type,Currency,Net Proceeds,Referral Fee including VAT,Fullfilment & Logistics Fees including VAT,Shipping Credits including VAT,Other Order Fees including VAT,Order Subsidies including VAT,Non-Order Fees including VAT,Non-Order Subsidies including VAT,Others including VAT,Total",
+    `C1,Noon UAE,REF-${ym}-1,NAE${ym.replace("-", "")}0001,ITEM-1,${ym}-01,${ym}-02,"Maple mug, large",Z1,NOON-MAPLE-MUG,Order,AED,100.00,-8.40,-6.30,0,0,2.00,0,0,0,87.30`,
+    `C2,Noon KSA,REF-SA-1,NSA0001,ITEM-1,${ym}-04,${ym}-05,Maple mug,Z1,NOON-MAPLE-MUG,Order,SAR,50.00,-4.00,-3.00,0,0,0,0,0,0,43.00`,
+  ].join("\n");
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /Noon transactions/ }).click();
+  await expect(page.getByRole("heading", { name: "Noon transactions" })).toBeVisible();
+  await page.getByLabel("Noon transaction files").setInputFiles({
+    name: "noon-transactions.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(file),
+  });
+  await expect(page.getByText("noon-transactions.csv: 1 transaction added")).toBeVisible();
+  await expect(page.getByText("1 transaction refreshed.")).toBeVisible();
+  // Noon KSA wasn't a channel yet: rows in riyals add it.
+  const ksa = page.getByRole("region", { name: "Noon KSA" });
+  await expect(ksa.getByText("1 transaction", { exact: true })).toBeVisible();
+
+  // Another kind of file says so.
+  await page.getByLabel("Noon transaction files").setInputFiles({
+    name: "statement.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("Date,Description,Amount\n2026-10-01,Coffee,4.50"),
+  });
+  await expect(page.getByText(/statement.csv: This isn't Noon's transaction view/)).toBeVisible();
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {

@@ -351,6 +351,13 @@
       "when": 1791501901184,
       "tag": "0049_noon_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1791514641999,
+      "tag": "0050_noon_transactions",
+      "breakpoints": true
     }
   ]
 }

@@ -268,3 +268,19 @@ export function previewReport(bytes: Uint8Array, gzip = false): ReportPreview {
     gzip,
   };
 }
+
+/**
+ * The payouts report's inputs for a date range, named as Noon names them: a "from"/"start"
+ * param gets the first day and a "to"/"end" param the last (YYYY-MM-DD). Without Noon's own
+ * description, from_date and to_date.
+ */
+export function noonPayoutsParams(spec: unknown, from: string, to: string): Record<string, string> {
+  const names =
+    spec && typeof spec === "object" ? Object.keys(spec as Record<string, unknown>) : [];
+  const params: Record<string, string> = {};
+  for (const name of names) {
+    if (/from|start/i.test(name)) params[name] = from;
+    else if (/(^|_)to($|_)|end|until/i.test(name)) params[name] = to;
+  }
+  return Object.keys(params).length ? params : { from_date: from, to_date: to };
+}
