@@ -475,7 +475,11 @@ export default async function OrdersPage({
                       ) : null}
                     </span>
                     <span className="hidden text-muted-foreground text-sm xl:block">
-                      {o.fulfillment === "amazon" ? "Amazon (FBA)" : "You"}
+                      {o.fulfillment === "merchant"
+                        ? "You"
+                        : o.channelKind === "noon"
+                          ? "Noon (FBN)"
+                          : "Amazon (FBA)"}
                     </span>
                     <span
                       className={cn(

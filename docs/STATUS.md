@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-09, phase 4c slice 5: Noon in the daily job and in Channel profit._
+_Last updated: 2026-10-09, phase 4c slice 6: Noon orders from the transaction view._
 
 ---
 
@@ -28,7 +28,7 @@ _Last updated: 2026-10-09, phase 4c slice 5: Noon in the daily job and in Channe
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off) and slice 6 (bundles) done. Next: Noon (phase 4c), with bundles from day one |
-| 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) and 5 (Noon in the daily job, with automatic posting, and in Channel profit) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: orders, cost of goods sold and FBN stock; VAT inside Noon's fees once the owner says whether Kazomo is registered. See §3 "Phase 4c" |
+| 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) and 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: check cost of goods sold for Noon with Kazomo's linked SKUs, then FBN stock (and Noon returns back into stock). Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1255,6 +1255,35 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
   paths kept, cause chains, Postgres codes and digests).
 
+### Phase 4c, slice 6: Noon orders
+
+- **From the transaction view, not a separate report** (core `noon-orders.ts` `noonOrders`, db
+  `refreshNoonOrders`): Noon's order APIs cover only seller-shipped (FBP) orders, but every order
+  Noon charges, FBN or FBP, has an "Order" row per item. Each order number in a Noon country is an
+  order (`orders`, status Shipped, dated Noon's order date at midday UTC), each item number one
+  unit (`order_items`, the seller's Partner SKU, else Noon's Z-SKU, title, net proceeds as the
+  price, quantity 1), and "Order Update" rows' negative net proceeds are its refunded amount.
+  Fulfilment from the country: FBP (`seller`) → merchant, else Noon (`amazon` in the column,
+  shown as "Noon (FBN)"). An order whose sale is before the first row brought in isn't made.
+  Items are marked in (`items_synced_at`), so nothing waits on Amazon.
+- **When:** every import of rows (API, upload, daily job) remakes the orders those rows belong
+  to; the first import after this change (or into a company without Noon orders) makes all of
+  them. So existing companies get their orders with the next "Bring in from Noon" or daily run.
+- **Orders screens:** Noon orders show "Noon (FBN)" / "You" in the list and "Noon (Fulfilled by
+  Noon, FBN)" / "You (Fulfilled by partner, FBP)" on the order; no Seller Central link and no
+  review card. **Review requests are Amazon's only** now (`onAmazon` in db `reviews.ts`: the
+  planner, Ask all, eligibility checks, manual asks and the Requests page).
+- **Cost of goods sold** picks Noon up as it is: units shipped by order month per marketplace
+  (`salesByMonth`), so linking Noon's Partner SKUs to products (Products → SKUs from orders) puts
+  Noon in Inventory → Cost of goods sold. Noon returns don't come back into stock yet (FBN stock
+  slice).
+- Not built: Noon's FBPI order APIs (live FBP orders before Noon charges them, with addresses);
+  "Both" countries show every order as Noon-shipped (the rows don't say which way each went).
+- Tests: core `noon-orders.test.ts`; db `noon-orders.test.ts` (order and items from rows,
+  re-import keeps one order with the return as its refund, left out of review candidates, counted
+  in cost of goods sold, isolation); e2e "noon: upload Noon's transaction view" opens last month's
+  Noon order.
+
 ### Phase 4c, slice 5: Noon in the daily job and in Channel profit
 
 - **Daily job** (`/api/cron/fx-rates` → step `noon`, `server/noon-daily.ts` `runNoonDaily`, 60 s,
@@ -1705,12 +1734,14 @@ pasted in when needed:
 3. [x] **Transactions from the transaction view.** 3a (export pipeline, columns check) and 3b
    (rows kept one by one, a year back by API or by upload, monthly totals and transaction types)
    done.
-4. [ ] **Orders** (FBN: the orders export; FBP: the FBPI order APIs), daily with the other jobs.
+4. [x] **Orders**: done in slice 6, from the transaction view (FBN and FBP alike). Noon's FBPI order
+   APIs (live FBP orders before they're charged) aren't used yet.
 5. [x] **Posting and deposit matching.** Done in slice 4 (monthly entries to a Noon balance,
    payouts matched to deposits, balance check).
 6. [x] **Channel profit and the daily job** for Noon: done in slice 5. Still to do: VAT inside
    Noon's fees as recoverable input tax, for a registered company (owner input 4).
-7. [ ] **Cost of goods sold for Noon**, per month and marketplace, bundles included.
+7. [ ] **Cost of goods sold for Noon**, per month and marketplace, bundles included. Works through
+   Noon orders (slice 6) once SKUs are linked; check it with Kazomo's products.
 8. [ ] **FBN stock**: returns back into stock, losses written off, "your stock against Noon's".
 
 ### Phase 0 leftovers
@@ -2004,7 +2035,8 @@ cases. These answers only help pick sensible defaults and test data:
 3. Roles: today every member can manage accounts and post entries. A future "accountant" or
    read-only role is a permissions change, not a data change.
 4. Noon (phase 4c): set up and posted from March 2026; the books agree with Noon. Switch on
-   **Post Noon automatically** (How Noon posts) so new months post and payouts match by
-   themselves. Still to answer: is Kazomo VAT-registered (then the VAT inside Noon's fees is
-   recoverable, not a cost), and which contract the balance transfers go to and what they pay for
-   (Noon's transaction view, Contracts filter).
+   **Post Noon automatically** (How Noon posts). Kazomo isn't VAT-registered (Noon's fees post
+   with their VAT, as a cost; revisit if it registers). Link Noon's Partner SKUs to products
+   (Products → SKUs from orders) so cost of goods sold counts Noon. Still unknown: which contract
+   the balance transfers go to and what they pay for (Noon's transaction view, Contracts filter, or
+   Noon seller support).

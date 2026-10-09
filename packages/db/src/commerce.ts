@@ -549,6 +549,7 @@ export async function listOrders(
       id: orders.id,
       externalId: orders.externalId,
       channelName: salesChannels.name,
+      channelKind: salesChannels.kind,
       purchasedAt: orders.purchasedAt,
       status: orders.status,
       fulfillment: orders.fulfillment,
