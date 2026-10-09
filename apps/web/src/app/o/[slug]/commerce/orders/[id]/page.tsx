@@ -79,9 +79,13 @@ export default async function OrderPage({
     {
       label: "Shipped by",
       value:
-        order.fulfillment === "amazon"
-          ? "Amazon (Fulfilled by Amazon)"
-          : "You (merchant fulfilled)",
+        channel.kind === "noon"
+          ? order.fulfillment === "amazon"
+            ? "Noon (Fulfilled by Noon, FBN)"
+            : "You (Fulfilled by partner, FBP)"
+          : order.fulfillment === "amazon"
+            ? "Amazon (Fulfilled by Amazon)"
+            : "You (merchant fulfilled)",
     },
     {
       label: "Ships to",
@@ -99,7 +103,8 @@ export default async function OrderPage({
     (f): f is string => Boolean(f),
   );
 
-  const review = reviewsOn ? reviewSummary() : null;
+  // Review requests are Amazon's.
+  const review = reviewsOn && channel.kind === "amazon" ? reviewSummary() : null;
   /**
    * The review card: the request if there is one, otherwise what Amazon said when last asked
    * (FBA orders have no delivery dates, so Amazon's answer is what counts), else the window.

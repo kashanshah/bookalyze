@@ -2127,6 +2127,15 @@ test("noon: upload Noon's transaction view", async ({ page }) => {
     buffer: Buffer.from("Date,Description,Amount\n2026-10-01,Coffee,4.50"),
   });
   await expect(page.getByText(/statement.csv: This isn't Noon's transaction view/)).toBeVisible();
+
+  // Noon's orders come from its rows: last month's order, shipped by Noon (Noon UAE ships Both).
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  await page
+    .getByRole("link", { name: new RegExp(`NAE${ym.replace("-", "")}0001`) })
+    .first()
+    .click();
+  await expect(page.getByText("Noon (Fulfilled by Noon, FBN)")).toBeVisible();
+  await expect(page.getByText("Noon UAE", { exact: true }).first()).toBeVisible();
 });
 
 test("noon: choose how Noon posts, post a month and check the Noon balance", async ({ page }) => {
