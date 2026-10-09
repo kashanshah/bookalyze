@@ -705,11 +705,28 @@ export const noonTransactions = pgTable(
     /** The money columns add up to `total`. */
     balanced: boolean("balanced").notNull(),
     source: text("source", { enum: ["api", "upload"] }).notNull(),
+    /**
+     * A payment row's bank deposit, once matched: the deposit as it is now (moved to the Noon
+     * balance account), and as it was before (put back on unmatch).
+     */
+    depositEntryId: uuid("deposit_entry_id"),
+    depositOriginalEntryId: uuid("deposit_original_entry_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    unique("noon_transactions_org_id_key").on(t.organizationId, t.id),
     unique("noon_transactions_channel_key").on(t.organizationId, t.channelId, t.key),
+    foreignKey({
+      name: "noon_transactions_deposit_entry_fk",
+      columns: [t.organizationId, t.depositEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    foreignKey({
+      name: "noon_transactions_deposit_original_entry_fk",
+      columns: [t.organizationId, t.depositOriginalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
     index("noon_transactions_channel_date_idx").on(
       t.organizationId,
       t.channelId,
@@ -722,5 +739,111 @@ export const noonTransactions = pgTable(
     }).onDelete("cascade"),
     check("noon_transactions_source_valid", sql`${t.source} in ('api', 'upload')`),
     tenantIsolationPolicy("noon_transactions", t.organizationId),
+  ],
+);
+
+/**
+ * A Noon country's month in the books (phase 4c, slice 4): one entry, and what it held when
+ * posted (`earned`, `rows`), so later changes to Noon's rows show as "changed since posted". It
+ * counts as posted while its entry isn't reversed.
+ */
+export const noonPeriods = pgTable(
+  "noon_periods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    /** "2026-09". */
+    month: char("month", { length: 7 }).notNull(),
+    currency: char("currency", { length: 3 }).notNull(),
+    earned: numeric("earned", { precision: 20, scale: 4 }).notNull(),
+    rows: integer("rows").notNull(),
+    journalEntryId: uuid("journal_entry_id"),
+    /** Main-currency units per one unit of the month's currency ("1" in the main currency). */
+    postedFxRate: numeric("posted_fx_rate", { precision: 20, scale: 10 }),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("noon_periods_channel_month_key").on(t.organizationId, t.channelId, t.month),
+    foreignKey({
+      name: "noon_periods_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "noon_periods_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    check("noon_periods_month_valid", sql`${t.month} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
+    tenantIsolationPolicy("noon_periods", t.organizationId),
+  ],
+);
+
+/** The account each kind of Noon amount posts to (core `NOON_ACCOUNT_KEYS`). */
+export const noonAccounts = pgTable(
+  "noon_accounts",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    accountId: uuid("account_id").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.organizationId, t.key] }),
+    foreignKey({
+      name: "noon_accounts_account_fk",
+      columns: [t.organizationId, t.accountId],
+      foreignColumns: [accounts.organizationId, accounts.id],
+    }),
+    tenantIsolationPolicy("noon_accounts", t.organizationId),
+  ],
+);
+
+/** When Noon starts posting (the first day of a month): earlier months stay out of the books. */
+export const noonSettings = pgTable(
+  "noon_settings",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    postFrom: date("post_from").notNull(),
+    updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [tenantIsolationPolicy("noon_settings", t.organizationId)],
+);
+
+/** Bank deposits someone said aren't a Noon payout, so they aren't suggested for it again. */
+export const noonDepositDismissals = pgTable(
+  "noon_deposit_dismissals",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    transactionId: uuid("transaction_id").notNull(),
+    journalEntryId: uuid("journal_entry_id").notNull(),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.transactionId, t.journalEntryId] }),
+    foreignKey({
+      name: "noon_deposit_dismissals_transaction_fk",
+      columns: [t.organizationId, t.transactionId],
+      foreignColumns: [noonTransactions.organizationId, noonTransactions.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "noon_deposit_dismissals_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("noon_deposit_dismissals", t.organizationId),
   ],
 );

@@ -1,5 +1,5 @@
 import { NOON_MARKETPLACES, type NoonTransaction } from "@bookalyze/core";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { connections } from "./schema/banking";
 import { noonTransactions, salesChannels } from "./schema/commerce";
@@ -131,50 +131,6 @@ export async function importNoonTransactions(
     }
   }
   return { added, updated, unknownCurrency, channelsAdded };
-}
-
-export type NoonMonth = {
-  channelId: string;
-  /** YYYY-MM. */
-  month: string;
-  rows: number;
-  unbalanced: number;
-  netProceeds: string;
-  referralFee: string;
-  fulfilmentFee: string;
-  shippingCredits: string;
-  otherOrderFees: string;
-  orderSubsidies: string;
-  nonOrderFees: string;
-  nonOrderSubsidies: string;
-  others: string;
-  total: string;
-};
-
-/** Each Noon channel's months (by transaction date), newest first, with each column's sum. */
-export async function noonTransactionMonths(tx: Transaction): Promise<NoonMonth[]> {
-  const sum = (c: unknown) => sql<string>`coalesce(sum(${c}), 0)::text`;
-  const month = sql<string>`to_char(${noonTransactions.transactionDate}, 'YYYY-MM')`;
-  return tx
-    .select({
-      channelId: noonTransactions.channelId,
-      month,
-      rows: sql<number>`count(*)::int`,
-      unbalanced: sql<number>`count(*) filter (where not ${noonTransactions.balanced})::int`,
-      netProceeds: sum(noonTransactions.netProceeds),
-      referralFee: sum(noonTransactions.referralFee),
-      fulfilmentFee: sum(noonTransactions.fulfilmentFee),
-      shippingCredits: sum(noonTransactions.shippingCredits),
-      otherOrderFees: sum(noonTransactions.otherOrderFees),
-      orderSubsidies: sum(noonTransactions.orderSubsidies),
-      nonOrderFees: sum(noonTransactions.nonOrderFees),
-      nonOrderSubsidies: sum(noonTransactions.nonOrderSubsidies),
-      others: sum(noonTransactions.others),
-      total: sum(noonTransactions.total),
-    })
-    .from(noonTransactions)
-    .groupBy(noonTransactions.channelId, month)
-    .orderBy(sql`2 desc`, asc(noonTransactions.channelId));
 }
 
 /** The transaction types Noon uses, per channel, most frequent first, with their total. */

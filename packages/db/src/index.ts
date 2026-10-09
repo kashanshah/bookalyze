@@ -15,6 +15,7 @@ export * from "./invoices";
 export * from "./landed-costs";
 export * from "./ledger";
 export * from "./listings";
+export * from "./noon-posting";
 export * from "./noon-transactions";
 export * from "./purchasing";
 export * from "./reconciliation";

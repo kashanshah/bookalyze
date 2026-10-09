@@ -3,10 +3,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import { listNoonChannels } from "../commerce";
+import { noonMonths } from "../noon-posting";
 import {
   importNoonTransactions,
   noonSyncState,
-  noonTransactionMonths,
   noonTransactionTypes,
   saveNoonSyncState,
 } from "../noon-transactions";
@@ -99,18 +99,18 @@ describe("Noon transactions", () => {
   it("sums each month's columns per country, and counts the transaction types", async () => {
     const channels = await scoped((tx) => listNoonChannels(tx));
     const uae = channels.find((c) => c.currency === "AED")?.id;
-    const months = await scoped((tx) => noonTransactionMonths(tx));
+    const months = await scoped((tx) => noonMonths(tx, "2026-10-09"));
     const uaeMonths = months.filter((m) => m.channelId === uae);
-    expect(uaeMonths.map((m) => [m.month, m.rows, m.total])).toEqual([
+    expect(uaeMonths.map((m) => [m.month, m.rows, m.earned])).toEqual([
       ["2026-09", 2, "-15.5000"],
       ["2026-08", 1, "87.3000"],
     ]);
-    expect(uaeMonths[1]).toMatchObject({
-      netProceeds: "100.0000",
-      referralFee: "-8.4000",
-      orderSubsidies: "2.0000",
-      unbalanced: 0,
+    expect(uaeMonths[1]?.groups).toMatchObject({
+      sales: "100.0000",
+      fees: "-14.7000",
+      subsidies: "2.0000",
     });
+    expect(uaeMonths[1]?.unbalanced).toBe(0);
     const types = await scoped((tx) => noonTransactionTypes(tx));
     expect(types.filter((t) => t.channelId === uae).map((t) => t.transactionType)).toEqual(
       expect.arrayContaining(["Order", "Order Update", "Storage Fee"]),
@@ -118,7 +118,7 @@ describe("Noon transactions", () => {
   });
 
   it("keeps each company's transactions to itself", async () => {
-    expect(await scoped((tx) => noonTransactionMonths(tx), otherOrgId)).toEqual([]);
+    expect(await scoped((tx) => noonMonths(tx, "2026-10-09"), otherOrgId)).toEqual([]);
     const rows = await scoped((tx) => tx.select().from(schema.noonTransactions), otherOrgId);
     expect(rows).toEqual([]);
   });

@@ -2129,6 +2129,70 @@ test("noon: upload Noon's transaction view", async ({ page }) => {
   await expect(page.getByText(/statement.csv: This isn't Noon's transaction view/)).toBeVisible();
 });
 
+test("noon: choose how Noon posts, post a month and check the Noon balance", async ({ page }) => {
+  // Last month (uploaded and brought in above). The company keeps CAD books, so the AED month
+  // posts at that day's rate (the dirham via its US dollar peg): store it, as the daily job would.
+  const d = new Date();
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0));
+  const lastDay = last.toISOString().slice(0, 10);
+  const label = new Intl.DateTimeFormat("en-CA", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(last);
+  await withOwnerDb((db) =>
+    db.query(
+      `insert into fx_rates (date, base, quote, rate, source) values ($1, 'CAD', 'USD', 1.3650, 'Bank of Canada')
+       on conflict (date, base, quote) do update set rate = excluded.rate`,
+      [lastDay],
+    ),
+  );
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /Noon transactions/ }).click();
+
+  // The accounts, suggested from their names; the Noon balance is added on the spot.
+  await page.getByRole("link", { name: /Put Noon in your books/ }).click();
+  await expect(page.getByRole("heading", { name: "How Noon posts" })).toBeVisible();
+  await expect(page.getByText(/Suggested from your accounts' names/)).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Noon's fees", exact: true })).toContainText(
+    "Payment processing fees",
+  );
+  await page.getByRole("combobox", { name: "Noon balance (what Noon holds for you)" }).click();
+  await page.locator('input[role="combobox"][aria-autocomplete="list"]').fill("Noon balance");
+  await page.getByRole("button", { name: "Add “Noon balance” as a new account" }).click();
+  await page
+    .getByRole("dialog", { name: "Add an account" })
+    .getByRole("button", {
+      name: "Add account",
+    })
+    .click();
+  await expect(
+    page.getByRole("combobox", { name: "Noon balance (what Noon holds for you)" }),
+  ).toContainText("Noon balance");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Noon posts with these accounts from now on.")).toBeVisible();
+
+  // Last month posts as one entry; the balance in the books agrees with Noon's rows.
+  const uae = page.getByRole("region", { name: "Noon UAE" });
+  const month = uae.getByRole("listitem", { name: label, exact: true });
+  await expect(month.getByText("Ready to post")).toBeVisible();
+  await month.getByRole("button", { name: `Post ${label}` }).click();
+  await expect(page.getByText(`${label} is in your books`)).toBeVisible();
+  await expect(month.getByText(/Posted as JE-/)).toBeVisible();
+  await expect(month.getByText("In books", { exact: true })).toBeVisible();
+  const balance = page.getByRole("region", { name: "Noon balance in AED" });
+  await expect(balance.getByText(/not in the books yet/)).toBeVisible();
+  await expect(balance.getByText(/Everything else agrees with Noon/)).toBeVisible();
+
+  // And back out.
+  await month.getByRole("button", { name: `Take ${label} out of the books` }).click();
+  await month.getByRole("button", { name: `Click again to take ${label} out` }).click();
+  await expect(page.getByText(`${label} is out of your books`)).toBeVisible();
+  await expect(month.getByText("Ready to post")).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

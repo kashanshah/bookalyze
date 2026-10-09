@@ -16,7 +16,7 @@ import {
   type SettlementAccounts,
   settlementDepositWindow,
 } from "@bookalyze/core";
-import { and, asc, desc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, ne, type SQL, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { fxRateOn } from "./fx";
 import { formatEntryNumber, LedgerError, postJournalEntry, reverseJournalEntry } from "./ledger";
@@ -344,60 +344,109 @@ export async function postSettlement(
     accounts: await getSettlementAccounts(tx),
   });
   if (!built.ok) throw new LedgerError(built.error);
+  const posted = await postClearingEntry(tx, {
+    orgId: input.orgId,
+    userId: input.userId,
+    date: input.date,
+    reference: s.externalId,
+    memo: input.memo,
+    source: "settlement",
+    sourceId: s.id,
+    currency: s.currency,
+    baseCurrency: input.baseCurrency,
+    lines: built.lines,
+    total: String(s.total),
+    clearingId: (await getSettlementAccounts(tx)).clearing ?? "",
+    what: "settlement",
+  });
+  await tx
+    .update(settlements)
+    .set({
+      journalEntryId: posted.id,
+      postedFxRate: posted.rate,
+      payoutBaseAmount: posted.payoutBase,
+    })
+    .where(eq(settlements.id, s.id));
+  return { id: posted.id, entryNumber: posted.entryNumber, label: posted.label };
+}
+
+/**
+ * Posts lines built for a payout (each kind to its account, the payout to `clearingId`) as one
+ * entry in `currency`. Another currency than the main one posts at `date`'s rate, each line
+ * valued on its own (core `convertSettlementEntry`). Returns the entry, the rate, and the
+ * clearing line's main-currency value. Shared by Amazon settlements and Noon months.
+ */
+export async function postClearingEntry(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    userId: string | null;
+    date: string;
+    reference: string | null;
+    memo: string;
+    source: "settlement" | "noon";
+    sourceId: string;
+    currency: string;
+    baseCurrency: string;
+    lines: readonly { accountId: string; amount: string; description: string }[];
+    total: string;
+    clearingId: string;
+    /** "settlement", "month": for the error when it doesn't balance. */
+    what: string;
+  },
+) {
   const all = await tx.select().from(accounts);
-  const record = async (entry: { id: string; entryNumber: number }, rate: string, base: string) => {
-    await tx
-      .update(settlements)
-      .set({ journalEntryId: entry.id, postedFxRate: rate, payoutBaseAmount: base })
-      .where(eq(settlements.id, s.id));
-    return { ...entry, label: formatEntryNumber(entry.entryNumber) };
-  };
   const post = (prepared: PreparedEntry) =>
     postJournalEntry(tx, {
       orgId: input.orgId,
       userId: input.userId,
       date: input.date,
-      reference: s.externalId,
+      reference: input.reference,
       memo: input.memo,
-      source: "settlement",
-      sourceId: s.id,
+      source: input.source,
+      sourceId: input.sourceId,
       entry: prepared,
     });
-  if (s.currency !== input.baseCurrency) {
+  const done = (entry: { id: string; entryNumber: number }, rate: string, payoutBase: string) => ({
+    ...entry,
+    label: formatEntryNumber(entry.entryNumber),
+    rate,
+    payoutBase,
+  });
+  if (input.currency !== input.baseCurrency) {
     const quote = await fxRateOn(tx, {
       base: input.baseCurrency,
-      quote: s.currency,
+      quote: input.currency,
       date: input.date,
     });
     if (!quote) {
       throw new LedgerError(
-        `There's no ${s.currency} to ${input.baseCurrency} exchange rate for ${input.date} yet. Rates come in every weekday evening: try again tomorrow.`,
+        `There's no ${input.currency} to ${input.baseCurrency} exchange rate for ${input.date} yet. Rates come in every weekday evening: try again tomorrow.`,
       );
     }
     const byId = new Map(all.map((a) => [a.id, a]));
-    if (built.lines.some((l) => byId.get(l.accountId)?.isArchived)) {
+    if (input.lines.some((l) => byId.get(l.accountId)?.isArchived)) {
       throw new LedgerError("One of the chosen accounts is archived. Choose another.");
     }
-    const clearingId = (await getSettlementAccounts(tx)).clearing ?? "";
     const converted = convertSettlementEntry({
-      lines: built.lines,
-      total: String(s.total),
-      clearingAccountId: clearingId,
-      clearingCurrency: byId.get(clearingId)?.currency ?? null,
-      currency: s.currency,
+      lines: input.lines,
+      total: input.total,
+      clearingAccountId: input.clearingId,
+      clearingCurrency: byId.get(input.clearingId)?.currency ?? null,
+      currency: input.currency,
       baseCurrency: input.baseCurrency,
       rate: quote.rate,
     });
     if (!converted.ok) throw new LedgerError(converted.error);
     const entry = await post({
-      currency: s.currency,
+      currency: input.currency,
       fxRate: quote.rate,
       total: formatDecimal(
-        built.lines.map((l) => parseDecimal(l.amount)).reduce((t, a) => (a > 0n ? t + a : t), 0n),
+        input.lines.map((l) => parseDecimal(l.amount)).reduce((t, a) => (a > 0n ? t + a : t), 0n),
       ),
       lines: converted.lines.map((l, index) => ({ index, ...l, taxRateId: null })),
     });
-    return record(entry, quote.rate, converted.payoutBase);
+    return done(entry, quote.rate, converted.payoutBase);
   }
   const ledger = new Map<string, LedgerAccount>(
     all.map((a) => [
@@ -407,9 +456,9 @@ export async function postSettlement(
   );
   const prepared = prepareJournalEntry(
     {
-      currency: s.currency,
+      currency: input.currency,
       baseCurrency: input.baseCurrency,
-      lines: built.lines.map((l) =>
+      lines: input.lines.map((l) =>
         l.amount.startsWith("-")
           ? { accountId: l.accountId, description: l.description, credit: l.amount.slice(1) }
           : { accountId: l.accountId, description: l.description, debit: l.amount },
@@ -422,9 +471,9 @@ export async function postSettlement(
       prepared.errors.form ??
       Object.values(prepared.errors.lines ?? {})[0] ??
       "It doesn't balance.";
-    throw new LedgerError(`The settlement couldn't be posted: ${first}`);
+    throw new LedgerError(`The ${input.what} couldn't be posted: ${first}`);
   }
-  return record(await post(prepared.entry), "1", String(s.total));
+  return done(await post(prepared.entry), "1", input.total);
 }
 
 /** Takes a settlement out of the books: its entry is reversed (on the same day). */
@@ -532,23 +581,28 @@ export type DepositCandidate = {
 };
 
 /**
- * Bank deposits that could be a settlement's payout: money into one bank, card or cash account
- * (not the clearing account), within `settlementDepositWindow`, not already moved to the
- * clearing account and not turned down for this settlement, that fit the payout (core
- * `depositFit`): exactly its amount in its currency, or, paid in another currency, close to it
- * at that day's rate. Exact ones first, then by date (closest to Amazon's deposit date).
+ * Bank deposits that could be a payout of `total` in `currency`: money into one bank, card or
+ * cash account (not the clearing account), between `from` and `to`, not already moved to the
+ * clearing account and not turned down (`notDismissed`, a condition on the entry `e`), that fit
+ * the payout (core `depositFit`): exactly its amount in its currency, or, paid in another
+ * currency, close to it at that day's rate. Exact ones first, then by date (closest to `anchor`).
+ * Shared by Amazon settlements and Noon payouts.
  */
-export async function settlementDepositCandidates(
+export async function depositCandidates(
   tx: Transaction,
-  settlementId: string,
-  onlyEntryId?: string,
+  input: {
+    total: string;
+    currency: string;
+    from: string;
+    to: string;
+    anchor: string;
+    clearing: string | null;
+    notDismissed: SQL;
+    onlyEntryId?: string;
+  },
 ): Promise<DepositCandidate[]> {
-  const [s] = await tx.select().from(settlements).where(eq(settlements.id, settlementId));
-  if (!s || parseDecimal(String(s.total)) <= 0n) return [];
-  const clearing = (await getSettlementAccounts(tx)).clearing ?? null;
-  const endDate = s.endAt.toISOString().slice(0, 10);
-  const { from, to } = settlementDepositWindow({ depositDate: s.depositDate, endDate });
-  const anchor = s.depositDate ?? endDate;
+  if (parseDecimal(input.total) <= 0n) return [];
+  const { clearing, from, to, anchor } = input;
   const rows = await tx.execute<{
     entry_id: string;
     entry_number: number;
@@ -578,7 +632,7 @@ export async function settlementDepositCandidates(
     join journal_lines m on m.journal_entry_id = e.id and m.amount > 0
     join accounts ma on ma.id = m.account_id and ma.subtype in (${moneyList})
     where e.reversed_by_entry_id is null and e.reverses_entry_id is null
-      and e.source not in ('settlement', 'reversal')
+      and e.source not in ('settlement', 'reversal', 'noon')
       and e.date between ${from}::date and ${to}::date
       and (select count(*) from journal_lines l join accounts a on a.id = l.account_id
         where l.journal_entry_id = e.id and a.subtype in (${moneyList})) = 1
@@ -589,16 +643,15 @@ export async function settlementDepositCandidates(
           where l.journal_entry_id = e.id and l.account_id = ${clearing})`
           : sql``
       }
-      and not exists (select 1 from settlement_deposit_dismissals x
-        where x.settlement_id = ${s.id} and x.journal_entry_id = e.id)
-      ${onlyEntryId ? sql`and e.id = ${onlyEntryId}` : sql``}
+      and ${input.notDismissed}
+      ${input.onlyEntryId ? sql`and e.id = ${input.onlyEntryId}` : sql``}
     order by abs(e.date - ${anchor}::date), e.date, e.entry_number
     limit 300`);
-  // The market rate (deposit units per payout unit) on Amazon's deposit date, per currency.
+  // The market rate (deposit units per payout unit) on the anchor day, per currency.
   const rates = new Map<string, string | null>();
   const rateFor = async (currency: string) => {
     if (!rates.has(currency)) {
-      const quote = await fxRateOn(tx, { base: currency, quote: s.currency, date: anchor });
+      const quote = await fxRateOn(tx, { base: currency, quote: input.currency, date: anchor });
       rates.set(currency, quote?.rate ?? null);
     }
     return rates.get(currency) ?? null;
@@ -606,11 +659,11 @@ export async function settlementDepositCandidates(
   const found: DepositCandidate[] = [];
   for (const r of rows.rows) {
     const fit = depositFit({
-      total: String(s.total),
-      currency: s.currency,
+      total: input.total,
+      currency: input.currency,
       depositAmount: r.amount,
       depositCurrency: r.currency,
-      rate: r.currency === s.currency ? null : await rateFor(r.currency),
+      rate: r.currency === input.currency ? null : await rateFor(r.currency),
     });
     if (!fit) continue;
     found.push({
@@ -635,6 +688,164 @@ export async function settlementDepositCandidates(
     .sort((a, b) => closeness(a.c) - closeness(b.c) || a.order - b.order)
     .map((x) => x.c)
     .slice(0, 10);
+}
+
+/**
+ * Bank deposits that could be a settlement's payout (`depositCandidates`), within
+ * `settlementDepositWindow`, not turned down for this settlement.
+ */
+export async function settlementDepositCandidates(
+  tx: Transaction,
+  settlementId: string,
+  onlyEntryId?: string,
+): Promise<DepositCandidate[]> {
+  const [s] = await tx.select().from(settlements).where(eq(settlements.id, settlementId));
+  if (!s || parseDecimal(String(s.total)) <= 0n) return [];
+  const endDate = s.endAt.toISOString().slice(0, 10);
+  const { from, to } = settlementDepositWindow({ depositDate: s.depositDate, endDate });
+  return depositCandidates(tx, {
+    total: String(s.total),
+    currency: s.currency,
+    from,
+    to,
+    anchor: s.depositDate ?? endDate,
+    clearing: (await getSettlementAccounts(tx)).clearing ?? null,
+    notDismissed: sql`not exists (select 1 from settlement_deposit_dismissals x
+        where x.settlement_id = ${s.id} and x.journal_entry_id = e.id)`,
+    onlyEntryId,
+  });
+}
+
+/**
+ * Replaces a bank deposit (reversed on its own date, posted again) with its money line kept and
+ * everything else moved to the clearing account, at the payout's main-currency value
+ * (`payoutBase`), any difference to exchange gain or loss (core `depositMatchLines`). Bank
+ * links, receipts and the reviewed tick follow (`replaceJournalEntry`). Shared by Amazon
+ * settlements and Noon payouts.
+ */
+export async function moveDepositToClearing(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    userId: string | null;
+    entryId: string;
+    clearing: string;
+    currency: string;
+    baseCurrency: string;
+    total: string;
+    payoutBase: string;
+    description: string;
+  },
+) {
+  const { clearing } = input;
+  const [entry] = await tx
+    .select()
+    .from(journalEntries)
+    .where(eq(journalEntries.id, input.entryId));
+  if (!entry) throw new LedgerError("This deposit no longer exists.");
+  const lines = await tx
+    .select({
+      accountId: journalLines.accountId,
+      description: journalLines.description,
+      currency: journalLines.currency,
+      amount: journalLines.amount,
+      baseAmount: journalLines.baseAmount,
+      subtype: accounts.subtype,
+    })
+    .from(journalLines)
+    .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+    .where(eq(journalLines.journalEntryId, entry.id))
+    .orderBy(asc(journalLines.lineNo));
+  const money = lines.find((l) =>
+    (MONEY_ACCOUNT_SUBTYPES as readonly string[]).includes(l.subtype),
+  );
+  if (!money) throw new LedgerError("This deposit isn't on a bank account.");
+  const system = await tx
+    .select({ id: accounts.id, key: accounts.systemKey, currency: accounts.currency })
+    .from(accounts)
+    .where(sql`${accounts.systemKey} in ('fx_gain', 'fx_loss') or ${accounts.id} = ${clearing}`);
+  const built = depositMatchLines({
+    money: {
+      accountId: money.accountId,
+      description: money.description,
+      currency: money.currency,
+      amount: String(money.amount),
+      baseAmount: String(money.baseAmount),
+    },
+    clearingAccountId: clearing,
+    clearingCurrency: system.find((a) => a.id === clearing)?.currency ?? null,
+    currency: input.currency,
+    baseCurrency: input.baseCurrency,
+    total: input.total,
+    payoutBase: input.payoutBase,
+    fxGainAccountId: system.find((a) => a.key === "fx_gain")?.id ?? null,
+    fxLossAccountId: system.find((a) => a.key === "fx_loss")?.id ?? null,
+    description: input.description,
+  });
+  if (!built.ok) throw new LedgerError(built.error);
+  const prepared: PreparedEntry = {
+    currency: entry.currency,
+    fxRate: entry.fxRate,
+    total: String(money.amount),
+    lines: built.lines.map((l, index) => ({ index, ...l, taxRateId: null })),
+  };
+  return replaceJournalEntry(tx, {
+    orgId: input.orgId,
+    userId: input.userId,
+    entryId: entry.id,
+    date: entry.date,
+    reference: entry.reference,
+    memo: entry.memo,
+    contactId: entry.contactId,
+    entry: prepared,
+  });
+}
+
+/** Puts a matched deposit back as it was before (`originalId`'s lines), replacing `currentId`. */
+export async function restoreDeposit(
+  tx: Transaction,
+  input: { orgId: string; userId: string | null; currentId: string; originalId: string },
+) {
+  const [current] = await tx
+    .select()
+    .from(journalEntries)
+    .where(eq(journalEntries.id, input.currentId));
+  const [original] = await tx
+    .select()
+    .from(journalEntries)
+    .where(eq(journalEntries.id, input.originalId));
+  if (!current || !original) throw new LedgerError("This deposit no longer exists.");
+  const lines = await tx
+    .select()
+    .from(journalLines)
+    .where(eq(journalLines.journalEntryId, original.id))
+    .orderBy(asc(journalLines.lineNo));
+  const prepared: PreparedEntry = {
+    currency: original.currency,
+    fxRate: original.fxRate,
+    total: formatDecimal(
+      lines.map((l) => parseDecimal(String(l.amount))).reduce((t, a) => (a > 0n ? t + a : t), 0n),
+    ),
+    lines: lines.map((l, index) => ({
+      index,
+      accountId: l.accountId,
+      description: l.description,
+      currency: l.currency,
+      amount: String(l.amount),
+      baseAmount: String(l.baseAmount),
+      taxRateId: l.taxRateId,
+    })),
+  };
+  return replaceJournalEntry(tx, {
+    orgId: input.orgId,
+    userId: input.userId,
+    entryId: current.id,
+    date: current.date,
+    reference: current.reference,
+    memo: current.memo,
+    contactId: current.contactId,
+    entry: prepared,
+  });
 }
 
 /**
@@ -679,28 +890,6 @@ export async function matchSettlementDeposit(
       "This deposit can't be matched to the settlement (it changed, or doesn't fit). Refresh to see the latest.",
     );
   }
-  const [entry] = await tx
-    .select()
-    .from(journalEntries)
-    .where(eq(journalEntries.id, input.entryId));
-  if (!entry) throw new LedgerError("This deposit no longer exists.");
-  const lines = await tx
-    .select({
-      accountId: journalLines.accountId,
-      description: journalLines.description,
-      currency: journalLines.currency,
-      amount: journalLines.amount,
-      baseAmount: journalLines.baseAmount,
-      subtype: accounts.subtype,
-    })
-    .from(journalLines)
-    .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
-    .where(eq(journalLines.journalEntryId, entry.id))
-    .orderBy(asc(journalLines.lineNo));
-  const money = lines.find((l) =>
-    (MONEY_ACCOUNT_SUBTYPES as readonly string[]).includes(l.subtype),
-  );
-  if (!money) throw new LedgerError("This deposit isn't on a bank account.");
   // Settlements posted before their main-currency value was kept were in the main currency.
   const payoutBase =
     s.payoutBase !== null
@@ -711,48 +900,20 @@ export async function matchSettlementDeposit(
   if (!payoutBase) {
     throw new LedgerError("Take this settlement out of the books and post it again, then match.");
   }
-  const system = await tx
-    .select({ id: accounts.id, key: accounts.systemKey, currency: accounts.currency })
-    .from(accounts)
-    .where(sql`${accounts.systemKey} in ('fx_gain', 'fx_loss') or ${accounts.id} = ${clearing}`);
-  const built = depositMatchLines({
-    money: {
-      accountId: money.accountId,
-      description: money.description,
-      currency: money.currency,
-      amount: String(money.amount),
-      baseAmount: String(money.baseAmount),
-    },
-    clearingAccountId: clearing,
-    clearingCurrency: system.find((a) => a.id === clearing)?.currency ?? null,
+  const posted = await moveDepositToClearing(tx, {
+    orgId: input.orgId,
+    userId: input.userId,
+    entryId: input.entryId,
+    clearing,
     currency: s.currency,
     baseCurrency: input.baseCurrency,
     total: String(s.total),
     payoutBase,
-    fxGainAccountId: system.find((a) => a.key === "fx_gain")?.id ?? null,
-    fxLossAccountId: system.find((a) => a.key === "fx_loss")?.id ?? null,
     description: `Amazon settlement ${s.externalId}`,
-  });
-  if (!built.ok) throw new LedgerError(built.error);
-  const prepared: PreparedEntry = {
-    currency: entry.currency,
-    fxRate: entry.fxRate,
-    total: String(money.amount),
-    lines: built.lines.map((l, index) => ({ index, ...l, taxRateId: null })),
-  };
-  const posted = await replaceJournalEntry(tx, {
-    orgId: input.orgId,
-    userId: input.userId,
-    entryId: entry.id,
-    date: entry.date,
-    reference: entry.reference,
-    memo: entry.memo,
-    contactId: entry.contactId,
-    entry: prepared,
   });
   await tx
     .update(settlements)
-    .set({ depositEntryId: posted.id, depositOriginalEntryId: entry.id })
+    .set({ depositEntryId: posted.id, depositOriginalEntryId: input.entryId })
     .where(eq(settlements.id, s.id));
   return { ...posted, label: formatEntryNumber(posted.entryNumber), was: candidate };
 }
@@ -774,45 +935,11 @@ export async function unmatchSettlementDeposit(
   if (!s.depositEntryId || !s.depositOriginalEntryId || !(await isDepositMatched(tx, s.id))) {
     throw new LedgerError("This settlement's deposit isn't matched.");
   }
-  const [current] = await tx
-    .select()
-    .from(journalEntries)
-    .where(eq(journalEntries.id, s.depositEntryId));
-  const [original] = await tx
-    .select()
-    .from(journalEntries)
-    .where(eq(journalEntries.id, s.depositOriginalEntryId));
-  if (!current || !original) throw new LedgerError("This deposit no longer exists.");
-  const lines = await tx
-    .select()
-    .from(journalLines)
-    .where(eq(journalLines.journalEntryId, original.id))
-    .orderBy(asc(journalLines.lineNo));
-  const prepared: PreparedEntry = {
-    currency: original.currency,
-    fxRate: original.fxRate,
-    total: formatDecimal(
-      lines.map((l) => parseDecimal(String(l.amount))).reduce((t, a) => (a > 0n ? t + a : t), 0n),
-    ),
-    lines: lines.map((l, index) => ({
-      index,
-      accountId: l.accountId,
-      description: l.description,
-      currency: l.currency,
-      amount: String(l.amount),
-      baseAmount: String(l.baseAmount),
-      taxRateId: l.taxRateId,
-    })),
-  };
-  const posted = await replaceJournalEntry(tx, {
+  const posted = await restoreDeposit(tx, {
     orgId: input.orgId,
     userId: input.userId,
-    entryId: current.id,
-    date: current.date,
-    reference: current.reference,
-    memo: current.memo,
-    contactId: current.contactId,
-    entry: prepared,
+    currentId: s.depositEntryId,
+    originalId: s.depositOriginalEntryId,
   });
   await tx
     .update(settlements)
