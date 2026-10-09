@@ -1,0 +1,1 @@
+ALTER TABLE "noon_settings" ADD COLUMN "auto_post" boolean DEFAULT false NOT NULL;

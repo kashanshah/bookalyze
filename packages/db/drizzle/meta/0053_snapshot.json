@@ -1,6 +1,6 @@
 {
-  "id": "7cfdfdaa-db08-4d76-ae1c-71e568903724",
-  "prevId": "0dd9841f-0598-4b7a-af8e-846731dc2ddf",
+  "id": "b06f3fd7-a200-496d-a26f-eed52ef7c3c0",
+  "prevId": "7cfdfdaa-db08-4d76-ae1c-71e568903724",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3591,6 +3591,13 @@
           "notNull": true,
           "default": true
         },
+        "notify_emails": {
+          "name": "notify_emails",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
         "paused": {
           "name": "paused",
           "type": "boolean",
@@ -3773,6 +3780,10 @@
         "listing_watches_cadence_valid": {
           "name": "listing_watches_cadence_valid",
           "value": "\"listing_watches\".\"cadence\" in ('hourly', 'daily', 'weekly')"
+        },
+        "listing_watches_notify_emails_max": {
+          "name": "listing_watches_notify_emails_max",
+          "value": "cardinality(\"listing_watches\".\"notify_emails\") <= 2"
         },
         "listing_watches_asin_valid": {
           "name": "listing_watches_asin_valid",

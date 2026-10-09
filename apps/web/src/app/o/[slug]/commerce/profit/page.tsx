@@ -7,9 +7,16 @@ import {
   type GroupTotals,
   localDate,
   minorUnits,
+  monthEnd,
+  noonProfitTotals,
   SETTLEMENT_GROUPS,
 } from "@bookalyze/core";
-import { getSettlementAccounts, schema, settlementsForProfit } from "@bookalyze/db";
+import {
+  getSettlementAccounts,
+  noonMonthsForProfit,
+  schema,
+  settlementsForProfit,
+} from "@bookalyze/db";
 import { eq } from "drizzle-orm";
 import { AlertTriangle, ChartColumn } from "lucide-react";
 import type { Metadata } from "next";
@@ -34,16 +41,30 @@ type Column = {
   currency: string;
   totals: GroupTotals;
   settlements: number;
+  /** Noon's rows (Noon has no settlements). */
+  transactions: number;
 };
+
+const plural = (n: number, one: string, many = `${one}s`) =>
+  `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+/** "3 settlements", "120 transactions", or both for "All channels". */
+const countOf = (c: Column) =>
+  [
+    c.settlements ? plural(c.settlements, "settlement") : null,
+    c.transactions ? plural(c.transactions, "Noon transaction") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ") || "Nothing yet";
 
 /** Rows of the report: what makes up the net, with subtotals, then what isn't profit. */
 const ROWS: { key: string; label: string; kind?: "subtotal" | "total" | "muted" }[] = [
   { key: "sales", label: "Sales" },
   { key: "refunds", label: "Refunds" },
-  { key: "promotions", label: "Promotions" },
+  { key: "promotions", label: "Promotions and subsidies" },
   { key: "netSales", label: "Net sales", kind: "subtotal" },
-  { key: "fees", label: SETTLEMENT_GROUPS.fees },
-  { key: "feeTax", label: SETTLEMENT_GROUPS.feeTax },
+  { key: "fees", label: "Marketplace fees" },
+  { key: "feeTax", label: "Tax on the marketplace's fees" },
   { key: "advertising", label: SETTLEMENT_GROUPS.advertising },
   { key: "reimbursements", label: SETTLEMENT_GROUPS.reimbursements },
   { key: "other", label: SETTLEMENT_GROUPS.other },
@@ -71,7 +92,7 @@ export default async function ChannelProfitPage({
     today,
     fiscalConfigOf(ctx.profile),
   );
-  const { rows, feeTaxRecoverable } = await inOrg(ctx, async (tx) => {
+  const { rows, noon, feeTaxRecoverable } = await inOrg(ctx, async (tx) => {
     // Tax on fees recoverable: its account is an asset or liability (input tax), not the fees.
     const feeTax = (await getSettlementAccounts(tx)).feeTax;
     const [account] = feeTax
@@ -82,6 +103,7 @@ export default async function ChannelProfitPage({
       : [];
     return {
       rows: await settlementsForProfit(tx, { from, to, timezone }),
+      noon: await noonMonthsForProfit(tx, { from, to }),
       feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
     };
   });
@@ -94,6 +116,7 @@ export default async function ChannelProfitPage({
     currency: baseCurrency,
     totals: emptyGroupTotals(),
     settlements: 0,
+    transactions: 0,
   };
   const decimals = minorUnits(baseCurrency);
   const rates = new Map<string, string | null>();
@@ -107,6 +130,7 @@ export default async function ChannelProfitPage({
       currency: s.currency,
       totals: emptyGroupTotals(),
       settlements: 0,
+      transactions: 0,
     };
     addSettlementLines(column.totals, s.lines);
     column.settlements++;
@@ -132,6 +156,42 @@ export default async function ChannelProfitPage({
       s.currency === baseCurrency ? units : convertUnits(units, r, decimals),
     );
     all.settlements++;
+  }
+  // Noon: its rows in the period, a month at a time (each month at the rate it posted at, else
+  // its last day's rate).
+  for (const m of noon) {
+    const key = `noon:${m.channelId}:${m.currency}`;
+    const column = columns.get(key) ?? {
+      key,
+      label: m.channelName,
+      currency: m.currency,
+      totals: emptyGroupTotals(),
+      settlements: 0,
+      transactions: 0,
+    };
+    noonProfitTotals(m.sums, undefined, column.totals);
+    column.transactions += m.rows;
+    columns.set(key, column);
+    let rate: string | null = m.currency === baseCurrency ? "1" : m.postedFxRate;
+    if (!rate) {
+      const date = monthEnd(m.month) < to ? monthEnd(m.month) : to;
+      const cacheKey = `${m.currency}:${date}`;
+      if (!rates.has(cacheKey)) {
+        rates.set(cacheKey, (await suggestRate(baseCurrency, m.currency, date))?.rate ?? null);
+      }
+      rate = rates.get(cacheKey) ?? null;
+    }
+    if (!rate) {
+      unconverted++;
+      continue;
+    }
+    const r = rate;
+    noonProfitTotals(
+      m.sums,
+      (units) => (m.currency === baseCurrency ? units : convertUnits(units, r, decimals)),
+      all.totals,
+    );
+    all.transactions += m.rows;
   }
   const channels = [...columns.values()].sort((a, b) => a.label.localeCompare(b.label));
   const showAll =
@@ -160,11 +220,11 @@ export default async function ChannelProfitPage({
       <PageHeader
         eyebrow="Commerce"
         title="Channel profit"
-        description="What each marketplace earned you: sales less refunds, promotions, Amazon's fees and advertising, from its settlements. Before the cost of the products sold."
+        description="What each marketplace earned you: sales less refunds, promotions, the marketplace's fees and advertising, from Amazon's settlements and Noon's transactions. Before the cost of the products sold."
       />
       <RangeControls from={from} to={to} presets={presets} />
 
-      {rows.length ? (
+      {rows.length || noon.length ? (
         <div className="overflow-x-auto rounded-2xl border bg-card shadow-xs">
           <table className="w-full min-w-[32rem] text-sm">
             <thead>
@@ -175,11 +235,7 @@ export default async function ChannelProfitPage({
                 {results.map(({ column }) => (
                   <th key={column.key} className="px-5 py-3 text-end font-medium">
                     <span className="block text-foreground">{column.label}</span>
-                    <span className="block font-normal">
-                      {column.settlements === 1
-                        ? "1 settlement"
-                        : `${column.settlements} settlements`}
-                    </span>
+                    <span className="block font-normal">{countOf(column)}</span>
                   </th>
                 ))}
               </tr>
@@ -213,25 +269,34 @@ export default async function ChannelProfitPage({
           <span className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <ChartColumn className="size-6" />
           </span>
-          <p className="font-medium">No settlements in this period</p>
+          <p className="font-medium">Nothing sold in this period</p>
           <p className="max-w-md text-muted-foreground text-sm">
-            Choose another period, or bring in settlements on the{" "}
+            Choose another period, or bring in Amazon's{" "}
             <Link
               href={`/o/${slug}/commerce/settlements`}
               className="text-primary underline-offset-4 hover:underline"
             >
-              Settlements
+              settlements
             </Link>{" "}
-            page.
+            or Noon's{" "}
+            <Link
+              href={`/o/${slug}/commerce/noon`}
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              transactions
+            </Link>
+            .
           </p>
         </div>
       )}
 
       <div className="grid gap-2 text-muted-foreground text-xs">
         <p>
-          Each settlement counts in the period its last day falls in. Settlements in another
-          currency are in {baseCurrency} at the rate they posted at, or that day's rate if they
-          aren't in your books yet. Product costs come with inventory.
+          Each Amazon settlement counts in the period its last day falls in; each Noon row on its
+          own day, and Noon's "held back and released" is what stayed in your Noon balance, so "paid
+          out" is what Noon paid. Amounts in another currency are in {baseCurrency} at the rate they
+          posted at, or that day's rate if they aren't in your books yet. Product costs come with
+          inventory.
           {feeTaxRecoverable
             ? " Tax on Amazon's fees posts to a recoverable tax account, so it isn't counted as a cost."
             : ""}
@@ -239,8 +304,10 @@ export default async function ChannelProfitPage({
         {unconverted ? (
           <p className="flex items-center gap-1.5">
             <AlertTriangle className="size-3.5 shrink-0" />
-            {unconverted === 1 ? "1 settlement isn't" : `${unconverted} settlements aren't`} in the{" "}
-            {baseCurrency} total: there's no exchange rate for its day yet.
+            {unconverted === 1
+              ? "1 settlement or Noon month isn't"
+              : `${unconverted} settlements or Noon months aren't`}{" "}
+            in the {baseCurrency} total: there's no exchange rate for its day yet.
           </p>
         ) : null}
         {unbalanced ? (

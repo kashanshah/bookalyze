@@ -121,6 +121,11 @@ export default async function NoonAccountsPage({ params }: { params: Promise<{ s
           hint: "Months from this one go into the books, and payouts from it are matched. Earlier ones stay out: your books have those already.",
           month: true,
         }}
+        autoPost={settings.autoPost}
+        autoPostField={{
+          label: "Post Noon automatically",
+          hint: "Every evening, new rows come in from Noon (when its API is connected), each month posts once it's over (and again when Noon changes it), and a payout is matched to its deposit when exactly one deposit of that amount, in that currency, is uncategorized or in your Noon sales account.",
+        }}
         options={options}
         suggested={firstTime}
         canManage={isOrgAdmin(ctx)}

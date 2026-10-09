@@ -4,9 +4,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
 import { createDefaultChart, postJournalEntry } from "../ledger";
 import {
+  getNoonSettings,
   matchNoonPayout,
   noonBalanceCheck,
   noonMonths,
+  noonMonthsForProfit,
   noonMonthsToPost,
   noonPayoutCandidates,
   noonPayouts,
@@ -283,6 +285,50 @@ describe("Noon in the books", () => {
     expect(months.find((m) => m.month === "2026-09")).toMatchObject({
       state: "ready",
       posted: null,
+    });
+  });
+
+  it("gives Channel profit the rows of a period, with the rate a month posted at", async () => {
+    const september = await scoped((tx) =>
+      noonMonthsForProfit(tx, { from: "2026-09-01", to: "2026-09-30" }),
+    );
+    expect(september.map((m) => [m.month, m.rows, m.channelName, m.postedFxRate])).toEqual([
+      ["2026-09", 5, "Noon UAE", null],
+    ]);
+    const [channel] = await scoped((tx) => tx.select().from(schema.salesChannels));
+    await scoped((tx) =>
+      postNoonMonth(tx, {
+        orgId,
+        userId: null,
+        channelId: channel?.id ?? "",
+        month: "2026-09",
+        baseCurrency: "AED",
+        today: TODAY,
+      }),
+    );
+    const posted = await scoped((tx) =>
+      noonMonthsForProfit(tx, { from: "2026-09-15", to: "2026-10-31" }),
+    );
+    expect(posted.map((m) => [m.month, m.rows, m.postedFxRate])).toEqual([
+      ["2026-09", 3, "1.0000000000"],
+      ["2026-10", 1, null],
+    ]);
+  });
+
+  it("keeps whether Noon posts automatically", async () => {
+    expect((await scoped((tx) => getNoonSettings(tx))).autoPost).toBe(false);
+    await scoped((tx) =>
+      saveNoonSetup(tx, {
+        orgId,
+        userId: null,
+        accounts: { sales: ids.sales, fees: ids.fees, balance: ids.balance },
+        postFrom: "2026-09-01",
+        autoPost: true,
+      }),
+    );
+    expect(await scoped((tx) => getNoonSettings(tx))).toEqual({
+      postFrom: "2026-09-01",
+      autoPost: true,
     });
   });
 

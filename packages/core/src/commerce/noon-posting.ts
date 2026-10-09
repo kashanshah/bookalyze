@@ -1,6 +1,6 @@
 import { formatDecimal, parseDecimal } from "../money";
 import { NOON_AMOUNT_FIELDS, type NoonAmountField } from "./noon-transactions";
-import type { SettlementEntryLine } from "./settlements";
+import { emptyGroupTotals, type GroupTotals, type SettlementEntryLine } from "./settlements";
 
 /**
  * How Noon's transaction view goes into the books (phase 4c, slice 4). Noon keeps a balance for
@@ -221,4 +221,27 @@ export function noonMonthState(input: {
   if (monthEnd(input.month) < input.postFrom) return "before";
   if (monthEnd(input.month) >= input.today) return "inProgress";
   return "ready";
+}
+
+/**
+ * Noon's rows in Channel profit's groups (the Amazon report's rows): sales and shipping credits
+ * as sales, returns as refunds, Noon's subsidies with promotions (they lower what the buyer
+ * paid), fees, advertising, and balance moved to another contract with other. What stayed in
+ * (or left) the Noon balance shows as "held back and released", so "paid out" is what Noon
+ * actually paid out in the period. `convert` values units in another currency.
+ */
+export function noonProfitTotals(
+  sums: readonly NoonSum[],
+  convert: (units: bigint) => bigint = (u) => u,
+  into: GroupTotals = emptyGroupTotals(),
+): GroupTotals {
+  const { groups: g, earned, paidOut } = noonGroupTotals(sums);
+  into.sales += convert(g.sales + g.shippingCredits);
+  into.refunds += convert(g.refunds);
+  into.promotions += convert(g.subsidies);
+  into.fees += convert(g.fees);
+  into.advertising += convert(g.advertising);
+  into.other += convert(g.transfers + g.other);
+  into.reserve += convert(paidOut - earned);
+  return into;
 }
