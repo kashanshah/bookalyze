@@ -81,7 +81,9 @@ describe("Noon orders", () => {
       currency: "AED",
     });
     expect(order?.itemsSyncedAt).not.toBeNull();
-    const items = await scoped((tx) => tx.select().from(schema.orderItems));
+    const items = await scoped((tx) =>
+      tx.select().from(schema.orderItems).orderBy(schema.orderItems.externalId),
+    );
     expect(items.map((i) => [i.externalId, i.sku, i.quantityShipped, i.itemPrice])).toEqual([
       ["ITEM-1", "MUG-1", 1, "100.0000"],
       ["ITEM-2", "MUG-1", 1, "100.0000"],
