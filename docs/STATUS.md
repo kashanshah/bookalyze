@@ -13,9 +13,9 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-09, listing watch: emails go only to each product's own one or two
-addresses (after phase 4c slice 7: every Noon report the key can download, each with a check of
-its columns)._
+_Last updated: 2026-10-09, listing watch: the product page lists how often it is checked and,
+when email is on, the addresses that get it (after phase 4c slice 7: every Noon report the key
+can download, each with a check of its columns)._
 
 ---
 
@@ -1129,8 +1129,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   and a green ▲ / red ▼ pill on best seller rank moves (`rankTrend()`: a lower rank is better).
   Each category's rank move is its own change, with `before`/`after` the plain rank numbers. The list and the
   product page show the latest price, featured offer (with its price and Prime), seller count
-  and best seller rank. The list also shows a short note of the title and description. An icon
-  on each product, and on its page, opens that product on Amazon.
+  and best seller rank. The product page lists how often it is checked (daily, weekly, or hourly)
+  and, when email is on, the one or two addresses that receive it. The list also shows a short
+  note of the title and description. An icon on each product, and on its page, opens that product
+  on Amazon.
 - **Recipients:** each product emails only its own addresses, one or two ("Send to" on the watch
   form, `listing_watches.notify_emails`, at most two by a database check, migration
   `0053_listing_watch_recipients`). A new watch starts with the signed-in person's email, which

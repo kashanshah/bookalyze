@@ -80,14 +80,6 @@ export default async function WatchPage({
             <span className="tabular">{watch.asin}</span>
             <span>· {watch.channelName}</span>
             {watch.paused ? <Badge variant="secondary">Paused</Badge> : null}
-            {cadence ? <Badge variant="outline">{cadence.label}</Badge> : null}
-            {watch.notify && watch.notifyEmails.length ? (
-              <span className="min-w-0 text-sm [overflow-wrap:anywhere]">
-                · Emails {watch.notifyEmails.join(" and ")}
-              </span>
-            ) : (
-              <Badge variant="outline">Email off</Badge>
-            )}
           </span>
         }
         actions={
@@ -109,6 +101,37 @@ export default async function WatchPage({
       {watch.paused ? (
         <Alert>Checks are paused. Resume them when you want Amazon looked at again.</Alert>
       ) : null}
+
+      <section className="rounded-2xl border bg-card p-5 shadow-xs sm:p-6">
+        <h2 className="sr-only">How often and email</h2>
+        <dl className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt className="text-muted-foreground text-xs">How often</dt>
+            <dd className="mt-0.5 font-medium text-sm">{cadence?.label ?? watch.cadence}</dd>
+            {cadence ? (
+              <dd className="mt-0.5 text-muted-foreground text-xs leading-relaxed">
+                {cadence.hint}
+              </dd>
+            ) : null}
+          </div>
+          <div>
+            <dt className="text-muted-foreground text-xs">Send to</dt>
+            {watch.notify && watch.notifyEmails.length ? (
+              <dd className="mt-0.5">
+                <ul className="grid gap-0.5 text-sm">
+                  {watch.notifyEmails.map((email) => (
+                    <li key={email} className="[overflow-wrap:anywhere]">
+                      {email}
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+            ) : (
+              <dd className="mt-0.5 text-sm">Email off</dd>
+            )}
+          </div>
+        </dl>
+      </section>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="grid gap-6">
