@@ -100,7 +100,8 @@ export async function saveListingWatchAction(
     if (
       checked.ok &&
       checked.changes.length &&
-      (parsed.data.notify || parsed.data.notifyEmails.length)
+      parsed.data.notify &&
+      parsed.data.notifyEmails.length
     ) {
       // Saved either way; an email that fails goes out with the next hourly run.
       await emailListingChanges({ id: ctx.org.id, name: ctx.org.name, slug: ctx.org.slug }).catch(
@@ -135,7 +136,7 @@ export async function checkListingWatchAction(
   );
   if (!result.ok) return { ok: false, message: result.message };
   const watch = await inOrg(ctx, (tx) => getListingWatch(tx, id));
-  if (result.changes.length && (watch?.notify || watch?.notifyEmails.length)) {
+  if (result.changes.length && watch?.notify && watch.notifyEmails.length) {
     await emailListingChanges({ id: ctx.org.id, name: ctx.org.name, slug: ctx.org.slug });
   }
   revalidatePath(`${base(slug)}/${id}`);

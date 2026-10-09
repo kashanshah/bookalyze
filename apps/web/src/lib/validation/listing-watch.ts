@@ -18,10 +18,10 @@ export const listingWatchSchema = z
     checks: z.array(z.enum(checkKeys)).min(1, "Choose at least one thing to watch."),
     cadence: z.enum(cadenceKeys),
     notify: z.boolean(),
-    /** Up to two more people to email about this product (blank rows are dropped). */
+    /** Who to email about this product: one or two addresses when email is on. */
     notifyEmails: z
       .array(z.string().trim().toLowerCase())
-      .max(2, "Up to two more people.")
+      .max(2, "Up to two addresses.")
       .optional()
       .transform((list) => [...new Set((list ?? []).filter(Boolean))]),
   })
@@ -32,6 +32,13 @@ export const listingWatchSchema = z
         code: "custom",
         path: ["asin"],
         message: "Enter the 10-character ASIN from the product page. It looks like B0XXXXXXXX.",
+      });
+    }
+    if (value.notify && !value.notifyEmails.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["notifyEmails"],
+        message: "Add an email address, or turn emails off.",
       });
     }
     value.notifyEmails.forEach((email, index) => {

@@ -56,7 +56,7 @@ export default async function NewWatchPage({ params }: { params: Promise<{ slug:
         title="Watch a product"
         description="We'll take a first look as soon as you save, then check again on the schedule you pick."
       />
-      <WatchForm slug={slug} channels={channels} />
+      <WatchForm slug={slug} channels={channels} defaultEmail={ctx.session.user.email} />
     </div>
   );
 }

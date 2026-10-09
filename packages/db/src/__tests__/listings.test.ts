@@ -82,7 +82,7 @@ const input = {
   checks: ["price", "content"] as ListingCheck[],
   cadence: "daily" as const,
   notify: true,
-  notifyEmails: [] as string[],
+  notifyEmails: ["seller@example.com"] as string[],
 };
 
 describe("listing watches", () => {
@@ -154,12 +154,11 @@ describe("listing watches", () => {
     expect(await scoped((tx) => listListingChanges(tx, id))).toEqual([]);
   });
 
-  it("emails a product's own recipients even when owners and admins aren't", async () => {
+  it("emails only a product's own addresses, and nobody when emails are off", async () => {
     const id = await scoped((tx) =>
       createListingWatch(tx, {
         ...input,
         asin: "B0EXTRA001",
-        notify: false,
         notifyEmails: ["buyer@example.com", "ops@example.com"],
         channelId,
         orgId,
@@ -183,7 +182,7 @@ describe("listing watches", () => {
     );
     const mail = await scoped((tx) => unnotifiedListingChanges(tx));
     expect(mail.map((m) => [m.asin, m.notify, m.notifyEmails])).toEqual([
-      ["B0EXTRA001", false, ["buyer@example.com", "ops@example.com"]],
+      ["B0EXTRA001", true, ["buyer@example.com", "ops@example.com"]],
     ]);
     // A third address is refused by the database.
     await expect(
@@ -195,6 +194,32 @@ describe("listing watches", () => {
     ).rejects.toThrow();
     await scoped((tx) => markListingChangesNotified(tx, mail[0]?.changeIds ?? []));
     await scoped((tx) => deleteListingWatch(tx, id));
+
+    // Emails off, even with addresses saved: the change is recorded but nothing waits to go out.
+    const quiet = await scoped((tx) =>
+      createListingWatch(tx, {
+        ...input,
+        asin: "B0QUIET001",
+        notify: false,
+        channelId,
+        orgId,
+        userId: null,
+      }),
+    );
+    await scoped((tx) =>
+      saveListingCheck(tx, {
+        id: quiet,
+        observed: { ...EMPTY_OBSERVATION, title: "Kettle", price: "30.00", currency: "USD" },
+        changes: [{ field: "price", summary: "Price changed.", before: "31.00", after: "30.00" }],
+        title: "Kettle",
+        checkedAt: new Date("2026-10-08T15:00:00Z"),
+        nextCheckAt: new Date("2026-10-09T15:00:00Z"),
+        error: null,
+      }),
+    );
+    expect(await scoped((tx) => listListingChanges(tx, quiet))).toHaveLength(1);
+    expect(await scoped((tx) => unnotifiedListingChanges(tx))).toEqual([]);
+    await scoped((tx) => deleteListingWatch(tx, quiet));
   });
 
   it("refuses hourly checks that include photos or review topics", async () => {

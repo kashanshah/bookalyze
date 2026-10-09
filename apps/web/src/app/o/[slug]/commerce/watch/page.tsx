@@ -140,7 +140,7 @@ export default async function ListingWatchPage({
                           <span className="tabular">{watch.asin}</span>
                           {` · ${watch.channelName}`}
                           {cadence ? ` · ${cadence}` : ""}
-                          {watch.notify || watch.notifyEmails.length ? "" : " · Email off"}
+                          {watch.notify && watch.notifyEmails.length ? "" : " · Email off"}
                         </span>
                         <span className="mt-1 block truncate text-xs">
                           {watch.lastChangeSummary ? (

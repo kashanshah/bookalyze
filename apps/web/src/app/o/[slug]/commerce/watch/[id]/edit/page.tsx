@@ -56,6 +56,7 @@ export default async function EditWatchPage({
         description="What we compare, how often, and whether owners and admins get an email."
       />
       <WatchForm
+        defaultEmail={ctx.session.user.email}
         slug={slug}
         channels={channels}
         initial={{
