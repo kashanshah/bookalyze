@@ -65,6 +65,7 @@ export default async function EditWatchPage({
           checks,
           cadence: data.watch.cadence as ListingCadence,
           notify: data.watch.notify,
+          notifyEmails: data.watch.notifyEmails,
         }}
       />
     </div>

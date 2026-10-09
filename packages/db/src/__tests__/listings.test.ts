@@ -82,6 +82,7 @@ const input = {
   checks: ["price", "content"] as ListingCheck[],
   cadence: "daily" as const,
   notify: true,
+  notifyEmails: [] as string[],
 };
 
 describe("listing watches", () => {
@@ -153,6 +154,49 @@ describe("listing watches", () => {
     expect(await scoped((tx) => listListingChanges(tx, id))).toEqual([]);
   });
 
+  it("emails a product's own recipients even when owners and admins aren't", async () => {
+    const id = await scoped((tx) =>
+      createListingWatch(tx, {
+        ...input,
+        asin: "B0EXTRA001",
+        notify: false,
+        notifyEmails: ["buyer@example.com", "ops@example.com"],
+        channelId,
+        orgId,
+        userId: null,
+      }),
+    );
+    expect((await scoped((tx) => getListingWatch(tx, id)))?.notifyEmails).toEqual([
+      "buyer@example.com",
+      "ops@example.com",
+    ]);
+    await scoped((tx) =>
+      saveListingCheck(tx, {
+        id,
+        observed: { ...EMPTY_OBSERVATION, title: "Kettle", price: "30.00", currency: "USD" },
+        changes: [{ field: "price", summary: "Price changed.", before: "31.00", after: "30.00" }],
+        title: "Kettle",
+        checkedAt: new Date("2026-10-08T15:00:00Z"),
+        nextCheckAt: new Date("2026-10-09T15:00:00Z"),
+        error: null,
+      }),
+    );
+    const mail = await scoped((tx) => unnotifiedListingChanges(tx));
+    expect(mail.map((m) => [m.asin, m.notify, m.notifyEmails])).toEqual([
+      ["B0EXTRA001", false, ["buyer@example.com", "ops@example.com"]],
+    ]);
+    // A third address is refused by the database.
+    await expect(
+      scoped((tx) =>
+        tx
+          .update(schema.listingWatches)
+          .set({ notifyEmails: ["a@example.com", "b@example.com", "c@example.com"] }),
+      ),
+    ).rejects.toThrow();
+    await scoped((tx) => markListingChangesNotified(tx, mail[0]?.changeIds ?? []));
+    await scoped((tx) => deleteListingWatch(tx, id));
+  });
+
   it("refuses hourly checks that include photos or review topics", async () => {
     await expect(
       scoped((tx) =>
@@ -162,6 +206,7 @@ describe("listing watches", () => {
           checks: ["price", "reviews"],
           cadence: "hourly",
           notify: false,
+          notifyEmails: [],
           orgId,
           userId: null,
         }),

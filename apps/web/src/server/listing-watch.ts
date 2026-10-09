@@ -216,7 +216,10 @@ export async function checkListingWatch(
   return { ok: true, changes };
 }
 
-/** Owners and admins, one email per company, covering every change not sent yet. */
+/**
+ * One email per person covering every change not sent yet: owners and admins for products with
+ * email on, and each product's own extra recipients for that product.
+ */
 export async function emailListingChanges(org: {
   id: string;
   name: string;
@@ -238,15 +241,28 @@ export async function emailListingChanges(org: {
         ),
       ),
   );
-  if (!recipients.length) return 0;
+  // Owners and admins get the products that email them; each product's own recipients get
+  // that product. Someone on both lists gets one email.
+  const inbox = new Map<string, typeof items>();
+  const add = (email: string, item: (typeof items)[number]) => {
+    const key = email.toLowerCase();
+    const list = inbox.get(key) ?? [];
+    if (!list.includes(item)) list.push(item);
+    inbox.set(key, list);
+  };
+  for (const item of items) {
+    if (item.notify) for (const { email } of recipients) add(email, item);
+    for (const email of item.notifyEmails) add(email, item);
+  }
+  if (!inbox.size) return 0;
   const url = `${env().BETTER_AUTH_URL}/o/${org.slug}/commerce/watch`;
   const locale = await localeOf(org.id);
-  const subject =
-    items.length === 1
-      ? `${items[0]?.title || items[0]?.asin} changed on ${items[0]?.channelName}`
-      : `${items.length} products changed`;
   let sent = 0;
-  for (const { email } of recipients) {
+  for (const [email, own] of inbox) {
+    const subject =
+      own.length === 1
+        ? `${own[0]?.title || own[0]?.asin} changed on ${own[0]?.channelName}`
+        : `${own.length} products changed`;
     try {
       await sendEmail({
         to: email,
@@ -254,7 +270,7 @@ export async function emailListingChanges(org: {
         react: ListingChanges({
           organizationName: org.name,
           url,
-          items: items.map((item) => ({
+          items: own.map((item) => ({
             title: item.title || item.asin,
             channelName: item.channelName,
             asin: item.asin,
