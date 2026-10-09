@@ -1981,6 +1981,55 @@ test("amounts recorded in CAD on a USD account are corrected from the bank's PDF
   await expect(page.locator("li", { hasText: "1035" })).toContainText("US$100.00");
 });
 
+test("ebay: add eBay sites, switch one off and back on, and link a SKU on it", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  const ebay = page.getByRole("region", { name: "eBay", exact: true });
+  await ebay.getByRole("button", { name: "Add an eBay site" }).click();
+
+  // A Canadian company is offered eBay Canada first.
+  const add = page.getByRole("dialog");
+  await expect(add.getByRole("combobox", { name: "eBay site" })).toContainText("eBay Canada");
+  await add.getByRole("button", { name: "Add site" }).click();
+  await expect(page.getByText("eBay Canada added")).toBeVisible();
+  await expect(ebay.getByText("CA · CAD · You ship the orders")).toBeVisible();
+
+  // Canada can't be added twice; eBay US can.
+  await ebay.getByRole("button", { name: "Add an eBay site" }).click();
+  await choose(page.getByRole("dialog").getByLabel("eBay site"), "eBay US");
+  await page.getByRole("dialog").getByRole("button", { name: "Add site" }).click();
+  await expect(page.getByText("eBay US added")).toBeVisible();
+  await ebay.getByRole("button", { name: "Add an eBay site" }).click();
+  await page.getByRole("combobox", { name: "eBay site" }).click();
+  await expect(page.getByRole("option", { name: /eBay Canada/ })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+
+  // Switched off, it stays listed; adding it again switches it back on.
+  await ebay.getByRole("switch", { name: "Use eBay US" }).click();
+  await expect(ebay.getByText("US · USD · You ship the orders · Switched off")).toBeVisible();
+  await ebay.getByRole("button", { name: "Add an eBay site" }).click();
+  await choose(page.getByRole("dialog").getByLabel("eBay site"), "eBay US");
+  await page.getByRole("dialog").getByRole("button", { name: "Add site" }).click();
+  await expect(page.getByText("eBay US switched on")).toBeVisible();
+  await expect(ebay.getByRole("switch", { name: "Use eBay US" })).toBeChecked();
+
+  // Its SKUs link to products like Amazon's.
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  const mug = page.getByRole("listitem", { name: "Maple leaf ceramic mug", exact: true });
+  await mug.getByRole("button", { name: "Edit Maple leaf ceramic mug" }).click();
+  const dialog = page.getByRole("dialog");
+  await choose(dialog.getByLabel("Marketplace", { exact: true }), "eBay US");
+  await dialog.getByLabel("Marketplace SKU", { exact: true }).fill("EBAY-MAPLE-MUG");
+  await dialog.getByRole("button", { name: "Link SKU" }).click();
+  await expect(page.getByText("EBAY-MAPLE-MUG linked")).toBeVisible();
+  await expect(dialog.getByText(/eBay US · 1 unit per listing/)).toBeVisible();
+});
+
 test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Commerce", exact: true }).click();

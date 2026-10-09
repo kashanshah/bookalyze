@@ -386,6 +386,13 @@
       "when": 1791533065612,
       "tag": "0054_listing_watch_default_recipient",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1791582088544,
+      "tag": "0055_ebay_channels",
+      "breakpoints": true
     }
   ]
 }

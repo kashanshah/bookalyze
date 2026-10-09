@@ -3,6 +3,7 @@ import {
   type AmazonOrderItem,
   type AmazonRefund,
   type BuyerClaim,
+  type EbayMarketplace,
   type FulfilmentMode,
   formatDecimal,
   type MarketplaceParticipation,
@@ -131,6 +132,61 @@ export async function addNoonChannel(
     })
     .returning();
   if (!row) throw new Error("The Noon channel couldn't be added.");
+  return { channel: row, created: true };
+}
+
+// --- eBay -------------------------------------------------------------------------------------
+
+/** The company's eBay channels (one per eBay site), by name. */
+export async function listEbayChannels(tx: Transaction) {
+  return tx
+    .select()
+    .from(salesChannels)
+    .where(eq(salesChannels.kind, "ebay"))
+    .orderBy(asc(salesChannels.name));
+}
+
+/**
+ * Adds an eBay site as a channel, switched on, shipped by the seller. Adding one the company
+ * already has switches it back on and keeps its history. Returns the channel and whether it was
+ * new.
+ */
+export async function addEbayChannel(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    marketplace: Pick<EbayMarketplace, "id" | "name" | "country" | "currency">;
+  },
+) {
+  const [existing] = await tx
+    .select({ id: salesChannels.id })
+    .from(salesChannels)
+    .where(
+      and(eq(salesChannels.kind, "ebay"), eq(salesChannels.marketplaceId, input.marketplace.id)),
+    );
+  if (existing) {
+    const [row] = await tx
+      .update(salesChannels)
+      .set({ isActive: true })
+      .where(eq(salesChannels.id, existing.id))
+      .returning();
+    if (!row) throw new Error("The eBay channel couldn't be updated.");
+    return { channel: row, created: false };
+  }
+  const [row] = await tx
+    .insert(salesChannels)
+    .values({
+      organizationId: input.orgId,
+      kind: "ebay",
+      name: input.marketplace.name,
+      marketplaceId: input.marketplace.id,
+      country: input.marketplace.country,
+      currency: input.marketplace.currency,
+      fulfilment: "seller",
+      isActive: true,
+    })
+    .returning();
+  if (!row) throw new Error("The eBay channel couldn't be added.");
   return { channel: row, created: true };
 }
 

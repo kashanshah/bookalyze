@@ -13,9 +13,8 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-09, phase 4c slice 7b: Noon report checks ask for the inputs a report needs
-(country, status…), including ones Noon only names when they're missing (after the listing
-watch's product page showing how often it's checked and who gets its emails)._
+_Last updated: 2026-10-09, phase 4d slice 1: eBay sites as channels (after phase 4c slice 7b,
+Noon report checks that ask for the inputs a report needs)._
 
 ---
 
@@ -31,6 +30,7 @@ watch's product page showing how often it's checked and who gets its emails)._
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off) and slice 6 (bundles) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) and 7 (every report the key can download, each with a check of its columns) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: find FBN stock and returns among Noon's reports (owner input 4), then FBN stock (and Noon returns back into stock). Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
+| 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slice 1 (eBay sites added by hand as channels, SKUs linkable) done. Next: connect eBay (OAuth consent, tokens in the encrypted vault). See §3 "Phase 4d" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1267,6 +1267,24 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
   paths kept, cause chains, Postgres codes and digests).
 
+### Phase 4d, slice 1: eBay channels
+
+- **eBay as a product** (core `ebay.ts`): each eBay site is a channel in its currency, keyed by
+  eBay's own marketplace id (`EBAY_US`, `EBAY_CA`, `EBAY_GB`, `EBAY_AU`, `EBAY_DE`, `EBAY_FR`,
+  `EBAY_IT`, `EBAY_ES`), the id eBay's APIs use, so orders and payouts brought in later find
+  their channel by it. `defaultEbayMarketplace` offers the company's own country, else eBay US.
+- **Channels → eBay:** add a site (dialog with the site and its currency; a site already added
+  is greyed out; one switched off comes back on with its history), switch sites on and off.
+  Sites are shipped by the seller (`fulfilment = 'seller'`, no choice shown: eBay's own
+  fulfilment programme isn't covered). Channels have no connection yet, so they show orders and
+  unlinked SKUs like Noon's, and their SKUs link to products (Inventory → a product → Marketplace).
+- **Database** (migration `0055_ebay_channels`): channel kind `ebay`, one channel per eBay site
+  per company (`sales_channels_ebay_marketplace_key`). db `listEbayChannels`, `addEbayChannel`.
+  Amazon settlements, the FBA inventory ledger and review requests stay Amazon's only.
+- Tests: core `ebay.test.ts`; db `ebay.test.ts` (add, add again switches on, one per site, kinds,
+  isolation); e2e "ebay: add eBay sites…" (Canada offered first, no second Canada, switch off and
+  back on, link a SKU).
+
 ### Phase 4c, slice 7: every Noon report, each with a check
 
 - **Why:** FBN stock and returns need one of Noon's reports, and the key's category list gives
@@ -1787,6 +1805,35 @@ pasted in when needed:
    Slice 7 lists every report with a check of its columns; next, the report with FBN stock and
    returns (owner input 4), then its import.
 
+### Phase 4d: eBay (as a product: any eBay site; the seller ships)
+Built like Amazon and Noon: channels first, then the account, orders, money and the books.
+- **Auth:** OAuth 2 authorization code grant. Bookalyze is one eBay developer app (keys are system
+  secrets: `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, `EBAY_RU_NAME`, sandbox or production), so a
+  company only clicks **Connect eBay** and agrees on eBay's page; no developer account of its
+  own. Consent `https://auth.ebay.com/oauth2/authorize` → our callback → `POST
+  https://api.ebay.com/identity/v1/oauth2/token` (Basic client id:secret). The refresh token
+  (about 18 months) is kept encrypted in `connections`; access tokens last 2 hours. Scopes:
+  `sell.fulfillment.readonly`, `sell.finances`, `sell.account.readonly`,
+  `commerce.identity.readonly`.
+- **Orders:** Fulfillment API `GET /sell/fulfillment/v1/order` (filter `creationdate`, 200 a
+  page; 90 days back by default, up to 2 years by date filter). Line items carry the SKU,
+  quantity, price, and eBay's fees per order (`totalMarketplaceFee`).
+- **Money:** Finances API (`apiz.ebay.com/sell/finances/v1`): `/transaction` (every sale,
+  refund, fee, shipping label, dispute and payout, with marketplace and order ids) and `/payout`
+  (bank transfers). Sellers in the EU and UK must sign Finances calls (eBay's "digital
+  signatures"). Fallback: the Seller Hub Payments "Transaction report" CSV upload.
+
+1. [x] **eBay channels.** Done in slice 1.
+2. [ ] **Connect eBay**: Connect button, consent, callback, tokens in the vault, test
+   (`commerce.identity` user), disconnect. Needs the app keys (owner input 5).
+3. [ ] **Orders** from the Fulfillment API, a year back and daily; SKUs, so cost of goods sold
+   counts eBay.
+4. [ ] **Transactions** from the Finances API kept row by row (a year back), with the transaction
+   report upload as the fallback; monthly totals.
+5. [ ] **Posting and deposit matching**: monthly entries per eBay site to an eBay balance
+   clearing account, payouts matched to bank deposits (the shared settlements helpers).
+6. [ ] **Daily job and Channel profit.**
+
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.
 - [x] Encrypted credential vault (AES-GCM) and a `connections` table. Done in phase 2, slice 1.
@@ -2087,3 +2134,9 @@ cases. These answers only help pick sensible defaults and test data:
    inventory, FBN, warehouse or returns, and share their names and column names (only the
    columns, no rows). A report that asks for a country and a Noon status: country `ae`; the
    status values are in Noon's own reports page for that report.
+5. eBay (phase 4d): which company sells on which eBay sites (add them on Channels → eBay). For
+   connecting: an eBay developer account (developer.ebay.com, free), a production keyset, and a
+   redirect (RuName) whose "auth accepted" URL is `https://app.bookalyze.com/api/ebay/callback`;
+   then set `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` and `EBAY_RU_NAME` in Vercel. These are
+   Bookalyze's own app keys, not a company's; each company's eBay access comes from its own
+   consent and is kept encrypted.

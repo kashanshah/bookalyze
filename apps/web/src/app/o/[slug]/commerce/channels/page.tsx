@@ -1,16 +1,23 @@
 import {
   defaultAmazonRegion,
+  defaultEbayMarketplace,
   defaultNoonMarketplace,
   isFulfilmentMode,
   noonReportInputs,
 } from "@bookalyze/core";
-import { getNoonConnection, listAmazonConnections, listNoonChannels } from "@bookalyze/db";
+import {
+  getNoonConnection,
+  listAmazonConnections,
+  listEbayChannels,
+  listNoonChannels,
+} from "@bookalyze/db";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/shell/page-header";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { isOrgAdmin } from "@/server/org";
 import { ChannelsScreen } from "./channels";
+import { EbayChannels } from "./ebay";
 import { NoonChannels } from "./noon";
 
 export const metadata: Metadata = { title: "Channels" };
@@ -18,8 +25,9 @@ export const metadata: Metadata = { title: "Channels" };
 export default async function ChannelsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const ctx = await getCommerceContext(slug);
-  const { connections, noon, noonConnection } = await inOrg(ctx, async (tx) => ({
+  const { connections, ebay, noon, noonConnection } = await inOrg(ctx, async (tx) => ({
     connections: await listAmazonConnections(tx),
+    ebay: await listEbayChannels(tx),
     noon: await listNoonChannels(tx),
     noonConnection: await getNoonConnection(tx),
   }));
@@ -28,7 +36,7 @@ export default async function ChannelsPage({ params }: { params: Promise<{ slug:
       <PageHeader
         eyebrow="Commerce"
         title="Channels"
-        description="Where the company sells. Connect Amazon Seller Central and pick the marketplaces to bring orders in from, and add the countries you sell in on Noon."
+        description="Where the company sells. Connect Amazon Seller Central and pick the marketplaces to bring orders in from, and add the eBay sites and Noon countries you sell on."
       />
       <ChannelsScreen
         slug={slug}
@@ -50,6 +58,19 @@ export default async function ChannelsPage({ params }: { params: Promise<{ slug:
             currency: ch.currency,
             isActive: ch.isActive,
           })),
+        }))}
+      />
+      <EbayChannels
+        slug={slug}
+        canManage={isOrgAdmin(ctx)}
+        defaultMarketplace={defaultEbayMarketplace(ctx.profile.countryCode).id}
+        channels={ebay.map((ch) => ({
+          id: ch.id,
+          name: ch.name,
+          marketplaceId: ch.marketplaceId ?? "",
+          country: ch.country,
+          currency: ch.currency,
+          isActive: ch.isActive,
         }))}
       />
       <NoonChannels

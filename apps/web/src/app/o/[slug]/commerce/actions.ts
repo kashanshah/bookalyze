@@ -3,6 +3,7 @@
 import {
   AMAZON_REGIONS,
   addDaysIso,
+  ebayMarketplace,
   FULFILMENT_MODES,
   isAmazonRegion,
   NOON_FULFILMENT,
@@ -16,6 +17,7 @@ import {
   type ReportPreview,
 } from "@bookalyze/core";
 import {
+  addEbayChannel,
   addNoonChannel,
   amazonConnectionsForRegion,
   attachNoonChannels,
@@ -306,6 +308,42 @@ export async function addNoonChannelAction(
       entityType: "sales_channel",
       entityId: added.channel.id,
       after: { name: marketplace.name, fulfilment: parsed.data.fulfilment },
+    });
+    return added;
+  });
+  revalidate(slug);
+  return { ok: true, name: marketplace.name, created: result.created };
+}
+
+/** Adds an eBay site as a channel (or switches one added before back on). */
+export async function addEbayChannelAction(
+  slug: string,
+  input: unknown,
+): Promise<CommerceResult<{ name: string; created: boolean }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const parsed = z
+    .object({
+      marketplace: z.string().refine((v) => ebayMarketplace(v) !== null, "Choose an eBay site."),
+    })
+    .safeParse(input);
+  const marketplace = parsed.success ? ebayMarketplace(parsed.data.marketplace) : null;
+  if (!marketplace) {
+    return {
+      ok: false,
+      message: "Check the highlighted fields.",
+      errors: { marketplace: "Choose an eBay site." },
+    };
+  }
+  const result = await inOrg(ctx, async (tx) => {
+    const added = await addEbayChannel(tx, { orgId: ctx.org.id, marketplace });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: added.created ? "channel.added" : "channel.switched_on",
+      entityType: "sales_channel",
+      entityId: added.channel.id,
+      after: { name: marketplace.name },
     });
     return added;
   });

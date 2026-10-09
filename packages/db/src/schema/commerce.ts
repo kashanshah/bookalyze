@@ -23,7 +23,7 @@ import { organization, user } from "./auth";
 import { connections } from "./banking";
 import { tenantIsolationPolicy } from "./tenancy";
 
-export const CHANNEL_KINDS = ["amazon", "noon"] as const;
+export const CHANNEL_KINDS = ["amazon", "noon", "ebay"] as const;
 export type ChannelKind = (typeof CHANNEL_KINDS)[number];
 
 /** Who ships a channel's orders: the marketplace (FBA, FBN), the seller (FBM, FBP), or both. */
@@ -31,8 +31,8 @@ export const CHANNEL_FULFILMENT = ["marketplace", "seller", "both"] as const;
 
 /**
  * Where the company sells: one row per Amazon marketplace of a connected seller account, and
- * one per Noon country the company adds (with no connection until Noon's API is connected).
- * Orders, review requests and settlements hang off it.
+ * one per Noon country or eBay site the company adds (with no connection until that account's
+ * API is connected). Orders, review requests and settlements hang off it.
  */
 export const salesChannels = pgTable(
   "sales_channels",
@@ -45,7 +45,8 @@ export const salesChannels = pgTable(
     kind: text("kind", { enum: CHANNEL_KINDS }).notNull(),
     /** e.g. "Amazon.ca". */
     name: text("name").notNull(),
-    /** Amazon's marketplace ID (e.g. A2EUQ1WTGCTBG2), or core's Noon key (e.g. noon-ae). */
+    /** Amazon's marketplace ID (e.g. A2EUQ1WTGCTBG2), core's Noon key (e.g. noon-ae), or eBay's
+     * marketplace id (e.g. EBAY_US). */
     marketplaceId: text("marketplace_id"),
     country: char("country", { length: 2 }),
     currency: char("currency", { length: 3 }).notNull(),
@@ -87,7 +88,11 @@ export const salesChannels = pgTable(
     uniqueIndex("sales_channels_noon_marketplace_key")
       .on(t.organizationId, t.marketplaceId)
       .where(sql`${t.kind} = 'noon'`),
-    check("sales_channels_kind_valid", sql`${t.kind} in ('amazon', 'noon')`),
+    // One channel per eBay site per company.
+    uniqueIndex("sales_channels_ebay_marketplace_key")
+      .on(t.organizationId, t.marketplaceId)
+      .where(sql`${t.kind} = 'ebay'`),
+    check("sales_channels_kind_valid", sql`${t.kind} in ('amazon', 'noon', 'ebay')`),
     check(
       "sales_channels_fulfilment_valid",
       sql`${t.fulfilment} is null or ${t.fulfilment} in ('marketplace', 'seller', 'both')`,
