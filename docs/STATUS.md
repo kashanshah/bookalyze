@@ -1730,6 +1730,10 @@ screenshots work well).
   shared reference rows.
 - **E2E** (`apps/web/e2e/smoke.spec.ts`): one serial flow. Later tests reuse the owner created by
   the first.
+- E2E tests get 90 s each (`playwright.config.ts`): they're whole flows, and CI runs about twice
+  as slow as a laptop. Each step still waits 5 s at most, so a real hang still fails fast.
+- `choose()` (e2e helpers) picks from the list its trigger opened, via `aria-controls`: a list
+  that's still closing, or an open list sharing its trigger's label, no longer confuses it.
 
 ---
 

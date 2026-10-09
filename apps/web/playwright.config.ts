@@ -7,6 +7,10 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
+  // Each test is a whole flow (sign in, set up, several screens): 17–26 s locally, about twice
+  // that on CI's runners, so the 30 s default failed the longest ones by time alone. Each step
+  // still waits its own 5 s at most.
+  timeout: 90_000,
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: `http://localhost:${port}`,
