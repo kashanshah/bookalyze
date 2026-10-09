@@ -13,7 +13,8 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-09, phase 4c slice 5: Noon in the daily job and in Channel profit._
+_Last updated: 2026-10-09, listing watch: up to two extra email recipients per product (after
+phase 4c slice 5: Noon in the daily job and in Channel profit)._
 
 ---
 
@@ -1129,6 +1130,12 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   product page show the latest price, featured offer (with its price and Prime), seller count
   and best seller rank. The list also shows a short note of the title and description. An icon
   on each product, and on its page, opens that product on Amazon.
+- **Extra recipients:** each product can email up to two more people ("Also email", a repeatable
+  field on the watch form, `listing_watches.notify_emails`, at most two by a database check,
+  migration `0053_listing_watch_recipients`). They get that product's changes only, even with
+  the owners-and-admins switch off. `emailListingChanges` sends one email per person: owners and
+  admins get the products with the switch on, each extra address its own products; an address
+  on both lists gets one email.
 - **Only Amazon's official API.** Catalog Items 2022-04-01 (title, bullets, description, photos,
   best seller rank), Product Pricing v0 item offers for New (price with shipping, featured
   offer, how many sellers), and Customer Feedback 2024-06-01 review topics. `sortBy=MENTIONS`

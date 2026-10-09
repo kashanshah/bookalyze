@@ -28,7 +28,15 @@ const base = (slug: string) => `/o/${slug}/commerce/watch`;
 
 function issues(error: z.ZodError): Record<string, string> {
   const errors: Record<string, string> = {};
-  for (const issue of error.issues) errors[String(issue.path[0] ?? "form")] ??= issue.message;
+  for (const issue of error.issues) {
+    const [first, index] = issue.path;
+    // Each extra email has its own error: "notifyEmails.0", "notifyEmails.1".
+    const key =
+      first === "notifyEmails" && typeof index === "number"
+        ? `notifyEmails.${index}`
+        : String(first ?? "form");
+    errors[key] ??= issue.message;
+  }
   return errors;
 }
 
@@ -74,7 +82,13 @@ export async function saveListingWatchAction(
         action: id ? "listing_watch.update" : "listing_watch.create",
         entityType: "listing_watch",
         entityId: saved,
-        after: { asin: parsed.data.asin, cadence: parsed.data.cadence, checks: parsed.data.checks },
+        after: {
+          asin: parsed.data.asin,
+          cadence: parsed.data.cadence,
+          checks: parsed.data.checks,
+          notify: parsed.data.notify,
+          notifyEmails: parsed.data.notifyEmails.length,
+        },
       });
       return saved;
     });
@@ -83,7 +97,11 @@ export async function saveListingWatchAction(
       watchId,
       true,
     );
-    if (checked.ok && checked.changes.length && parsed.data.notify) {
+    if (
+      checked.ok &&
+      checked.changes.length &&
+      (parsed.data.notify || parsed.data.notifyEmails.length)
+    ) {
       // Saved either way; an email that fails goes out with the next hourly run.
       await emailListingChanges({ id: ctx.org.id, name: ctx.org.name, slug: ctx.org.slug }).catch(
         (error) => logError("listing_watch.email_failed", error, { orgId: ctx.org.id }),
@@ -117,7 +135,7 @@ export async function checkListingWatchAction(
   );
   if (!result.ok) return { ok: false, message: result.message };
   const watch = await inOrg(ctx, (tx) => getListingWatch(tx, id));
-  if (result.changes.length && watch?.notify) {
+  if (result.changes.length && (watch?.notify || watch?.notifyEmails.length)) {
     await emailListingChanges({ id: ctx.org.id, name: ctx.org.name, slug: ctx.org.slug });
   }
   revalidatePath(`${base(slug)}/${id}`);

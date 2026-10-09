@@ -33,6 +33,8 @@ export type ListingWatchInput = {
   checks: ListingCheck[];
   cadence: ListingCadence;
   notify: boolean;
+  /** Up to two more email addresses for this product's changes. */
+  notifyEmails: string[];
 };
 
 const watchColumns = {
@@ -45,6 +47,7 @@ const watchColumns = {
   checks: listingWatches.checks,
   cadence: listingWatches.cadence,
   notify: listingWatches.notify,
+  notifyEmails: listingWatches.notifyEmails,
   paused: listingWatches.paused,
   observed: listingWatches.observed,
   lastCheckedAt: listingWatches.lastCheckedAt,
@@ -181,6 +184,7 @@ export async function createListingWatch(
         checks: input.checks,
         cadence: input.cadence,
         notify: input.notify,
+        notifyEmails: input.notifyEmails,
         createdBy: input.userId,
       })
       .returning({ id: listingWatches.id });
@@ -222,6 +226,7 @@ export async function updateListingWatch(
         checks: input.checks,
         cadence: input.cadence,
         notify: input.notify,
+        notifyEmails: input.notifyEmails,
         ...(rebaseline ? { observed: null } : {}),
         ...(input.cadence !== current.cadence ? { nextCheckAt: new Date() } : {}),
         updatedAt: new Date(),
@@ -294,7 +299,11 @@ export async function saveListingCheck(
     .where(eq(listingWatches.id, input.id));
   if (!input.changes.length) return;
   const [watch] = await tx
-    .select({ notify: listingWatches.notify, organizationId: listingWatches.organizationId })
+    .select({
+      notify: listingWatches.notify,
+      notifyEmails: listingWatches.notifyEmails,
+      organizationId: listingWatches.organizationId,
+    })
     .from(listingWatches)
     .where(eq(listingWatches.id, input.id));
   if (!watch) return;
@@ -307,7 +316,8 @@ export async function saveListingCheck(
       before: change.before,
       after: change.after,
       checkedAt: input.checkedAt,
-      notifiedAt: watch.notify ? null : input.checkedAt,
+      // Nobody to tell: no email will ever go out for it.
+      notifiedAt: watch.notify || watch.notifyEmails.length ? null : input.checkedAt,
     })),
   );
 }
@@ -334,6 +344,10 @@ export type ListingChangeMail = {
   /** Each change on its own, newest first. */
   changes: { field: string; summary: string; before: string | null; after: string | null }[];
   changeIds: string[];
+  /** Owners and admins are emailed about it. */
+  notify: boolean;
+  /** And these addresses too. */
+  notifyEmails: string[];
 };
 
 /** Unsent changes, grouped so one product is one block in the email. */
@@ -350,11 +364,18 @@ export async function unnotifiedListingChanges(tx: Transaction): Promise<Listing
       asin: listingWatches.asin,
       imageUrl: listingWatches.imageUrl,
       channelName: salesChannels.name,
+      notify: listingWatches.notify,
+      notifyEmails: listingWatches.notifyEmails,
     })
     .from(listingChanges)
     .innerJoin(listingWatches, eq(listingWatches.id, listingChanges.watchId))
     .innerJoin(salesChannels, eq(salesChannels.id, listingWatches.channelId))
-    .where(and(sql`${listingChanges.notifiedAt} is null`, eq(listingWatches.notify, true)))
+    .where(
+      and(
+        sql`${listingChanges.notifiedAt} is null`,
+        sql`(${listingWatches.notify} or cardinality(${listingWatches.notifyEmails}) > 0)`,
+      ),
+    )
     .orderBy(desc(listingChanges.checkedAt));
   const grouped = new Map<string, ListingChangeMail>();
   for (const row of rows) {
@@ -375,6 +396,8 @@ export async function unnotifiedListingChanges(tx: Transaction): Promise<Listing
         summary: row.summary,
         changes: [change],
         changeIds: [row.id],
+        notify: row.notify,
+        notifyEmails: row.notifyEmails,
       });
       continue;
     }
