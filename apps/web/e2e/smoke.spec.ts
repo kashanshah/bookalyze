@@ -100,7 +100,7 @@ test("features respect dependencies and drive navigation", async ({ page }) => {
   await page.getByRole("link", { name: "Commerce", exact: true }).click();
   await expect(page.getByText("Connect a marketplace first")).toBeVisible();
   await page.getByRole("link", { name: "Channels", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Connect Amazon Seller Central" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Add your first channel" })).toBeVisible();
 
   await page.getByRole("link", { name: "Features", exact: true }).click();
   await page.locator("#module-commerce").click();
@@ -1308,7 +1308,8 @@ test("commerce: connect Amazon Seller Central, choose marketplaces, test and dis
   await page.locator("#module-commerce").click();
   await expect(page.getByText("Commerce switched on")).toBeVisible();
   await page.getByRole("link", { name: "Channels", exact: true }).click();
-  await page.getByRole("button", { name: "Connect Amazon" }).click();
+  // No channel yet: choose where you sell.
+  await page.getByRole("button", { name: /^Amazon/ }).click();
 
   const dialog = page.getByRole("dialog");
   await dialog
@@ -1323,6 +1324,11 @@ test("commerce: connect Amazon Seller Central, choose marketplaces, test and dis
   await dialog.getByRole("button", { name: "Check and connect" }).click();
   await expect(page.getByText("Amazon connected")).toBeVisible();
   await expect(page.getByText("Selling in 1 marketplace")).toBeVisible();
+
+  // Each marketplace is a channel with its own page; the account's credentials are on it.
+  await expect(page.getByRole("link", { name: /^Amazon\.com/ })).toContainText("Switched off");
+  await page.getByRole("link", { name: /^Amazon\.ca/ }).click();
+  await expect(page.getByRole("heading", { name: "Amazon.ca" })).toBeVisible();
 
   // Where the seller sells starts switched on; elsewhere starts off.
   await expect(page.getByText("Maple Goods Store", { exact: false })).toBeVisible();
@@ -1339,17 +1345,18 @@ test("commerce: connect Amazon Seller Central, choose marketplaces, test and dis
   await expect(page.getByText("Amazon Seller Central")).toHaveCount(0);
 
   await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Amazon\.ca/ }).click();
   await page.getByRole("button", { name: "Disconnect" }).click();
   await page.getByRole("button", { name: "Click again to disconnect" }).click();
   await expect(page.getByText("Disconnected", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Connect Amazon" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Add your first channel" })).toBeVisible();
 });
 
 test("commerce: bring in Amazon orders, find one by SKU and open it", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   // Reconnect (the test before disconnected): the marketplaces start as Amazon has them again.
   await page.getByRole("link", { name: "Channels", exact: true }).click();
-  await page.getByRole("button", { name: "Connect Amazon" }).click();
+  await page.getByRole("button", { name: /^Amazon/ }).click();
   const dialog = page.getByRole("dialog");
   await dialog
     .getByLabel("LWA client ID")
@@ -1358,6 +1365,7 @@ test("commerce: bring in Amazon orders, find one by SKU and open it", async ({ p
   await dialog.getByLabel("Refresh token").fill("Atzr|e2e-refresh-token-0000");
   await dialog.getByRole("button", { name: "Check and connect" }).click();
   await expect(page.getByText("Amazon connected")).toBeVisible();
+  await page.getByRole("link", { name: /^Amazon\.ca/ }).click();
   await expect(page.getByLabel("Bring in orders from Amazon.ca")).toBeChecked();
 
   // First time: choose the start date, then the orders come in (two pages, then their items).
@@ -1826,6 +1834,7 @@ test("commerce: a different seller account's credentials hide the previous accou
 
   const replace = async (refreshToken: string) => {
     await page.getByRole("link", { name: "Channels", exact: true }).click();
+    await page.getByRole("link", { name: /^Amazon\.ca/ }).click();
     await page.getByRole("button", { name: "Replace credentials" }).click();
     const dialog = page.getByRole("dialog");
     await dialog
@@ -1835,6 +1844,9 @@ test("commerce: a different seller account's credentials hide the previous accou
     await dialog.getByLabel("Refresh token").fill(refreshToken);
     await dialog.getByRole("button", { name: "Check and replace" }).click();
     await expect(page.getByText("Credentials replaced")).toBeVisible();
+    // Another seller account is a new connection with its own channels: open them again.
+    await expect(page).toHaveURL(/\/commerce\/channels$/);
+    await page.getByRole("link", { name: /^Amazon\.ca/ }).click();
   };
 
   // Another seller in the same region (Amazon doesn't know our orders): it starts fresh.
@@ -1981,12 +1993,79 @@ test("amounts recorded in CAD on a USD account are corrected from the bank's PDF
   await expect(page.locator("li", { hasText: "1035" })).toContainText("US$100.00");
 });
 
+test("ebay: add eBay sites, switch one off and back on, and link a SKU on it", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  const addSite = async () => {
+    await page.getByRole("button", { name: "Add a channel" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /^eBay/ }).click();
+  };
+  await addSite();
+
+  // A Canadian company is offered eBay Canada first; the new site's page opens.
+  const add = page.getByRole("dialog");
+  await expect(add.getByRole("combobox", { name: "eBay site" })).toContainText("eBay Canada");
+  await add.getByRole("button", { name: "Add site" }).click();
+  await expect(page.getByText("eBay Canada added")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "eBay Canada" })).toBeVisible();
+  await expect(page.getByText("You ship eBay orders yourself.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "eBay account" })).toBeVisible();
+
+  // Canada can't be added twice; eBay US can. Back goes to the platforms.
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await expect(page.getByRole("link", { name: /^eBay Canada/ })).toContainText("Not connected");
+  await addSite();
+  await choose(page.getByRole("dialog").getByLabel("eBay site"), "eBay US");
+  await page.getByRole("dialog").getByRole("button", { name: "Add site" }).click();
+  await expect(page.getByText("eBay US added")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "eBay US" })).toBeVisible();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await addSite();
+  await page.getByRole("combobox", { name: "eBay site" }).click();
+  await expect(page.getByRole("option", { name: /eBay Canada/ })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").getByRole("button", { name: "Back" }).click();
+  await expect(page.getByRole("dialog").getByText("Where do you sell?")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // Switched off on its page, it stays listed; adding it again switches it back on.
+  await page.getByRole("link", { name: /^eBay US/ }).click();
+  await page.getByRole("switch", { name: "Use eBay US" }).click();
+  await expect(page.getByText("Switched off", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await expect(page.getByRole("link", { name: /^eBay US/ })).toContainText("Switched off");
+  await addSite();
+  await choose(page.getByRole("dialog").getByLabel("eBay site"), "eBay US");
+  await page.getByRole("dialog").getByRole("button", { name: "Add site" }).click();
+  await expect(page.getByText("eBay US switched on")).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Use eBay US" })).toBeChecked();
+
+  // Its SKUs link to products like Amazon's.
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  const mug = page.getByRole("listitem", { name: "Maple leaf ceramic mug", exact: true });
+  await mug.getByRole("button", { name: "Edit Maple leaf ceramic mug" }).click();
+  const dialog = page.getByRole("dialog");
+  await choose(dialog.getByLabel("Marketplace", { exact: true }), "eBay US");
+  await dialog.getByLabel("Marketplace SKU", { exact: true }).fill("EBAY-MAPLE-MUG");
+  await dialog.getByRole("button", { name: "Link SKU" }).click();
+  await expect(page.getByText("EBAY-MAPLE-MUG linked")).toBeVisible();
+  await expect(dialog.getByText(/eBay US · 1 unit per listing/)).toBeVisible();
+});
+
 test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Commerce", exact: true }).click();
   await page.getByRole("link", { name: "Channels", exact: true }).click();
-  const noon = page.getByRole("region", { name: "Noon", exact: true });
-  await noon.getByRole("button", { name: "Add a Noon country" }).click();
+  const addCountry = async () => {
+    await page.getByRole("button", { name: "Add a channel" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /^Noon/ }).click();
+  };
+  await addCountry();
 
   // A Canadian company is offered the UAE first; Noon ships the orders by default.
   const add = page.getByRole("dialog");
@@ -1996,19 +2075,26 @@ test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ p
   );
   await add.getByRole("button", { name: "Add country" }).click();
   await expect(page.getByText("Noon UAE added")).toBeVisible();
-  await expect(noon.getByText("AE · AED")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Noon UAE" })).toBeVisible();
 
-  // The UAE can't be added twice; another country can.
-  await noon.getByRole("button", { name: "Add a Noon country" }).click();
+  // The UAE can't be added twice.
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await expect(page.getByRole("link", { name: /^Noon UAE/ })).toContainText("AE · AED");
+  await addCountry();
   await page.getByRole("combobox", { name: "Country" }).click();
   await expect(page.getByRole("option", { name: /Noon UAE/ })).toHaveAttribute(
     "aria-disabled",
     "true",
   );
   await page.keyboard.press("Escape");
-  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Back" }).click();
+  await expect(page.getByRole("dialog").getByText("Where do you sell?")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 
-  await choose(noon.getByLabel("Who ships Noon UAE orders"), "Both");
+  // Who ships is set on the country's own page.
+  await page.getByRole("link", { name: /^Noon UAE/ }).click();
+  await choose(page.getByLabel("Who ships Noon UAE orders"), "Both");
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
   // Its SKUs link to products like Amazon's.
@@ -2032,7 +2118,8 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Commerce", exact: true }).click();
   await page.getByRole("link", { name: "Channels", exact: true }).click();
-  const noon = page.getByRole("region", { name: "Noon", exact: true });
+  await page.getByRole("link", { name: /^Noon UAE/ }).click();
+  const noon = page.getByRole("region", { name: "Noon's API" });
   await noon.getByRole("button", { name: "Connect Noon's API" }).click();
   const dialog = page.getByRole("dialog");
 
@@ -2094,7 +2181,7 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await expect(page.getByText("Fbn stock report checked")).toBeVisible({ timeout: 30_000 });
 
   // A year of Noon's transactions, a month at a time; bringing in again finds nothing new.
-  await noon.getByRole("link", { name: /Noon transactions/ }).click();
+  await page.getByRole("link", { name: /Noon transactions/ }).click();
   await expect(page.getByRole("heading", { name: "Noon transactions" })).toBeVisible();
   await expect(page.getByText(/starts a year back/)).toBeVisible();
   await page.getByRole("button", { name: "Bring in from Noon" }).click();
@@ -2109,13 +2196,14 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
     timeout: 30_000,
   });
   await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Noon UAE/ }).click();
 
   // Disconnecting keeps the Noon countries.
   await noon.getByRole("button", { name: "Disconnect" }).click();
   await noon.getByRole("button", { name: "Click again to disconnect" }).click();
   await expect(page.getByText("Noon disconnected")).toBeVisible();
   await expect(noon.getByRole("button", { name: "Connect Noon's API" })).toBeVisible();
-  await expect(noon.getByText("Noon UAE")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Noon UAE" })).toBeVisible();
 });
 
 test("noon: upload Noon's transaction view", async ({ page }) => {
@@ -2131,6 +2219,7 @@ test("noon: upload Noon's transaction view", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Commerce", exact: true }).click();
   await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Noon UAE/ }).click();
   await page.getByRole("link", { name: /Noon transactions/ }).click();
   await expect(page.getByRole("heading", { name: "Noon transactions" })).toBeVisible();
   await page.getByLabel("Noon transaction files").setInputFiles({
@@ -2183,6 +2272,7 @@ test("noon: choose how Noon posts, post a month and check the Noon balance", asy
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Commerce", exact: true }).click();
   await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Noon UAE/ }).click();
   await page.getByRole("link", { name: /Noon transactions/ }).click();
 
   // The accounts, suggested from their names; the Noon balance is added on the spot.

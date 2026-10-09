@@ -2,6 +2,8 @@
 
 import { AMAZON_REGIONS, type AmazonRegion } from "@bookalyze/core";
 import { CircleAlert, KeyRound, PlugZap, RefreshCw, ShoppingBag, Unplug } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +29,7 @@ import {
   testAmazonAction,
 } from "../actions";
 
-type ConnectionView = {
+export type AmazonConnectionView = {
   id: string;
   name: string;
   status: "active" | "error" | "disconnected";
@@ -44,143 +46,31 @@ type ConnectionView = {
   }[];
 };
 
-export function ChannelsScreen({
-  slug,
-  locale,
-  canManage,
-  defaultRegion,
-  connections,
-}: {
-  slug: string;
-  locale: string;
-  canManage: boolean;
-  defaultRegion: AmazonRegion;
-  connections: ConnectionView[];
-}) {
-  const [connecting, setConnecting] = useState<AmazonRegion | null>(null);
-  const [key, setKey] = useState(0);
-  const open = (region: AmazonRegion) => {
-    setKey((k) => k + 1);
-    setConnecting(region);
-  };
-  const live = connections.filter((c) => c.status !== "disconnected");
-
-  return (
-    <div className="grid gap-6">
-      {live.length === 0 ? (
-        <div className="relative overflow-hidden rounded-2xl border bg-card px-6 py-12 shadow-xs">
-          <div className="pointer-events-none absolute inset-0 bg-dots text-primary opacity-[0.06]" />
-          <div className="relative mx-auto grid max-w-xl gap-5">
-            <div className="flex flex-col items-center gap-4 text-center">
-              <span className="zoom-in-75 flex size-14 animate-in items-center justify-center rounded-2xl bg-primary/10 text-primary duration-500">
-                <ShoppingBag className="size-7" />
-              </span>
-              <div>
-                <h2 className="font-semibold text-lg tracking-tight">
-                  Connect Amazon Seller Central
-                </h2>
-                <p className="mt-2 text-muted-foreground text-sm leading-relaxed">
-                  Orders come in on their own, and you can ask buyers for reviews the way Amazon
-                  allows. Bookalyze uses your own developer app, so your data stays between you and
-                  Amazon.
-                </p>
-              </div>
-            </div>
-            <ol className="grid gap-2.5 rounded-xl border bg-background/60 p-4 text-sm">
-              <li>
-                <span className="font-medium">1.</span> In Seller Central, open{" "}
-                <span className="font-medium">Apps and Services → Develop Apps</span> and add (or
-                open) your private app.
-              </li>
-              <li>
-                <span className="font-medium">2.</span> Give it these roles: Selling Partner
-                Insights, Inventory and Order Tracking, Finance and Accounting (for refunds), and
-                Buyer Communication. Add Tax Invoicing only when your developer profile already has
-                that role. A role the profile does not have makes Amazon refuse the connection
-                check.
-              </li>
-              <li>
-                <span className="font-medium">3.</span> Copy its LWA client ID and client secret,
-                then choose <span className="font-medium">Authorize</span> to get a refresh token.
-              </li>
-            </ol>
-            <div className="flex justify-center">
-              <Button onClick={() => open(defaultRegion)} disabled={!canManage}>
-                <PlugZap />
-                Connect Amazon
-              </Button>
-            </div>
-            {canManage ? null : (
-              <p className="text-center text-muted-foreground text-xs">
-                Only owners and admins can connect accounts.
-              </p>
-            )}
-          </div>
-        </div>
-      ) : (
-        <>
-          {live.map((c) => (
-            <ConnectionCard
-              key={c.id}
-              slug={slug}
-              locale={locale}
-              canManage={canManage}
-              connection={c}
-              onReplace={() => open(c.region as AmazonRegion)}
-            />
-          ))}
-          {canManage ? (
-            <div>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  open(
-                    AMAZON_REGIONS.find((r) => !live.some((c) => c.region === r.key))?.key ??
-                      defaultRegion,
-                  )
-                }
-              >
-                <PlugZap />
-                Connect another region
-              </Button>
-            </div>
-          ) : null}
-        </>
-      )}
-
-      <Dialog open={connecting !== null} onOpenChange={(o) => (o ? null : setConnecting(null))}>
-        <DialogContent>
-          {connecting ? (
-            <ConnectForm
-              key={key}
-              slug={slug}
-              initialRegion={connecting}
-              replacing={live.some((c) => c.region === connecting)}
-              onDone={() => setConnecting(null)}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-function ConnectionCard({
+/**
+ * The Amazon seller account a marketplace comes from: one set of credentials per region, shared
+ * by every marketplace of that region (Amazon.ca and Amazon.com, say). Test, replace or
+ * disconnect it, and switch its other marketplaces on or off.
+ */
+export function AmazonAccount({
   slug,
   locale,
   canManage,
   connection: c,
-  onReplace,
+  channelId,
 }: {
   slug: string;
   locale: string;
   canManage: boolean;
-  connection: ConnectionView;
-  onReplace: () => void;
+  connection: AmazonConnectionView;
+  /** The channel whose page this is; the account's other marketplaces are listed. */
+  channelId: string;
 }) {
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [busy, setBusy] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [replacing, setReplacing] = useState(false);
+  const [key, setKey] = useState(0);
   const run = (id: string, task: () => Promise<void>) =>
     start(async () => {
       setBusy(id);
@@ -195,9 +85,9 @@ function ConnectionCard({
         description: `Selling in ${result.marketplaces} ${result.marketplaces === 1 ? "marketplace" : "marketplaces"}.`,
       });
     });
-  const toggle = (channelId: string, on: boolean) =>
-    run(channelId, async () => {
-      const result = await setChannelActiveAction(slug, channelId, on);
+  const toggle = (id: string, on: boolean) =>
+    run(id, async () => {
+      const result = await setChannelActiveAction(slug, id, on);
       if (!result.ok) toast.error(result.message);
     });
   const disconnect = () =>
@@ -209,21 +99,26 @@ function ConnectionCard({
         description:
           "The credentials are deleted. Its orders are kept but hidden, and come back if you connect this account again.",
       });
+      router.push(`/o/${slug}/commerce/channels`);
     });
   const checked = c.lastSyncedAt
     ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(
         new Date(c.lastSyncedAt),
       )
     : null;
+  const others = c.channels.filter((ch) => ch.id !== channelId);
 
   return (
-    <section className="overflow-hidden rounded-2xl border bg-card shadow-xs">
+    <section
+      aria-labelledby="account-heading"
+      className="overflow-hidden rounded-2xl border bg-card shadow-xs"
+    >
       <div className="flex flex-wrap items-start gap-3 border-b px-5 py-4">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <ShoppingBag className="size-5" />
         </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="flex flex-wrap items-center gap-2 font-semibold">
+        <div className="min-w-0 flex-1 basis-[calc(100%-3.25rem)] sm:basis-0">
+          <h2 id="account-heading" className="flex flex-wrap items-center gap-2 font-semibold">
             {c.name}
             {c.status === "error" ? (
               <Badge variant="warning">Needs attention</Badge>
@@ -236,14 +131,22 @@ function ConnectionCard({
             {checked ? `Last checked ${checked}` : "Not checked yet"}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="ms-13 flex flex-wrap gap-2 sm:ms-0">
           <Button variant="outline" size="sm" onClick={test} disabled={pending}>
             {busy === "test" ? <Spinner /> : <RefreshCw />}
             Test connection
           </Button>
           {canManage ? (
             <>
-              <Button variant="ghost" size="sm" onClick={onReplace} disabled={pending}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setKey((k) => k + 1);
+                  setReplacing(true);
+                }}
+                disabled={pending}
+              >
                 <KeyRound />
                 Replace credentials
               </Button>
@@ -267,17 +170,22 @@ function ConnectionCard({
         </p>
       ) : null}
       <div className="px-5 pt-4 pb-1">
-        <h3 className="font-medium text-sm">Marketplaces</h3>
+        <h3 className="font-medium text-sm">Other marketplaces on this account</h3>
         <p className="text-muted-foreground text-xs">
-          Switched-on marketplaces bring in orders. You can change this any time.
+          They share these credentials. Switched-on marketplaces bring in orders.
         </p>
       </div>
-      {c.channels.length ? (
+      {others.length ? (
         <ul className="divide-y">
-          {c.channels.map((ch) => (
+          {others.map((ch) => (
             <li key={ch.id} className="flex items-center gap-3 px-5 py-3">
               <div className={cn("min-w-0 flex-1", !ch.isActive && "opacity-60")}>
-                <p className="font-medium text-sm">{ch.name}</p>
+                <Link
+                  href={`/o/${slug}/commerce/channels/${ch.id}`}
+                  className="font-medium text-sm underline-offset-4 hover:underline"
+                >
+                  {ch.name}
+                </Link>
                 <p className="text-muted-foreground text-xs">
                   {[ch.country, ch.currency].filter(Boolean).join(" · ")}
                 </p>
@@ -294,24 +202,75 @@ function ConnectionCard({
           ))}
         </ul>
       ) : (
-        <p className="px-5 py-4 text-muted-foreground text-sm">
-          Amazon didn't list any marketplaces for this account.
+        <p className="px-5 pt-1 pb-4 text-muted-foreground text-sm">
+          Amazon doesn't list any other marketplace for this account.
         </p>
       )}
+
+      <Dialog open={replacing} onOpenChange={setReplacing}>
+        <DialogContent>
+          {replacing ? (
+            <ConnectAmazonForm
+              key={key}
+              slug={slug}
+              initialRegion={c.region as AmazonRegion}
+              replacing
+              onCancel={() => setReplacing(false)}
+              onDone={(connectionId) => {
+                setReplacing(false);
+                // Another seller account's credentials start a new connection, with new
+                // channels: this page's channel is hidden with the old account's orders.
+                if (connectionId && connectionId !== c.id) {
+                  router.push(`/o/${slug}/commerce/channels`);
+                }
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
 
-function ConnectForm({
+/** How to get the credentials, shown before the form when Amazon is added. */
+export function AmazonSteps() {
+  return (
+    <ol className="grid gap-2 rounded-xl border bg-muted/30 p-4 text-sm leading-relaxed">
+      <li>
+        <span className="font-medium">1.</span> In Seller Central, open{" "}
+        <span className="font-medium">Apps and Services → Develop Apps</span> and add (or open) your
+        private app.
+      </li>
+      <li>
+        <span className="font-medium">2.</span> Give it these roles: Selling Partner Insights,
+        Inventory and Order Tracking, Finance and Accounting (for refunds), and Buyer Communication.
+        Add Tax Invoicing only when your developer profile already has that role. A role the profile
+        does not have makes Amazon refuse the connection check.
+      </li>
+      <li>
+        <span className="font-medium">3.</span> Copy its LWA client ID and client secret, then
+        choose <span className="font-medium">Authorize</span> to get a refresh token.
+      </li>
+    </ol>
+  );
+}
+
+export function ConnectAmazonForm({
   slug,
   initialRegion,
   replacing,
   onDone,
+  onBack,
+  onCancel,
 }: {
   slug: string;
   initialRegion: AmazonRegion;
   replacing: boolean;
-  onDone: () => void;
+  /** Called with the connection the credentials ended up on. */
+  onDone: (connectionId: string) => void;
+  /** Back to choosing a platform (when adding a channel). */
+  onBack?: () => void;
+  onCancel?: () => void;
 }) {
   const [region, setRegion] = useState<AmazonRegion>(initialRegion);
   const [clientId, setClientId] = useState("");
@@ -343,20 +302,21 @@ function ConnectForm({
               ? `These credentials are for ${result.regionLabel}, so the account was connected there. ${selling}`
               : selling,
           });
-          onDone();
+          onDone(result.connectionId);
         });
       }}
     >
       <DialogHeader>
         <DialogTitle>{replacing ? "Replace Amazon credentials" : "Connect Amazon"}</DialogTitle>
         <DialogDescription>
-          From your app in Seller Central → Develop Apps. They're checked with Amazon, then stored
-          encrypted; nobody can read them back.
+          Each Amazon region is one seller account, and its marketplaces become your channels. The
+          credentials are checked with Amazon, then stored encrypted; nobody can read them back.
           {replacing
             ? " If they're for a different seller account, it starts fresh, and this account's orders are hidden until it's connected again."
             : null}
         </DialogDescription>
       </DialogHeader>
+      {replacing ? null : <AmazonSteps />}
       <Field label="Region" htmlFor="amazon-region" hint={hint} error={errors.region}>
         <Combobox
           id="amazon-region"
@@ -399,8 +359,8 @@ function ConnectForm({
         />
       </Field>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onDone}>
-          Cancel
+        <Button type="button" variant="outline" onClick={onBack ?? onCancel}>
+          {onBack ? "Back" : "Cancel"}
         </Button>
         <Button type="submit" disabled={pending}>
           {pending ? <Spinner /> : <PlugZap />}

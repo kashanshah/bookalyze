@@ -10,7 +10,6 @@ import {
   noonReportName,
 } from "@bookalyze/core";
 import {
-  ArrowRight,
   ChevronRight,
   CircleAlert,
   Copy,
@@ -19,12 +18,9 @@ import {
   KeyRound,
   PlugZap,
   Plus,
-  ReceiptText,
   RefreshCw,
-  Store,
   Unplug,
 } from "lucide-react";
-import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -41,15 +37,12 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 import {
   addNoonChannelAction,
   checkNoonReportAction,
   connectNoonAction,
   disconnectNoonAction,
   type NoonReportCheck,
-  setChannelActiveAction,
   setChannelFulfilmentAction,
   testNoonAction,
 } from "../actions";
@@ -67,204 +60,79 @@ export type NoonConnectionView = {
   payoutsReport: boolean;
 };
 
-export type NoonChannelView = {
-  id: string;
-  name: string;
-  marketplaceId: string;
-  country: string | null;
-  currency: string;
-  fulfilment: FulfilmentMode | null;
-  isActive: boolean;
-};
-
 const fulfilmentOptions = FULFILMENT_MODES.map((m) => ({
   value: m,
   label: NOON_FULFILMENT[m].label,
   description: NOON_FULFILMENT[m].hint,
 }));
 
-export function NoonChannels({
+/** Who ships a Noon country's orders, changed on its channel page. */
+export function NoonFulfilment({
   slug,
-  locale,
+  channel,
   canManage,
-  defaultMarketplace,
-  channels,
-  connection,
 }: {
   slug: string;
-  locale: string;
+  channel: { id: string; name: string; fulfilment: FulfilmentMode | null };
   canManage: boolean;
-  defaultMarketplace: string;
-  channels: NoonChannelView[];
-  connection: NoonConnectionView | null;
 }) {
-  const [adding, setAdding] = useState(false);
-  const [key, setKey] = useState(0);
   const [pending, start] = useTransition();
-  const [busy, setBusy] = useState<string | null>(null);
-  const run = (id: string, task: () => Promise<void>) =>
+  const ship = (fulfilment: string) =>
     start(async () => {
-      setBusy(id);
-      await task();
-      setBusy(null);
-    });
-  const toggle = (channelId: string, on: boolean) =>
-    run(channelId, async () => {
-      const result = await setChannelActiveAction(slug, channelId, on);
-      if (!result.ok) toast.error(result.message);
-    });
-  const ship = (channelId: string, fulfilment: string) =>
-    run(channelId, async () => {
-      const result = await setChannelFulfilmentAction(slug, channelId, fulfilment);
+      const result = await setChannelFulfilmentAction(slug, channel.id, fulfilment);
       if (!result.ok) return void toast.error(result.message);
       toast.success("Saved", { description: result.label });
     });
-  const open = () => {
-    setKey((k) => k + 1);
-    setAdding(true);
-  };
-  const unused = NOON_MARKETPLACES.find(
-    (m) => !channels.some((c) => c.marketplaceId === m.id && c.isActive),
+  const hint = channel.fulfilment ? NOON_FULFILMENT[channel.fulfilment].hint : null;
+  return (
+    <Field
+      label="Who ships the orders?"
+      htmlFor={`fulfilment-${channel.id}`}
+      hint={hint ?? "Noon's warehouses (FBN), you (FBP), or both."}
+    >
+      <Combobox
+        id={`fulfilment-${channel.id}`}
+        aria-label={`Who ships ${channel.name} orders`}
+        value={channel.fulfilment ?? ""}
+        placeholder="Who ships the orders?"
+        onChange={ship}
+        options={fulfilmentOptions}
+        disabled={!canManage || pending}
+      />
+    </Field>
   );
+}
 
+/** Noon's API on a Noon country's page: one key for all the company's Noon countries. */
+export function NoonAccount(props: {
+  slug: string;
+  locale: string;
+  canManage: boolean;
+  connection: NoonConnectionView | null;
+  country: string | null;
+}) {
   return (
     <section
-      aria-labelledby="noon-heading"
+      aria-labelledby="noon-api-heading"
       className="overflow-hidden rounded-2xl border bg-card shadow-xs"
     >
-      <div className="flex flex-wrap items-start gap-3 border-b px-5 py-4">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Store className="size-5" />
-        </span>
-        <div className="min-w-0 flex-1 basis-[calc(100%-3.25rem)] sm:basis-0">
-          <h2 id="noon-heading" className="font-semibold">
-            Noon
-          </h2>
-          <p className="text-muted-foreground text-sm">
-            Add each country you sell in on Noon and say who ships the orders. Its SKUs can then be
-            linked to your products, bundles included.
-          </p>
-        </div>
-        {canManage && unused && channels.length ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ms-13 sm:ms-0"
-            onClick={open}
-            disabled={pending}
-          >
-            <Plus />
-            Add a Noon country
-          </Button>
-        ) : null}
-      </div>
-      <NoonApi
-        slug={slug}
-        locale={locale}
-        canManage={canManage}
-        connection={connection}
-        country={channels[0]?.country ?? null}
-      />
-      {channels.length ? (
-        <ul className="divide-y border-t">
-          {channels.map((ch) => (
-            <li
-              key={ch.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3 sm:flex-nowrap"
-            >
-              <div className={cn("min-w-0 flex-1", !ch.isActive && "opacity-60")}>
-                <p className="font-medium text-sm">{ch.name}</p>
-                <p className="text-muted-foreground text-xs">
-                  {[ch.country, ch.currency].filter(Boolean).join(" · ")}
-                  {ch.isActive ? "" : " · Switched off"}
-                </p>
-              </div>
-              <Combobox
-                aria-label={`Who ships ${ch.name} orders`}
-                value={ch.fulfilment ?? ""}
-                placeholder="Who ships the orders?"
-                onChange={(v) => ship(ch.id, v)}
-                options={fulfilmentOptions}
-                disabled={!canManage || pending}
-                wrapperClassName="order-last w-full sm:order-none sm:w-60"
-              />
-              {busy === ch.id ? <Spinner className="text-muted-foreground" /> : null}
-              <Switch
-                id={`channel-${ch.id}`}
-                checked={ch.isActive}
-                disabled={!canManage || pending}
-                onCheckedChange={(on) => toggle(ch.id, on)}
-                aria-label={`Use ${ch.name}`}
-              />
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="grid justify-items-start gap-3 border-t px-5 py-5">
-          <p className="max-w-prose text-muted-foreground text-sm">
-            Selling on Noon in the UAE, Saudi Arabia or Egypt? Add the country here. Each one is a
-            channel in its own currency, like an Amazon marketplace.
-          </p>
-          {canManage ? (
-            <Button onClick={open}>
-              <Plus />
-              Add a Noon country
-            </Button>
-          ) : (
-            <p className="text-muted-foreground text-xs">
-              Only owners and admins can add channels.
-            </p>
-          )}
-        </div>
-      )}
-      {channels.length || connection ? (
-        <Link
-          href={`/o/${slug}/commerce/noon`}
-          className="group flex items-center gap-3 border-t px-5 py-3.5 text-sm transition-colors hover:bg-muted/40"
-        >
-          <ReceiptText className="size-4 shrink-0 text-primary" />
-          <span className="min-w-0 flex-1">
-            <span className="font-medium">Noon transactions</span>
-            <span className="block text-muted-foreground text-xs">
-              Every sale, fee and subsidy Noon paid or charged, month by month: bring in the past
-              year from Noon's API, or upload the transaction view.
-            </span>
-          </span>
-          <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
-        </Link>
-      ) : null}
-
-      <Dialog open={adding} onOpenChange={setAdding}>
-        <DialogContent>
-          {adding ? (
-            <AddNoonForm
-              key={key}
-              slug={slug}
-              channels={channels}
-              initialMarketplace={
-                channels.some((c) => c.marketplaceId === defaultMarketplace && c.isActive)
-                  ? (unused?.id ?? defaultMarketplace)
-                  : defaultMarketplace
-              }
-              onDone={() => setAdding(false)}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <NoonApi {...props} />
     </section>
   );
 }
 
-function AddNoonForm({
+export function AddNoonForm({
   slug,
   channels,
   initialMarketplace,
   onDone,
+  onBack,
 }: {
   slug: string;
-  channels: NoonChannelView[];
+  channels: { marketplaceId: string; isActive: boolean }[];
   initialMarketplace: string;
-  onDone: () => void;
+  onDone: (channelId: string) => void;
+  onBack: () => void;
 }) {
   const [marketplace, setMarketplace] = useState(initialMarketplace);
   const [fulfilment, setFulfilment] = useState<string>("marketplace");
@@ -288,7 +156,7 @@ function AddNoonForm({
               ? "Link its SKUs to your products on Products."
               : "It keeps everything it had before.",
           });
-          onDone();
+          onDone(result.channelId);
         });
       }}
     >
@@ -334,8 +202,8 @@ function AddNoonForm({
         />
       </Field>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onDone}>
-          Cancel
+        <Button type="button" variant="outline" onClick={onBack}>
+          Back
         </Button>
         <Button type="submit" disabled={pending}>
           {pending ? <Spinner /> : <Plus />}
@@ -399,11 +267,13 @@ function NoonApi({
     : null;
 
   return (
-    <div className="grid gap-3 bg-muted/30 px-5 py-4">
+    <div className="grid gap-3 px-5 py-4">
       <div className="flex flex-wrap items-start gap-3">
-        <KeyRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1 basis-[calc(100%-1.75rem)] sm:basis-0">
-          <h3 className="flex flex-wrap items-center gap-2 font-medium text-sm">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <KeyRound className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1 basis-[calc(100%-3.25rem)] sm:basis-0">
+          <h2 id="noon-api-heading" className="flex flex-wrap items-center gap-2 font-semibold">
             Noon's API
             {live ? (
               live.status === "error" ? (
@@ -412,7 +282,7 @@ function NoonApi({
                 <Badge variant="success">Connected</Badge>
               )
             ) : null}
-          </h3>
+          </h2>
           <p className="text-muted-foreground text-xs leading-relaxed">
             {live
               ? [
@@ -422,10 +292,10 @@ function NoonApi({
                 ]
                   .filter(Boolean)
                   .join(" · ")
-              : "Connect it with your service account's key file, so Noon's reports come in by themselves. Without it, they can be uploaded by hand."}
+              : "One key for all your Noon countries. Connect it with your service account's key file, so Noon's reports come in by themselves. Without it, they can be uploaded by hand."}
           </p>
         </div>
-        <div className="ms-7 flex flex-wrap gap-2 sm:ms-0">
+        <div className="ms-13 flex flex-wrap gap-2 sm:ms-0">
           {live ? (
             <>
               <Button variant="outline" size="sm" onClick={test} disabled={pending}>
