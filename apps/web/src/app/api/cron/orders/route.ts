@@ -1,5 +1,6 @@
 import { syncAllOrders } from "@/server/amazon-orders";
 import { env } from "@/server/env";
+import { jobStep, logInfo } from "@/server/log";
 
 /**
  * The order job, every 5 minutes (vercel.json). Vercel Cron calls it with
@@ -15,8 +16,8 @@ export async function GET(request: Request) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
     return new Response("Unauthorized", { status: 401 });
   }
-  const orders = await syncAllOrders(240_000).catch((error: unknown) => ({
-    error: (error as Error).message,
-  }));
+  const started = Date.now();
+  const orders = await jobStep("orders", "run", () => syncAllOrders(240_000));
+  logInfo("job.orders", { ms: Date.now() - started, orders });
   return Response.json({ orders });
 }

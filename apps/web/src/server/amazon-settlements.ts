@@ -13,6 +13,7 @@ import {
 import { sql } from "drizzle-orm";
 import { AmazonError, downloadReport, settlementReportsPage } from "./amazon";
 import { openAmazonCredentials } from "./commerce";
+import { logError, logWarn } from "./log";
 
 /**
  * Amazon settlements, brought in from the Reports API: Amazon makes one settlement report per
@@ -119,7 +120,12 @@ export async function syncConnectionSettlements(
       let settlement: ReturnType<typeof parseSettlementReport>;
       try {
         settlement = parseSettlementReport(text);
-      } catch {
+      } catch (error) {
+        logWarn(
+          "amazon.settlement_unreadable",
+          { orgId: ctx.orgId, connectionId: connection.id, reportId: report.reportId },
+          error,
+        );
         result.unreadable++;
         continue;
       }
@@ -183,7 +189,22 @@ export async function syncAllSettlements(budgetMs: number) {
       { orgId: row.organization_id, userId: null },
       row.connection_id,
       Math.min(deadline, Date.now() + 60_000),
-    ).catch(() => ({ added: 0, error: "failed" }));
+    ).catch((error) => {
+      logError("job.amazon_settlements_failed", error, {
+        orgId: row.organization_id,
+        connectionId: row.connection_id,
+      });
+      return { added: 0, error: "failed" };
+    });
+    // Handled failures (a refused key, a missing role) are saved on the connection and shown in
+    // the app; log them too, so a run's problems can be read in one place.
+    if (r.error && r.error !== "failed") {
+      logWarn("job.amazon_settlements_problem", {
+        orgId: row.organization_id,
+        connectionId: row.connection_id,
+        problem: r.error,
+      });
+    }
     added += r.added;
     if (r.error) failed++;
   }

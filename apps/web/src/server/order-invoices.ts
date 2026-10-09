@@ -26,7 +26,8 @@ import { inOrg } from "@/server/accounting";
 import { AmazonError, orderBuyerIdentity } from "@/server/amazon";
 import { type CommerceContext, openAmazonCredentials } from "@/server/commerce";
 import { renderOrderInvoicePdf } from "@/server/invoice-pdf";
-import { deleteStoredFile, invoiceKey, putStoredFile, storageDriver } from "@/server/storage";
+import { logError } from "@/server/log";
+import { invoiceKey, putStoredFile, removeStoredFile, storageDriver } from "@/server/storage";
 
 const ROLE_NOTE =
   "Amazon didn't share the buyer's name or tax number. In Seller Central → Develop Apps, give the app the Tax Invoicing role, authorize it again, and paste the new refresh token in Commerce → Channels. You can type the details from the customer's message.";
@@ -139,6 +140,10 @@ async function buyerFromAmazon(
   } catch (error) {
     if (error instanceof AmazonError && error.code === "forbidden") {
       return { buyer: emptyBuyer(), note: ROLE_NOTE };
+    }
+    // Amazon errors are logged where they happen; anything else would be lost here.
+    if (!(error instanceof AmazonError)) {
+      logError("invoice.buyer_lookup_failed", error, { orgId: ctx.org.id, order: externalId });
     }
     return { buyer: emptyBuyer(), note: UNREACHABLE_NOTE };
   }
@@ -341,7 +346,8 @@ export async function issueOrderInvoice(
 
   try {
     await putStoredFile({ key: issued.key, bytes: issued.bytes, contentType: "application/pdf" });
-  } catch {
+  } catch (error) {
+    logError("invoice.file_save_failed", error, { orgId: ctx.org.id, invoiceId: issued.id });
     await inOrg(ctx, async (tx) => {
       if (issued.restore) {
         await updateOrderInvoice(tx, {
@@ -354,16 +360,18 @@ export async function issueOrderInvoice(
       } else {
         await deleteOrderInvoice(tx, issued.id);
       }
-    }).catch(() => {});
+    }).catch((rollback) =>
+      logError("invoice.rollback_failed", rollback, { orgId: ctx.org.id, invoiceId: issued.id }),
+    );
     // A correction that keeps the same storage key must not delete the file the row points at again.
     if (!issued.restore || issued.restore.storageKey !== issued.key) {
-      await deleteStoredFile(issued.key).catch(() => {});
+      await removeStoredFile(issued.key);
     }
     return { ok: false, message: "The invoice file couldn't be saved. Try again." };
   }
 
   if (issued.previousKey && issued.previousKey !== issued.key) {
-    await deleteStoredFile(issued.previousKey).catch(() => {});
+    await removeStoredFile(issued.previousKey);
   }
   return {
     ok: true,

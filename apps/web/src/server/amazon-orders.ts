@@ -19,6 +19,7 @@ import { sql } from "drizzle-orm";
 import { AmazonError, orderItems, ordersPage, refundsPage } from "./amazon";
 import { SKU_SYNC_EVERY_MS, syncChannelSkus } from "./amazon-skus";
 import { openAmazonCredentials } from "./commerce";
+import { logError, logWarn } from "./log";
 
 /**
  * Bringing Amazon orders in, one sales channel (marketplace) at a time, within a time budget:
@@ -234,8 +235,14 @@ export async function syncChannelOrders(
           } catch (error) {
             // An order Amazon won't list items for (e.g. not found) is left without them, so it
             // doesn't block the rest on every run.
-            if (error instanceof AmazonError && error.code === "unexpected") fetched = [];
-            else if (!(error instanceof AmazonError && error.code === "throttled")) throw error;
+            if (error instanceof AmazonError && error.code === "unexpected") {
+              logWarn(
+                "amazon.order_items_skipped",
+                { orgId: ctx.orgId, channelId, order: order.externalId },
+                error,
+              );
+              fetched = [];
+            } else if (!(error instanceof AmazonError && error.code === "throttled")) throw error;
             else if (!(await backOff(2_100))) break items;
           }
         }
@@ -325,7 +332,22 @@ export async function syncAllOrders(budgetMs: number) {
         { orgId: row.organization_id, userId: null },
         row.channel_id,
         Math.min(deadline, Date.now() + MINUTE),
-      ).catch(() => ({ orders: 0, items: 0, waiting: 0, more: false, error: "failed" }));
+      ).catch((error) => {
+        logError("job.amazon_orders_failed", error, {
+          orgId: row.organization_id,
+          channelId: row.channel_id,
+        });
+        return { orders: 0, items: 0, waiting: 0, more: false, error: "failed" };
+      });
+      // Handled failures (a refused key, a missing role) are saved on the connection and shown in
+      // the app; log them too, so a run's problems can be read in one place.
+      if (r.error && r.error !== "failed") {
+        logWarn("job.amazon_orders_problem", {
+          orgId: row.organization_id,
+          channelId: row.channel_id,
+          problem: r.error,
+        });
+      }
       orders += r.orders;
       items += r.items;
       waiting += r.waiting;

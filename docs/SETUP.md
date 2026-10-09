@@ -156,6 +156,14 @@ and opened the same way. Nothing in the bucket is public. Locally you can skip S
 Optional: use a separate bucket (e.g. `bookalyze-files-preview`) for Preview deployments so test
 uploads never mix with real receipts.
 
+## Logs
+
+Bookalyze writes one JSON line per event to the server logs (Vercel → the project → **Logs**).
+Filter by the event (`"event":"request.failed"`, `noon.request_failed`, `job.daily`…), a company
+ID, or the **error reference** shown on the "Something went wrong" page. Credentials are never
+logged, and email addresses are masked. To keep logs longer than Vercel's retention, add a Log
+Drain (Vercel → Settings → Log Drains) to a log service; nothing in the app changes.
+
 ## Daily exchange rates (Vercel Cron)
 
 `apps/web/vercel.json` schedules `/api/cron/fx-rates` on weekdays at 22:15 UTC. That's after the

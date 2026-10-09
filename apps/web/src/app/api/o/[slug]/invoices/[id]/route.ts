@@ -1,6 +1,7 @@
 import { getInvoiceById } from "@bookalyze/db";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
+import { logWarn } from "@/server/log";
 import { downloadUrl, readLocalFile, storageDriver } from "@/server/storage";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -38,7 +39,9 @@ export async function GET(
         "X-Content-Type-Options": "nosniff",
       },
     });
-  } catch {
+  } catch (error) {
+    // The row says the file exists, so a missing file on disk is worth knowing about.
+    logWarn("storage.local_file_missing", { invoiceId: id }, error);
     return new Response("Not found", { status: 404 });
   }
 }

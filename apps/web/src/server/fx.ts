@@ -1,6 +1,7 @@
 import "server-only";
 import { BANK_OF_CANADA_CURRENCIES, parseBankOfCanada } from "@bookalyze/core";
 import { fxRateOn, getDb, missingCadRates, upsertFxRates } from "@bookalyze/db";
+import { logWarn } from "./log";
 
 /**
  * Exchange rates from the Bank of Canada Valet API (free, official, CAD-based). A daily cron keeps
@@ -19,8 +20,15 @@ function shift(date: string, days: number): string {
 export async function syncBankOfCanada(start: string, end: string): Promise<number> {
   const series = BANK_OF_CANADA_CURRENCIES.map((c) => `FX${c}CAD`).join(",");
   const url = `${VALET}/${series}/json?start_date=${start}&end_date=${end}`;
-  const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
-  if (!response.ok) throw new Error(`Bank of Canada responded ${response.status}`);
+  const response = await fetch(url, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) {
+    logWarn("fx.bank_of_canada_failed", { status: response.status, start, end });
+    throw new Error(`Bank of Canada responded ${response.status}`);
+  }
   return upsertFxRates(getDb(), parseBankOfCanada(await response.json()), "Bank of Canada");
 }
 
@@ -40,7 +48,8 @@ export async function suggestRate(
   if ((await missingCadRates(db, base, quote, date)).length) {
     try {
       await syncBankOfCanada(shift(date, -7), date);
-    } catch {
+    } catch (error) {
+      logWarn("fx.suggest_rate_fetch_failed", { base, quote, date }, error);
       return null;
     }
   }

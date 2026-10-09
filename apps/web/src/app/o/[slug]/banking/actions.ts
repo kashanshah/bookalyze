@@ -28,6 +28,7 @@ import {
   sealConnectionSecret,
   syncConnection,
 } from "@/server/banking";
+import { logError } from "@/server/log";
 import { fiscalConfigOf, isOrgAdmin } from "@/server/org";
 import { WiseError, wiseBalances, wiseProfiles } from "@/server/wise";
 
@@ -41,6 +42,8 @@ const tokenSchema = z
   .regex(/^[A-Za-z0-9-]+$/, "That doesn't look like a Wise API token.");
 
 function fail(error: unknown): Failure {
+  // Wise's refusals are logged where Wise answered; a vault problem only here.
+  if (error instanceof VaultError) logError("vault.unavailable", error, { area: "banking" });
   if (error instanceof WiseError || error instanceof VaultError) {
     return { ok: false, message: error.message };
   }
@@ -54,6 +57,7 @@ function vaultReady(): Failure | null {
     return null;
   } catch (error) {
     if (error instanceof VaultError) {
+      logError("vault.unavailable", error, { area: "banking" });
       return {
         ok: false,
         message:

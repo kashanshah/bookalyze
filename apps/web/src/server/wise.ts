@@ -9,6 +9,7 @@ import {
   type WiseProfile,
 } from "@bookalyze/core";
 import { env } from "./env";
+import { logError, logWarn, requestIdOf } from "./log";
 
 /**
  * The Wise API, with a personal API token (read-only is enough). Responses are parsed in
@@ -19,8 +20,10 @@ export class WiseError extends Error {
   constructor(
     message: string,
     readonly code: "unauthorized" | "sca_required" | "unavailable" | "unexpected",
+    options?: { cause?: unknown },
   ) {
-    super(message);
+    super(message, options);
+    this.name = "WiseError";
   }
 }
 
@@ -34,8 +37,21 @@ async function call(token: string, path: string): Promise<unknown> {
       cache: "no-store",
       signal: AbortSignal.timeout(30_000),
     });
-  } catch {
-    throw new WiseError("Wise couldn't be reached. Try again in a minute.", "unavailable");
+  } catch (cause) {
+    logError("wise.unreachable", cause, { path: path.split("?")[0] });
+    throw new WiseError("Wise couldn't be reached. Try again in a minute.", "unavailable", {
+      cause,
+    });
+  }
+  if (!response.ok) {
+    // The token stays in the request header; the path (with its query, which holds dates and
+    // IDs only) and Wise's request ID are enough to trace it.
+    logWarn("wise.request_failed", {
+      path,
+      status: response.status,
+      requestId: requestIdOf(response),
+      scaRequired: Boolean(response.headers.get("x-2fa-approval")),
+    });
   }
   if (response.status === 401) {
     throw new WiseError(

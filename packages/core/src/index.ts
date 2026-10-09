@@ -6,6 +6,7 @@ export * from "./entity";
 export * from "./fiscal";
 export * from "./import";
 export * from "./inventory";
+export * from "./log-format";
 export * from "./modules/entitlements";
 export * from "./modules/registry";
 export * from "./money";

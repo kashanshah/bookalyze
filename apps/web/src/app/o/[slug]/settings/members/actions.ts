@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { getAuth } from "@/server/auth";
+import { logWarn } from "@/server/log";
 import { getOrgContext, isOrgAdmin } from "@/server/org";
 
 export type InviteState = { error?: string; invited?: string };
@@ -14,6 +15,7 @@ const inviteSchema = z.object({
 });
 
 function errorMessage(error: unknown, fallback: string): string {
+  logWarn("members.action_failed", { fallback }, error);
   return error instanceof Error && error.message ? error.message : fallback;
 }
 

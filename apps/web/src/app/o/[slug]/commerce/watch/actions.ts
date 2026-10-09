@@ -18,6 +18,7 @@ import { inOrg } from "@/server/accounting";
 import { audit } from "@/server/audit";
 import { getCommerceContext } from "@/server/commerce";
 import { checkListingWatch, emailListingChanges } from "@/server/listing-watch";
+import { logError } from "@/server/log";
 
 type Result<T = undefined> =
   | (T extends undefined ? { ok: true } : { ok: true } & T)
@@ -85,7 +86,7 @@ export async function saveListingWatchAction(
     if (checked.ok && checked.changes.length && parsed.data.notify) {
       // Saved either way; an email that fails goes out with the next hourly run.
       await emailListingChanges({ id: ctx.org.id, name: ctx.org.name, slug: ctx.org.slug }).catch(
-        (error) => console.error("Listing changes email failed", error),
+        (error) => logError("listing_watch.email_failed", error, { orgId: ctx.org.id }),
       );
     }
     revalidatePath(base(slug));

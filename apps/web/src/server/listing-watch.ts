@@ -38,6 +38,7 @@ import { AmazonError, catalogItem, itemOffers, reviewTopics } from "./amazon";
 import { openAmazonCredentials } from "./commerce";
 import { sendEmail } from "./email";
 import { env } from "./env";
+import { logError, logWarn } from "./log";
 
 /**
  * Looks up the products a company is watching and emails owners and admins when Amazon reports
@@ -110,6 +111,7 @@ export async function checkListingWatch(
   if (!force && found.watch.nextCheckAt.getTime() > Date.now()) return { ok: true, changes: [] };
 
   const fail = async (message: string, waitMs = HOUR) => {
+    logWarn("listing_watch.check_failed", { orgId: ctx.orgId, watchId: id, problem: message });
     await withOrg(db, ctx, (tx) =>
       saveListingCheckError(tx, {
         id,
@@ -275,7 +277,7 @@ export async function emailListingChanges(org: {
       sent += 1;
     } catch (error) {
       // One bad address mustn't stop the others; the changes still show on the page.
-      console.error("Listing changes email failed", error);
+      logError("listing_watch.email_failed", error, { orgId: org.id });
     }
   }
   // Nobody reached: keep them for the next run rather than dropping them.
@@ -340,7 +342,7 @@ export async function checkDueListingWatches(budgetMs: number): Promise<{
       emails += await emailListingChanges(company);
     } catch (error) {
       // One company's failure mustn't stop the others.
-      console.error("Listing watch failed for a company", error);
+      logError("listing_watch.company_failed", error, { orgId: company.id });
     }
   }
   return { checked, changes, emails };

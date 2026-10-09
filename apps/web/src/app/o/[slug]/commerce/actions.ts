@@ -44,6 +44,7 @@ import {
   sealAmazonCredentials,
   sealNoonCredentials,
 } from "@/server/commerce";
+import { logError } from "@/server/log";
 import { checkNoonKey, NoonError } from "@/server/noon";
 import { isOrgAdmin } from "@/server/org";
 
@@ -60,6 +61,7 @@ function failure(error: unknown): { ok: false; message: string } {
     return { ok: false, message: error.message };
   }
   if (error instanceof VaultError) {
+    logError("vault.unavailable", error, { area: "commerce" });
     return {
       ok: false,
       message:

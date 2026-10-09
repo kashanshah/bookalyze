@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { type FieldErrors, fieldErrors, orgProfileSchema } from "@/lib/validation/org-profile";
+import { logError } from "@/server/log";
 import { createOrganization } from "@/server/organizations";
 import { requireSession } from "@/server/session";
 
@@ -30,7 +31,7 @@ export async function createOrganizationAction(
   try {
     ({ slug } = await createOrganization(session.user.id, name.data, profile.data));
   } catch (error) {
-    console.error(error);
+    logError("onboarding.create_company_failed", error, { userId: session.user.id });
     return { message: "Something went wrong creating the organization. Please try again." };
   }
   redirect(`/o/${slug}`);
