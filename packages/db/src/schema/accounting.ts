@@ -48,6 +48,8 @@ export const JOURNAL_SOURCES = [
   "cogs",
   /** Stock on hand before Bookalyze, valued as an opening lot (inventory_lots). */
   "opening_stock",
+  /** A month of Noon's transactions in one country (commerce noon_periods). */
+  "noon",
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 

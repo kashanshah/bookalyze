@@ -1,13 +1,35 @@
 "use server";
 
-import { can, NOON_AMOUNT_FIELDS } from "@bookalyze/core";
-import { getNoonConnection, importNoonTransactions, type NoonImportResult } from "@bookalyze/db";
+import {
+  can,
+  monthEnd,
+  NOON_ACCOUNT_KEYS,
+  NOON_AMOUNT_FIELDS,
+  type NoonAccounts,
+} from "@bookalyze/core";
+import {
+  dismissNoonPayoutDeposit,
+  getNoonConnection,
+  importNoonTransactions,
+  LedgerError,
+  matchNoonPayout,
+  type NoonImportResult,
+  noonMonthsToPost,
+  noonPayoutsWithOneDeposit,
+  postNoonMonth,
+  saveNoonSetup,
+  schema,
+  unmatchNoonPayout,
+  unpostNoonMonth,
+} from "@bookalyze/db";
+import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { nowIn } from "@/lib/dates";
+import { isIsoDate, nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { audit } from "@/server/audit";
 import { getCommerceContext } from "@/server/commerce";
+import { suggestRate } from "@/server/fx";
 import { logError } from "@/server/log";
 import { type NoonSyncResult, syncNoonTransactions } from "@/server/noon-transactions";
 import { isOrgAdmin } from "@/server/org";
@@ -22,7 +44,7 @@ async function noonContext(slug: string) {
   if (!isOrgAdmin(ctx)) {
     return {
       ctx,
-      denied: { ok: false, message: "Only owners and admins can bring in Noon's transactions." },
+      denied: { ok: false, message: "Only owners and admins can do this." },
     };
   }
   return { ctx, denied: null };
@@ -121,4 +143,312 @@ export async function uploadNoonTransactionsAction(
   });
   revalidate(slug);
   return { ok: true, ...result };
+}
+
+// --- Posting to the books -----------------------------------------------------------------
+
+function revalidateBooks(slug: string) {
+  revalidate(slug);
+  revalidatePath(`/o/${slug}/accounting`, "layout");
+}
+
+function postingError(error: unknown): string {
+  if (error instanceof LedgerError) {
+    if (error.code === "period_locked") {
+      return "Your books are closed for that period. Ask an owner to reopen it, or leave this month out.";
+    }
+    return error.message;
+  }
+  throw error;
+}
+
+const setupSchema = z.object({
+  accounts: z.record(
+    z.enum(NOON_ACCOUNT_KEYS as [string, ...string[]]),
+    z.uuid().or(z.literal("")),
+  ),
+  postFrom: z
+    .string()
+    .refine((v) => isIsoDate(v) && v.endsWith("-01"), "Choose the month posting starts."),
+});
+
+/** Saves the account for each kind of Noon amount, the Noon balance account and the start month. */
+export async function saveNoonSetupAction(
+  slug: string,
+  input: z.input<typeof setupSchema>,
+): Promise<NoonResult> {
+  const { ctx, denied } = await noonContext(slug);
+  if (denied) return denied as { ok: false; message: string };
+  const parsed = setupSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Check the accounts and the month." };
+  const accounts = Object.fromEntries(
+    Object.entries(parsed.data.accounts).filter(([, v]) => v),
+  ) as NoonAccounts;
+  if (!accounts.balance) return { ok: false, message: "Choose the Noon balance account." };
+  const saved = await inOrg(ctx, async (tx) => {
+    const mine = new Map(
+      (await tx.select().from(schema.accounts).where(eq(schema.accounts.isArchived, false))).map(
+        (a) => [a.id, a],
+      ),
+    );
+    if (Object.values(accounts).some((id) => !mine.has(id ?? ""))) return "unknown";
+    if (mine.get(accounts.balance ?? "")?.type !== "asset") return "balance";
+    if (
+      Object.entries(accounts).some(([key, id]) => key !== "balance" && id === accounts.balance)
+    ) {
+      return "same";
+    }
+    await saveNoonSetup(tx, {
+      orgId: ctx.org.id,
+      userId: ctx.session.user.id,
+      accounts,
+      postFrom: parsed.data.postFrom,
+    });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "noon.accounts_updated",
+      entityType: "noon_settings",
+      after: { accounts, postFrom: parsed.data.postFrom },
+    });
+    return "ok";
+  });
+  if (saved === "balance") {
+    return { ok: false, message: "The Noon balance account must be an asset (Money in transit)." };
+  }
+  if (saved === "same") {
+    return {
+      ok: false,
+      message: "The Noon balance account can't also be used for another line. Choose another.",
+    };
+  }
+  if (saved === "unknown") return { ok: false, message: "Choose accounts from the list." };
+  revalidateBooks(slug);
+  return { ok: true };
+}
+
+const monthSchema = z.object({
+  channelId: z.uuid(),
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+});
+
+/**
+ * Posts Noon months to the books: one, or (`all`) every finished month from the start month on
+ * (and months changed since posted), each in its own transaction, oldest first.
+ */
+export async function postNoonMonthsAction(
+  slug: string,
+  input: z.input<typeof monthSchema> | { all: true },
+): Promise<NoonResult<{ posted: number; failed: number; message: string | null }>> {
+  const { ctx, denied } = await noonContext(slug);
+  if (denied) return denied as { ok: false; message: string };
+  const today = nowIn(ctx.profile.timezone).date;
+  const one = "all" in input ? null : monthSchema.safeParse(input);
+  if (one && !one.success) return { ok: false, message: "Month not found." };
+  const months = one?.success
+    ? [{ ...one.data, currency: null as string | null }]
+    : (await inOrg(ctx, (tx) => noonMonthsToPost(tx, today))).slice(0, 36);
+  let posted = 0;
+  let failed = 0;
+  let message: string | null = null;
+  for (const m of months) {
+    try {
+      if (m.currency && m.currency !== ctx.profile.baseCurrency) {
+        // Another currency posts at the month's last day's rate: fetch it if it isn't stored.
+        await suggestRate(ctx.profile.baseCurrency, m.currency, monthEnd(m.month));
+      }
+      await inOrg(ctx, async (tx) => {
+        const entry = await postNoonMonth(tx, {
+          orgId: ctx.org.id,
+          userId: ctx.session.user.id,
+          channelId: m.channelId,
+          month: m.month,
+          baseCurrency: ctx.profile.baseCurrency,
+          today,
+        });
+        await audit(tx, {
+          orgId: ctx.org.id,
+          actorUserId: ctx.session.user.id,
+          action: entry.again ? "noon.month_reposted" : "noon.month_posted",
+          entityType: "sales_channel",
+          entityId: m.channelId,
+          after: { month: m.month, journalEntryId: entry.id, earned: entry.earned },
+        });
+      });
+      posted++;
+    } catch (error) {
+      failed++;
+      message ??= postingError(error);
+    }
+  }
+  revalidateBooks(slug);
+  if (one && failed) return { ok: false, message: message ?? "It couldn't be posted." };
+  return { ok: true, posted, failed, message };
+}
+
+/** Takes a Noon month out of the books (its entry is reversed). */
+export async function unpostNoonMonthAction(
+  slug: string,
+  input: z.input<typeof monthSchema>,
+): Promise<NoonResult> {
+  const { ctx, denied } = await noonContext(slug);
+  if (denied) return denied as { ok: false; message: string };
+  const parsed = monthSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Month not found." };
+  try {
+    await inOrg(ctx, async (tx) => {
+      await unpostNoonMonth(tx, { orgId: ctx.org.id, userId: ctx.session.user.id, ...parsed.data });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "noon.month_unposted",
+        entityType: "sales_channel",
+        entityId: parsed.data.channelId,
+        after: { month: parsed.data.month },
+      });
+    });
+  } catch (error) {
+    return { ok: false, message: postingError(error) };
+  }
+  revalidateBooks(slug);
+  return { ok: true };
+}
+
+// --- Payouts and bank deposits -----------------------------------------------------------
+
+const payoutSchema = z.object({ transactionId: z.uuid(), entryId: z.uuid() });
+
+/** Matches a Noon payout to its bank deposit (moving the deposit to the Noon balance). */
+export async function matchNoonPayoutAction(
+  slug: string,
+  input: z.input<typeof payoutSchema>,
+): Promise<NoonResult> {
+  const { ctx, denied } = await noonContext(slug);
+  if (denied) return denied as { ok: false; message: string };
+  const parsed = payoutSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Deposit not found." };
+  try {
+    await inOrg(ctx, async (tx) => {
+      const matched = await matchNoonPayout(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        ...parsed.data,
+        baseCurrency: ctx.profile.baseCurrency,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "noon.payout_matched",
+        entityType: "noon_transaction",
+        entityId: parsed.data.transactionId,
+        before: { journalEntryId: parsed.data.entryId, categories: matched.was.categories },
+        after: { journalEntryId: matched.id },
+      });
+    });
+  } catch (error) {
+    return { ok: false, message: postingError(error) };
+  }
+  revalidateBooks(slug);
+  return { ok: true };
+}
+
+/** Puts a matched deposit back as it was (its old category). */
+export async function unmatchNoonPayoutAction(
+  slug: string,
+  transactionId: string,
+): Promise<NoonResult> {
+  const { ctx, denied } = await noonContext(slug);
+  if (denied) return denied as { ok: false; message: string };
+  if (!z.uuid().safeParse(transactionId).success) {
+    return { ok: false, message: "Payout not found." };
+  }
+  try {
+    await inOrg(ctx, async (tx) => {
+      const back = await unmatchNoonPayout(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        transactionId,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "noon.payout_unmatched",
+        entityType: "noon_transaction",
+        entityId: transactionId,
+        after: { journalEntryId: back.id },
+      });
+    });
+  } catch (error) {
+    return { ok: false, message: postingError(error) };
+  }
+  revalidateBooks(slug);
+  return { ok: true };
+}
+
+/** "Not this one": the deposit isn't suggested for the payout again. */
+export async function dismissNoonPayoutAction(
+  slug: string,
+  input: z.input<typeof payoutSchema>,
+): Promise<NoonResult> {
+  const { ctx, denied } = await noonContext(slug);
+  if (denied) return denied as { ok: false; message: string };
+  const parsed = payoutSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Deposit not found." };
+  await inOrg(ctx, async (tx) => {
+    await dismissNoonPayoutDeposit(tx, {
+      orgId: ctx.org.id,
+      userId: ctx.session.user.id,
+      ...parsed.data,
+    });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "noon.payout_deposit_dismissed",
+      entityType: "noon_transaction",
+      entityId: parsed.data.transactionId,
+      after: { journalEntryId: parsed.data.entryId },
+    });
+  });
+  revalidate(slug);
+  return { ok: true };
+}
+
+/** Matches every payout that has exactly one deposit of its amount (up to 50 per click). */
+export async function matchNoonPayoutsAction(
+  slug: string,
+): Promise<NoonResult<{ matched: number; failed: number; message: string | null }>> {
+  const { ctx, denied } = await noonContext(slug);
+  if (denied) return denied as { ok: false; message: string };
+  const found = await inOrg(ctx, (tx) => noonPayoutsWithOneDeposit(tx, 50));
+  let matched = 0;
+  let failed = 0;
+  let message: string | null = null;
+  for (const f of found) {
+    try {
+      await inOrg(ctx, async (tx) => {
+        const done = await matchNoonPayout(tx, {
+          orgId: ctx.org.id,
+          userId: ctx.session.user.id,
+          transactionId: f.transactionId,
+          entryId: f.deposit.entryId,
+          baseCurrency: ctx.profile.baseCurrency,
+        });
+        await audit(tx, {
+          orgId: ctx.org.id,
+          actorUserId: ctx.session.user.id,
+          action: "noon.payout_matched",
+          entityType: "noon_transaction",
+          entityId: f.transactionId,
+          before: { journalEntryId: f.deposit.entryId, categories: f.deposit.categories },
+          after: { journalEntryId: done.id },
+        });
+      });
+      matched++;
+    } catch (error) {
+      failed++;
+      message ??= postingError(error);
+    }
+  }
+  revalidateBooks(slug);
+  return { ok: true, matched, failed, message };
 }

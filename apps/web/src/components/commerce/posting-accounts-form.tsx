@@ -1,15 +1,9 @@
 "use client";
 
-import {
-  type AccountType,
-  accountTypes,
-  SETTLEMENT_ACCOUNT_HINTS,
-  SETTLEMENT_GROUPS,
-  type SettlementAccountKey,
-} from "@bookalyze/core";
+import { type AccountType, accountTypes } from "@bookalyze/core";
 import { Plus, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { type ReactNode, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { NewAccountForm, type NewCategory } from "@/components/accounting/category-picker";
 import { Button } from "@/components/ui/button";
@@ -20,32 +14,16 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { formatDate } from "@/lib/dates";
-import { saveSettlementSetupAction } from "../actions";
 
-const LABELS: Record<SettlementAccountKey, string> = {
-  ...SETTLEMENT_GROUPS,
-  clearing: "Amazon clearing (the payout)",
-};
+export type PostingAccountOption = ComboboxOption & { type: string };
 
-type AccountOption = ComboboxOption & { type: string };
-
-/** The type and purpose a new account opens with, for this settlement line. */
-const NEW_ACCOUNT: Record<SettlementAccountKey, { type: AccountType; subtype: string }> = {
-  sales: { type: "income", subtype: "income" },
-  refunds: { type: "income", subtype: "income" },
-  promotions: { type: "income", subtype: "discount" },
-  reimbursements: { type: "income", subtype: "other_income" },
-  fees: { type: "expense", subtype: "payment_processing_fee" },
-  advertising: { type: "expense", subtype: "operating_expense" },
-  feeTax: { type: "liability", subtype: "sales_tax" },
-  tax: { type: "liability", subtype: "sales_tax" },
-  reserve: { type: "asset", subtype: "money_in_transit" },
-  other: { type: "asset", subtype: "money_in_transit" },
-  clearing: { type: "asset", subtype: "money_in_transit" },
-};
+type SaveResult = { ok: true } | { ok: false; message: string };
 
 /** Keep a new account with the others of its type, so the dropdown doesn't split the group. */
-function insertOption(list: AccountOption[], option: AccountOption): AccountOption[] {
+function insertOption(
+  list: PostingAccountOption[],
+  option: PostingAccountOption,
+): PostingAccountOption[] {
   if (list.some((o) => o.value === option.value)) return list;
   const last = list.findLastIndex((o) => o.group === option.group);
   if (last < 0) return [...list, option];
@@ -54,45 +32,75 @@ function insertOption(list: AccountOption[], option: AccountOption): AccountOpti
   return next;
 }
 
-export function SettlementAccountsForm({
+/**
+ * "How … posts": an account for each kind of amount a marketplace reports, the clearing account
+ * (an asset) its payouts go through, and when posting starts. Shared by Amazon settlements and
+ * Noon. Each dropdown can add a new account, opening on a fitting type.
+ */
+export function PostingAccountsForm({
   slug,
+  idPrefix,
   keys,
+  labels,
+  hints,
+  newAccount,
+  clearingKey,
+  clearingHint,
   initial,
   postFrom: initialFrom,
+  postFromField,
   autoPost: initialAuto,
+  autoPostField,
   options,
   suggested,
   canManage,
   locale,
+  save,
+  savedDescription,
+  doneHref,
 }: {
   slug: string;
-  keys: SettlementAccountKey[];
+  idPrefix: string;
+  keys: readonly string[];
+  labels: Record<string, string>;
+  hints: Record<string, string>;
+  newAccount: Record<string, { type: AccountType; subtype: string }>;
+  clearingKey: string;
+  /** Said when a new account added for the clearing line isn't an asset. */
+  clearingHint: string;
   initial: Record<string, string>;
+  /** YYYY-MM-DD; with `postFromField.month`, the first day of a month. */
   postFrom: string;
-  autoPost: boolean;
-  options: AccountOption[];
+  postFromField: { label: string; hint: string; month?: boolean };
+  autoPost?: boolean;
+  autoPostField?: { label: string; hint: string };
+  options: PostingAccountOption[];
   suggested: boolean;
   canManage: boolean;
   locale: string;
+  save: (
+    slug: string,
+    input: { accounts: Record<string, string>; postFrom: string; autoPost?: boolean },
+  ) => Promise<SaveResult>;
+  savedDescription: string;
+  doneHref: string;
 }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
   const [postFrom, setPostFrom] = useState(initialFrom);
-  const [autoPost, setAutoPost] = useState(initialAuto);
-  const [added, setAdded] = useState<AccountOption[]>([]);
-  const [creating, setCreating] = useState<{ key: SettlementAccountKey; name: string } | null>(
-    null,
-  );
+  const [autoPost, setAutoPost] = useState(initialAuto ?? false);
+  const [added, setAdded] = useState<PostingAccountOption[]>([]);
+  const [creating, setCreating] = useState<{ key: string; name: string } | null>(null);
   const [pending, start] = useTransition();
   const accounts = useMemo(
     () => added.reduce((list, option) => insertOption(list, option), options),
     [options, added],
   );
-  // The clearing account holds money in transit: assets only.
-  const optionsFor = (key: SettlementAccountKey) =>
-    key === "clearing" ? accounts.filter((o) => o.type === "asset") : accounts;
+  // The clearing account holds money on its way to the bank: assets only.
+  const optionsFor = (key: string) =>
+    key === clearingKey ? accounts.filter((o) => o.type === "asset") : accounts;
 
-  const created = (key: SettlementAccountKey, account: NewCategory) => {
+  const created = (key: string, account: NewCategory) => {
     setAdded((list) =>
       insertOption(list, {
         value: account.id,
@@ -101,26 +109,33 @@ export function SettlementAccountsForm({
         type: account.type,
       }),
     );
-    if (key === "clearing" && account.type !== "asset") {
-      toast.message("Choose an asset for the payout", {
-        description: `${account.name} is in your chart. Amazon clearing has to be an asset, such as money in transit.`,
+    if (key === clearingKey && account.type !== "asset") {
+      toast.message("Choose an asset for this line", {
+        description: `${account.name} is in your chart. ${clearingHint}`,
       });
       return;
     }
     setValues((s) => ({ ...s, [key]: account.id }));
   };
 
-  const save = () =>
+  const submit = () =>
     start(async () => {
-      const result = await saveSettlementSetupAction(slug, {
+      const result = await save(slug, {
         accounts: values,
         postFrom,
-        autoPost,
+        ...(autoPostField ? { autoPost } : {}),
       });
       if (!result.ok) return void toast.error(result.message);
-      toast.success("Saved", { description: "Settlements post with these accounts from now on." });
-      router.push(`/o/${slug}/commerce/settlements`);
+      toast.success("Saved", { description: savedDescription });
+      router.push(doneHref);
     });
+
+  let footerNote: ReactNode = null;
+  if (postFrom) {
+    footerNote = postFromField.month
+      ? `From ${new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${postFrom}T00:00:00Z`))}.`
+      : `From ${formatDate(postFrom, locale, "long")}.`;
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -138,15 +153,13 @@ export function SettlementAccountsForm({
               className="grid gap-2 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_18rem] sm:gap-6"
             >
               <div className="min-w-0">
-                <p className="font-medium text-sm" id={`settlement-${key}-label`}>
-                  {LABELS[key]}
+                <p className="font-medium text-sm" id={`${idPrefix}-${key}-label`}>
+                  {labels[key]}
                 </p>
-                <p className="mt-0.5 text-muted-foreground text-xs">
-                  {SETTLEMENT_ACCOUNT_HINTS[key]}
-                </p>
+                <p className="mt-0.5 text-muted-foreground text-xs">{hints[key]}</p>
               </div>
               <Combobox
-                aria-labelledby={`settlement-${key}-label`}
+                aria-labelledby={`${idPrefix}-${key}-label`}
                 value={values[key] ?? ""}
                 onChange={(v) => setValues((s) => ({ ...s, [key]: v }))}
                 options={optionsFor(key)}
@@ -181,43 +194,41 @@ export function SettlementAccountsForm({
         </ul>
       </section>
       <aside className="grid h-fit gap-4 rounded-2xl border bg-card p-5 shadow-xs">
-        <Field
-          label="Post settlements from"
-          htmlFor="settlements-from"
-          hint="Settlements whose period ends on or after this day go into the books. Earlier ones stay out: your books (from Wave, say) have those payouts already."
-        >
+        <Field label={postFromField.label} htmlFor={`${idPrefix}-from`} hint={postFromField.hint}>
           <Input
-            id="settlements-from"
-            type="date"
-            value={postFrom}
-            onChange={(e) => setPostFrom(e.target.value)}
+            id={`${idPrefix}-from`}
+            type={postFromField.month ? "month" : "date"}
+            value={postFromField.month ? postFrom.slice(0, 7) : postFrom}
+            onChange={(e) =>
+              setPostFrom(
+                postFromField.month && e.target.value ? `${e.target.value}-01` : e.target.value,
+              )
+            }
             disabled={!canManage || pending}
           />
         </Field>
         <p className="text-muted-foreground text-xs">
-          From {postFrom ? formatDate(postFrom, locale, "long") : "the date above"}. You choose when
-          each one posts, and can take it back out.
+          {footerNote ?? "From the date above."} You choose when each one posts, and can take it
+          back out.
         </p>
-        <div className="grid gap-1.5 border-t pt-4">
-          <div className="flex items-center justify-between gap-3">
-            <label htmlFor="settlements-auto" className="font-medium text-sm">
-              Post new settlements automatically
-            </label>
-            <Switch
-              id="settlements-auto"
-              checked={autoPost}
-              onCheckedChange={setAutoPost}
-              disabled={!canManage || pending}
-            />
+        {autoPostField ? (
+          <div className="grid gap-1.5 border-t pt-4">
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor={`${idPrefix}-auto`} className="font-medium text-sm">
+                {autoPostField.label}
+              </label>
+              <Switch
+                id={`${idPrefix}-auto`}
+                checked={autoPost}
+                onCheckedChange={setAutoPost}
+                disabled={!canManage || pending}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">{autoPostField.hint}</p>
           </div>
-          <p className="text-muted-foreground text-xs">
-            Every evening, new settlements post, and a deposit of exactly the payout (same amount,
-            same currency) is matched when it's uncategorized or in your sales account. Deposits in
-            another currency always wait for you to check the rate.
-          </p>
-        </div>
+        ) : null}
         {canManage ? (
-          <Button onClick={save} disabled={pending}>
+          <Button onClick={submit} disabled={pending}>
             {pending ? <Spinner /> : null}
             {pending ? "Saving…" : "Save"}
           </Button>
@@ -231,8 +242,8 @@ export function SettlementAccountsForm({
             <NewAccountForm
               slug={slug}
               initialName={creating.name}
-              defaultType={NEW_ACCOUNT[creating.key].type}
-              defaultSubtype={NEW_ACCOUNT[creating.key].subtype}
+              defaultType={newAccount[creating.key]?.type ?? "expense"}
+              defaultSubtype={newAccount[creating.key]?.subtype ?? "operating_expense"}
               title="Add an account"
               description="This account is added to your chart of accounts, then selected for this line."
               submitLabel="Add account"
