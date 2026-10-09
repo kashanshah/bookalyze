@@ -9,7 +9,7 @@ import {
   NOON_TRANSACTIONS_EXPORT,
   type NoonExportCategory,
   noonMarketplace,
-  noonPayoutsParams,
+  noonReportParams,
   parseNoonKeyFile,
   previewReport,
   type ReportPreview,
@@ -444,6 +444,8 @@ function noonSettings(projectCode: string, categories: NoonExportCategory[]) {
     payoutsReport: categories.some((c) => c.code === NOON_TRANSACTIONS_EXPORT),
     /** The payouts report's inputs as Noon describes them (names and types). */
     payoutsParams: categories.find((c) => c.code === NOON_TRANSACTIONS_EXPORT)?.spec ?? null,
+    /** Every report's inputs, for checking any of them. */
+    reportParams: Object.fromEntries(categories.slice(0, 200).map((c) => [c.code, c.spec])),
   };
 }
 
@@ -594,11 +596,12 @@ export type NoonReportCheck =
     };
 
 /**
- * Checks Noon's payouts report end to end without keeping anything: asks for the last 7 days,
- * waits for it (about 25 s per call; the page calls again with the export's code while Noon is
- * still making it), downloads it and returns only its kind, column names and row count.
+ * Checks one of the reports the key can download end to end without keeping anything: asks for
+ * the last 7 days (when the report takes dates), waits for it (about 25 s per call; the page
+ * calls again with the export's code while Noon is still making it), downloads it and returns
+ * only its kind, column names and row count.
  */
-export async function checkNoonPayoutsReportAction(
+export async function checkNoonReportAction(
   slug: string,
   input: unknown,
 ): Promise<CommerceResult<{ check: NoonReportCheck }>> {
@@ -606,6 +609,7 @@ export async function checkNoonPayoutsReportAction(
   if (denied) return denied;
   const parsed = z
     .object({
+      category: z.string().trim().min(1).max(200),
       exportCode: z.string().trim().max(200).optional(),
       from: z.string().refine(isIsoDate).optional(),
       to: z.string().refine(isIsoDate).optional(),
@@ -619,6 +623,21 @@ export async function checkNoonPayoutsReportAction(
   if (!connection?.secret || connection.status === "disconnected") {
     return { ok: false, message: "Noon isn't connected. Upload the key file first." };
   }
+  const { category } = parsed.data;
+  const reports = Array.isArray(connection.settings.reports) ? connection.settings.reports : [];
+  if (!reports.includes(category)) {
+    return {
+      ok: false,
+      message: "This key can't download that report. Test the connection to refresh the list.",
+    };
+  }
+  const allParams =
+    connection.settings.reportParams && typeof connection.settings.reportParams === "object"
+      ? (connection.settings.reportParams as Record<string, unknown>)
+      : {};
+  const spec =
+    allParams[category] ??
+    (category === NOON_TRANSACTIONS_EXPORT ? connection.settings.payoutsParams : null);
   const today = nowIn(ctx.profile.timezone).date;
   const to = parsed.data.to ?? addDaysIso(today, -1);
   const from = parsed.data.from ?? addDaysIso(to, -6);
@@ -626,16 +645,17 @@ export async function checkNoonPayoutsReportAction(
     const creds = openNoonCredentials(ctx.org.id, connection.id, connection.secret);
     const exportCode =
       parsed.data.exportCode ||
-      (await createNoonExport(
-        creds,
-        NOON_TRANSACTIONS_EXPORT,
-        noonPayoutsParams(connection.settings.payoutsParams, from, to),
-      ));
+      (await createNoonExport(creds, category, noonReportParams(spec, from, to)));
     const deadline = Date.now() + 25_000;
     for (;;) {
       const status = await noonExportStatus(creds, exportCode);
       if (status.state === "failed") {
-        logWarn("noon.export_failed", { orgId: ctx.org.id, exportCode, status: status.status });
+        logWarn("noon.export_failed", {
+          orgId: ctx.org.id,
+          category,
+          exportCode,
+          status: status.status,
+        });
         return {
           ok: false,
           message: `Noon couldn't make the report (it says “${status.status}”). Try again later.`,
@@ -644,8 +664,9 @@ export async function checkNoonPayoutsReportAction(
       if (status.state === "ready" && status.downloadUrl) {
         const file = await downloadNoonExport(creds, status.downloadUrl);
         const preview = previewReport(file.bytes, file.gzip);
-        logInfo("noon.payouts_report_checked", {
+        logInfo("noon.report_checked", {
           orgId: ctx.org.id,
+          category,
           exportCode,
           kind: preview.kind,
           columns: preview.columns.length,

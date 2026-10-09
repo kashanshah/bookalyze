@@ -2061,13 +2061,28 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   // The payouts report, checked end to end: asked for, made by Noon, downloaded; only its
   // columns are shown.
   await noon.getByRole("button", { name: "Check the payouts report" }).click();
-  await expect(page.getByText("Noon's payouts report checked")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Transaction view (payouts) checked")).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(noon.getByText(/CSV file, compressed · 22 columns · \d+ rows/)).toBeVisible();
   const columns = noon.getByRole("list", { name: "Columns in Noon's payouts report" });
   await expect(columns.getByText("Reference Nr", { exact: true })).toBeVisible();
   await expect(columns.getByText("Net Proceeds", { exact: true })).toBeVisible();
   // Nothing from the rows is shown.
   await expect(noon.getByText(/REF-\d{4}-\d{2}-1/)).toHaveCount(0);
+
+  // Every report the key can download is listed with its own check, to find the one a new task
+  // needs by its columns.
+  await noon.getByText("Reports this key can download (2)").click();
+  const orders = noon.getByRole("listitem").filter({ hasText: "noon_orders_report" });
+  await expect(orders.getByText("Orders report", { exact: true })).toBeVisible();
+  await orders.getByRole("button", { name: "Check", exact: true }).click();
+  await expect(page.getByText("Orders report checked")).toBeVisible({ timeout: 30_000 });
+  await expect(
+    noon
+      .getByRole("list", { name: "Columns in Orders report" })
+      .getByText("Order Nr", { exact: true }),
+  ).toBeVisible();
 
   // A year of Noon's transactions, a month at a time; bringing in again finds nothing new.
   await noon.getByRole("link", { name: /Noon transactions/ }).click();
@@ -2127,6 +2142,15 @@ test("noon: upload Noon's transaction view", async ({ page }) => {
     buffer: Buffer.from("Date,Description,Amount\n2026-10-01,Coffee,4.50"),
   });
   await expect(page.getByText(/statement.csv: This isn't Noon's transaction view/)).toBeVisible();
+
+  // Noon's orders come from its rows: last month's order, shipped by Noon (Noon UAE ships Both).
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  await page
+    .getByRole("link", { name: new RegExp(`NAE${ym.replace("-", "")}0001`) })
+    .first()
+    .click();
+  await expect(page.getByText("Noon (Fulfilled by Noon, FBN)")).toBeVisible();
+  await expect(page.getByText("Noon UAE", { exact: true }).first()).toBeVisible();
 });
 
 test("noon: choose how Noon posts, post a month and check the Noon balance", async ({ page }) => {

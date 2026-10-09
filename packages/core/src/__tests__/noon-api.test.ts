@@ -250,3 +250,24 @@ function storedZip(names: string[]): Uint8Array {
     ...u16(0),
   ]);
 }
+
+describe("any report's inputs and name", () => {
+  it("fills date inputs, leaves reports without dates alone, and names reports plainly", async () => {
+    const { noonReportParams, noonReportName } = await import("../commerce/noon-api");
+    expect(
+      noonReportParams({ start_date: "string", end_date: "string" }, "2026-10-01", "2026-10-07"),
+    ).toEqual({
+      start_date: "2026-10-01",
+      end_date: "2026-10-07",
+    });
+    expect(noonReportParams({ warehouse_code: "string" }, "2026-10-01", "2026-10-07")).toEqual({});
+    expect(noonReportParams(null, "2026-10-01", "2026-10-07")).toEqual({
+      from_date: "2026-10-01",
+      to_date: "2026-10-07",
+    });
+    expect(noonReportName("noon_fbn_inventory_report")).toBe("Fbn inventory report");
+    expect(noonReportName("noon_financeweb_transactionviewreportonitemlevel")).toBe(
+      "Transaction view (payouts)",
+    );
+  });
+});

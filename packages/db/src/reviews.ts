@@ -89,6 +89,8 @@ const readyToday = (today: string) =>
     windowOpenUntil(today),
     or(eq(orders.reviewEligible, true), and(isNull(orders.reviewEligible), windowOpened(today))),
   );
+/** Review requests are Amazon's: orders on other marketplaces (Noon) are never asked. */
+const onAmazon = sql<boolean>`exists (select 1 from sales_channels rc where rc.id = ${orders.channelId} and rc.kind = 'amazon')`;
 const unasked = notExists(sql`(select 1 from ${reviewRequests} r where r.order_id = ${orders.id})`);
 const skus = sql<
   string[]
@@ -127,6 +129,7 @@ export async function reviewCandidates(
       .where(
         and(
           shipped,
+          onAmazon,
           windowOpenUntil(input.today),
           unasked,
           input.needsItems ? sql`${orders.itemsSyncedAt} is not null` : undefined,
@@ -203,7 +206,7 @@ export async function reviewTargets(tx: Transaction, orderIds: readonly string[]
     .from(orders)
     .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
     .leftJoin(reviewRequests, eq(reviewRequests.orderId, orders.id))
-    .where(inArray(orders.id, [...orderIds]));
+    .where(and(inArray(orders.id, [...orderIds]), onAmazon));
 }
 
 /** Orders whose window is open today and nobody asked: "Ask all". */
@@ -218,6 +221,7 @@ export async function readyToAsk(
     .where(
       and(
         shipped,
+        onAmazon,
         unasked,
         readyToday(input.today),
         input.channelId ? eq(orders.channelId, input.channelId) : undefined,
@@ -244,6 +248,7 @@ export async function ordersToCheckEligibility(
     .where(
       and(
         shipped,
+        onAmazon,
         windowOpened(input.today),
         windowOpenUntil(input.today),
         or(isNull(reviewRequests.status), eq(reviewRequests.status, "scheduled")),
@@ -349,7 +354,10 @@ export async function listReviewOrders(
     offset: number;
   },
 ) {
-  const channel = input.channelId ? eq(orders.channelId, input.channelId) : undefined;
+  const channel = and(
+    onAmazon,
+    input.channelId ? eq(orders.channelId, input.channelId) : undefined,
+  );
   const ask = and(shipped, unasked, windowOpenUntil(input.today));
   const byTab = {
     ask,
