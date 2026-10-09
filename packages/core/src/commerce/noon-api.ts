@@ -97,7 +97,12 @@ export function noonErrorDetail(json: unknown): string | null {
   return (code && !text.includes(code) ? `${code}: ${text}` : text).slice(0, 300) || code;
 }
 
-export type NoonExportCategory = { code: string; params: string[] };
+export type NoonExportCategory = {
+  code: string;
+  params: string[];
+  /** The params as Noon describes them (types or examples), shown when a report is checked. */
+  spec: Record<string, string>;
+};
 
 /** GET /impex/v1/export/category/list: the reports this project can download, with their inputs. */
 export function parseExportCategories(json: unknown): NoonExportCategory[] {
@@ -107,10 +112,159 @@ export function parseExportCategories(json: unknown): NoonExportCategory[] {
     const c = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
     const code = typeof c.export_category_code === "string" ? c.export_category_code : "";
     if (!code) return [];
-    const params = c.params && typeof c.params === "object" ? Object.keys(c.params) : [];
-    return [{ code, params }];
+    const raw_params =
+      c.params && typeof c.params === "object" ? (c.params as Record<string, unknown>) : {};
+    const spec = Object.fromEntries(
+      Object.entries(raw_params).map(([k, v]) => [
+        k,
+        (typeof v === "string" ? v : (JSON.stringify(v) ?? "")).slice(0, 200),
+      ]),
+    );
+    return [{ code, params: Object.keys(spec), spec }];
   });
 }
 
 /** The item-level transaction view (sales, fees, refunds, payouts): what payouts come from. */
 export const NOON_TRANSACTIONS_EXPORT = "noon_financeweb_transactionviewreportonitemlevel";
+
+export const NOON_EXPORT_CREATE_PATH = "/impex/v1/export/create";
+export const NOON_EXPORT_STATUS_PATH = "/impex/v1/export/status";
+
+/** POST /impex/v1/export/create: the export's code, to ask its status with. */
+export function parseExportCreated(json: unknown): string {
+  const body = json && typeof json === "object" ? (json as Record<string, unknown>) : {};
+  const code = typeof body.export_code === "string" ? body.export_code.trim() : "";
+  if (!code) throw new Error("Noon didn't say which export it made.");
+  return code;
+}
+
+export type NoonExportStatus = {
+  exportCode: string;
+  /** Noon's own word for it, e.g. "PROCESSING" or "COMPLETED". */
+  status: string;
+  state: "ready" | "failed" | "working";
+  downloadUrl: string | null;
+};
+
+/**
+ * POST /impex/v1/export/status. Ready once Noon gives a download link; failed when its status
+ * says so (failed, error, cancelled, expired); otherwise still being made.
+ */
+export function parseExportStatus(json: unknown): NoonExportStatus {
+  const body = json && typeof json === "object" ? (json as Record<string, unknown>) : {};
+  const status = typeof body.export_status === "string" ? body.export_status.trim() : "";
+  const downloadUrl =
+    typeof body.download_url === "string" && body.download_url.trim()
+      ? body.download_url.trim()
+      : null;
+  const failed = /fail|error|cancel|expire|reject/i.test(status);
+  return {
+    exportCode: typeof body.export_code === "string" ? body.export_code : "",
+    status: status || "unknown",
+    state: failed ? "failed" : downloadUrl ? "ready" : "working",
+    downloadUrl: failed ? null : downloadUrl,
+  };
+}
+
+export type ReportFileKind = "csv" | "tsv" | "xlsx" | "zip" | "json" | "unknown";
+
+export type ReportPreview = {
+  kind: ReportFileKind;
+  /** The header row (CSV/TSV), or the files inside (zip, xlsx). */
+  columns: string[];
+  /** Data rows after the header (CSV/TSV only). */
+  rows: number | null;
+  gzip: boolean;
+};
+
+/** Splits one CSV/TSV line, honouring double quotes ("a, b" stays one cell). */
+export function splitDelimitedLine(line: string, delimiter: "," | "\t"): string[] {
+  const cells: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === delimiter) {
+      cells.push(cell);
+      cell = "";
+    } else cell += ch;
+  }
+  cells.push(cell);
+  return cells.map((c) => c.trim());
+}
+
+/** File names inside a zip, from its central directory (no unpacking). */
+export function zipEntryNames(bytes: Uint8Array): string[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  // The end-of-central-directory record is in the last 64 KB.
+  let end = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65_557); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      end = i;
+      break;
+    }
+  }
+  if (end < 0) return [];
+  const count = view.getUint16(end + 10, true);
+  let at = view.getUint32(end + 16, true);
+  const names: string[] = [];
+  const decoder = new TextDecoder();
+  for (let n = 0; n < count && at + 46 <= bytes.length; n++) {
+    if (view.getUint32(at, true) !== 0x02014b50) break;
+    const nameLength = view.getUint16(at + 28, true);
+    const extra = view.getUint16(at + 30, true);
+    const comment = view.getUint16(at + 32, true);
+    names.push(decoder.decode(bytes.subarray(at + 46, at + 46 + nameLength)));
+    at += 46 + nameLength + extra + comment;
+  }
+  return names;
+}
+
+/**
+ * What a downloaded report is (already gunzipped when `gzip`): its kind, and its columns
+ * (CSV/TSV header) or the files inside (zip, xlsx). Never returns data rows' contents.
+ */
+export function previewReport(bytes: Uint8Array, gzip = false): ReportPreview {
+  const zip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  if (zip) {
+    const names = zipEntryNames(bytes);
+    const xlsx = names.some((n) => n.startsWith("xl/"));
+    return { kind: xlsx ? "xlsx" : "zip", columns: names.slice(0, 50), rows: null, gzip };
+  }
+  const text = new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    let keys: string[] = [];
+    try {
+      const json = JSON.parse(trimmed) as unknown;
+      const first = Array.isArray(json) ? json[0] : json;
+      if (first && typeof first === "object") keys = Object.keys(first).slice(0, 100);
+    } catch {
+      // Not JSON after all: fall through to the delimited reading.
+    }
+    if (keys.length) return { kind: "json", columns: keys, rows: null, gzip };
+  }
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  const header = lines[0] ?? "";
+  if (!header) return { kind: "unknown", columns: [], rows: null, gzip };
+  const tabs = (header.match(/\t/g) ?? []).length;
+  const commas = (header.match(/,/g) ?? []).length;
+  if (!tabs && !commas)
+    return { kind: "unknown", columns: [header.slice(0, 200)], rows: null, gzip };
+  const delimiter = tabs > commas ? "\t" : ",";
+  return {
+    kind: delimiter === "\t" ? "tsv" : "csv",
+    columns: splitDelimitedLine(header, delimiter)
+      .map((c) => c.slice(0, 120))
+      .slice(0, 200),
+    rows: lines.length - 1,
+    gzip,
+  };
+}

@@ -2058,6 +2058,17 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await noon.getByRole("button", { name: "Test connection" }).click();
   await expect(page.getByText("Noon answered")).toBeVisible();
 
+  // The payouts report, checked end to end: asked for, made by Noon, downloaded; only its
+  // columns are shown.
+  await noon.getByRole("button", { name: "Check the payouts report" }).click();
+  await expect(page.getByText("Noon's payouts report checked")).toBeVisible({ timeout: 30_000 });
+  await expect(noon.getByText(/CSV file, compressed · 10 columns · 2 rows/)).toBeVisible();
+  const columns = noon.getByRole("list", { name: "Columns in Noon's payouts report" });
+  await expect(columns.getByText("Reference Number", { exact: true })).toBeVisible();
+  await expect(columns.getByText("Net Proceeds", { exact: true })).toBeVisible();
+  // Nothing from the rows is shown.
+  await expect(noon.getByText("REF-0001")).toHaveCount(0);
+
   // Disconnecting keeps the Noon countries.
   await noon.getByRole("button", { name: "Disconnect" }).click();
   await noon.getByRole("button", { name: "Click again to disconnect" }).click();

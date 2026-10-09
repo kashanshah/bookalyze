@@ -13,7 +13,7 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-08, error logging (after phase 4c slice 2: connect Noon's API)._
+_Last updated: 2026-10-09, phase 4c slice 3a: Noon's reports by API (payouts report check)._
 
 ---
 
@@ -28,7 +28,7 @@ _Last updated: 2026-10-08, error logging (after phase 4c slice 2: connect Noon's
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off) and slice 6 (bundles) done. Next: Noon (phase 4c), with bundles from day one |
-| 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders) and 2 (connect Noon's API with the service-account key file) done. Next: the transaction view as payouts (by API and by upload), then orders, posting, channel profit, cost of goods sold and FBN stock. See §3 "Phase 4c" |
+| 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) and 3a (Noon's reports by API, with a check of the payouts report's columns) done. Kazomo's key is connected (12 reports, payouts included). Next: the transaction view as payouts (by API and by upload), then orders, posting, channel profit, cost of goods sold and FBN stock. See §3 "Phase 4c" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1255,6 +1255,31 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
   paths kept, cause chains, Postgres codes and digests).
 
+### Phase 4c, slice 3a: Noon's reports by API (payouts report check)
+
+- **Reports come from Noon's export API** (`server/noon.ts`): `createNoonExport` (`POST
+  /impex/v1/export/create` with the category and its params) → `noonExportStatus` (`POST
+  /impex/v1/export/status`; core `parseExportStatus`: ready once there's a `download_url`, failed
+  when the status says fail/error/cancel/expire, otherwise working) → `downloadNoonExport` (the
+  link as is, then once more with the session if refused; gunzipped; 50 MB at most).
+- **Check the payouts report** (Channels → Noon's API, admins, when the key has the payouts
+  report): asks for the last 7 days (company time) of the item-level transaction view, waits about
+  25 s per call while Noon makes it (the page calls again with the export's code, for up to 6
+  minutes), downloads it and shows only **what it is** (CSV, TSV, Excel, zip, JSON), **its
+  columns** (with Copy names) and **how many rows**. Nothing is saved; no amounts or orders are
+  shown. Logged as `noon.payouts_report_checked` (kind, column and row counts).
+- **Params by Noon's own names:** the category list's params are kept for the payouts report
+  (`settings.payoutsParams`, refreshed by Test connection); a "from"/"start" param gets the first
+  day and a "to"/"end" param the last, as YYYY-MM-DD (else `from_date` / `to_date`). If Noon wants
+  another format, its error names the field and says so.
+- **Reading files** (core `previewReport`): CSV/TSV header with quoted cells
+  (`splitDelimitedLine`), row count, BOM; JSON keys; a zip's file names from its central directory
+  (`zipEntryNames`), which tells an Excel file (`xl/…`) from a zip of CSVs. No spreadsheet library
+  yet: added in slice 3b if Noon sends Excel.
+- Tests: core `noon-api.test.ts` (export status states, CSV/TSV/JSON/zip/xlsx previews); e2e
+  "noon: connect Noon's API…" now checks the payouts report against the stand-in (PROCESSING, then
+  a gzipped CSV; only its 10 column names show).
+
 ### Phase 4c, slice 2: connect Noon's API
 
 - **Commerce → Channels → Noon → Noon's API** (admins): "Connect Noon's API" takes the
@@ -1559,10 +1584,10 @@ pasted in when needed:
 
 1. [x] **Noon channels.** Done in slice 1.
 2. [x] **Connect Noon's API.** Done in slice 2.
-3. [ ] **Payouts from the transaction view**, by API (create the export, poll, download) and by
-   upload (the same file from Seller Lab): rows kept by reference number, grouped into payouts
-   on Settlements, with Noon's own line names and groups. Needs a real file's header row (or
-   one export by API) to confirm the columns.
+3. [ ] **Payouts from the transaction view.** 3a done (the export pipeline and a check of the
+   report's columns). 3b: rows kept by reference number, grouped into payouts on Settlements with
+   Noon's own line names and groups, by API and by upload (the same file from Seller Lab). Needs
+   the column names "Check the payouts report" shows for Kazomo.
 4. [ ] **Orders** (FBN: the orders export; FBP: the FBPI order APIs), daily with the other jobs.
 5. [ ] **Posting, deposit matching and channel profit** for Noon payouts (VAT on Noon's fees: a
    cost or recoverable, as for Amazon).
@@ -1856,6 +1881,6 @@ cases. These answers only help pick sensible defaults and test data:
    committed. Report any column or account it gets wrong.
 3. Roles: today every member can manage accounts and post entries. A future "accountant" or
    read-only role is a permissions change, not a data change.
-4. Noon (phase 4c): connect Kazomo For Online Selling's Noon key (Commerce → Channels → Noon's
-   API) and say what "Test connection" lists; share only the **header row** of a Seller Lab
-   transaction-view export (no amounts, orders or names). Both confirm what slice 3 reads.
+4. Noon (phase 4c): Kazomo's key is connected. Run **Check the payouts report** (Commerce →
+   Channels → Noon's API) and share the file type and column names it shows (Copy names): no
+   amounts, orders or names. They set what slice 3b reads.

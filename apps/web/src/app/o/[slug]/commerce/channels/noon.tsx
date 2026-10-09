@@ -8,7 +8,9 @@ import {
 } from "@bookalyze/core";
 import {
   CircleAlert,
+  Copy,
   FileKey,
+  FileSearch,
   KeyRound,
   PlugZap,
   Plus,
@@ -35,8 +37,10 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   addNoonChannelAction,
+  checkNoonPayoutsReportAction,
   connectNoonAction,
   disconnectNoonAction,
+  type NoonReportCheck,
   setChannelActiveAction,
   setChannelFulfilmentAction,
   testNoonAction,
@@ -429,6 +433,7 @@ function NoonApi({
           download. Give the service account a role that can see finance, then test again.
         </p>
       ) : null}
+      {live?.payoutsReport && canManage ? <PayoutsReportCheck slug={slug} /> : null}
 
       <Dialog open={connecting} onOpenChange={setConnecting}>
         <DialogContent>
@@ -543,3 +548,107 @@ function ConnectNoonForm({
     </form>
   );
 }
+
+/**
+ * Asks Noon for the last 7 days of its payouts report and shows what it is (CSV, Excel…), its
+ * columns and how many rows: nothing is kept. Noon makes reports in the background, so this
+ * asks again with the export's code until it's ready.
+ */
+function PayoutsReportCheck({ slug }: { slug: string }) {
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [result, setResult] = useState<Extract<NoonReportCheck, { state: "ready" }> | null>(null);
+  const run = async () => {
+    setRunning(true);
+    setResult(null);
+    setProgress("Asking Noon for the last 7 days…");
+    let exportCode: string | undefined;
+    const giveUp = Date.now() + 6 * 60_000;
+    try {
+      while (Date.now() < giveUp) {
+        const response = await checkNoonPayoutsReportAction(slug, { exportCode });
+        if (!response.ok) return void toast.error(response.message);
+        const check = response.check;
+        if (check.state === "ready") {
+          setResult(check);
+          toast.success("Noon's payouts report checked");
+          return;
+        }
+        exportCode = check.exportCode;
+        setProgress(`Noon is making the report (${check.status.toLowerCase()})…`);
+      }
+      toast.error("Noon is still making the report. Try again in a few minutes.");
+    } finally {
+      setRunning(false);
+      setProgress(null);
+    }
+  };
+  const preview = result?.preview;
+  const kind = preview ? KIND_LABELS[preview.kind] : null;
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Button variant="outline" size="sm" onClick={run} disabled={running}>
+          {running ? <Spinner /> : <FileSearch />}
+          Check the payouts report
+        </Button>
+        <p className="text-muted-foreground text-xs" aria-live="polite">
+          {progress ??
+            "Downloads the last 7 days once and shows its columns, so the next step can read it. Nothing is saved."}
+        </p>
+      </div>
+      {result && preview ? (
+        <div className="fade-in-0 grid animate-in gap-3 rounded-xl border bg-card p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <p className="text-sm">
+              <span className="font-medium">{kind}</span>
+              {preview.gzip ? ", compressed" : ""} ·{" "}
+              {preview.kind === "xlsx" || preview.kind === "zip"
+                ? `${preview.columns.length} files inside`
+                : `${preview.columns.length} columns`}
+              {preview.rows !== null ? ` · ${preview.rows} rows` : ""}
+              <span className="block text-muted-foreground text-xs">
+                {result.from} to {result.to} · Noon export {result.exportCode}
+              </span>
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(preview.columns.join("\n"));
+                  toast.success("Column names copied");
+                } catch {
+                  toast.error("Couldn't copy. Select the names below instead.");
+                }
+              }}
+            >
+              <Copy />
+              Copy names
+            </Button>
+          </div>
+          <ul className="flex flex-wrap gap-1.5" aria-label="Columns in Noon's payouts report">
+            {preview.columns.map((c, i) => (
+              <li
+                // biome-ignore lint/suspicious/noArrayIndexKey: names can repeat; the list never reorders
+                key={`${i}-${c}`}
+                className="select-all rounded-md border bg-muted/40 px-2 py-0.5 font-mono text-xs"
+              >
+                {c || "(blank)"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const KIND_LABELS: Record<string, string> = {
+  csv: "CSV file",
+  tsv: "Tab-separated file",
+  xlsx: "Excel file",
+  zip: "Zip file",
+  json: "JSON file",
+  unknown: "Unrecognised file",
+};

@@ -2,6 +2,7 @@
 
 import {
   AMAZON_REGIONS,
+  addDaysIso,
   FULFILMENT_MODES,
   isAmazonRegion,
   NOON_FULFILMENT,
@@ -9,6 +10,8 @@ import {
   type NoonExportCategory,
   noonMarketplace,
   parseNoonKeyFile,
+  previewReport,
+  type ReportPreview,
 } from "@bookalyze/core";
 import {
   addNoonChannel,
@@ -44,8 +47,14 @@ import {
   sealAmazonCredentials,
   sealNoonCredentials,
 } from "@/server/commerce";
-import { logError } from "@/server/log";
-import { checkNoonKey, NoonError } from "@/server/noon";
+import { logError, logInfo, logWarn } from "@/server/log";
+import {
+  checkNoonKey,
+  createNoonExport,
+  downloadNoonExport,
+  NoonError,
+  noonExportStatus,
+} from "@/server/noon";
 import { isOrgAdmin } from "@/server/org";
 
 export type CommerceResult<T = object> =
@@ -432,6 +441,8 @@ function noonSettings(projectCode: string, categories: NoonExportCategory[]) {
     projectCode,
     reports: categories.map((c) => c.code).slice(0, 200),
     payoutsReport: categories.some((c) => c.code === NOON_TRANSACTIONS_EXPORT),
+    /** The payouts report's inputs as Noon describes them (names and types). */
+    payoutsParams: categories.find((c) => c.code === NOON_TRANSACTIONS_EXPORT)?.spec ?? null,
   };
 }
 
@@ -568,4 +579,107 @@ export async function disconnectNoonAction(slug: string): Promise<CommerceResult
   if (!done) return { ok: false, message: "Noon isn't connected." };
   revalidate(slug);
   return { ok: true };
+}
+
+/**
+ * The payouts report's inputs for a date range, named as Noon names them: a "from"/"start"
+ * param gets the first day and a "to"/"end" param the last (YYYY-MM-DD). Without Noon's own
+ * description, from_date and to_date.
+ */
+function payoutsParams(spec: unknown, from: string, to: string): Record<string, string> {
+  const names =
+    spec && typeof spec === "object" ? Object.keys(spec as Record<string, unknown>) : [];
+  const params: Record<string, string> = {};
+  for (const name of names) {
+    if (/from|start/i.test(name)) params[name] = from;
+    else if (/(^|_)to($|_)|end|until/i.test(name)) params[name] = to;
+  }
+  return Object.keys(params).length ? params : { from_date: from, to_date: to };
+}
+
+export type NoonReportCheck =
+  | { state: "working"; exportCode: string; status: string; from: string; to: string }
+  | {
+      state: "ready";
+      exportCode: string;
+      status: string;
+      from: string;
+      to: string;
+      preview: ReportPreview;
+    };
+
+/**
+ * Checks Noon's payouts report end to end without keeping anything: asks for the last 7 days,
+ * waits for it (about 25 s per call; the page calls again with the export's code while Noon is
+ * still making it), downloads it and returns only its kind, column names and row count.
+ */
+export async function checkNoonPayoutsReportAction(
+  slug: string,
+  input: unknown,
+): Promise<CommerceResult<{ check: NoonReportCheck }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const parsed = z
+    .object({
+      exportCode: z.string().trim().max(200).optional(),
+      from: z.string().refine(isIsoDate).optional(),
+      to: z.string().refine(isIsoDate).optional(),
+    })
+    .safeParse(input ?? {});
+  if (!parsed.success) return { ok: false, message: "Start the check again." };
+  const connection = await inOrg(ctx, async (tx) => {
+    const found = await getNoonConnection(tx);
+    return found ? getConnection(tx, found.id) : null;
+  });
+  if (!connection?.secret || connection.status === "disconnected") {
+    return { ok: false, message: "Noon isn't connected. Upload the key file first." };
+  }
+  const today = nowIn(ctx.profile.timezone).date;
+  const to = parsed.data.to ?? addDaysIso(today, -1);
+  const from = parsed.data.from ?? addDaysIso(to, -6);
+  try {
+    const creds = openNoonCredentials(ctx.org.id, connection.id, connection.secret);
+    const exportCode =
+      parsed.data.exportCode ||
+      (await createNoonExport(
+        creds,
+        NOON_TRANSACTIONS_EXPORT,
+        payoutsParams(connection.settings.payoutsParams, from, to),
+      ));
+    const deadline = Date.now() + 25_000;
+    for (;;) {
+      const status = await noonExportStatus(creds, exportCode);
+      if (status.state === "failed") {
+        logWarn("noon.export_failed", { orgId: ctx.org.id, exportCode, status: status.status });
+        return {
+          ok: false,
+          message: `Noon couldn't make the report (it says “${status.status}”). Try again later.`,
+        };
+      }
+      if (status.state === "ready" && status.downloadUrl) {
+        const file = await downloadNoonExport(creds, status.downloadUrl);
+        const preview = previewReport(file.bytes, file.gzip);
+        logInfo("noon.payouts_report_checked", {
+          orgId: ctx.org.id,
+          exportCode,
+          kind: preview.kind,
+          columns: preview.columns.length,
+          rows: preview.rows,
+        });
+        return {
+          ok: true,
+          check: { state: "ready", exportCode, status: status.status, from, to, preview },
+        };
+      }
+      if (Date.now() + 2_500 > deadline) {
+        return {
+          ok: true,
+          check: { state: "working", exportCode, status: status.status, from, to },
+        };
+      }
+      await new Promise((r) => setTimeout(r, 2_500));
+    }
+  } catch (error) {
+    return failure(error);
+  }
 }
