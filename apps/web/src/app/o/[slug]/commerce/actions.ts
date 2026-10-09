@@ -6,6 +6,7 @@ import {
   FULFILMENT_MODES,
   isAmazonRegion,
   NOON_FULFILMENT,
+  NOON_INPUT_NAME,
   NOON_TRANSACTIONS_EXPORT,
   type NoonExportCategory,
   noonMarketplace,
@@ -613,6 +614,10 @@ export async function checkNoonReportAction(
       exportCode: z.string().trim().max(200).optional(),
       from: z.string().refine(isIsoDate).optional(),
       to: z.string().refine(isIsoDate).optional(),
+      inputs: z
+        .record(z.string().regex(NOON_INPUT_NAME), z.string().trim().max(200))
+        .refine((r) => Object.keys(r).length <= 20)
+        .optional(),
     })
     .safeParse(input ?? {});
   if (!parsed.success) return { ok: false, message: "Start the check again." };
@@ -645,7 +650,11 @@ export async function checkNoonReportAction(
     const creds = openNoonCredentials(ctx.org.id, connection.id, connection.secret);
     const exportCode =
       parsed.data.exportCode ||
-      (await createNoonExport(creds, category, noonReportParams(spec, from, to)));
+      (await createNoonExport(
+        creds,
+        category,
+        noonReportParams(spec, from, to, parsed.data.inputs ?? {}),
+      ));
     const deadline = Date.now() + 25_000;
     for (;;) {
       const status = await noonExportStatus(creds, exportCode);

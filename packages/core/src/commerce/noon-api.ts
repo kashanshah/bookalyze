@@ -289,12 +289,62 @@ export function noonPayoutsParams(spec: unknown, from: string, to: string): Reco
  * Any report's inputs for a date range (`noonPayoutsParams`'s rule). A report Noon describes
  * without any date input gets none; one it doesn't describe gets from_date and to_date.
  */
-export function noonReportParams(spec: unknown, from: string, to: string): Record<string, string> {
+export function noonReportParams(
+  spec: unknown,
+  from: string,
+  to: string,
+  /** Other inputs a person filled in (country, status…); blanks are left out. */
+  inputs: Record<string, string> = {},
+): Record<string, string> {
   const described = spec && typeof spec === "object" && Object.keys(spec).length > 0;
-  const params = noonPayoutsParams(spec, from, to);
-  if (!described) return params;
-  const names = Object.keys(spec as Record<string, unknown>);
-  return Object.fromEntries(Object.entries(params).filter(([k]) => names.includes(k)));
+  const dates = noonPayoutsParams(spec, from, to);
+  const names = described ? Object.keys(spec as Record<string, unknown>) : null;
+  const params = names
+    ? Object.fromEntries(Object.entries(dates).filter(([k]) => names.includes(k)))
+    : dates;
+  for (const [k, v] of Object.entries(inputs)) {
+    if (v.trim() && !isNoonDateParam(k)) params[k] = v.trim();
+  }
+  return params;
+}
+
+/** A date input by its name: "from"/"start" for the first day, "to"/"end"/"until" for the last. */
+function isNoonDateParam(name: string): boolean {
+  return /from|start/i.test(name) || /(^|_)to($|_)|end|until/i.test(name);
+}
+
+/** A report input's name as Noon sends it (letters, digits and underscores). */
+export const NOON_INPUT_NAME = /^[A-Za-z0-9_]{1,60}$/;
+
+/**
+ * A report's inputs other than its dates (country, status…), with Noon's description of each
+ * (its type, or the values it takes): what a person fills in to check the report.
+ */
+export function noonReportInputs(spec: unknown): { name: string; hint: string }[] {
+  if (!spec || typeof spec !== "object") return [];
+  return Object.entries(spec as Record<string, unknown>)
+    .filter(([name]) => NOON_INPUT_NAME.test(name) && !isNoonDateParam(name))
+    .map(([name, v]) => ({
+      name,
+      hint: (typeof v === "string" ? v : (JSON.stringify(v) ?? "")).slice(0, 200),
+    }));
+}
+
+/**
+ * The inputs Noon says a report is missing, from its answer ("Missing required fields: country,
+ * noon_status"), so the check can ask for them.
+ */
+export function noonMissingFields(message: string): string[] {
+  const match = /missing required fields?:?\s*([A-Za-z0-9_,\s]+)/i.exec(message);
+  if (!match?.[1]) return [];
+  return [
+    ...new Set(
+      match[1]
+        .split(/[,\s]+/)
+        .map((f) => f.trim())
+        .filter((f) => NOON_INPUT_NAME.test(f) && f.toLowerCase() !== "and"),
+    ),
+  ];
 }
 
 /** Plain names for Noon's report codes we know; others are spelled out from the code. */

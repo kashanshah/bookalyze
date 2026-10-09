@@ -13,9 +13,9 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-09, listing watch: the product page lists how often it is checked and,
-when email is on, the addresses that get it (after phase 4c slice 7: every Noon report the key
-can download, each with a check of its columns)._
+_Last updated: 2026-10-09, phase 4c slice 7b: Noon report checks ask for the inputs a report needs
+(country, status…), including ones Noon only names when they're missing (after the listing
+watch's product page showing how often it's checked and who gets its emails)._
 
 ---
 
@@ -1281,10 +1281,19 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   connect and test). `noonReportParams` sends only the date inputs a report describes: none for a
   report without dates, from_date/to_date for one Noon doesn't describe. A key connected before
   this has the payouts report's spec only; Test connection fills the rest.
+- **Other inputs (slice 7b):** some reports need more than dates (Kazomo's stock report answered
+  "Missing required fields: country, noon_status", inputs its description leaves out). Each
+  check shows fields for a report's described non-date inputs (core `noonReportInputs`, with
+  Noon's description as the hint), and when Noon answers "Missing required fields: …"
+  (`noonMissingFields`) it adds those fields and asks for them inline. Country starts as the first
+  Noon country's code in lower case (`ae`). `checkNoonReportAction` takes them as `inputs`
+  (names `NOON_INPUT_NAME`, at most 20); `noonReportParams` adds the non-blank ones. Nothing is
+  kept: the values Kazomo's reports need are to be recorded here once found.
 - `checkNoonReportAction` (was `checkNoonPayoutsReportAction`) takes the report's code and refuses
   one the key can't download; the `noon.report_checked` and `noon.export_failed` logs carry it.
-- Tests: core `noon-api.test.ts` (params and names); e2e "noon: connect" checks the orders report
-  from the list.
+- Tests: core `noon-api.test.ts` (params, names, inputs, missing fields); e2e "noon: connect"
+  checks the orders report from the list, and a stock report that needs a country and a status
+  (the mock answers like Noon until both are given).
 
 ### Phase 4c, slice 6: Noon orders
 
@@ -2076,4 +2085,5 @@ cases. These answers only help pick sensible defaults and test data:
    Noon seller support). For FBN stock: on Channels → Noon's API, open "Reports this key can
    download", press Test connection once, then Check the reports whose names mention stock,
    inventory, FBN, warehouse or returns, and share their names and column names (only the
-   columns, no rows).
+   columns, no rows). A report that asks for a country and a Noon status: country `ae`; the
+   status values are in Noon's own reports page for that report.

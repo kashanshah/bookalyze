@@ -2051,7 +2051,7 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await dialog.getByLabel("Key file").setInputFiles(await keyFile("/test/key-file"));
   await dialog.getByRole("button", { name: "Check and connect" }).click();
   await expect(page.getByText("Noon connected")).toBeVisible();
-  await expect(page.getByText("2 reports available, payouts included").first()).toBeVisible();
+  await expect(page.getByText("3 reports available, payouts included").first()).toBeVisible();
   await expect(noon.getByText("Connected", { exact: true })).toBeVisible();
   await expect(noon.getByText(/Project PRJ000001/)).toBeVisible();
 
@@ -2073,7 +2073,7 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
 
   // Every report the key can download is listed with its own check, to find the one a new task
   // needs by its columns.
-  await noon.getByText("Reports this key can download (2)").click();
+  await noon.getByText("Reports this key can download (3)").click();
   const orders = noon.getByRole("listitem").filter({ hasText: "noon_orders_report" });
   await expect(orders.getByText("Orders report", { exact: true })).toBeVisible();
   await orders.getByRole("button", { name: "Check", exact: true }).click();
@@ -2083,6 +2083,15 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
       .getByRole("list", { name: "Columns in Orders report" })
       .getByText("Order Nr", { exact: true }),
   ).toBeVisible();
+  // A report that needs inputs Noon's description leaves out: they're asked for, then it works.
+  const stock = noon.getByRole("listitem").filter({ hasText: "noon_fbn_stock_report" });
+  await stock.getByRole("button", { name: "Check", exact: true }).click();
+  await expect(page.getByText("Noon needs a few details for this report")).toBeVisible();
+  await expect(stock.getByLabel("Country")).toHaveValue("ae");
+  await expect(stock.getByText("Noon needs this for the report.")).toBeVisible();
+  await stock.getByLabel("Noon status").fill("active");
+  await stock.getByRole("button", { name: "Check", exact: true }).click();
+  await expect(page.getByText("Fbn stock report checked")).toBeVisible({ timeout: 30_000 });
 
   // A year of Noon's transactions, a month at a time; bringing in again finds nothing new.
   await noon.getByRole("link", { name: /Noon transactions/ }).click();

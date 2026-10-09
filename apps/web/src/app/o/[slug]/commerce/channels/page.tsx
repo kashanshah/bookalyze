@@ -1,4 +1,9 @@
-import { defaultAmazonRegion, defaultNoonMarketplace, isFulfilmentMode } from "@bookalyze/core";
+import {
+  defaultAmazonRegion,
+  defaultNoonMarketplace,
+  isFulfilmentMode,
+  noonReportInputs,
+} from "@bookalyze/core";
 import { getNoonConnection, listAmazonConnections, listNoonChannels } from "@bookalyze/db";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/shell/page-header";
@@ -68,6 +73,14 @@ export default async function ChannelsPage({ params }: { params: Promise<{ slug:
                       (r): r is string => typeof r === "string",
                     )
                   : [],
+                reportInputs: Object.fromEntries(
+                  Object.entries(
+                    noonConnection.settings.reportParams &&
+                      typeof noonConnection.settings.reportParams === "object"
+                      ? (noonConnection.settings.reportParams as Record<string, unknown>)
+                      : {},
+                  ).map(([code, spec]) => [code, noonReportInputs(spec)]),
+                ),
                 payoutsReport: noonConnection.settings.payoutsReport === true,
               }
             : null

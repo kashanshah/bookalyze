@@ -40,6 +40,11 @@ const categories = {
       export_category_code: "noon_orders_report",
       params: { from_date: "string", to_date: "string" },
     },
+    // Like Noon's stock reports: it needs inputs its description leaves out.
+    {
+      export_category_code: "noon_fbn_stock_report",
+      params: { from_date: "string", to_date: "string" },
+    },
   ],
 };
 
@@ -148,6 +153,19 @@ createServer((req, res) => {
             fields: [{ name: "params.from_date", descriptions: ["must be YYYY-MM-DD"] }],
           },
         });
+      }
+      if (
+        body.export_category_code === "noon_fbn_stock_report" &&
+        (!params.country || !params.noon_status)
+      ) {
+        return send(
+          res,
+          400,
+          error(
+            "INVALID_ARGUMENT",
+            "AssertionError('Missing required fields: country, noon_status')",
+          ),
+        );
       }
       const code = `EXP-${exports.size + 1}`;
       // The first export is still being made at the first status check (so the app's waiting
