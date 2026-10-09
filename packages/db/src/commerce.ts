@@ -240,6 +240,12 @@ export async function setChannelFulfilment(
   return row ?? null;
 }
 
+/** One channel of the company, or null. */
+export async function getChannel(tx: Transaction, channelId: string) {
+  const [row] = await tx.select().from(salesChannels).where(eq(salesChannels.id, channelId));
+  return row ?? null;
+}
+
 export async function setChannelActive(tx: Transaction, channelId: string, isActive: boolean) {
   const [row] = await tx
     .update(salesChannels)

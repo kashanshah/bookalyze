@@ -13,8 +13,9 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-09, phase 4d slice 1: eBay sites as channels (after phase 4c slice 7b,
-Noon report checks that ask for the inputs a report needs)._
+_Last updated: 2026-10-09, Channels redesign: one list of every channel, "Add a channel" by
+platform, and a page per channel with its settings and account (after phase 4d slice 1, eBay
+sites as channels)._
 
 ---
 
@@ -1267,6 +1268,36 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
   paths kept, cause chains, Postgres codes and digests).
 
+### Channels redesign: a list, "Add a channel", and a page per channel
+
+- **Commerce → Channels** lists every channel the company has, whatever the platform (Amazon
+  marketplaces, eBay sites, Noon countries), sorted by platform then name. Each row shows the
+  platform, country, currency, who ships, and badges: Switched off, Connected / Needs attention /
+  Not connected (eBay and Noon countries added by hand). Nothing is shown by default for a
+  platform the company doesn't use: with no channel, the page asks "Add your first channel" with
+  the three platforms.
+- **Add a channel** (dialog): choose the platform, then its own form: Amazon's credentials
+  (region, LWA client id and secret, refresh token, with the steps), an eBay site, or a Noon
+  country and who ships. Back returns to the platforms. A new eBay site or Noon country opens its
+  page; Amazon's marketplaces appear in the list (Amazon makes them from the account). The
+  Amazon region offered is the company's own, else the first one not connected yet.
+- **A page per channel** (`/commerce/channels/[id]`, `components` in `channels/[id]` and the
+  platform files `channels/amazon.tsx`, `ebay.tsx`, `noon.tsx`, names and icons in
+  `platforms.tsx`): switch it on or off ("Bring in orders from Amazon.ca" / "Use eBay US"), its
+  platform settings (who ships a Noon country's orders), "Its orders" (Orders filtered to it),
+  and the account behind it:
+  - Amazon: the Seller Central account of its region (test, replace credentials, disconnect) and
+    the account's other marketplaces with their switches. Credentials of another seller account
+    make a new connection with new channels, so the page goes back to the list
+    (`connectAmazonAction` returns `connectionId`); disconnecting goes back too.
+  - Noon: Noon's API (one key for all the Noon countries: connect, test, report checks,
+    disconnect) and, with the payouts feature, Noon transactions and How Noon posts.
+  - eBay: the eBay account (connecting comes in phase 4d slice 2).
+- A disconnected Amazon account's marketplaces stay hidden (list and page), like their orders.
+  db `getChannel`. Add actions return the new `channelId`.
+- e2e: the Amazon, eBay and Noon flows go through the list, the platform picker and the channel
+  pages.
+
 ### Phase 4d, slice 1: eBay channels
 
 - **eBay as a product** (core `ebay.ts`): each eBay site is a channel in its currency, keyed by
@@ -1824,8 +1855,9 @@ Built like Amazon and Noon: channels first, then the account, orders, money and 
   signatures"). Fallback: the Seller Hub Payments "Transaction report" CSV upload.
 
 1. [x] **eBay channels.** Done in slice 1.
-2. [ ] **Connect eBay**: Connect button, consent, callback, tokens in the vault, test
-   (`commerce.identity` user), disconnect. Needs the app keys (owner input 5).
+2. [ ] **Connect eBay** on an eBay site's page (the eBay account card): Connect button, consent,
+   callback, tokens in the vault, test (`commerce.identity` user), disconnect. Needs the app keys
+   (owner input 5).
 3. [ ] **Orders** from the Fulfillment API, a year back and daily; SKUs, so cost of goods sold
    counts eBay.
 4. [ ] **Transactions** from the Finances API kept row by row (a year back), with the transaction
@@ -2129,12 +2161,12 @@ cases. These answers only help pick sensible defaults and test data:
    with their VAT, as a cost; revisit if it registers). Link Noon's Partner SKUs to products
    (Products → SKUs from orders) so cost of goods sold counts Noon. Still unknown: which contract
    the balance transfers go to and what they pay for (Noon's transaction view, Contracts filter, or
-   Noon seller support). For FBN stock: on Channels → Noon's API, open "Reports this key can
-   download", press Test connection once, then Check the reports whose names mention stock,
-   inventory, FBN, warehouse or returns, and share their names and column names (only the
+   Noon seller support). For FBN stock: on Channels → Noon UAE → Noon's API, open "Reports this
+   key can download", press Test connection once, then Check the reports whose names mention
+   stock, inventory, FBN, warehouse or returns, and share their names and column names (only the
    columns, no rows). A report that asks for a country and a Noon status: country `ae`; the
    status values are in Noon's own reports page for that report.
-5. eBay (phase 4d): which company sells on which eBay sites (add them on Channels → eBay). For
+5. eBay (phase 4d): which company sells on which eBay sites (Channels → Add a channel → eBay). For
    connecting: an eBay developer account (developer.ebay.com, free), a production keyset, and a
    redirect (RuName) whose "auth accepted" URL is `https://app.bookalyze.com/api/ebay/callback`;
    then set `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` and `EBAY_RU_NAME` in Vercel. These are

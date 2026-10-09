@@ -1,9 +1,10 @@
 import {
+  AMAZON_REGIONS,
   defaultAmazonRegion,
   defaultEbayMarketplace,
   defaultNoonMarketplace,
+  type FulfilmentMode,
   isFulfilmentMode,
-  noonReportInputs,
 } from "@bookalyze/core";
 import {
   getNoonConnection,
@@ -16,11 +17,16 @@ import { PageHeader } from "@/components/shell/page-header";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { isOrgAdmin } from "@/server/org";
-import { ChannelsScreen } from "./channels";
-import { EbayChannels } from "./ebay";
-import { NoonChannels } from "./noon";
+import { ChannelList, type ChannelRowView } from "./channel-list";
 
 export const metadata: Metadata = { title: "Channels" };
+
+/** Who ships a Noon country's orders, short enough for a list row. */
+const NOON_SHIPPING: Record<FulfilmentMode, string> = {
+  marketplace: "Noon ships (FBN)",
+  seller: "You ship (FBP)",
+  both: "Noon and you ship",
+};
 
 export default async function ChannelsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -31,92 +37,77 @@ export default async function ChannelsPage({ params }: { params: Promise<{ slug:
     noon: await listNoonChannels(tx),
     noonConnection: await getNoonConnection(tx),
   }));
+  const noonLive =
+    noonConnection && noonConnection.status !== "disconnected" ? noonConnection : null;
+  const rows: ChannelRowView[] = [
+    // A disconnected Amazon account's marketplaces are hidden with its orders.
+    ...connections
+      .filter((c) => c.status !== "disconnected")
+      .flatMap((c) =>
+        c.channels.map((ch) => ({
+          id: ch.id,
+          platform: "amazon" as const,
+          name: ch.name,
+          country: ch.country,
+          currency: ch.currency,
+          isActive: ch.isActive,
+          shipping: null,
+          account: c.status === "error" ? ("attention" as const) : ("connected" as const),
+        })),
+      ),
+    ...ebay.map((ch) => ({
+      id: ch.id,
+      platform: "ebay" as const,
+      name: ch.name,
+      country: ch.country,
+      currency: ch.currency,
+      isActive: ch.isActive,
+      shipping: "You ship",
+      account: "none" as const,
+    })),
+    ...noon.map((ch) => ({
+      id: ch.id,
+      platform: "noon" as const,
+      name: ch.name,
+      country: ch.country,
+      currency: ch.currency,
+      isActive: ch.isActive,
+      shipping:
+        ch.fulfilment && isFulfilmentMode(ch.fulfilment) ? NOON_SHIPPING[ch.fulfilment] : null,
+      account: noonLive
+        ? noonLive.status === "error"
+          ? ("attention" as const)
+          : ("connected" as const)
+        : ("none" as const),
+    })),
+  ];
+  const existing = (list: typeof ebay) =>
+    list.map((ch) => ({ marketplaceId: ch.marketplaceId ?? "", isActive: ch.isActive }));
   return (
     <div className="grid gap-8">
       <PageHeader
         eyebrow="Commerce"
         title="Channels"
-        description="Where the company sells. Connect Amazon Seller Central and pick the marketplaces to bring orders in from, and add the eBay sites and Noon countries you sell on."
+        description="Where the company sells: Amazon marketplaces, eBay sites and Noon countries. Each channel has its own page for its settings and its account."
       />
-      <ChannelsScreen
-        slug={slug}
-        locale={ctx.profile.locale}
-        canManage={isOrgAdmin(ctx)}
-        defaultRegion={defaultAmazonRegion(ctx.profile.countryCode)}
-        connections={connections.map((c) => ({
-          id: c.id,
-          name: c.name,
-          status: c.status,
-          region: String(c.settings.region ?? ""),
-          storeName: typeof c.settings.storeName === "string" ? c.settings.storeName : null,
-          lastSyncedAt: c.lastSyncedAt?.toISOString() ?? null,
-          lastError: c.lastError,
-          channels: c.channels.map((ch) => ({
-            id: ch.id,
-            name: ch.name,
-            country: ch.country,
-            currency: ch.currency,
-            isActive: ch.isActive,
-          })),
-        }))}
-      />
-      <EbayChannels
+      <ChannelList
         slug={slug}
         canManage={isOrgAdmin(ctx)}
-        defaultMarketplace={defaultEbayMarketplace(ctx.profile.countryCode).id}
-        channels={ebay.map((ch) => ({
-          id: ch.id,
-          name: ch.name,
-          marketplaceId: ch.marketplaceId ?? "",
-          country: ch.country,
-          currency: ch.currency,
-          isActive: ch.isActive,
-        }))}
-      />
-      <NoonChannels
-        slug={slug}
-        locale={ctx.profile.locale}
-        connection={
-          noonConnection
-            ? {
-                status: noonConnection.status,
-                projectCode:
-                  typeof noonConnection.settings.projectCode === "string"
-                    ? noonConnection.settings.projectCode
-                    : null,
-                lastSyncedAt: noonConnection.lastSyncedAt?.toISOString() ?? null,
-                lastError: noonConnection.lastError,
-                reports: Array.isArray(noonConnection.settings.reports)
-                  ? noonConnection.settings.reports.length
-                  : 0,
-                reportCodes: Array.isArray(noonConnection.settings.reports)
-                  ? noonConnection.settings.reports.filter(
-                      (r): r is string => typeof r === "string",
-                    )
-                  : [],
-                reportInputs: Object.fromEntries(
-                  Object.entries(
-                    noonConnection.settings.reportParams &&
-                      typeof noonConnection.settings.reportParams === "object"
-                      ? (noonConnection.settings.reportParams as Record<string, unknown>)
-                      : {},
-                  ).map(([code, spec]) => [code, noonReportInputs(spec)]),
-                ),
-                payoutsReport: noonConnection.settings.payoutsReport === true,
-              }
-            : null
-        }
-        canManage={isOrgAdmin(ctx)}
-        defaultMarketplace={defaultNoonMarketplace(ctx.profile.countryCode).id}
-        channels={noon.map((ch) => ({
-          id: ch.id,
-          name: ch.name,
-          marketplaceId: ch.marketplaceId ?? "",
-          country: ch.country,
-          currency: ch.currency,
-          fulfilment: ch.fulfilment && isFulfilmentMode(ch.fulfilment) ? ch.fulfilment : null,
-          isActive: ch.isActive,
-        }))}
+        rows={rows}
+        defaults={{
+          // The company's own region first; once connected, the next region not connected yet.
+          amazonRegion:
+            [
+              defaultAmazonRegion(ctx.profile.countryCode),
+              ...AMAZON_REGIONS.map((r) => r.key),
+            ].find(
+              (r) =>
+                !connections.some((c) => c.status !== "disconnected" && c.settings.region === r),
+            ) ?? defaultAmazonRegion(ctx.profile.countryCode),
+          ebay: defaultEbayMarketplace(ctx.profile.countryCode).id,
+          noon: defaultNoonMarketplace(ctx.profile.countryCode).id,
+        }}
+        existing={{ ebay: existing(ebay), noon: existing(noon) }}
       />
     </div>
   );
