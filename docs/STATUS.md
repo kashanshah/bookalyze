@@ -13,9 +13,8 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-09, Channels redesign: one list of every channel, "Add a channel" by
-platform, and a page per channel with its settings and account (after phase 4d slice 1, eBay
-sites as channels)._
+_Last updated: 2026-10-09, phase 4d slice 2: Connect eBay (consent on eBay's page through
+Bookalyze's one eBay app, tokens in the vault, account-deletion notices)._
 
 ---
 
@@ -31,7 +30,7 @@ sites as channels)._
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off) and slice 6 (bundles) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) and 7 (every report the key can download, each with a check of its columns) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: find FBN stock and returns among Noon's reports (owner input 4), then FBN stock (and Noon returns back into stock). Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
-| 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slice 1 (eBay sites added by hand as channels, SKUs linkable) done. Next: connect eBay (OAuth consent, tokens in the encrypted vault). See §3 "Phase 4d" |
+| 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable) and 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices) done. Next: eBay orders. See §3 "Phase 4d" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
@@ -1268,6 +1267,39 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
   paths kept, cause chains, Postgres codes and digests).
 
+### Phase 4d, slice 2: Connect eBay
+
+- **One app, many accounts:** Bookalyze's own eBay developer app (env vars `EBAY_CLIENT_ID`,
+  `EBAY_CLIENT_SECRET`, `EBAY_RU_NAME`, `EBAY_ENVIRONMENT`, `EBAY_VERIFICATION_TOKEN`; setup in
+  `docs/SETUP.md` → eBay). Each company connects its own seller account by consent; one eBay
+  connection per company (provider `ebay`, migration `0056_ebay_connections`), shared by all its
+  eBay sites (`attachEbayChannels`; sites added later join it).
+- **Flow** (an eBay site's page → eBay account → **Connect eBay**): `startEbayConnectAction`
+  (admins) signs a 10-minute state (slug, channel, user, nonce; HMAC with
+  `BETTER_AUTH_SECRET`) and sets the nonce in an httpOnly cookie (path `/api/ebay`), then the
+  browser goes to eBay's consent page (core `ebayConsentUrl`, scopes `EBAY_SCOPES`: orders
+  read-only, finances, account read-only, identity). eBay returns to `/api/ebay/callback`
+  (`?code` or `?error`): the state must verify, match the cookie and the signed-in admin; the
+  code becomes tokens (`exchangeEbayCode`), Commerce Identity says who the account is, the
+  refresh token (and its expiry, about 18 months) is sealed in the vault, settings keep the eBay
+  user id, username, account type and registration site. Back on the site's page a toast says
+  connected / declined / failed (`EbayConnectNotice`, then the address is tidied).
+- **Test connection** (fresh access token, then who the account is), **Connect again**,
+  **Disconnect** (sign-in deleted, sites stay with their history). Access tokens (2 hours) are
+  cached in memory per account. The Channels list shows eBay sites as Connected / Needs attention.
+- **Account-deletion notices** (`/api/ebay/account-deletion`, required by eBay for apps that keep
+  eBay user data): GET answers eBay's check (`sha256(challenge + token + endpoint)`, endpoint from
+  `BETTER_AUTH_URL`); POST verifies `X-EBAY-SIGNATURE` (eBay's public key from the Notification
+  API with an app token, ECDSA over SHA-1; 412 when it doesn't verify), then in each company
+  (`withOrg`) disconnects connections to that eBay user and drops the user's id and name
+  (`forgetEbayUser`), with an audit entry.
+- Not yet: orders, transactions and payouts (slices 3 and 4).
+- Tests: core `ebay-api.test.ts` (consent URL, tokens, user, errors, notices, signature header,
+  key PEM); db `ebay.test.ts` (connection shared by the sites, later sites join, disconnect,
+  forgetting a user only in the company that connected it); e2e "ebay: connect the eBay
+  account…" against `e2e/ebay-mock.mjs` (declined, connected, test, every site connected, the
+  endpoint check, a forged notice refused and eBay's own forgetting the account, disconnect).
+
 ### Channels redesign: a list, "Add a channel", and a page per channel
 
 - **Commerce → Channels** lists every channel the company has, whatever the platform (Amazon
@@ -1855,9 +1887,8 @@ Built like Amazon and Noon: channels first, then the account, orders, money and 
   signatures"). Fallback: the Seller Hub Payments "Transaction report" CSV upload.
 
 1. [x] **eBay channels.** Done in slice 1.
-2. [ ] **Connect eBay** on an eBay site's page (the eBay account card): Connect button, consent,
-   callback, tokens in the vault, test (`commerce.identity` user), disconnect. Needs the app keys
-   (owner input 5).
+2. [x] **Connect eBay.** Done in slice 2 (needs the app keys in Vercel to be used: owner
+   input 5).
 3. [ ] **Orders** from the Fulfillment API, a year back and daily; SKUs, so cost of goods sold
    counts eBay.
 4. [ ] **Transactions** from the Finances API kept row by row (a year back), with the transaction
@@ -2168,7 +2199,8 @@ cases. These answers only help pick sensible defaults and test data:
    status values are in Noon's own reports page for that report.
 5. eBay (phase 4d): which company sells on which eBay sites (Channels → Add a channel → eBay). For
    connecting: an eBay developer account (developer.ebay.com, free), a production keyset, and a
-   redirect (RuName) whose "auth accepted" URL is `https://app.bookalyze.com/api/ebay/callback`;
-   then set `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` and `EBAY_RU_NAME` in Vercel. These are
-   Bookalyze's own app keys, not a company's; each company's eBay access comes from its own
-   consent and is kept encrypted.
+   redirect (RuName) whose "auth accepted" URL is `https://app.bookalyze.com/api/ebay/callback`,
+   and the account-deletion endpoint; then set `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`,
+   `EBAY_RU_NAME` and `EBAY_VERIFICATION_TOKEN` in Vercel (steps in `docs/SETUP.md` → eBay).
+   These are Bookalyze's own app keys, not a company's; each company's eBay access comes from
+   its own consent and is kept encrypted. Then Connect eBay on each company's eBay site.

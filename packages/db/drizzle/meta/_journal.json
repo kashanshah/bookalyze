@@ -393,6 +393,13 @@
       "when": 1791582088544,
       "tag": "0055_ebay_channels",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1791589229520,
+      "tag": "0056_ebay_connections",
+      "breakpoints": true
     }
   ]
 }
