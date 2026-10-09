@@ -379,6 +379,13 @@
       "when": 1791532230139,
       "tag": "0053_listing_watch_recipients",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1791533065612,
+      "tag": "0054_listing_watch_default_recipient",
+      "breakpoints": true
     }
   ]
 }

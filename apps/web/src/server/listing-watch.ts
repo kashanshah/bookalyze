@@ -32,7 +32,7 @@ import {
   VaultError,
   withOrg,
 } from "@bookalyze/db";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { ListingChanges } from "@/emails/listing-changes";
 import { AmazonError, catalogItem, itemOffers, reviewTopics } from "./amazon";
 import { openAmazonCredentials } from "./commerce";
@@ -217,8 +217,8 @@ export async function checkListingWatch(
 }
 
 /**
- * One email per person covering every change not sent yet: owners and admins for products with
- * email on, and each product's own extra recipients for that product.
+ * One email per address covering every change not sent yet on the products that list it (with
+ * email on).
  */
 export async function emailListingChanges(org: {
   id: string;
@@ -229,30 +229,16 @@ export async function emailListingChanges(org: {
   const ctx = { orgId: org.id, userId: null };
   const items = await withOrg(db, ctx, (tx) => unnotifiedListingChanges(tx));
   if (!items.length) return 0;
-  const recipients = await withOrg(db, ctx, (tx) =>
-    tx
-      .select({ email: schema.user.email })
-      .from(schema.member)
-      .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-      .where(
-        and(
-          eq(schema.member.organizationId, org.id),
-          inArray(schema.member.role, ["owner", "admin"]),
-        ),
-      ),
-  );
-  // Owners and admins get the products that email them; each product's own recipients get
-  // that product. Someone on both lists gets one email.
+  // Each product emails the addresses listed on it; someone on several gets one email.
   const inbox = new Map<string, typeof items>();
-  const add = (email: string, item: (typeof items)[number]) => {
-    const key = email.toLowerCase();
-    const list = inbox.get(key) ?? [];
-    if (!list.includes(item)) list.push(item);
-    inbox.set(key, list);
-  };
   for (const item of items) {
-    if (item.notify) for (const { email } of recipients) add(email, item);
-    for (const email of item.notifyEmails) add(email, item);
+    if (!item.notify) continue;
+    for (const email of item.notifyEmails) {
+      const key = email.toLowerCase();
+      const list = inbox.get(key) ?? [];
+      if (!list.includes(item)) list.push(item);
+      inbox.set(key, list);
+    }
   }
   if (!inbox.size) return 0;
   const url = `${env().BETTER_AUTH_URL}/o/${org.slug}/commerce/watch`;

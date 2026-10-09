@@ -30,12 +30,12 @@ export type WatchDraft = {
   checks: ListingCheck[];
   cadence: ListingCadence;
   notify: boolean;
-  /** Up to two more people emailed about this product's changes. */
+  /** Who is emailed about this product's changes (one or two addresses). */
   notifyEmails: string[];
 };
 
-/** How many extra people one product can email. */
-const MAX_EXTRA_EMAILS = 2;
+/** How many addresses one product can email. */
+const MAX_EMAILS = 2;
 
 const DEFAULT_CHECKS: ListingCheck[] = [
   "price",
@@ -51,10 +51,13 @@ export function WatchForm({
   slug,
   channels,
   initial,
+  defaultEmail,
 }: {
   slug: string;
   channels: { id: string; name: string }[];
   initial?: WatchDraft;
+  /** The signed-in person's email: where a new watch emails, until changed. */
+  defaultEmail: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -63,7 +66,9 @@ export function WatchForm({
   const [checks, setChecks] = useState<ListingCheck[]>(initial?.checks ?? DEFAULT_CHECKS);
   const [cadence, setCadence] = useState<ListingCadence>(initial?.cadence ?? "daily");
   const [notify, setNotify] = useState(initial?.notify ?? true);
-  const [emails, setEmails] = useState<string[]>(initial?.notifyEmails ?? []);
+  const [emails, setEmails] = useState<string[]>(
+    initial?.notifyEmails.length ? initial.notifyEmails : [defaultEmail],
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const issue = listingWatchIssue({ checks, cadence });
   const channelName = channels.find((channel) => channel.id === channelId)?.name ?? "";
@@ -86,7 +91,7 @@ export function WatchForm({
           checks,
           cadence,
           notify,
-          notifyEmails: emails.map((email) => email.trim()).filter(Boolean),
+          notifyEmails: notify ? emails.map((email) => email.trim()).filter(Boolean) : [],
         },
         initial?.id,
       );
@@ -242,79 +247,87 @@ export function WatchForm({
         {issue || errors.cadence ? (
           <p className="text-destructive text-sm">{errors.cadence || issue}</p>
         ) : null}
-        <div className="flex items-start justify-between gap-4 rounded-xl border p-4">
-          <span>
-            <span className="block font-medium text-sm">Email when something changes</span>
-            <span className="mt-0.5 block text-muted-foreground text-xs leading-relaxed">
-              Owners and admins get one email. A check that finds nothing stays quiet.
+        <div className="grid gap-4 rounded-xl border p-4">
+          <div className="flex items-start justify-between gap-4">
+            <span>
+              <span className="block font-medium text-sm">Email when something changes</span>
+              <span className="mt-0.5 block text-muted-foreground text-xs leading-relaxed">
+                One email to the addresses below. A check that finds nothing stays quiet.
+              </span>
             </span>
-          </span>
-          <Switch
-            checked={notify}
-            onCheckedChange={setNotify}
-            aria-label="Email when something changes"
-          />
-        </div>
-        <div className="grid gap-3 rounded-xl border p-4">
-          <span>
-            <span className="block font-medium text-sm">Also email (optional)</span>
-            <span className="mt-0.5 block text-muted-foreground text-xs leading-relaxed">
-              Up to {MAX_EXTRA_EMAILS} more people, such as a teammate or your sourcing agent. They
-              get this product's changes only, even with the switch above off.
-            </span>
-          </span>
-          {emails.map((email, index) => {
-            const error = errors[`notifyEmails.${index}`];
-            return (
-              // biome-ignore lint/suspicious/noArrayIndexKey: rows have no id; order is stable.
-              <div key={index} className="fade-in-0 grid animate-in gap-1">
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="email"
-                    inputMode="email"
-                    autoComplete="email"
-                    aria-label={`Extra email ${index + 1}`}
-                    value={email}
-                    placeholder="name@example.com"
-                    aria-invalid={Boolean(error)}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setEmails((current) => current.map((e, i) => (i === index ? value : e)));
-                      setErrors((current) => ({ ...current, [`notifyEmails.${index}`]: "" }));
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Remove extra email ${index + 1}`}
-                    onClick={() => {
-                      setEmails((current) => current.filter((_, i) => i !== index));
-                      setErrors((current) => ({
-                        ...current,
-                        "notifyEmails.0": "",
-                        "notifyEmails.1": "",
-                      }));
-                    }}
-                  >
-                    <X />
-                  </Button>
-                </div>
-                {error ? <p className="text-destructive text-xs">{error}</p> : null}
-              </div>
-            );
-          })}
-          {emails.length < MAX_EXTRA_EMAILS ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="justify-self-start"
-              onClick={() => setEmails((current) => [...current, ""])}
-            >
-              <Plus />
-              {emails.length ? "Add another person" : "Add a person"}
-            </Button>
+            <Switch
+              checked={notify}
+              onCheckedChange={(on) => {
+                setNotify(on);
+                // Turning it back on with nobody to email: start from your own address.
+                if (on && !emails.some((e) => e.trim()) && defaultEmail) setEmails([defaultEmail]);
+              }}
+              aria-label="Email when something changes"
+            />
+          </div>
+          {notify ? (
+            <div className="fade-in-0 grid animate-in gap-3">
+              <span className="font-medium text-muted-foreground text-xs">
+                Send to (up to {MAX_EMAILS})
+              </span>
+              {emails.map((email, index) => {
+                const error = errors[`notifyEmails.${index}`];
+                return (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: rows have no id; order is stable.
+                  <div key={index} className="grid gap-1">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="email"
+                        inputMode="email"
+                        autoComplete="email"
+                        aria-label={`Email address ${index + 1}`}
+                        value={email}
+                        placeholder="name@example.com"
+                        aria-invalid={Boolean(error)}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setEmails((current) => current.map((e, i) => (i === index ? value : e)));
+                          setErrors((current) => ({ ...current, [`notifyEmails.${index}`]: "" }));
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove email address ${index + 1}`}
+                        disabled={emails.length === 1}
+                        onClick={() => {
+                          setEmails((current) => current.filter((_, i) => i !== index));
+                          setErrors((current) => ({
+                            ...current,
+                            "notifyEmails.0": "",
+                            "notifyEmails.1": "",
+                          }));
+                        }}
+                      >
+                        <X />
+                      </Button>
+                    </div>
+                    {error ? <p className="text-destructive text-xs">{error}</p> : null}
+                  </div>
+                );
+              })}
+              {errors.notifyEmails ? (
+                <p className="text-destructive text-xs">{errors.notifyEmails}</p>
+              ) : null}
+              {emails.length < MAX_EMAILS ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="justify-self-start"
+                  onClick={() => setEmails((current) => [...current, ""])}
+                >
+                  <Plus />
+                  Add another address
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </section>

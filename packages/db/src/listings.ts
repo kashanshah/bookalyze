@@ -317,7 +317,7 @@ export async function saveListingCheck(
       after: change.after,
       checkedAt: input.checkedAt,
       // Nobody to tell: no email will ever go out for it.
-      notifiedAt: watch.notify || watch.notifyEmails.length ? null : input.checkedAt,
+      notifiedAt: watch.notify && watch.notifyEmails.length ? null : input.checkedAt,
     })),
   );
 }
@@ -373,7 +373,7 @@ export async function unnotifiedListingChanges(tx: Transaction): Promise<Listing
     .where(
       and(
         sql`${listingChanges.notifiedAt} is null`,
-        sql`(${listingWatches.notify} or cardinality(${listingWatches.notifyEmails}) > 0)`,
+        sql`(${listingWatches.notify} and cardinality(${listingWatches.notifyEmails}) > 0)`,
       ),
     )
     .orderBy(desc(listingChanges.checkedAt));

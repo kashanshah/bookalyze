@@ -13,8 +13,9 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-09, phase 4c slice 7: every Noon report the key can download, each with a
-check of its columns (to find FBN stock and returns)._
+_Last updated: 2026-10-09, listing watch: emails go only to each product's own one or two
+addresses (after phase 4c slice 7: every Noon report the key can download, each with a check of
+its columns)._
 
 ---
 
@@ -1130,12 +1131,14 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   product page show the latest price, featured offer (with its price and Prime), seller count
   and best seller rank. The list also shows a short note of the title and description. An icon
   on each product, and on its page, opens that product on Amazon.
-- **Extra recipients:** each product can email up to two more people ("Also email", a repeatable
-  field on the watch form, `listing_watches.notify_emails`, at most two by a database check,
-  migration `0053_listing_watch_recipients`). They get that product's changes only, even with
-  the owners-and-admins switch off. `emailListingChanges` sends one email per person: owners and
-  admins get the products with the switch on, each extra address its own products; an address
-  on both lists gets one email.
+- **Recipients:** each product emails only its own addresses, one or two ("Send to" on the watch
+  form, `listing_watches.notify_emails`, at most two by a database check, migration
+  `0053_listing_watch_recipients`). A new watch starts with the signed-in person's email, which
+  can be changed. With the switch on, at least one address is required; owners and admins are
+  not emailed unless they're listed. A change is waiting to email only when the switch is on
+  and there's an address (`unnotifiedListingChanges`). `emailListingChanges` sends one email per
+  address with all its products. Migration `0054_listing_watch_default_recipient` gave watches
+  that had email on and no address their creator's email (or the earliest owner's).
 - **Only Amazon's official API.** Catalog Items 2022-04-01 (title, bullets, description, photos,
   best seller rank), Product Pricing v0 item offers for New (price with shipping, featured
   offer, how many sellers), and Customer Feedback 2024-06-01 review topics. `sortBy=MENTIONS`
