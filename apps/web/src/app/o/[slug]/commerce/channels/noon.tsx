@@ -5,9 +5,12 @@ import {
   type FulfilmentMode,
   NOON_FULFILMENT,
   NOON_MARKETPLACES,
+  NOON_TRANSACTIONS_EXPORT,
+  noonReportName,
 } from "@bookalyze/core";
 import {
   ArrowRight,
+  ChevronRight,
   CircleAlert,
   Copy,
   FileKey,
@@ -40,7 +43,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   addNoonChannelAction,
-  checkNoonPayoutsReportAction,
+  checkNoonReportAction,
   connectNoonAction,
   disconnectNoonAction,
   type NoonReportCheck,
@@ -55,6 +58,8 @@ export type NoonConnectionView = {
   lastSyncedAt: string | null;
   lastError: string | null;
   reports: number;
+  /** Noon's codes for the reports the key can download. */
+  reportCodes: string[];
   payoutsReport: boolean;
 };
 
@@ -452,7 +457,18 @@ function NoonApi({
           download. Give the service account a role that can see finance, then test again.
         </p>
       ) : null}
-      {live?.payoutsReport && canManage ? <PayoutsReportCheck slug={slug} /> : null}
+      {live?.payoutsReport && canManage ? (
+        <ReportCheck
+          slug={slug}
+          category={NOON_TRANSACTIONS_EXPORT}
+          buttonLabel="Check the payouts report"
+          columnsLabel="Columns in Noon's payouts report"
+          hint="Downloads the last 7 days once and shows its columns, so the next step can read it. Nothing is saved."
+        />
+      ) : null}
+      {live && canManage && live.reportCodes.length ? (
+        <NoonReportList slug={slug} codes={live.reportCodes} />
+      ) : null}
 
       <Dialog open={connecting} onOpenChange={setConnecting}>
         <DialogContent>
@@ -569,11 +585,61 @@ function ConnectNoonForm({
 }
 
 /**
- * Asks Noon for the last 7 days of its payouts report and shows what it is (CSV, Excel…), its
- * columns and how many rows: nothing is kept. Noon makes reports in the background, so this
- * asks again with the export's code until it's ready.
+ * Every report the key can download, each with its own check, so the right one for a new task
+ * (such as Noon's warehouse stock and returns) can be found by its columns.
  */
-function PayoutsReportCheck({ slug }: { slug: string }) {
+function NoonReportList({ slug, codes }: { slug: string; codes: string[] }) {
+  const sorted = [...codes].sort((a, b) => noonReportName(a).localeCompare(noonReportName(b)));
+  return (
+    <details className="group rounded-xl border bg-card">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 font-medium text-sm [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90 rtl:-scale-x-100" />
+        Reports this key can download ({codes.length})
+      </summary>
+      <div className="grid gap-1 border-t px-4 pt-2 pb-4">
+        <p className="pb-2 text-muted-foreground text-xs leading-relaxed">
+          Check one to see what Noon sends in it: its columns and how many rows, for the last 7
+          days. Nothing is saved.
+        </p>
+        <ul className="grid divide-y">
+          {sorted.map((code) => (
+            <li key={code} className="grid gap-2 py-3">
+              <div className="min-w-0">
+                <p className="font-medium text-sm">{noonReportName(code)}</p>
+                <p className="break-all font-mono text-muted-foreground text-xs">{code}</p>
+              </div>
+              <ReportCheck
+                slug={slug}
+                category={code}
+                buttonLabel="Check"
+                columnsLabel={`Columns in ${noonReportName(code)}`}
+              />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </details>
+  );
+}
+
+/**
+ * Asks Noon for the last 7 days of one report and shows what it is (CSV, Excel…), its columns
+ * and how many rows: nothing is kept. Noon makes reports in the background, so this asks again
+ * with the export's code until it's ready.
+ */
+function ReportCheck({
+  slug,
+  category,
+  buttonLabel,
+  columnsLabel,
+  hint,
+}: {
+  slug: string;
+  category: string;
+  buttonLabel: string;
+  columnsLabel: string;
+  hint?: string;
+}) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [result, setResult] = useState<Extract<NoonReportCheck, { state: "ready" }> | null>(null);
@@ -585,12 +651,12 @@ function PayoutsReportCheck({ slug }: { slug: string }) {
     const giveUp = Date.now() + 6 * 60_000;
     try {
       while (Date.now() < giveUp) {
-        const response = await checkNoonPayoutsReportAction(slug, { exportCode });
+        const response = await checkNoonReportAction(slug, { category, exportCode });
         if (!response.ok) return void toast.error(response.message);
         const check = response.check;
         if (check.state === "ready") {
           setResult(check);
-          toast.success("Noon's payouts report checked");
+          toast.success(`${noonReportName(category)} checked`);
           return;
         }
         exportCode = check.exportCode;
@@ -609,11 +675,10 @@ function PayoutsReportCheck({ slug }: { slug: string }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button variant="outline" size="sm" onClick={run} disabled={running}>
           {running ? <Spinner /> : <FileSearch />}
-          Check the payouts report
+          {buttonLabel}
         </Button>
         <p className="text-muted-foreground text-xs" aria-live="polite">
-          {progress ??
-            "Downloads the last 7 days once and shows its columns, so the next step can read it. Nothing is saved."}
+          {progress ?? hint}
         </p>
       </div>
       {result && preview ? (
@@ -646,7 +711,7 @@ function PayoutsReportCheck({ slug }: { slug: string }) {
               Copy names
             </Button>
           </div>
-          <ul className="flex flex-wrap gap-1.5" aria-label="Columns in Noon's payouts report">
+          <ul className="flex flex-wrap gap-1.5" aria-label={columnsLabel}>
             {preview.columns.map((c, i) => (
               <li
                 // biome-ignore lint/suspicious/noArrayIndexKey: names can repeat; the list never reorders

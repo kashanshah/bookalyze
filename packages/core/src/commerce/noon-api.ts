@@ -284,3 +284,32 @@ export function noonPayoutsParams(spec: unknown, from: string, to: string): Reco
   }
   return Object.keys(params).length ? params : { from_date: from, to_date: to };
 }
+
+/**
+ * Any report's inputs for a date range (`noonPayoutsParams`'s rule). A report Noon describes
+ * without any date input gets none; one it doesn't describe gets from_date and to_date.
+ */
+export function noonReportParams(spec: unknown, from: string, to: string): Record<string, string> {
+  const described = spec && typeof spec === "object" && Object.keys(spec).length > 0;
+  const params = noonPayoutsParams(spec, from, to);
+  if (!described) return params;
+  const names = Object.keys(spec as Record<string, unknown>);
+  return Object.fromEntries(Object.entries(params).filter(([k]) => names.includes(k)));
+}
+
+/** Plain names for Noon's report codes we know; others are spelled out from the code. */
+const NOON_REPORT_NAMES: Record<string, string> = {
+  [NOON_TRANSACTIONS_EXPORT]: "Transaction view (payouts)",
+};
+
+/** "noon_fbn_inventory_report" → "Fbn inventory report", or a known report's own name. */
+export function noonReportName(code: string): string {
+  const known = NOON_REPORT_NAMES[code];
+  if (known) return known;
+  const words = code
+    .replace(/^noon_+/i, "")
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .join(" ");
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : code;
+}

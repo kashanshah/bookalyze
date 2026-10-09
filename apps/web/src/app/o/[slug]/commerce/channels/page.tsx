@@ -63,6 +63,11 @@ export default async function ChannelsPage({ params }: { params: Promise<{ slug:
                 reports: Array.isArray(noonConnection.settings.reports)
                   ? noonConnection.settings.reports.length
                   : 0,
+                reportCodes: Array.isArray(noonConnection.settings.reports)
+                  ? noonConnection.settings.reports.filter(
+                      (r): r is string => typeof r === "string",
+                    )
+                  : [],
                 payoutsReport: noonConnection.settings.payoutsReport === true,
               }
             : null
