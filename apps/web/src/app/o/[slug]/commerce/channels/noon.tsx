@@ -6,6 +6,7 @@ import {
   NOON_FULFILMENT,
   NOON_MARKETPLACES,
   NOON_TRANSACTIONS_EXPORT,
+  noonMissingFields,
   noonReportName,
 } from "@bookalyze/core";
 import {
@@ -38,6 +39,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -60,6 +62,8 @@ export type NoonConnectionView = {
   reports: number;
   /** Noon's codes for the reports the key can download. */
   reportCodes: string[];
+  /** Each report's inputs other than dates (country, status…), as Noon describes them. */
+  reportInputs: Record<string, { name: string; hint: string }[]>;
   payoutsReport: boolean;
 };
 
@@ -154,7 +158,13 @@ export function NoonChannels({
           </Button>
         ) : null}
       </div>
-      <NoonApi slug={slug} locale={locale} canManage={canManage} connection={connection} />
+      <NoonApi
+        slug={slug}
+        locale={locale}
+        canManage={canManage}
+        connection={connection}
+        country={channels[0]?.country ?? null}
+      />
       {channels.length ? (
         <ul className="divide-y border-t">
           {channels.map((ch) => (
@@ -342,11 +352,14 @@ function NoonApi({
   locale,
   canManage,
   connection: c,
+  country,
 }: {
   slug: string;
   locale: string;
   canManage: boolean;
   connection: NoonConnectionView | null;
+  /** The first Noon country's code, offered for reports that ask for a country. */
+  country: string | null;
 }) {
   const [connecting, setConnecting] = useState(false);
   const [key, setKey] = useState(0);
@@ -467,7 +480,12 @@ function NoonApi({
         />
       ) : null}
       {live && canManage && live.reportCodes.length ? (
-        <NoonReportList slug={slug} codes={live.reportCodes} />
+        <NoonReportList
+          slug={slug}
+          codes={live.reportCodes}
+          inputs={live.reportInputs}
+          defaults={country ? { country: country.toLowerCase() } : {}}
+        />
       ) : null}
 
       <Dialog open={connecting} onOpenChange={setConnecting}>
@@ -588,7 +606,17 @@ function ConnectNoonForm({
  * Every report the key can download, each with its own check, so the right one for a new task
  * (such as Noon's warehouse stock and returns) can be found by its columns.
  */
-function NoonReportList({ slug, codes }: { slug: string; codes: string[] }) {
+function NoonReportList({
+  slug,
+  codes,
+  inputs,
+  defaults,
+}: {
+  slug: string;
+  codes: string[];
+  inputs: NoonConnectionView["reportInputs"];
+  defaults: Record<string, string>;
+}) {
   const sorted = [...codes].sort((a, b) => noonReportName(a).localeCompare(noonReportName(b)));
   return (
     <details className="group rounded-xl border bg-card">
@@ -609,10 +637,14 @@ function NoonReportList({ slug, codes }: { slug: string; codes: string[] }) {
                 <p className="break-all font-mono text-muted-foreground text-xs">{code}</p>
               </div>
               <ReportCheck
+                // Starts afresh when a test of the connection brings new inputs for it.
+                key={(inputs[code] ?? []).map((f) => f.name).join()}
                 slug={slug}
                 category={code}
                 buttonLabel="Check"
                 columnsLabel={`Columns in ${noonReportName(code)}`}
+                inputs={inputs[code] ?? []}
+                defaults={defaults}
               />
             </li>
           ))}
@@ -633,13 +665,23 @@ function ReportCheck({
   buttonLabel,
   columnsLabel,
   hint,
+  inputs = [],
+  defaults = {},
 }: {
   slug: string;
   category: string;
   buttonLabel: string;
   columnsLabel: string;
   hint?: string;
+  /** The report's inputs other than dates; more are added when Noon says some are missing. */
+  inputs?: { name: string; hint: string }[];
+  defaults?: Record<string, string>;
 }) {
+  const [fields, setFields] = useState(inputs);
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(inputs.map((f) => [f.name, defaults[f.name] ?? ""])),
+  );
+  const [needed, setNeeded] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [result, setResult] = useState<Extract<NoonReportCheck, { state: "ready" }> | null>(null);
@@ -651,8 +693,33 @@ function ReportCheck({
     const giveUp = Date.now() + 6 * 60_000;
     try {
       while (Date.now() < giveUp) {
-        const response = await checkNoonReportAction(slug, { category, exportCode });
-        if (!response.ok) return void toast.error(response.message);
+        const response = await checkNoonReportAction(slug, {
+          category,
+          exportCode,
+          inputs: values,
+        });
+        if (!response.ok) {
+          const missing = noonMissingFields(response.message);
+          if (missing.length) {
+            // Noon wants more inputs for this report: ask for them next to the button.
+            setNeeded(missing);
+            setFields((f) => [
+              ...f,
+              ...missing
+                .filter((m) => !f.some((x) => x.name === m))
+                .map((name) => ({ name, hint: "" })),
+            ]);
+            setValues((v) => ({
+              ...Object.fromEntries(missing.map((m) => [m, defaults[m] ?? ""])),
+              ...v,
+            }));
+            return void toast.error("Noon needs a few details for this report", {
+              description: `Fill in ${missing.map(inputLabel).join(" and ")}, then check again.`,
+            });
+          }
+          return void toast.error(response.message);
+        }
+        setNeeded([]);
         const check = response.check;
         if (check.state === "ready") {
           setResult(check);
@@ -672,6 +739,39 @@ function ReportCheck({
   const kind = preview ? KIND_LABELS[preview.kind] : null;
   return (
     <div className="grid gap-3">
+      {fields.length ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {fields.map((f) => {
+            const id = `${category}-${f.name}`;
+            return (
+              <Field
+                key={f.name}
+                label={inputLabel(f.name)}
+                htmlFor={id}
+                hint={
+                  f.hint
+                    ? `Noon describes it as: ${f.hint}`
+                    : `Noon's name for it: ${f.name}. Its own reports page shows the choices.`
+                }
+                error={
+                  needed.includes(f.name) && !values[f.name]?.trim()
+                    ? "Noon needs this for the report."
+                    : undefined
+                }
+              >
+                <Input
+                  id={id}
+                  value={values[f.name] ?? ""}
+                  onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="font-mono"
+                />
+              </Field>
+            );
+          })}
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button variant="outline" size="sm" onClick={run} disabled={running}>
           {running ? <Spinner /> : <FileSearch />}
@@ -726,6 +826,12 @@ function ReportCheck({
       ) : null}
     </div>
   );
+}
+
+/** "noon_status" → "Noon status". */
+function inputLabel(name: string) {
+  const words = name.split("_").filter(Boolean).join(" ");
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : name;
 }
 
 const KIND_LABELS: Record<string, string> = {

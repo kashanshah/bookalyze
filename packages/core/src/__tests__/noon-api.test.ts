@@ -270,4 +270,29 @@ describe("any report's inputs and name", () => {
       "Transaction view (payouts)",
     );
   });
+
+  it("asks for a report's other inputs, and the ones Noon says are missing", async () => {
+    const { noonReportInputs, noonReportParams, noonMissingFields } = await import(
+      "../commerce/noon-api"
+    );
+    const spec = { from_date: "string", to_date: "string", country: "string", noon_status: "enum" };
+    expect(noonReportInputs(spec)).toEqual([
+      { name: "country", hint: "string" },
+      { name: "noon_status", hint: "enum" },
+    ]);
+    expect(noonReportInputs(null)).toEqual([]);
+    expect(
+      noonReportParams(spec, "2026-10-01", "2026-10-07", {
+        country: " ae ",
+        noon_status: "",
+        to_date: "2020-01-01",
+      }),
+    ).toEqual({ from_date: "2026-10-01", to_date: "2026-10-07", country: "ae" });
+    expect(
+      noonMissingFields(
+        "Noon answered with an error (400): INVALID_ARGUMENT: AssertionError('Missing required fields: country, noon_status').",
+      ),
+    ).toEqual(["country", "noon_status"]);
+    expect(noonMissingFields("Noon answered with an error (500)")).toEqual([]);
+  });
 });
