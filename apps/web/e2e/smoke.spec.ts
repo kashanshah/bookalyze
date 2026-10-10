@@ -457,10 +457,10 @@ test("transactions: add a category on the spot, change values on the list, remov
   await expect(copy.getByLabel("Category 1", { exact: true })).toHaveText(
     "6400 · Shipping and postage",
   );
-  await copy.locator("#tx-memo").fill("Courier to Montreal");
+  await copy.locator("#tx-memo").fill("Parcel to Montreal");
   await copy.getByRole("button", { name: "Add transaction" }).click();
   await expect(page.getByText("Transaction added")).toBeVisible();
-  const montreal = page.locator("li", { hasText: "Courier to Montreal" });
+  const montreal = page.locator("li", { hasText: "Parcel to Montreal" });
   await expect(montreal).toContainText("−$21.50");
   await expect(courier).toBeVisible();
   await montreal.getByRole("button", { name: /^More for / }).click();
