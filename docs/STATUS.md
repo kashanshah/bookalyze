@@ -13,8 +13,8 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-09, phase 4d slice 2: Connect eBay (consent on eBay's page through
-Bookalyze's one eBay app, tokens in the vault, account-deletion notices)._
+_Last updated: 2026-10-10, Noon report checks read inputs Noon describes as a JSON schema and send
+typed dates (after phase 4d slice 2, Connect eBay)._
 
 ---
 
@@ -1370,6 +1370,13 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   Noon country's code in lower case (`ae`). `checkNoonReportAction` takes them as `inputs`
   (names `NOON_INPUT_NAME`, at most 20); `noonReportParams` adds the non-blank ones. Nothing is
   kept: the values Kazomo's reports need are to be recorded here once found.
+- **Fix (2026-10-10):** Kazomo's transaction view check answered "Missing required fields:
+  from_date, to_date": the check sent only the date inputs named in Noon's description, and
+  found none there. Most likely Noon describes them as a JSON schema (`type`, `properties`,
+  `required`, kept as text and cut at 200 characters), so the names read were `type`,
+  `properties` and `required` (the sync, which falls back to from_date/to_date, was fine). core `noonSpecFields` now reads plain names or a schema (whole
+  or cut short); `noonReportParams` sends from_date/to_date when the description names nothing,
+  and dates a person types win over the 7-day range.
 - `checkNoonReportAction` (was `checkNoonPayoutsReportAction`) takes the report's code and refuses
   one the key can't download; the `noon.report_checked` and `noon.export_failed` logs carry it.
 - Tests: core `noon-api.test.ts` (params, names, inputs, missing fields); e2e "noon: connect"
@@ -1865,8 +1872,27 @@ pasted in when needed:
 7. [ ] **Cost of goods sold for Noon**, per month and marketplace, bundles included. Works through
    Noon orders (slice 6) once SKUs are linked; check it with Kazomo's products.
 8. [ ] **FBN stock**: returns back into stock, losses written off, "your stock against Noon's".
-   Slice 7 lists every report with a check of its columns; next, the report with FBN stock and
-   returns (owner input 4), then its import.
+   Slice 7 lists every report with a check of its columns. Kazomo's key can download these
+   (columns checked 2026-10-10, column names only):
+   - `fbn_inventoryv2_ledgerdetailedview` (**the one for FBN stock**, like Amazon's FBA ledger):
+     transaction_date, transaction_type, reference_nr, reference_type, country_code,
+     warehouse_code, fulfillment_type, nfsku, sku, partner_sku, partner_barcode,
+     inventory_condition, quantity_delta, qc_fail_item_identifier.
+   - `fbn_inventoryv2_ledgersummaryview` (per day and SKU; to check against): date, location,
+     nfsku, sku, partner_sku, partner_barcode, inventory_condition, opening_quantity,
+     inbound_quantity, vendor_return_quantity, disposal_quantity, customer_outbound_quantity,
+     customer_return_quantity, transfer_in/out_quantity, transit_quantity, lost_quantity,
+     found_quantity, damaged_quantity, other_quantity, closing_quantity.
+   - `fbn_inventoryv2_aging` (stock age buckets by SKU), `fbn_inventory_fbninventorydetailreport`
+     (on-hand by warehouse; inputs lang and close date).
+   - `noon_noonoms_ordersexport` (FBN and FBP orders with status, delivery dates,
+     is_fulfilled_by_noon), `namshi_financestatement` (Namshi, not used),
+     `noon_financeweb_invoicesandcreditnotes` (inputs start_date, to_date, contract order nrs),
+     `noon_catalog_reports_productviewsandsalesdata` (visits and units; inputs language,
+     country), `noon_catalog_catalogexport` and `noon_catalog_globalcatalogexport` (listings,
+     prices and FBN stock; inputs country and noon_status, `active`).
+   Next: bring in the detailed ledger (returns back into stock, losses, damaged, found), like the
+   FBA inventory ledger, then "your stock against Noon's" from the summary view.
 
 ### Phase 4d: eBay (as a product: any eBay site; the seller ships)
 Built like Amazon and Noon: channels first, then the account, orders, money and the books.
