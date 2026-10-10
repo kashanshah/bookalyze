@@ -331,4 +331,30 @@ describe("any report's inputs and name", () => {
     });
     expect(noonSpecFields({})).toBeNull();
   });
+
+  it("tells date inputs from others by their words, not by letters inside them", async () => {
+    const { isNoonDateInput, noonReportParams, noonReportInputs } = await import(
+      "../commerce/noon-api"
+    );
+    for (const name of [
+      "from_date",
+      "to_date",
+      "start_date",
+      "endDate",
+      "close_date",
+      "created_at",
+    ]) {
+      expect(isNoonDateInput(name)).toBe(true);
+    }
+    for (const name of ["vendor_code", "country", "noon_status", "lang", "contract_order_nrs"]) {
+      expect(isNoonDateInput(name)).toBe(false);
+    }
+    // "vendor" holds "end" but isn't the range's end.
+    expect(
+      noonReportParams({ from_date: "string", vendor_code: "string" }, "2026-10-01", "2026-10-07"),
+    ).toEqual({ from_date: "2026-10-01" });
+    expect(
+      noonReportInputs({ vendor_code: "string", close_date: "date" }).map((i) => i.name),
+    ).toEqual(["vendor_code", "close_date"]);
+  });
 });

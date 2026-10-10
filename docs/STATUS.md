@@ -13,8 +13,8 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-10, Noon report checks read inputs Noon describes as a JSON schema and send
-typed dates (after phase 4d slice 2, Connect eBay)._
+_Last updated: 2026-10-10, Noon report checks: date inputs are date pickers, and inputs are
+recognised as dates by whole words (after the report-check fix for inputs described as a schema)._
 
 ---
 
@@ -1377,6 +1377,11 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   `properties` and `required` (the sync, which falls back to from_date/to_date, was fine). core `noonSpecFields` now reads plain names or a schema (whole
   or cut short); `noonReportParams` sends from_date/to_date when the description names nothing,
   and dates a person types win over the 7-day range.
+- **Date pickers (2026-10-10):** an input whose name is a day (`isNoonDateInput`: the words
+  from/start/to/end/until or date/day, or ending `_at`/`_on`, e.g. `close_date`) is a date
+  control, sent as YYYY-MM-DD; a range's ends say "Left empty, the check uses the last 7 days".
+  Names are read as words (`noonDateRole`), so `vendor_code` is no longer taken for an end date
+  (it held "end"). e2e: the mock's stock report also asks for `close_date`.
 - `checkNoonReportAction` (was `checkNoonPayoutsReportAction`) takes the report's code and refuses
   one the key can't download; the `noon.report_checked` and `noon.export_failed` logs carry it.
 - Tests: core `noon-api.test.ts` (params, names, inputs, missing fields); e2e "noon: connect"

@@ -279,10 +279,38 @@ export function noonPayoutsParams(spec: unknown, from: string, to: string): Reco
     spec && typeof spec === "object" ? Object.keys(spec as Record<string, unknown>) : [];
   const params: Record<string, string> = {};
   for (const name of names) {
-    if (/from|start/i.test(name)) params[name] = from;
-    else if (/(^|_)to($|_)|end|until/i.test(name)) params[name] = to;
+    const role = noonDateRole(name);
+    if (role) params[name] = role === "from" ? from : to;
   }
   return Object.keys(params).length ? params : { from_date: from, to_date: to };
+}
+
+/** A name's words: from_date → from, date; fromDate → from, date. */
+function nameWords(name: string): string[] {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/** Whether an input is a range's first day ("from", "start") or last ("to", "end", "until"). */
+export function noonDateRole(name: string): "from" | "to" | null {
+  const words = nameWords(name);
+  if (words.some((w) => w === "from" || w === "start")) return "from";
+  if (words.some((w) => w === "to" || w === "end" || w === "until")) return "to";
+  return null;
+}
+
+/** Whether a report input is a day (a range's ends, or any "…date", "…_at", "…_on" input). */
+export function isNoonDateInput(name: string): boolean {
+  const words = nameWords(name);
+  return (
+    noonDateRole(name) !== null ||
+    words.includes("date") ||
+    words.includes("day") ||
+    /_(at|on)$/i.test(name)
+  );
 }
 
 /** Words of a JSON schema, not input names. */
@@ -370,8 +398,8 @@ export function noonReportParams(
   const fields = noonSpecFields(spec);
   const params: Record<string, string> = {};
   for (const name of fields ?? []) {
-    if (/from|start/i.test(name)) params[name] = from;
-    else if (/(^|_)to($|_)|end|until/i.test(name)) params[name] = to;
+    const role = noonDateRole(name);
+    if (role) params[name] = role === "from" ? from : to;
   }
   if (!Object.keys(params).length && !fields?.length) {
     params.from_date = from;
@@ -383,9 +411,9 @@ export function noonReportParams(
   return params;
 }
 
-/** A date input by its name: "from"/"start" for the first day, "to"/"end"/"until" for the last. */
+/** A date input the check fills by itself: a range's first or last day. */
 function isNoonDateParam(name: string): boolean {
-  return /from|start/i.test(name) || /(^|_)to($|_)|end|until/i.test(name);
+  return noonDateRole(name) !== null;
 }
 
 /** A report input's name as Noon sends it (letters, digits and underscores). */
