@@ -1,7 +1,7 @@
 import type { PdfTextItem } from "../banking/pdf-statement";
-import { AMOUNT_SCALE, divRound, formatDecimal, parseDecimal, roundUnits } from "../money";
+import { formatDecimal, parseDecimal } from "../money";
 import { getCurrency } from "../reference-data";
-import { purchaseLineTotal, purchaseOrderTotal } from "./purchasing";
+import { purchaseLineTotal, purchaseOrderTotal, unitCostFromTotal } from "./purchasing";
 
 /**
  * Alibaba.com order receipts (the PDF "Receipt" from an order's page) read into a draft purchase
@@ -333,11 +333,9 @@ export function alibabaPurchaseDraft(
       quantity > 0 &&
       purchaseLineTotal(quantity, unitCost, currency) !== formatDecimal(parseDecimal(line.total))
     ) {
-      // Alibaba rounds the price it prints; work it back from the line total (4 decimals).
-      unitCost = formatDecimal(
-        roundUnits(divRound(parseDecimal(line.total), BigInt(quantity)), AMOUNT_SCALE),
-      );
-      note = `Alibaba prints ${show(line.unitPrice, currency)} each but charges ${show(line.total, currency)} for ${quantity}: the cost of one is worked back from the total.`;
+      // Alibaba rounds the price it prints; work it out from the line total, exactly.
+      unitCost = unitCostFromTotal(line.total, quantity) ?? unitCost;
+      note = `Alibaba prints ${show(line.unitPrice, currency)} each but charges ${show(line.total, currency)} for ${quantity}: the cost of one is worked out from the total.`;
     }
     return {
       productId,

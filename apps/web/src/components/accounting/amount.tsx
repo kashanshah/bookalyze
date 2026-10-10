@@ -1,4 +1,4 @@
-import { formatMoney, parseDecimal } from "@bookalyze/core";
+import { formatMoney, parseDecimal, RATE_SCALE } from "@bookalyze/core";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,7 +19,8 @@ export function Amount({
   muteZero?: boolean;
 }) {
   if (value == null) return <span className={cn("text-muted-foreground/50", className)}>—</span>;
-  const units = parseDecimal(value);
+  // Up to 10 places: a cost of one worked out from a total carries more than an amount.
+  const units = parseDecimal(value, RATE_SCALE);
   const formatted = formatMoney(units < 0n ? value.replace("-", "") : value, currency, locale);
   return (
     <span

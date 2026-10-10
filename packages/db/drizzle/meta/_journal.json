@@ -414,6 +414,13 @@
       "when": 1791658420202,
       "tag": "0058_purchases_in_books",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1791659189653,
+      "tag": "0059_po_unit_cost_scale",
+      "breakpoints": true
     }
   ]
 }

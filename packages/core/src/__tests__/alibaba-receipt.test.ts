@@ -186,10 +186,10 @@ describe("alibabaPurchaseDraft", () => {
     });
     // The longest matching name wins; a SKU in the title wins outright.
     expect(draft.lines.map((l) => [l.productId, l.quantity, l.unitCost])).toEqual([
-      ["cup", "560", "13.4604"],
+      ["cup", "560", "13.4604464286"],
       ["lid", "500", "2"],
     ]);
-    expect(draft.lines[0]?.note).toContain("worked back from the total");
+    expect(draft.lines[0]?.note).toContain("worked out from the total");
     expect(draft.lines[1]?.note).toBeNull();
     expect(draft.notes).toBe(
       [
@@ -199,8 +199,8 @@ describe("alibabaPurchaseDraft", () => {
         "Contract currency USD: USD 2,438.48 (1 USD = 3.739012 AED).",
       ].join("\n"),
     );
-    // 560 × 13.4604 is 7,537.82: three fils short of Alibaba's line.
-    expect(draft.checks).toEqual([expect.stringContaining("AED 8,537.82")]);
+    // The cost of one is kept exactly, so the lines add up to Alibaba's to the fils.
+    expect(draft.checks).toEqual([]);
   });
 
   it("offers the seller as a new vendor and flags lines billed by amount", () => {

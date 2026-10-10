@@ -1516,7 +1516,8 @@ test("purchase orders: draft, send, a partial delivery, then the rest", async ({
   await choose(page.getByLabel("Product 1", { exact: true }), "Maple leaf ceramic mug");
   await page.getByLabel("Quantity 1", { exact: true }).fill("120");
   await page.getByLabel("Cost of one 1", { exact: true }).fill("2.45");
-  await expect(page.getByText("$294.00").first()).toBeVisible();
+  await expect(page.getByLabel("Line total 1", { exact: true })).toHaveValue("294.00");
+  await expect(page.getByLabel("Order total")).toHaveValue("294.00");
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByText("PO-0001 created")).toBeVisible();
   await expect(page).toHaveURL(/\/purchase-orders\/[0-9a-f-]{36}$/);
@@ -2501,7 +2502,7 @@ test("purchase orders: fill one in from an Alibaba receipt, check it, then save 
   await expect(page.getByLabel("Quantity 1", { exact: true })).toHaveValue("200");
   // 200 at 2.47 would be 494.00; Alibaba charged 493.00, so the cost of one is worked back.
   await expect(page.getByLabel("Cost of one 1", { exact: true })).toHaveValue("2.465");
-  await expect(page.getByText("worked back from the total")).toBeVisible();
+  await expect(page.getByText("worked out from the total")).toBeVisible();
   await expect(page.getByText("On the receipt: Bamboo tray for coffee mugs")).toBeVisible();
   await expect(page.getByLabel("Notes (optional)")).toHaveValue(/Shipping fee USD 40\.00/);
   await expect(page).toHaveURL(/\/purchase-orders\/new$/);
@@ -2513,7 +2514,7 @@ test("purchase orders: fill one in from an Alibaba receipt, check it, then save 
     "Maple Glassworks Co., Ltd.",
   );
   await page.getByRole("button", { name: "Remove product 2" }).click();
-  await expect(page.getByText(/493\.00/).first()).toBeVisible();
+  await expect(page.getByLabel("Order total")).toHaveValue("493.00");
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByText(/PO-\d+ created/)).toBeVisible();
   await expect(
@@ -2622,6 +2623,51 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   await expect(deposits).toContainText("Into stock$670.48");
   await expect(deposits).toContainText("Owed$434.48");
   await expect(deposits.getByRole("button", { name: "Settle the difference" })).toBeVisible();
+});
+
+test("purchase orders: type the cost of one, the line total or the order total", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Purchase orders", exact: true }).click();
+  await page.getByRole("link", { name: "New purchase order" }).click();
+  await choose(page.getByLabel("Supplier", { exact: true }), "Office Depot");
+  await choose(page.getByLabel("Product 1", { exact: true }), "Maple leaf ceramic mug");
+  await page.getByLabel("Quantity 1", { exact: true }).fill("200");
+
+  // A line total paid as one sum: the cost of one is worked out, and the total stays exact.
+  await page.getByLabel("Line total 1", { exact: true }).fill("3514.77");
+  await expect(page.getByLabel("Cost of one 1", { exact: true })).toHaveValue("17.5739");
+  await expect(page.getByLabel("Order total")).toHaveValue("3514.77");
+
+  // More units for the same total: the cost of one follows.
+  await page.getByLabel("Quantity 1", { exact: true }).fill("300");
+  await expect(page.getByLabel("Cost of one 1", { exact: true })).toHaveValue("11.7159");
+  await expect(page.getByLabel("Line total 1", { exact: true })).toHaveValue("3514.77");
+
+  // The cost of one typed in: the line total follows.
+  await page.getByLabel("Cost of one 1", { exact: true }).fill("2.5");
+  await expect(page.getByLabel("Line total 1", { exact: true })).toHaveValue("750.00");
+
+  // A second product, then the whole order's total spread over both by their totals.
+  await page.getByRole("button", { name: "Add a product" }).click();
+  await choose(page.getByLabel("Product 2", { exact: true }), "Maple leaf ceramic mug");
+  await page.getByLabel("Quantity 2", { exact: true }).fill("100");
+  await page.getByLabel("Line total 2", { exact: true }).fill("250");
+  await page.getByLabel("Order total").fill("2000");
+  await page.getByLabel("Order total").press("Enter");
+  await expect(page.getByLabel("Line total 1", { exact: true })).toHaveValue("1500.00");
+  await expect(page.getByLabel("Line total 2", { exact: true })).toHaveValue("500.00");
+  await expect(page.getByLabel("Cost of one 1", { exact: true })).toHaveValue("5");
+
+  // Saved exactly.
+  await page.getByLabel("Line total 1", { exact: true }).fill("1499.99");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText(/PO-\d+ created/)).toBeVisible();
+  await expect(
+    page.getByRole("listitem", { name: "Maple leaf ceramic mug" }).first(),
+  ).toContainText("$1,499.99");
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {

@@ -1,0 +1,1 @@
+ALTER TABLE "purchase_order_lines" ALTER COLUMN "unit_cost" SET DATA TYPE numeric(24, 10);
