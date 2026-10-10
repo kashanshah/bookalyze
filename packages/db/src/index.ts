@@ -17,6 +17,7 @@ export * from "./ledger";
 export * from "./listings";
 export * from "./noon-posting";
 export * from "./noon-transactions";
+export * from "./purchase-payments";
 export * from "./purchasing";
 export * from "./reconciliation";
 export * from "./reports";

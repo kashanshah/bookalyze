@@ -33,6 +33,8 @@ export type DeliveryCostInput = {
   currency: string;
   exchangeRate: string | null;
   allocation: AllocationMethod;
+  /** Who it's paid to, when not the supplier (a shipping company, a customs broker). */
+  contactId?: string | null;
 };
 
 export type DeliveryCostingLine = {
@@ -104,6 +106,7 @@ async function loadDelivery(tx: Transaction, receiptId: string) {
       currency: purchaseReceiptCosts.currency,
       exchangeRate: purchaseReceiptCosts.exchangeRate,
       allocation: purchaseReceiptCosts.allocation,
+      contactId: purchaseReceiptCosts.contactId,
     })
     .from(purchaseReceiptCosts)
     .where(eq(purchaseReceiptCosts.receiptId, receiptId))
@@ -245,6 +248,7 @@ export async function saveDeliveryCosts(
         currency: cost.currency,
         exchangeRate: cost.currency === input.baseCurrency ? null : cost.exchangeRate,
         allocation: cost.allocation,
+        contactId: cost.contactId || null,
       })),
     );
   }

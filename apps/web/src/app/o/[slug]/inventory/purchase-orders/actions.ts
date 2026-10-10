@@ -1,28 +1,37 @@
 "use server";
 
-import { purchaseOrderNumber } from "@bookalyze/core";
+import { planProblems, purchaseOrderNumber } from "@bookalyze/core";
 import {
+  addPurchasePayment,
   addSupplier,
   cancelPurchaseOrder,
   createPurchaseOrder,
   deletePurchaseOrder,
+  ensureSystemAccount,
+  getContact,
   getPurchaseOrder,
+  listTransactions,
   markPurchaseOrderOrdered,
   PurchasingError,
   receivePurchaseOrder,
+  removePurchasePayment,
   saveDeliveryCosts,
+  savePaymentPlan,
   updatePurchaseOrder,
 } from "@bookalyze/db";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
   deliveryCostsSchema,
+  paymentPlanSchema,
   purchaseOrderSchema,
+  purchasePaymentSchema,
   receiveSchema,
 } from "@/lib/validation/purchasing";
 import { inOrg } from "@/server/accounting";
 import { audit } from "@/server/audit";
 import { getInventoryContext } from "@/server/inventory";
+import { saveTransactionAction } from "../../accounting/transactions/actions";
 
 type Fail = {
   ok: false;
@@ -305,4 +314,216 @@ export async function addSupplierAction(slug: string, input: unknown): Promise<A
   });
   revalidatePath(`/o/${slug}/accounting`, "layout");
   return { ok: true, id: saved.id, name: saved.name };
+}
+
+/** Saves the order's payment plan (any number of parts, each a percentage or an amount). */
+export async function savePaymentPlanAction(
+  slug: string,
+  id: string,
+  input: unknown,
+): Promise<PurchaseOrderActionResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  if (!validId(id)) return gone;
+  const parsed = paymentPlanSchema.safeParse(input);
+  if (!parsed.success) {
+    const lineErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const [index, field] = issue.path;
+      lineErrors[`${String(index)}.${String(field ?? "value")}`] ??= issue.message;
+    }
+    return { ok: false, message: "Check the highlighted parts.", lineErrors };
+  }
+  try {
+    return await inOrg(ctx, async (tx): Promise<PurchaseOrderActionResult> => {
+      const po = await getPurchaseOrder(tx, id);
+      if (!po) return gone;
+      const problems = planProblems(parsed.data, po.total, po.currency);
+      if (Object.keys(problems).length) {
+        const { plan, ...parts } = problems;
+        return {
+          ok: false,
+          message: plan ?? "Check the highlighted parts.",
+          lineErrors: Object.fromEntries(
+            Object.entries(parts).map(([index, message]) => [`${index}.value`, message]),
+          ),
+        };
+      }
+      await savePaymentPlan(tx, { purchaseOrderId: id, plan: parsed.data });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "purchase_order.plan_saved",
+        entityType: "purchase_order",
+        entityId: id,
+        after: { plan: parsed.data },
+      });
+      return { ok: true };
+    });
+  } catch (error) {
+    return friendly(error);
+  } finally {
+    revalidatePath(base(slug), "layout");
+  }
+}
+
+export type PaymentCandidate = {
+  id: string;
+  number: number;
+  date: string;
+  memo: string | null;
+  contactId: string | null;
+  amount: string;
+  currency: string;
+};
+
+/** Money that went out, newest first, to pick a payment that's already in the books. */
+export async function paymentCandidatesAction(
+  slug: string,
+  search: string,
+): Promise<PaymentCandidate[]> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  const { rows } = await inOrg(ctx, (tx) =>
+    listTransactions(tx, {
+      kind: "withdrawal",
+      search: search.trim().slice(0, 100) || null,
+      limit: 30,
+      offset: 0,
+    }),
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    number: row.entryNumber,
+    date: row.date,
+    memo: row.memo,
+    contactId: row.contactId,
+    amount: row.view.amount,
+    currency: row.currency,
+  }));
+}
+
+export type RecordPaymentResult =
+  | { ok: true; message: string }
+  | { ok: false; message?: string; errors?: Record<string, string> };
+
+/**
+ * Records a payment toward the order: a new bank transaction (money out to Inventory, like any
+ * supplier payment) or one already in the books, linked with the part of it for this order.
+ */
+export async function recordPurchasePaymentAction(
+  slug: string,
+  id: string,
+  input: unknown,
+): Promise<RecordPaymentResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  if (!validId(id)) return gone;
+  const parsed = purchasePaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    const errors: Record<string, string> = {};
+    for (const issue of parsed.error.issues)
+      errors[String(issue.path[0] ?? "form")] ??= issue.message;
+    return { ok: false, message: "Check the highlighted fields.", errors };
+  }
+  const value = parsed.data;
+  const po = await inOrg(ctx, (tx) => getPurchaseOrder(tx, id));
+  if (!po) return gone;
+  const contactId = value.contactId || po.supplierId;
+  if (contactId !== po.supplierId) {
+    const contact = await inOrg(ctx, (tx) => getContact(tx, contactId));
+    if (!contact) return { ok: false, errors: { contactId: "This vendor no longer exists." } };
+  }
+  const number = purchaseOrderNumber(po.number);
+
+  let entryId = value.journalEntryId;
+  if (value.mode === "new") {
+    const inventory = await inOrg(ctx, (tx) => ensureSystemAccount(tx, ctx.org.id, "inventory"));
+    const saved = await saveTransactionAction(slug, {
+      kind: "withdrawal",
+      date: value.date,
+      memo: [
+        number,
+        value.label || (contactId === po.supplierId ? "Payment" : "Shipping and costs"),
+      ]
+        .join(" · ")
+        .slice(0, 200),
+      contactId,
+      moneyAccountId: value.moneyAccountId,
+      fxRate: value.fxRate,
+      splits: [{ accountId: inventory, amount: value.bankAmount, description: "", taxRateId: "" }],
+    });
+    if (!saved.ok) {
+      const errors: Record<string, string> = {};
+      for (const [key, message] of Object.entries(saved.errors ?? {})) {
+        errors[key.startsWith("splits") ? "bankAmount" : key] ??= message;
+      }
+      return { ok: false, message: saved.message ?? "Check the highlighted fields.", errors };
+    }
+    entryId = saved.data.id;
+  }
+  if (!entryId) return { ok: false, errors: { journalEntryId: "Choose the transaction." } };
+  const journalEntryId = entryId;
+  try {
+    await inOrg(ctx, async (tx) => {
+      const payment = await addPurchasePayment(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        purchaseOrderId: id,
+        journalEntryId,
+        contactId,
+        receiptId: value.receiptId || null,
+        label: value.label,
+        amount: value.amount,
+        currency: value.currency,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "purchase_order.payment_added",
+        entityType: "purchase_order",
+        entityId: id,
+        after: {
+          paymentId: payment.id,
+          journalEntryId,
+          contactId,
+          amount: value.amount,
+          created: value.mode === "new",
+        },
+      });
+    });
+  } catch (error) {
+    const failed = friendly(error);
+    return { ok: false, message: failed.message };
+  }
+  revalidatePath(base(slug), "layout");
+  revalidatePath(`/o/${slug}/accounting`, "layout");
+  return {
+    ok: true,
+    message: value.mode === "new" ? "Payment recorded" : "Payment linked to the order",
+  };
+}
+
+/** Takes a payment off the order. Its bank transaction stays in the books. */
+export async function removePurchasePaymentAction(
+  slug: string,
+  id: string,
+  paymentId: string,
+): Promise<PurchaseOrderActionResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  if (!validId(id) || !validId(paymentId)) return gone;
+  try {
+    await inOrg(ctx, async (tx) => {
+      await removePurchasePayment(tx, { purchaseOrderId: id, paymentId });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "purchase_order.payment_removed",
+        entityType: "purchase_order",
+        entityId: id,
+        after: { paymentId },
+      });
+    });
+    revalidatePath(base(slug), "layout");
+    return { ok: true };
+  } catch (error) {
+    return friendly(error);
+  }
 }

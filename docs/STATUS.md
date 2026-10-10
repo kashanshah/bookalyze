@@ -28,7 +28,7 @@ back into stock, losses written off, like Amazon's FBA ledger)._
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
-| 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles) and slice 7 (a purchase order filled in from an Alibaba.com receipt) done. Next: Noon (phase 4c), with bundles from day one |
+| 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) done. Next: slice 9, purchases in the books through a supplier deposits account. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: "your stock against Noon's" from the ledger summary view. Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable) and 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices) done. Next: eBay orders. See §3 "Phase 4d" |
 
@@ -1659,6 +1659,61 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   apart, fulfilment checked, orders shown without a connection, Amazon.ae's upload unaffected);
   e2e "noon: add a Noon country, say who ships, and link a SKU on it".
 
+### Phase 5, slice 8: paying for purchase orders
+
+- **What it is:** a **Payments** section on every purchase order that has been sent (not
+  drafts). It shows the order total, what's been paid to the supplier (with the share, e.g.
+  "Paid (35.0%)") and what's still to pay, with a progress bar.
+- **Payment plan** (optional, "Add a payment plan"): any number of parts, each a **percentage of
+  the order or a fixed amount** in the order's currency, with what it's for ("Upfront",
+  "Balance"). Nothing is assumed: 50%, 100%, USD 1,000, 35/60/5 are all just plans.
+  - The dialog shows each percentage's amount and how much of the order isn't in the plan yet.
+    "Add a part" suggests the rest as a fixed amount.
+  - Parts over 100% and plans over the order are refused (`planProblems`).
+  - Payments to the supplier fill the parts in order: Paid, partly paid (with how much), To pay
+    (`planProgress`).
+- **Record a payment:**
+  - **Paid to:** the supplier by default, or any vendor (a shipping company, a customs broker).
+    For someone else, it can name the delivery it was for and its currency. Only payments to
+    the supplier count toward the order.
+  - **How much:** a percentage of the order or an amount. The dialog suggests the next unpaid
+    part of the plan, with its label.
+  - **A new payment:** paid from which account, on which day. If the account is in another
+    currency, it asks what left the account (and the exchange rate if that isn't the main
+    currency). Saving adds it to Transactions as money out to **Inventory**, the current
+    decision for supplier payments, through `saveTransactionAction`. The memo is "PO-0007 ·
+    Upfront".
+  - **Already in my books:** search money out and pick the transaction (e.g. one that came in
+    from the bank). Its amount is suggested when it's in the same currency.
+  - The same transaction can't be on the same order twice. A transaction can be split across
+    orders.
+- **Payments list:** date, what for, who (if not the supplier), amount, what left the account
+  when that was another currency, and a link to its journal entry. **Take this payment off the
+  order** (asks once more) unlinks it; the bank transaction stays in the books.
+  - A corrected transaction carries its payments over (`carryEntryLinks`). A transaction
+    removed from the books stays listed, dimmed, and no longer counts.
+- **Delivery costs** can say who they're **paid to** (Landed cost page, "Paid to (optional)"),
+  kept when costs are saved again.
+- **Not yet in the books differently:** payments still go to Inventory as before. Slice 9 moves
+  them to a supplier deposits account and posts deliveries, so exchange differences show up.
+- **Schema** (migration `0057_po_payments`): `purchase_orders.payment_plan` (jsonb, default
+  `[]`), `purchase_payments` (order, optional delivery, payee contact, journal entry, label,
+  amount > 0, currency; composite FKs; cascade from the order and the delivery),
+  `purchase_receipt_costs.contact_id`. All under RLS.
+- **Code:** core `inventory/purchase-payments.ts` (`percentOfTotal`, `paidPercent`,
+  `planAmounts`, `planProgress`, `planProblems`). db `purchase-payments.ts`
+  (`listPurchasePayments`, `addPurchasePayment`, `removePurchasePayment`, `savePaymentPlan`,
+  `paidByOrder`, `ordersPaidBy`). Actions `savePaymentPlanAction`, `paymentCandidatesAction`,
+  `recordPurchasePaymentAction` and `removePurchasePaymentAction`, audited as
+  `purchase_order.plan_saved`, `.payment_added` and `.payment_removed`. Web
+  `purchase-orders/[id]/payments.tsx`.
+- Tests:
+  - core `purchase-payments.test.ts`: amounts, progress, problems.
+  - db `purchase-payments.test.ts`: plan, payments to the supplier and a shipper, no linking
+    twice, carried over on correction, not counted once removed, cancelled orders, tenant
+    isolation.
+  - e2e "purchase orders: a payment plan, payments to the supplier and to a shipper".
+
 ### Phase 5, slice 7: purchase orders from Alibaba.com receipts
 
 - **What it is:** New purchase order → **Fill in from an Alibaba receipt**. Drop in (or choose) the
@@ -1919,6 +1974,12 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 7. [x] **Purchase orders from Alibaba.com receipts.** Done in slice 7. Later: remember which
    product each Alibaba title was (so the next receipt matches it), keep the receipt PDF on the
    order, and other suppliers' receipts or proforma invoices.
+8. [x] **Paying for purchase orders.** Done in slice 8: a payment plan (percentages or fixed
+   amounts), payments to the supplier and to others (freight), new or already in the books.
+9. [ ] **Purchases in the books.** Payments go to a Supplier deposits account; each delivery posts
+   its landed cost (Dr Inventory, Cr Supplier deposits), reposted when its costs change; a
+   received order settles what's left as an exchange difference. From a start date, so earlier
+   months (payments categorised to Inventory) stay as they are.
 
 ### Phase 4c: Noon (as a product: UAE, KSA, Egypt; FBN and FBP)
 Noon's partner API (docs: noon-docs.noonpartners.dev; its `llms.txt` lists every page, and the

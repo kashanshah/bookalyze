@@ -1,5 +1,13 @@
-import { purchaseOrderNumber } from "@bookalyze/core";
-import { deliveryCostSummary, getPurchaseOrder } from "@bookalyze/db";
+import { isMoneyAccountSubtype, purchaseOrderNumber } from "@bookalyze/core";
+import {
+  deliveryCostSummary,
+  formatEntryNumber,
+  getPurchaseOrder,
+  listPurchasePayments,
+  schema,
+  supplierOptions,
+} from "@bookalyze/db";
+import { asc } from "drizzle-orm";
 import { ArrowLeft, ChevronRight, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -12,7 +20,9 @@ import { formatDate, nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getInventoryContext } from "@/server/inventory";
 import { PurchaseOrderActions } from "../po-controls";
+import { currencyOptions } from "../shared";
 import { StatusBadge } from "../status-badge";
+import { PurchasePayments } from "./payments";
 
 export const metadata: Metadata = { title: "Purchase order" };
 
@@ -32,10 +42,24 @@ export default async function PurchaseOrderPage({
       tx,
       po.receipts.map((receipt) => receipt.id),
     );
-    return { po, costs };
+    const payments = await listPurchasePayments(tx, po.id);
+    const vendors = await supplierOptions(tx);
+    const accounts = await tx
+      .select()
+      .from(schema.accounts)
+      .orderBy(asc(schema.accounts.code), asc(schema.accounts.name));
+    return { po, costs, payments, vendors, accounts };
   });
   if (!found) notFound();
-  const { po, costs } = found;
+  const { po, costs, payments, vendors, accounts } = found;
+  const { baseCurrency } = ctx.profile;
+  const moneyAccounts = accounts
+    .filter((a) => isMoneyAccountSubtype(a.subtype) && !a.isArchived)
+    .map((a) => ({
+      id: a.id,
+      label: a.code ? `${a.code} · ${a.name}` : a.name,
+      currency: a.currency ?? baseCurrency,
+    }));
   const number = purchaseOrderNumber(po.number);
   const names = new Map(po.lines.map((line) => [line.id, line.productName]));
   const units = po.lines.reduce((sum, line) => sum + line.quantity, 0);
@@ -89,56 +113,97 @@ export default async function PurchaseOrderPage({
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <section className="overflow-hidden rounded-2xl border bg-card shadow-xs">
-          <div className="hidden grid-cols-[minmax(0,1fr)_6rem_7rem_8rem_8rem] gap-3 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider md:grid">
-            <span>Product</span>
-            <span className="text-end">Ordered</span>
-            <span className="text-end">Arrived</span>
-            <span className="text-end">Cost of one</span>
-            <span className="text-end">Total</span>
-          </div>
-          <ul className="divide-y">
-            {po.lines.map((line) => (
-              <li
-                key={line.id}
-                aria-label={line.productName}
-                className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 px-4 py-3 sm:px-5 md:grid-cols-[minmax(0,1fr)_6rem_7rem_8rem_8rem] md:items-center"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-sm">{line.productName}</p>
-                  {line.productSku ? (
-                    <p className="text-muted-foreground text-xs">Your SKU {line.productSku}</p>
-                  ) : null}
-                </div>
-                <p className="text-end text-sm tabular-nums md:order-none">
-                  <span className="text-muted-foreground md:hidden">Ordered </span>
-                  {n.format(line.quantity)}
-                </p>
-                <p className="text-sm tabular-nums md:text-end">
-                  <span className="text-muted-foreground md:hidden">Arrived </span>
-                  <span className={line.received >= line.quantity ? "text-success" : undefined}>
-                    {n.format(line.received)}
-                  </span>
-                </p>
-                <p className="text-end text-muted-foreground text-sm">
-                  <Amount value={line.unitCost} currency={po.currency} locale={locale} />
-                </p>
-                <p className="col-span-2 text-end text-sm md:col-span-1">
-                  <Amount value={line.total} currency={po.currency} locale={locale} />
-                </p>
-              </li>
-            ))}
-          </ul>
-          <div className="flex justify-end gap-3 border-t bg-muted/20 px-5 py-3 text-sm">
-            <span className="text-muted-foreground">Total</span>
-            <Amount
-              value={po.total}
-              currency={po.currency}
+        <div className="grid h-fit min-w-0 gap-6">
+          <section className="overflow-hidden rounded-2xl border bg-card shadow-xs">
+            <div className="hidden grid-cols-[minmax(0,1fr)_6rem_7rem_8rem_8rem] gap-3 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider md:grid">
+              <span>Product</span>
+              <span className="text-end">Ordered</span>
+              <span className="text-end">Arrived</span>
+              <span className="text-end">Cost of one</span>
+              <span className="text-end">Total</span>
+            </div>
+            <ul className="divide-y">
+              {po.lines.map((line) => (
+                <li
+                  key={line.id}
+                  aria-label={line.productName}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 px-4 py-3 sm:px-5 md:grid-cols-[minmax(0,1fr)_6rem_7rem_8rem_8rem] md:items-center"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-sm">{line.productName}</p>
+                    {line.productSku ? (
+                      <p className="text-muted-foreground text-xs">Your SKU {line.productSku}</p>
+                    ) : null}
+                  </div>
+                  <p className="text-end text-sm tabular-nums md:order-none">
+                    <span className="text-muted-foreground md:hidden">Ordered </span>
+                    {n.format(line.quantity)}
+                  </p>
+                  <p className="text-sm tabular-nums md:text-end">
+                    <span className="text-muted-foreground md:hidden">Arrived </span>
+                    <span className={line.received >= line.quantity ? "text-success" : undefined}>
+                      {n.format(line.received)}
+                    </span>
+                  </p>
+                  <p className="text-end text-muted-foreground text-sm">
+                    <Amount value={line.unitCost} currency={po.currency} locale={locale} />
+                  </p>
+                  <p className="col-span-2 text-end text-sm md:col-span-1">
+                    <Amount value={line.total} currency={po.currency} locale={locale} />
+                  </p>
+                </li>
+              ))}
+            </ul>
+            <div className="flex justify-end gap-3 border-t bg-muted/20 px-5 py-3 text-sm">
+              <span className="text-muted-foreground">Total</span>
+              <Amount
+                value={po.total}
+                currency={po.currency}
+                locale={locale}
+                className="font-semibold"
+              />
+            </div>
+          </section>
+          {po.status === "draft" ? null : (
+            <PurchasePayments
+              slug={slug}
               locale={locale}
-              className="font-semibold"
+              baseCurrency={baseCurrency}
+              today={nowIn(timezone).date}
+              po={{
+                id: po.id,
+                number,
+                status: po.status,
+                currency: po.currency,
+                total: po.total,
+                supplierId: po.supplierId,
+                supplierName: po.supplierName,
+              }}
+              plan={po.paymentPlan}
+              payments={payments.map((p) => ({
+                id: p.id,
+                receiptId: p.receiptId,
+                contactId: p.contactId,
+                contactName: p.contactName,
+                label: p.label,
+                amount: p.amount,
+                currency: p.currency,
+                journalEntryId: p.journalEntryId,
+                entryNumber: formatEntryNumber(p.entryNumber),
+                date: p.date,
+                removed: p.removed,
+                bank: p.bank ? { amount: p.bank.amount, currency: p.bank.currency } : null,
+              }))}
+              deliveries={po.receipts.map((r) => ({
+                id: r.id,
+                label: `Delivery of ${formatDate(r.receivedOn, locale)}`,
+              }))}
+              moneyAccounts={moneyAccounts}
+              vendors={vendors}
+              currencies={currencyOptions(baseCurrency)}
             />
-          </div>
-        </section>
+          )}
+        </div>
 
         <aside className="grid h-fit min-w-0 gap-4">
           <section className="rounded-2xl border bg-card p-5 text-sm shadow-xs">
