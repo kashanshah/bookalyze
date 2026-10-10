@@ -1,7 +1,7 @@
 "use client";
 
 import { isDecimal, purchaseLineTotal, purchaseOrderTotal } from "@bookalyze/core";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { Plus, Save, Trash2, TriangleAlert, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
@@ -13,7 +13,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { savePurchaseOrderAction } from "./actions";
+import { addSupplierAction, savePurchaseOrderAction } from "./actions";
 
 export type PurchaseOrderDefaults = {
   supplierId: string;
@@ -26,6 +26,9 @@ export type PurchaseOrderDefaults = {
 };
 
 type Line = { key: number; productId: string; quantity: string; unitCost: string };
+
+/** What a receipt said about a line (by its place in `defaults.lines`), shown under it. */
+export type LineHint = { description: string; note: string | null };
 
 /** "2.4500" → "2.45": what someone would type. */
 function plainCost(value: string): string {
@@ -40,6 +43,8 @@ export function PurchaseOrderForm({
   currencies,
   defaults,
   locale,
+  suggestedSupplier = null,
+  lineHints = [],
 }: {
   slug: string;
   /** Set when editing a draft. */
@@ -49,11 +54,17 @@ export function PurchaseOrderForm({
   currencies: { code: string; name: string }[];
   defaults: PurchaseOrderDefaults;
   locale: string;
+  /** A receipt's seller that isn't a vendor yet, offered as one. */
+  suggestedSupplier?: { name: string; address: string | null } | null;
+  lineHints?: LineHint[];
 }) {
   const router = useRouter();
   const formId = useId();
   const [pending, start] = useTransition();
   const [supplierId, setSupplierId] = useState(defaults.supplierId);
+  const [supplierList, setSupplierList] = useState(suppliers);
+  const [suggested, setSuggested] = useState(suggestedSupplier);
+  const [adding, startAdding] = useTransition();
   const [currency, setCurrency] = useState(defaults.currency);
   const [orderDate, setOrderDate] = useState(defaults.orderDate);
   const [expectedDate, setExpectedDate] = useState(defaults.expectedDate ?? "");
@@ -89,6 +100,27 @@ export function PurchaseOrderForm({
       .map((line) => ({ quantity: Number(line.quantity), unitCost: line.unitCost })),
     currency,
   );
+
+  const addSuggested = () =>
+    startAdding(async () => {
+      if (!suggested) return;
+      const result = await addSupplierAction(slug, suggested);
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      setSupplierList((all) =>
+        all.some((s) => s.id === result.id)
+          ? all
+          : [...all, { id: result.id, name: result.name }].sort((a, b) =>
+              a.name.localeCompare(b.name),
+            ),
+      );
+      setSupplierId(result.id);
+      setSuggested(null);
+      setErrors(({ supplierId: _, ...rest }) => rest);
+      toast.success(`${result.name} added to your vendors`);
+    });
 
   const update = (key: number, patch: Partial<Line>) =>
     setLines((all) => all.map((line) => (line.key === key ? { ...line, ...patch } : line)));
@@ -144,7 +176,7 @@ export function PurchaseOrderForm({
           htmlFor={`${formId}-supplier`}
           error={errors.supplierId}
           hint={
-            suppliers.length ? undefined : (
+            suggested && !supplierId ? undefined : supplierList.length ? undefined : (
               <>
                 Suppliers are your vendors.{" "}
                 <Link
@@ -166,8 +198,26 @@ export function PurchaseOrderForm({
             searchPlaceholder="Search vendors"
             emptyText="No vendor by that name."
             invalid={Boolean(errors.supplierId)}
-            options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+            options={supplierList.map((s) => ({ value: s.id, label: s.name }))}
           />
+          {suggested && !supplierId ? (
+            <div className="fade-in-0 mt-2 flex animate-in flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-dashed bg-muted/30 px-3 py-2.5 text-sm">
+              <p className="min-w-0 flex-1">
+                <span className="text-muted-foreground">The receipt's seller: </span>
+                <span className="font-medium">{suggested.name}</span>
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={addSuggested}
+                disabled={adding}
+              >
+                {adding ? <Spinner /> : <UserPlus />}
+                Add as a vendor
+              </Button>
+            </div>
+          ) : null}
         </Field>
         <Field
           label="Currency"
@@ -266,6 +316,20 @@ export function PurchaseOrderForm({
                   />
                   {err("productId") ? (
                     <p className="text-destructive text-xs">{err("productId")}</p>
+                  ) : null}
+                  {lineHints[line.key] ? (
+                    <div className="grid gap-0.5 text-xs">
+                      <p className="line-clamp-2 text-muted-foreground">
+                        <span className="font-medium text-foreground">On the receipt: </span>
+                        {lineHints[line.key]?.description}
+                      </p>
+                      {lineHints[line.key]?.note ? (
+                        <p className="flex gap-1.5 text-muted-foreground">
+                          <TriangleAlert className="mt-px size-3.5 shrink-0 text-warning" />
+                          {lineHints[line.key]?.note}
+                        </p>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
                 <div className="grid gap-1">

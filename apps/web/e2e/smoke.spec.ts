@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
+import { alibabaReceiptPdf } from "./alibaba-receipt-pdf";
 import {
   choose,
   latestLink,
@@ -2417,6 +2418,80 @@ test("noon: choose how Noon posts, post a month and check the Noon balance", asy
     page.getByRole("columnheader", { name: /Noon UAE.*Noon transactions/ }),
   ).toBeVisible();
   await expect(page.getByRole("rowheader", { name: "Promotions and subsidies" })).toBeVisible();
+});
+
+test("purchase orders: fill one in from an Alibaba receipt, check it, then save it", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Purchase orders", exact: true }).click();
+  await page.getByRole("link", { name: "New purchase order" }).click();
+  await expect(page.getByRole("heading", { name: "New purchase order" })).toBeVisible();
+
+  // The receipt is read in the browser and only fills the form.
+  await page.getByLabel("Alibaba receipt (PDF)").setInputFiles({
+    name: "alibaba-receipt.pdf",
+    mimeType: "application/pdf",
+    buffer: alibabaReceiptPdf({
+      orderNumber: "900000000001",
+      orderDate: "6:34 PM, Sep 2nd, 2026 (PDT)",
+      seller: ["Maple Glassworks Co., Ltd.", "No. 1, Example Road,", "Ningbo, Zhejiang, CN"],
+      items: [
+        {
+          title: ["Maple leaf ceramic mug 350ml custom logo wholesale"],
+          qty: "200.00",
+          unit: "USD 2.47",
+          total: "USD 493.00",
+        },
+        {
+          title: ["Bamboo tray for coffee mugs eco friendly", "custom size"],
+          qty: "50.00",
+          unit: "USD 1.20",
+          total: "USD 60.00",
+        },
+      ],
+      totals: [
+        ["Subtotal", "USD 553.00"],
+        ["Shipping fee", "USD 40.00"],
+        ["Order total", "USD 593.00"],
+      ],
+    }),
+  });
+  const filled = page.getByRole("region", { name: "Filled in from a receipt" });
+  await expect(filled.getByText("Filled in from alibaba-receipt.pdf")).toBeVisible();
+  await expect(
+    filled.getByText("Maple Glassworks Co., Ltd. isn't one of your vendors yet."),
+  ).toBeVisible();
+  await expect(
+    filled.getByText("Choose the product for the line Alibaba describes."),
+  ).toBeVisible();
+  await expect(page.getByLabel("Order date")).toHaveValue("2026-09-02");
+  await expect(page.getByLabel("Supplier's reference (optional)")).toHaveValue("900000000001");
+  await expect(page.getByLabel("Product 1", { exact: true })).toContainText(
+    "Maple leaf ceramic mug",
+  );
+  await expect(page.getByLabel("Quantity 1", { exact: true })).toHaveValue("200");
+  // 200 at 2.47 would be 494.00; Alibaba charged 493.00, so the cost of one is worked back.
+  await expect(page.getByLabel("Cost of one 1", { exact: true })).toHaveValue("2.465");
+  await expect(page.getByText("worked back from the total")).toBeVisible();
+  await expect(page.getByText("On the receipt: Bamboo tray for coffee mugs")).toBeVisible();
+  await expect(page.getByLabel("Notes (optional)")).toHaveValue(/Shipping fee USD 40\.00/);
+  await expect(page).toHaveURL(/\/purchase-orders\/new$/);
+
+  // Checked and corrected by hand: the seller added as a vendor, the tray line dropped.
+  await page.getByRole("button", { name: "Add as a vendor" }).click();
+  await expect(page.getByText("Maple Glassworks Co., Ltd. added to your vendors")).toBeVisible();
+  await expect(page.getByLabel("Supplier", { exact: true })).toContainText(
+    "Maple Glassworks Co., Ltd.",
+  );
+  await page.getByRole("button", { name: "Remove product 2" }).click();
+  await expect(page.getByText(/493\.00/).first()).toBeVisible();
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText(/PO-\d+ created/)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /PO-\d+ · Maple Glassworks Co\., Ltd\./ }),
+  ).toBeVisible();
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {
