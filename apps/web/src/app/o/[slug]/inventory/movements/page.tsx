@@ -1,4 +1,4 @@
-import { ledgerByMonth, ledgerChannels, stockComparison } from "@bookalyze/db";
+import { ledgerByMonth, ledgerChannels, ledgerOtherTypes, stockComparison } from "@bookalyze/db";
 import { ArrowLeftRight, CheckCircle2, Clock } from "lucide-react";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/shell/page-header";
@@ -24,19 +24,22 @@ const COLUMNS = [
   { key: "returned", label: "Returned", hint: "By customers" },
   { key: "adjusted", label: "Lost or found", hint: "Net adjustments" },
   { key: "removed", label: "Removed", hint: "Sent back to you" },
-  { key: "received", label: "Received", hint: "At Amazon" },
+  { key: "received", label: "Received", hint: "At the marketplace's warehouse" },
 ] as const;
 
 export default async function MovementsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const ctx = await getInventoryContext(slug, "inventory.cogs");
   const { locale } = ctx.profile;
-  const { channels, months, compare } = await inOrg(ctx, async (tx) => ({
+  const { channels, months, compare, others } = await inOrg(ctx, async (tx) => ({
     channels: await ledgerChannels(tx),
     months: await ledgerByMonth(tx, { months: 6 }),
     compare: await stockComparison(tx),
+    others: await ledgerOtherTypes(tx),
   }));
   const active = channels.filter((c) => c.isActive);
+  const sources = (["amazon", "noon"] as const).filter((k) => active.some((c) => c.kind === k));
+  const sourceNames = sources.map((k) => (k === "amazon" ? "Amazon" : "Noon")).join(" and ");
   const names = new Map(channels.map((c) => [c.id, c.name]));
   const monthKeys = [...new Set(months.map((m) => m.month))];
   const n = new Intl.NumberFormat(locale, { signDisplay: "exceptZero" });
@@ -47,15 +50,18 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
       <PageHeader
         eyebrow="Inventory"
         title="Stock movements"
-        description="Amazon's FBA inventory ledger: every unit shipped, returned, lost, found, removed or received. Returns go back into your stock lots and losses are written off when each month's cost of goods sold is posted."
+        description="Amazon's FBA and Noon's FBN inventory ledgers: every unit shipped, returned, lost, found, removed or received in their warehouses. Returns go back into your stock lots and losses are written off when each month's cost of goods sold is posted."
         actions={
           active.length ? (
             <div className="flex flex-wrap gap-2">
               <UploadLedgerButton
                 slug={slug}
-                channels={active.map((c) => ({ id: c.id, name: c.name }))}
+                channels={active
+                  .filter((c) => c.kind === "amazon")
+                  .map((c) => ({ id: c.id, name: c.name }))}
+                noon={active.some((c) => c.kind === "noon")}
               />
-              <SyncLedgerButton slug={slug} />
+              <SyncLedgerButton slug={slug} sources={[...sources]} />
             </div>
           ) : null
         }
@@ -66,10 +72,10 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
           <span className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <ArrowLeftRight className="size-6" />
           </span>
-          <p className="font-medium">Connect Amazon first</p>
+          <p className="font-medium">Connect Amazon or add a Noon country first</p>
           <p className="max-w-sm text-muted-foreground text-sm">
-            Stock movements come from Amazon's inventory ledger, once a marketplace is connected
-            under Commerce → Channels.
+            Stock movements come from Amazon's and Noon's inventory ledgers, for the stock in their
+            warehouses. Add a channel under Commerce → Channels.
           </p>
         </div>
       ) : (
@@ -79,7 +85,7 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
               <div key={c.id} className="rounded-2xl border bg-card p-4 shadow-xs">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-medium text-sm">{c.name}</p>
-                  {c.reportId ? (
+                  {c.kind === "amazon" && c.reportId ? (
                     <Badge variant="secondary">
                       <Clock />
                       Amazon is making a report
@@ -94,7 +100,7 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
                 <p className="mt-1 text-muted-foreground text-sm">
                   {c.through
                     ? `In through ${formatDate(c.through, locale, "long")} · ${plain.format(c.events)} movements`
-                    : "Not brought in yet. It comes in every night, or press Bring in from Amazon."}
+                    : `Not brought in yet. It comes in every night, or press Bring in from ${sourceNames}.`}
                 </p>
               </div>
             ))}
@@ -150,10 +156,48 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
             </section>
           ) : null}
 
+          {others.length ? (
+            <section
+              aria-labelledby="others-title"
+              className="overflow-hidden rounded-2xl border bg-card shadow-xs"
+            >
+              <div className="border-b px-5 py-3">
+                <h2 id="others-title" className="font-medium text-sm">
+                  Movements not counted yet
+                </h2>
+                <p className="mt-0.5 text-muted-foreground text-xs">
+                  Their type isn't one Bookalyze reads yet, so they don't change your stock or cost
+                  of goods sold. Share the type names to have them counted.
+                </p>
+              </div>
+              <ul className="divide-y">
+                {others.map((o) => (
+                  <li
+                    key={`${o.channelId}:${o.type}`}
+                    className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm"
+                  >
+                    <span className="min-w-0 truncate">
+                      {o.type ?? "No type"}
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · {names.get(o.channelId) ?? ""}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+                      {plain.format(o.rows)} {o.rows === 1 ? "row" : "rows"} · {n.format(o.units)}{" "}
+                      units
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           {monthKeys.length === 0 ? (
             <p className="rounded-2xl border border-dashed p-8 text-center text-muted-foreground text-sm">
-              No movements yet. Bring the ledger in from Amazon, or upload it from Seller Central →
-              Reports → Fulfillment → Inventory Ledger (Detailed view).
+              No movements yet. Bring the ledger in from {sourceNames}, or upload it: from Seller
+              Central → Reports → Fulfillment → Inventory Ledger (Detailed view), or Noon's FBN
+              inventory ledger (detailed view).
             </p>
           ) : (
             monthKeys.map((month) => (
