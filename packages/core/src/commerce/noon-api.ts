@@ -285,25 +285,100 @@ export function noonPayoutsParams(spec: unknown, from: string, to: string): Reco
   return Object.keys(params).length ? params : { from_date: from, to_date: to };
 }
 
+/** Words of a JSON schema, not input names. */
+const SCHEMA_WORDS = new Set([
+  "type",
+  "format",
+  "description",
+  "title",
+  "enum",
+  "items",
+  "default",
+  "example",
+  "examples",
+  "pattern",
+  "nullable",
+  "required",
+  "properties",
+  "additionalProperties",
+  "$schema",
+]);
+
+/** A value kept as text (the category list keeps each param as a string, cut at 200 characters). */
+function specValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+/** Quoted names in a JSON text that may have been cut short: an object's keys, or a list's items. */
+function quotedNames(text: string, keys: boolean): string[] {
+  const pattern = keys ? /"([A-Za-z0-9_]{1,60})"\s*:/g : /"([A-Za-z0-9_]{1,60})"/g;
+  return [...text.matchAll(pattern)]
+    .map((m) => m[1] ?? "")
+    .filter((n) => n && !SCHEMA_WORDS.has(n));
+}
+
 /**
- * Any report's inputs for a date range (`noonPayoutsParams`'s rule). A report Noon describes
- * without any date input gets none; one it doesn't describe gets from_date and to_date.
+ * The names of a report's inputs as Noon describes them: plain names (`{ from_date: "string" }`),
+ * or a JSON schema (`{ type, properties: {…}, required: […] }`, whole or cut short). Null when
+ * Noon describes nothing.
+ */
+export function noonSpecFields(spec: unknown): string[] | null {
+  if (!spec || typeof spec !== "object") return null;
+  const entries = Object.entries(spec as Record<string, unknown>);
+  if (!entries.length) return null;
+  const names = new Set<string>();
+  for (const [key, raw] of entries) {
+    if (key === "properties") {
+      const value = specValue(raw);
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        for (const name of Object.keys(value)) names.add(name);
+      } else if (typeof value === "string") {
+        for (const name of quotedNames(value, true)) names.add(name);
+      }
+    } else if (key === "required") {
+      const value = specValue(raw);
+      if (Array.isArray(value)) {
+        for (const name of value) if (typeof name === "string") names.add(name);
+      } else if (typeof value === "string") {
+        for (const name of quotedNames(value, false)) names.add(name);
+      }
+    } else if (!SCHEMA_WORDS.has(key)) {
+      names.add(key);
+    }
+  }
+  return [...names].filter((n) => NOON_INPUT_NAME.test(n));
+}
+
+/**
+ * Any report's inputs for a date range: the date inputs Noon names get the first and last day
+ * (YYYY-MM-DD); a report Noon describes with inputs but no dates gets none; one it doesn't
+ * describe (or describes in a way that names nothing) gets from_date and to_date. Inputs a person
+ * typed win, dates included.
  */
 export function noonReportParams(
   spec: unknown,
   from: string,
   to: string,
-  /** Other inputs a person filled in (country, status…); blanks are left out. */
+  /** Inputs a person filled in (country, status, or dates); blanks are left out. */
   inputs: Record<string, string> = {},
 ): Record<string, string> {
-  const described = spec && typeof spec === "object" && Object.keys(spec).length > 0;
-  const dates = noonPayoutsParams(spec, from, to);
-  const names = described ? Object.keys(spec as Record<string, unknown>) : null;
-  const params = names
-    ? Object.fromEntries(Object.entries(dates).filter(([k]) => names.includes(k)))
-    : dates;
+  const fields = noonSpecFields(spec);
+  const params: Record<string, string> = {};
+  for (const name of fields ?? []) {
+    if (/from|start/i.test(name)) params[name] = from;
+    else if (/(^|_)to($|_)|end|until/i.test(name)) params[name] = to;
+  }
+  if (!Object.keys(params).length && !fields?.length) {
+    params.from_date = from;
+    params.to_date = to;
+  }
   for (const [k, v] of Object.entries(inputs)) {
-    if (v.trim() && !isNoonDateParam(k)) params[k] = v.trim();
+    if (v.trim()) params[k] = v.trim();
   }
   return params;
 }
@@ -321,13 +396,22 @@ export const NOON_INPUT_NAME = /^[A-Za-z0-9_]{1,60}$/;
  * (its type, or the values it takes): what a person fills in to check the report.
  */
 export function noonReportInputs(spec: unknown): { name: string; hint: string }[] {
-  if (!spec || typeof spec !== "object") return [];
-  return Object.entries(spec as Record<string, unknown>)
-    .filter(([name]) => NOON_INPUT_NAME.test(name) && !isNoonDateParam(name))
-    .map(([name, v]) => ({
-      name,
-      hint: (typeof v === "string" ? v : (JSON.stringify(v) ?? "")).slice(0, 200),
-    }));
+  const flat =
+    spec && typeof spec === "object"
+      ? (spec as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+  return (noonSpecFields(spec) ?? [])
+    .filter((name) => !isNoonDateParam(name))
+    .map((name) => {
+      const v = flat[name];
+      return {
+        name,
+        hint:
+          v === undefined
+            ? ""
+            : (typeof v === "string" ? v : (JSON.stringify(v) ?? "")).slice(0, 200),
+      };
+    });
 }
 
 /**

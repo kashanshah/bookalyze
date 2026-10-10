@@ -285,14 +285,50 @@ describe("any report's inputs and name", () => {
       noonReportParams(spec, "2026-10-01", "2026-10-07", {
         country: " ae ",
         noon_status: "",
-        to_date: "2020-01-01",
+        to_date: "2026-09-30",
       }),
-    ).toEqual({ from_date: "2026-10-01", to_date: "2026-10-07", country: "ae" });
+    ).toEqual({ from_date: "2026-10-01", to_date: "2026-09-30", country: "ae" });
     expect(
       noonMissingFields(
         "Noon answered with an error (400): INVALID_ARGUMENT: AssertionError('Missing required fields: country, noon_status').",
       ),
     ).toEqual(["country", "noon_status"]);
     expect(noonMissingFields("Noon answered with an error (500)")).toEqual([]);
+  });
+
+  it("reads inputs Noon describes as a JSON schema, whole or cut short", async () => {
+    const { noonSpecFields, noonReportParams, noonReportInputs } = await import(
+      "../commerce/noon-api"
+    );
+    // As the category list is kept: each param as text, cut at 200 characters.
+    const schema = {
+      type: "object",
+      properties: JSON.stringify({
+        from_date: { type: "string", format: "date" },
+        to_date: { type: "string", format: "date" },
+      }),
+      required: JSON.stringify(["from_date", "to_date"]),
+    };
+    expect(noonSpecFields(schema)).toEqual(["from_date", "to_date"]);
+    expect(noonReportParams(schema, "2026-10-01", "2026-10-07")).toEqual({
+      from_date: "2026-10-01",
+      to_date: "2026-10-07",
+    });
+    expect(noonReportInputs(schema)).toEqual([]);
+
+    const cut = {
+      type: "object",
+      properties: '{"country": {"type": "string"}, "noon_status": {"type": "string", "enum": ["act',
+    };
+    expect(noonSpecFields(cut)).toEqual(["country", "noon_status"]);
+    expect(noonReportInputs(cut).map((i) => i.name)).toEqual(["country", "noon_status"]);
+    expect(noonReportParams(cut, "2026-10-01", "2026-10-07")).toEqual({});
+
+    // Described in a way that names nothing: the usual dates.
+    expect(noonReportParams({ type: "object" }, "2026-10-01", "2026-10-07")).toEqual({
+      from_date: "2026-10-01",
+      to_date: "2026-10-07",
+    });
+    expect(noonSpecFields({})).toBeNull();
   });
 });
