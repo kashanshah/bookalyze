@@ -13,8 +13,8 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-10, Noon report checks: date inputs are date pickers, and inputs are
-recognised as dates by whole words (after the report-check fix for inputs described as a schema)._
+_Last updated: 2026-10-10, phase 4c slice 8: FBN stock (Noon's FBN inventory ledger: returns
+back into stock, losses written off, like Amazon's FBA ledger)._
 
 ---
 
@@ -29,7 +29,7 @@ recognised as dates by whole words (after the report-check fix for inputs descri
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off) and slice 6 (bundles) done. Next: Noon (phase 4c), with bundles from day one |
-| 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) and 7 (every report the key can download, each with a check of its columns) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: find FBN stock and returns among Noon's reports (owner input 4), then FBN stock (and Noon returns back into stock). Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
+| 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: "your stock against Noon's" from the ledger summary view. Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable) and 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices) done. Next: eBay orders. See §3 "Phase 4d" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
@@ -1267,6 +1267,42 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
   paths kept, cause chains, Postgres codes and digests).
 
+### Phase 4c, slice 8: FBN stock (Noon's FBN inventory ledger)
+
+- **Same movements as Amazon's FBA ledger:** core `parseNoonLedger` reads Noon's
+  `fbn_inventoryv2_ledgerdetailedview` (transaction_date, transaction_type, reference_nr,
+  reference_type, country_code, warehouse_code, nfsku, sku, partner_sku, inventory_condition,
+  quantity_delta…) into `LedgerEvent`s: SKU = partner_sku (else Noon's sku), date from
+  transaction_date (ISO or day/month/year), warehouse, condition, reference, country, and
+  `reason` = "transaction type · reference type". `noonLedgerEventType` reads the types by their
+  words: removals and partner/seller returns → VendorReturns; other returns → CustomerReturns;
+  lost, found, damaged, disposal, adjustment, cycle count, QC fail… → Adjustments; transfers;
+  inbound/receipts; outbound/orders → Shipments; anything else → Other (changes nothing).
+  Kazomo's actual labels weren't known when this was built: the words are a best reading, and
+  types not read show on Stock movements ("Movements not counted yet") to be mapped later.
+- **Stored with Amazon's** in `inventory_ledger_events` (no migration): db `importNoonLedger`
+  puts each row on the company's Noon channel for its `country_code` and moves every Noon
+  channel's `ledger_synced_through` forward (a country with no movements had none); rows for a
+  country not added are left out and named. `ledgerChannels` now lists Amazon and Noon
+  channels (with kind and country); `ledgerOtherTypes` lists types not read.
+- **So cost of goods sold counts them as for Amazon:** customer returns come back as a lot at
+  the month's cost, net adjustments are written off (or found), and a Noon month waits until
+  its ledger is in through the month's end.
+- **Bringing it in** (server `noon-ledger.ts` `syncNoonLedger`): the export API like the
+  transaction view (a year back, a month per export, then the last weeks again; state in the
+  connection's `settings.ledger`; inputs from Noon's description, else from_date/to_date). On
+  Stock movements: "Bring in from Amazon and Noon" (or either), and **Upload a ledger file**
+  takes Noon's file too (told apart by `quantity_delta`; every row to its country). The daily
+  job brings it in for companies whose key can download it and that have Inventory on.
+  Amazon's ledger sync now runs for Amazon channels only (Noon and eBay channels used to make
+  it stop with "This marketplace no longer exists").
+- Not yet: "your stock against Noon's" from `fbn_inventoryv2_ledgersummaryview` (closing
+  quantities); FBP stock (the seller's own).
+- Tests: core `noon-ledger.test.ts` (types, rows, keys, stock changes); db `noon-ledger.test.ts`
+  (rows per country, every country in, missing countries named, cost of goods sold sees Noon's
+  returns and losses, types not read); e2e "noon: connect…" brings the ledger in from the mock
+  (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema).
+
 ### Phase 4d, slice 2: Connect eBay
 
 - **One app, many accounts:** Bookalyze's own eBay developer app (env vars `EBAY_CLIENT_ID`,
@@ -1876,7 +1912,8 @@ pasted in when needed:
    Noon's fees as recoverable input tax, for a registered company (owner input 4).
 7. [ ] **Cost of goods sold for Noon**, per month and marketplace, bundles included. Works through
    Noon orders (slice 6) once SKUs are linked; check it with Kazomo's products.
-8. [ ] **FBN stock**: returns back into stock, losses written off, "your stock against Noon's".
+8. [x] **FBN stock**: returns back into stock, losses written off (slice 8). Still to do:
+   "your stock against Noon's".
    Slice 7 lists every report with a check of its columns. Kazomo's key can download these
    (columns checked 2026-10-10, column names only):
    - `fbn_inventoryv2_ledgerdetailedview` (**the one for FBN stock**, like Amazon's FBA ledger):
@@ -1896,8 +1933,9 @@ pasted in when needed:
      `noon_catalog_reports_productviewsandsalesdata` (visits and units; inputs language,
      country), `noon_catalog_catalogexport` and `noon_catalog_globalcatalogexport` (listings,
      prices and FBN stock; inputs country and noon_status, `active`).
-   Next: bring in the detailed ledger (returns back into stock, losses, damaged, found), like the
-   FBA inventory ledger, then "your stock against Noon's" from the summary view.
+   Done in slice 8: the detailed ledger (returns back into stock, losses written off). Next:
+   "your stock against Noon's" from the summary view, and Kazomo's transaction types checked
+   against what Stock movements lists as not counted.
 
 ### Phase 4d: eBay (as a product: any eBay site; the seller ships)
 Built like Amazon and Noon: channels first, then the account, orders, money and the books.

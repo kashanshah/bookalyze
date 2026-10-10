@@ -8,6 +8,7 @@ export * from "./invoices";
 export * from "./listings";
 export * from "./noon";
 export * from "./noon-api";
+export * from "./noon-ledger";
 export * from "./noon-orders";
 export * from "./noon-posting";
 export * from "./noon-transactions";

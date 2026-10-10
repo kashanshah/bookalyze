@@ -40,6 +40,18 @@ const categories = {
       export_category_code: "noon_orders_report",
       params: { from_date: "string", to_date: "string" },
     },
+    // Noon's FBN inventory ledger, its inputs described as a JSON schema (kept cut short).
+    {
+      export_category_code: "fbn_inventoryv2_ledgerdetailedview",
+      params: {
+        type: "object",
+        properties: {
+          from_date: { type: "string", format: "date" },
+          to_date: { type: "string", format: "date" },
+        },
+        required: ["from_date", "to_date"],
+      },
+    },
     // Like Noon's stock reports: it needs inputs its description leaves out.
     {
       export_category_code: "noon_fbn_stock_report",
@@ -54,6 +66,35 @@ const categories = {
 const exports = new Map();
 const HEADER =
   "Contract,Contract Title,Reference Nr,Order Nr,Item Nr,Order Date,Transaction Date,Title,SKUs,Partner SKUs,Transaction Type,Currency,Net Proceeds,Referral Fee including VAT,Fullfilment & Logistics Fees including VAT,Shipping Credits including VAT,Other Order Fees including VAT,Order Subsidies including VAT,Non-Order Fees including VAT,Non-Order Subsidies including VAT,Others including VAT,Total";
+
+// Noon's FBN inventory ledger (detailed view), its real header. Synthetic rows: in each month a
+// customer return on the 10th, a unit lost on the 12th, and a type Bookalyze doesn't read yet.
+const LEDGER_HEADER =
+  "transaction_date,transaction_type,reference_nr,reference_type,country_code,warehouse_code,fulfillment_type,nfsku,sku,partner_sku,partner_barcode,inventory_condition,quantity_delta,qc_fail_item_identifier";
+function ledgerCsv(from, to) {
+  const rows = [LEDGER_HEADER];
+  const start = new Date(`${from.slice(0, 7)}-01T00:00:00Z`);
+  for (let month = start; month.toISOString().slice(0, 10) <= to; ) {
+    const ym = month.toISOString().slice(0, 7);
+    const lines = [
+      [
+        `${ym}-10`,
+        `${ym}-10 09:00:00,customer_return,NAE${ym.replace("-", "")}0001,customer_order,AE,DXB01,FBN,N1,Z1,NOON-MAPLE-MUG,0001,sellable,1,`,
+      ],
+      [
+        `${ym}-12`,
+        `${ym}-12 11:00:00,lost,ADJ-${ym},adjustment,AE,DXB01,FBN,N1,Z1,NOON-MAPLE-MUG,0001,sellable,-1,`,
+      ],
+      [
+        `${ym}-14`,
+        `${ym}-14 08:00:00,relabel,RL-${ym},,AE,DXB01,FBN,N1,Z1,NOON-MAPLE-MUG,0001,sellable,0,`,
+      ],
+    ];
+    for (const [day, line] of lines) if (day >= from && day <= to) rows.push(line);
+    month = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1));
+  }
+  return rows.join("\r\n");
+}
 
 function transactionsCsv(from, to) {
   const rows = [HEADER];
@@ -120,7 +161,11 @@ createServer((req, res) => {
       const found = exports.get(url.pathname.slice("/download/".length).replace(/\.csv\.gz$/, ""));
       if (!found) return send(res, 404, error("NOT_FOUND", "Export not found"));
       res.writeHead(200, { "Content-Type": "text/csv", "Content-Encoding": "identity" });
-      return res.end(gzipSync(transactionsCsv(found.from, found.to)));
+      const csv =
+        found.category === "fbn_inventoryv2_ledgerdetailedview"
+          ? ledgerCsv(found.from, found.to)
+          : transactionsCsv(found.from, found.to);
+      return res.end(gzipSync(csv));
     }
     if (!req.headers["user-agent"])
       return send(res, 400, error("INVALID_ARGUMENT", "User-Agent required"));
