@@ -230,7 +230,12 @@ describe("purchase order payments", () => {
     // Unlinking leaves the transaction in the books.
     const [first] = after;
     await scoped((tx) =>
-      removePurchasePayment(tx, { purchaseOrderId: po.id, paymentId: first?.id ?? "" }),
+      removePurchasePayment(tx, {
+        orgId,
+        userId: null,
+        purchaseOrderId: po.id,
+        paymentId: first?.id ?? "",
+      }),
     );
     expect(await scoped((tx) => listPurchasePayments(tx, po.id))).toHaveLength(1);
   });

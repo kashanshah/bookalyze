@@ -3,11 +3,14 @@ import {
   deliveryCostSummary,
   formatEntryNumber,
   getPurchaseOrder,
+  getPurchaseSettings,
   listPurchasePayments,
+  orderDeposits,
+  orderInBooks,
   schema,
   supplierOptions,
 } from "@bookalyze/db";
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { ArrowLeft, ChevronRight, Truck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -48,10 +51,22 @@ export default async function PurchaseOrderPage({
       .select()
       .from(schema.accounts)
       .orderBy(asc(schema.accounts.code), asc(schema.accounts.name));
-    return { po, costs, payments, vendors, accounts };
+    const inBooks = orderInBooks(po.orderDate, await getPurchaseSettings(tx));
+    const deposits = inBooks
+      ? await orderDeposits(tx, { orgId: ctx.org.id, purchaseOrderId: po.id })
+      : null;
+    const settlement = deposits?.settlementEntryId
+      ? (
+          await tx
+            .select({ n: schema.journalEntries.entryNumber })
+            .from(schema.journalEntries)
+            .where(eq(schema.journalEntries.id, deposits.settlementEntryId))
+        )[0]?.n
+      : undefined;
+    return { po, costs, payments, vendors, accounts, deposits, settlement };
   });
   if (!found) notFound();
-  const { po, costs, payments, vendors, accounts } = found;
+  const { po, costs, payments, vendors, accounts, deposits, settlement } = found;
   const { baseCurrency } = ctx.profile;
   const moneyAccounts = accounts
     .filter((a) => isMoneyAccountSubtype(a.subtype) && !a.isArchived)
@@ -201,6 +216,17 @@ export default async function PurchaseOrderPage({
               moneyAccounts={moneyAccounts}
               vendors={vendors}
               currencies={currencyOptions(baseCurrency)}
+              books={
+                deposits
+                  ? {
+                      paidIn: deposits.paidIn,
+                      intoStock: deposits.intoStock,
+                      left: deposits.left,
+                      settlementEntryId: deposits.settlementEntryId,
+                      settlementNumber: settlement ? formatEntryNumber(settlement) : null,
+                    }
+                  : null
+              }
             />
           )}
         </div>

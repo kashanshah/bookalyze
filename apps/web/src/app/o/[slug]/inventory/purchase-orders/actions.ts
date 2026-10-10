@@ -10,17 +10,24 @@ import {
   ensureSystemAccount,
   getContact,
   getPurchaseOrder,
+  getPurchaseSettings,
+  LedgerError,
   listTransactions,
   markPurchaseOrderOrdered,
+  orderInBooks,
   PurchasingError,
   receivePurchaseOrder,
   removePurchasePayment,
   saveDeliveryCosts,
   savePaymentPlan,
+  savePurchaseSettings,
+  settleOrder,
+  undoSettlement,
   updatePurchaseOrder,
 } from "@bookalyze/db";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { isIsoDate, nowIn, openDate } from "@/lib/dates";
 import {
   deliveryCostsSchema,
   paymentPlanSchema,
@@ -31,6 +38,7 @@ import {
 import { inOrg } from "@/server/accounting";
 import { audit } from "@/server/audit";
 import { getInventoryContext } from "@/server/inventory";
+import { isOrgAdmin } from "@/server/org";
 import { saveTransactionAction } from "../../accounting/transactions/actions";
 
 type Fail = {
@@ -66,6 +74,8 @@ function friendly(error: unknown): Fail {
   if (error instanceof PurchasingError) {
     return { ok: false, message: error.message, lineErrors: error.lineErrors };
   }
+  // Posting into a closed period, or an entry that no longer balances.
+  if (error instanceof LedgerError) return { ok: false, message: error.message };
   throw error;
 }
 
@@ -253,6 +263,7 @@ export async function saveDeliveryCostsAction(
       const result = await saveDeliveryCosts(tx, {
         ...parsed.data,
         orgId: ctx.org.id,
+        userId: ctx.session.user.id,
         receiptId,
         baseCurrency,
       });
@@ -435,7 +446,16 @@ export async function recordPurchasePaymentAction(
 
   let entryId = value.journalEntryId;
   if (value.mode === "new") {
-    const inventory = await inOrg(ctx, (tx) => ensureSystemAccount(tx, ctx.org.id, "inventory"));
+    // An order in the books holds payments on Supplier deposits; before that, on Inventory.
+    const category = await inOrg(ctx, async (tx) =>
+      ensureSystemAccount(
+        tx,
+        ctx.org.id,
+        orderInBooks(po.orderDate, await getPurchaseSettings(tx))
+          ? "supplier_deposits"
+          : "inventory",
+      ),
+    );
     const saved = await saveTransactionAction(slug, {
       kind: "withdrawal",
       date: value.date,
@@ -448,7 +468,7 @@ export async function recordPurchasePaymentAction(
       contactId,
       moneyAccountId: value.moneyAccountId,
       fxRate: value.fxRate,
-      splits: [{ accountId: inventory, amount: value.bankAmount, description: "", taxRateId: "" }],
+      splits: [{ accountId: category, amount: value.bankAmount, description: "", taxRateId: "" }],
     });
     if (!saved.ok) {
       const errors: Record<string, string> = {};
@@ -511,7 +531,12 @@ export async function removePurchasePaymentAction(
   if (!validId(id) || !validId(paymentId)) return gone;
   try {
     await inOrg(ctx, async (tx) => {
-      await removePurchasePayment(tx, { purchaseOrderId: id, paymentId });
+      await removePurchasePayment(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        purchaseOrderId: id,
+        paymentId,
+      });
       await audit(tx, {
         orgId: ctx.org.id,
         actorUserId: ctx.session.user.id,
@@ -519,6 +544,121 @@ export async function removePurchasePaymentAction(
         entityType: "purchase_order",
         entityId: id,
         after: { paymentId },
+      });
+    });
+    revalidatePath(base(slug), "layout");
+    return { ok: true };
+  } catch (error) {
+    return friendly(error);
+  }
+}
+
+/**
+ * Puts purchase orders in the books from a date: their payments wait on Supplier deposits and
+ * each delivery moves its landed cost into Inventory. Admins only.
+ */
+export async function savePurchaseSettingsAction(
+  slug: string,
+  postFrom: string,
+): Promise<{ ok: true; message: string; problems: string[] } | Fail> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only an admin can change this." };
+  if (!isIsoDate(postFrom)) {
+    return { ok: false, message: "Choose a date.", errors: { postFrom: "Choose a date." } };
+  }
+  const locked = ctx.profile.booksLockedThrough;
+  if (locked && postFrom <= locked) {
+    return {
+      ok: false,
+      message: "Your books are closed for that date.",
+      errors: { postFrom: "Choose a day after the books' closing date." },
+    };
+  }
+  try {
+    const result = await inOrg(ctx, async (tx) => {
+      const synced = await savePurchaseSettings(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        baseCurrency: ctx.profile.baseCurrency,
+        postFrom,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "purchase_settings.saved",
+        entityType: "organization",
+        entityId: ctx.org.id,
+        after: { postFrom, orders: synced.orders, problems: synced.problems.length },
+      });
+      return synced;
+    });
+    revalidatePath(`/o/${slug}/inventory`, "layout");
+    revalidatePath(`/o/${slug}/accounting`, "layout");
+    return {
+      ok: true,
+      message:
+        result.orders === 0
+          ? "Purchase orders are in the books from that date."
+          : `Purchase orders are in the books from that date (${result.orders} brought in).`,
+      problems: result.problems,
+    };
+  } catch (error) {
+    return friendly(error);
+  }
+}
+
+/** Settles what's left on Supplier deposits for a fully received order. */
+export async function settleOrderAction(
+  slug: string,
+  id: string,
+): Promise<PurchaseOrderActionResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  if (!validId(id)) return gone;
+  const date = openDate(nowIn(ctx.profile.timezone).date, ctx.profile.booksLockedThrough);
+  try {
+    await inOrg(ctx, async (tx) => {
+      const entryId = await settleOrder(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        baseCurrency: ctx.profile.baseCurrency,
+        purchaseOrderId: id,
+        date,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "purchase_order.settled",
+        entityType: "purchase_order",
+        entityId: id,
+        after: { entryId, date },
+      });
+    });
+    revalidatePath(base(slug), "layout");
+    return { ok: true };
+  } catch (error) {
+    return friendly(error);
+  }
+}
+
+export async function undoSettlementAction(
+  slug: string,
+  id: string,
+): Promise<PurchaseOrderActionResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  if (!validId(id)) return gone;
+  try {
+    await inOrg(ctx, async (tx) => {
+      await undoSettlement(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        purchaseOrderId: id,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "purchase_order.settlement_undone",
+        entityType: "purchase_order",
+        entityId: id,
       });
     });
     revalidatePath(base(slug), "layout");

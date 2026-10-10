@@ -1,6 +1,8 @@
 import { MONEY_ACCOUNT_SUBTYPES, type PaymentPlanPart } from "@bookalyze/core";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
+import { ensureSystemAccount } from "./cogs";
+import { getPurchaseSettings, moveToAccount, orderInBooks } from "./purchase-books";
 import { PurchasingError } from "./purchasing";
 import { accounts, contacts, journalEntries, journalLines } from "./schema/accounting";
 import { purchaseOrders, purchasePayments, purchaseReceipts } from "./schema/inventory";
@@ -80,6 +82,7 @@ async function orderForPayment(tx: Transaction, purchaseOrderId: string) {
       status: purchaseOrders.status,
       currency: purchaseOrders.currency,
       supplierId: purchaseOrders.supplierId,
+      orderDate: purchaseOrders.orderDate,
     })
     .from(purchaseOrders)
     .where(eq(purchaseOrders.id, purchaseOrderId))
@@ -159,14 +162,27 @@ export async function addPurchasePayment(
     })
     .returning({ id: purchasePayments.id });
   if (!row) throw new Error("The payment wasn't saved.");
+  // An order in the books holds its payments on Supplier deposits until the goods arrive.
+  if (orderInBooks(po.orderDate, await getPurchaseSettings(tx))) {
+    await moveToAccount(tx, {
+      orgId: input.orgId,
+      userId: input.userId,
+      entryId: input.journalEntryId,
+      accountId: await ensureSystemAccount(tx, input.orgId, "supplier_deposits"),
+    });
+  }
   return row;
 }
 
-/** Unlinks a payment from its order. The bank transaction stays in the books. */
+/**
+ * Unlinks a payment from its order. The bank transaction stays in the books; on an order in the
+ * books, one no longer paying any order goes back from Supplier deposits to Inventory.
+ */
 export async function removePurchasePayment(
   tx: Transaction,
-  input: { purchaseOrderId: string; paymentId: string },
+  input: { orgId: string; userId: string | null; purchaseOrderId: string; paymentId: string },
 ) {
+  const po = await orderForPayment(tx, input.purchaseOrderId);
   const removed = await tx
     .delete(purchasePayments)
     .where(
@@ -175,8 +191,38 @@ export async function removePurchasePayment(
         eq(purchasePayments.purchaseOrderId, input.purchaseOrderId),
       ),
     )
-    .returning({ id: purchasePayments.id });
-  if (!removed.length) throw new PurchasingError("That payment is no longer on this order.");
+    .returning({ id: purchasePayments.id, journalEntryId: purchasePayments.journalEntryId });
+  const [gone] = removed;
+  if (!gone) throw new PurchasingError("That payment is no longer on this order.");
+  if (!orderInBooks(po.orderDate, await getPurchaseSettings(tx))) return;
+  const [still] = await tx
+    .select({ id: purchasePayments.id })
+    .from(purchasePayments)
+    .where(eq(purchasePayments.journalEntryId, gone.journalEntryId))
+    .limit(1);
+  const [entry] = await tx
+    .select({ reversedBy: journalEntries.reversedByEntryId })
+    .from(journalEntries)
+    .where(eq(journalEntries.id, gone.journalEntryId));
+  if (still || !entry || entry.reversedBy) return;
+  const deposits = await ensureSystemAccount(tx, input.orgId, "supplier_deposits");
+  const [onDeposits] = await tx
+    .select({ id: journalLines.id })
+    .from(journalLines)
+    .where(
+      and(
+        eq(journalLines.journalEntryId, gone.journalEntryId),
+        eq(journalLines.accountId, deposits),
+      ),
+    )
+    .limit(1);
+  if (!onDeposits) return;
+  await moveToAccount(tx, {
+    orgId: input.orgId,
+    userId: input.userId,
+    entryId: gone.journalEntryId,
+    accountId: await ensureSystemAccount(tx, input.orgId, "inventory"),
+  });
 }
 
 export async function savePaymentPlan(
