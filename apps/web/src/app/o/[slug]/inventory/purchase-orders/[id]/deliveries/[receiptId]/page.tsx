@@ -1,5 +1,5 @@
 import { purchaseOrderNumber } from "@bookalyze/core";
-import { getDeliveryCosting } from "@bookalyze/db";
+import { getDeliveryCosting, supplierOptions } from "@bookalyze/db";
 import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -24,7 +24,10 @@ export default async function DeliveryCostsPage({
   if (!z.uuid().safeParse(id).success || !z.uuid().safeParse(receiptId).success) notFound();
   const ctx = await getInventoryContext(slug, "inventory.purchasing");
   const { locale, baseCurrency } = ctx.profile;
-  const delivery = await inOrg(ctx, (tx) => getDeliveryCosting(tx, receiptId));
+  const { delivery, vendors } = await inOrg(ctx, async (tx) => ({
+    delivery: await getDeliveryCosting(tx, receiptId),
+    vendors: await supplierOptions(tx),
+  }));
   if (!delivery || delivery.purchaseOrderId !== id) notFound();
   const number = purchaseOrderNumber(delivery.purchaseOrderNumber);
   const units = delivery.lines.reduce((sum, line) => sum + line.quantity, 0);
@@ -61,7 +64,9 @@ export default async function DeliveryCostsPage({
           unitCost: line.unitCost,
           unitWeight: line.unitWeight,
         }))}
+        vendors={vendors}
         costs={delivery.costs.map((cost) => ({
+          contactId: cost.contactId ?? "",
           kind: cost.kind,
           description: cost.description ?? "",
           amount: cost.amount,

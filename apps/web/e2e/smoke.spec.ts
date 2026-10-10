@@ -2521,6 +2521,75 @@ test("purchase orders: fill one in from an Alibaba receipt, check it, then save 
   ).toBeVisible();
 });
 
+test("purchase orders: a payment plan, payments to the supplier and to a shipper", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Purchase orders", exact: true }).click();
+  await page.getByRole("link", { name: /Maple Glassworks/ }).click();
+  await page.getByRole("button", { name: "Mark as sent" }).click();
+  await expect(page.getByText(/PO-\d+ marked as sent/)).toBeVisible();
+  const payments = page.getByRole("region", { name: "Payments" });
+  await expect(payments.getByText("No payments yet.")).toBeVisible();
+
+  // The plan: 35% upfront, then a fixed amount for the rest (USD 493.00 in all).
+  await payments.getByRole("button", { name: "Add a payment plan" }).click();
+  const planDialog = page.getByRole("dialog");
+  await planDialog.getByLabel("Part 1: percentage", { exact: true }).fill("35");
+  await expect(planDialog.getByText("= US$172.55")).toBeVisible();
+  await planDialog.getByRole("button", { name: "Add a part" }).click();
+  await expect(planDialog.getByLabel("Part 2: amount", { exact: true })).toHaveValue("320.45");
+  await planDialog.getByLabel("Part 2: what it's for").fill("Balance");
+  await expect(planDialog.getByText("The parts cover the whole order.")).toBeVisible();
+  await planDialog.getByRole("button", { name: "Save plan" }).click();
+  await expect(page.getByText("Payment plan saved")).toBeVisible();
+  const plan = payments.getByRole("list", { name: "Payment plan" });
+  await expect(plan.getByRole("listitem")).toHaveCount(2);
+  await expect(plan.getByRole("listitem").first()).toContainText("To pay");
+
+  // The upfront part, paid from a CAD account: the dialog suggests it from the plan.
+  await payments.getByRole("button", { name: "Record a payment" }).click();
+  const pay = page.getByRole("dialog");
+  await expect(pay.getByLabel("What it's for (optional)")).toHaveValue("Upfront");
+  await expect(pay.getByText("35% of the order is US$172.55.")).toBeVisible();
+  await choose(pay.getByLabel("Paid from", { exact: true }), "1000 · Cash on hand");
+  await pay.getByLabel(/What left the account/).fill("236.00");
+  await pay.getByRole("button", { name: "Record payment" }).click();
+  await expect(page.getByText("Payment recorded")).toBeVisible();
+  await expect(payments.getByText("Paid (35.0%)")).toBeVisible();
+  await expect(plan.getByRole("listitem").first()).toContainText("Paid");
+  await expect(payments.getByRole("listitem", { name: /Payment Upfront/ })).toContainText(
+    "$236.00 left the account",
+  );
+
+  // Freight paid to someone else doesn't count toward the supplier.
+  await payments.getByRole("button", { name: "Record a payment" }).click();
+  await choose(pay.getByLabel("Paid to", { exact: true }), "Office Depot");
+  await pay.getByLabel("What it's for (optional)").fill("Sea freight");
+  await pay.getByLabel(/How much/).fill("80");
+  await pay.getByRole("button", { name: "Record payment" }).click();
+  const freight = payments.getByRole("listitem", { name: /Payment Sea freight/ });
+  await expect(freight).toContainText("to Office Depot");
+  await expect(payments.getByText("Paid (35.0%)")).toBeVisible();
+
+  // A transaction already in the books can be linked, but not twice.
+  await payments.getByRole("button", { name: "Record a payment" }).click();
+  await expect(pay.getByLabel(/How much/)).toHaveValue("320.45");
+  await pay.getByRole("button", { name: "Already in my books" }).click();
+  await pay.getByLabel("Search your transactions").fill("Upfront");
+  await pay.getByRole("button", { name: /Upfront/ }).click();
+  await pay.getByRole("button", { name: "Link payment" }).click();
+  await expect(pay.getByText("That transaction is already a payment on this order.")).toBeVisible();
+  await pay.getByRole("button", { name: "Cancel" }).click();
+
+  // Taking a payment off the order asks once more.
+  await freight.getByRole("button", { name: "Take this payment off the order" }).click();
+  await freight.getByRole("button", { name: "Confirm: take this payment off the order" }).click();
+  await expect(page.getByText("Payment taken off the order")).toBeVisible();
+  await expect(freight).toHaveCount(0);
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

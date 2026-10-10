@@ -40,6 +40,8 @@ type Cost = {
   currency: string;
   exchangeRate: string;
   allocation: AllocationMethod;
+  /** Who it's paid to: a shipping company, a customs broker… Empty for the supplier. */
+  contactId: string;
 };
 
 /** "70.0000" → "70", "1.3650000000" → "1.365". */
@@ -74,6 +76,7 @@ export function DeliveryCostsForm({
   costed,
   exchangeRate,
   lines,
+  vendors,
   costs: initialCosts,
 }: {
   slug: string;
@@ -87,6 +90,7 @@ export function DeliveryCostsForm({
   costed: boolean;
   exchangeRate: string | null;
   lines: Line[];
+  vendors: { id: string; name: string }[];
   costs: Omit<Cost, "key">[];
 }) {
   const router = useRouter();
@@ -122,6 +126,7 @@ export function DeliveryCostsForm({
         currency: baseCurrency,
         exchangeRate: "",
         allocation: split === "weight" && noWeight.length ? "units" : split,
+        contactId: "",
       },
     ]);
     setNextKey((k) => k + 1);
@@ -312,6 +317,20 @@ export function DeliveryCostsForm({
                     >
                       <Trash2 />
                     </Button>
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-2">
+                    <Combobox
+                      aria-label={`Paid to, cost ${index + 1}`}
+                      value={cost.contactId}
+                      onChange={(contactId) => update(cost.key, { contactId })}
+                      placeholder="Paid to (optional)"
+                      searchPlaceholder="Search vendors"
+                      emptyText="No vendor by that name."
+                      options={[
+                        { value: "", label: "Not said" },
+                        ...vendors.map((v) => ({ value: v.id, label: v.name })),
+                      ]}
+                    />
                   </div>
                   {other ? (
                     <RateField

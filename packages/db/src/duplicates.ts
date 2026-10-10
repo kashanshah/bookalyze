@@ -10,6 +10,7 @@ import type { Transaction } from "./client";
 import { reverseJournalEntry } from "./ledger";
 import { accounts, duplicateSuggestions, journalEntries, journalLines } from "./schema/accounting";
 import { bankLines } from "./schema/banking";
+import { purchasePayments } from "./schema/inventory";
 
 /**
  * Possible duplicates, the way Wave does them: everything a bank sends goes into the books,
@@ -167,6 +168,11 @@ export async function carryEntryLinks(
     .update(bankLines)
     .set({ journalEntryId: input.to })
     .where(eq(bankLines.journalEntryId, input.from));
+  // A payment toward a purchase order stays one when its transaction is corrected or merged.
+  await tx
+    .update(purchasePayments)
+    .set({ journalEntryId: input.to })
+    .where(eq(purchasePayments.journalEntryId, input.from));
   // A pair turned down as a transfer stays turned down (a matched one follows in transfers.ts).
   for (const side of ["out_entry_id", "in_entry_id"] as const) {
     const column = sql.raw(side);

@@ -95,6 +95,11 @@ export const deliveryCostSchema = z
     currency: currencySchema,
     exchangeRate: rateSchema,
     allocation: z.enum(["units", "value", "weight"], "Choose how to split it."),
+    contactId: z
+      .string()
+      .optional()
+      .transform((v) => v || null)
+      .refine((v) => v === null || z.uuid().safeParse(v).success, "Choose who it was paid to."),
   })
   .refine((v) => decimalPlaces(v.amount) <= Math.max(getCurrency(v.currency)?.minorUnits ?? 2, 0), {
     path: ["amount"],
@@ -106,3 +111,84 @@ export const deliveryCostsSchema = z.object({
   costs: z.array(deliveryCostSchema).max(20, "Up to 20 costs per delivery."),
 });
 export type DeliveryCostsFormInput = z.input<typeof deliveryCostsSchema>;
+
+const positiveAmount = (message: string) =>
+  z
+    .string()
+    .trim()
+    .refine((v) => isDecimal(v) && !v.startsWith("-") && Number(v) > 0, message)
+    .refine((v) => !isDecimal(v) || decimalPlaces(v) <= 4, "Use at most 4 decimal places.");
+
+/** A payment plan: parts, each a percentage of the order or a fixed amount. */
+export const paymentPlanSchema = z
+  .array(
+    z.object({
+      label: z.string().trim().max(60, "Keep it under 60 characters."),
+      kind: z.enum(["percent", "amount"]),
+      value: positiveAmount("Enter a percentage or an amount."),
+    }),
+  )
+  .max(12, "Up to 12 parts.");
+export type PaymentPlanInput = z.input<typeof paymentPlanSchema>;
+
+/** A payment toward a purchase order: a new bank transaction, or one already in the books. */
+export const purchasePaymentSchema = z
+  .object({
+    mode: z.enum(["new", "existing"]),
+    /** Who was paid; empty for the supplier. */
+    contactId: z
+      .string()
+      .optional()
+      .transform((v) => v || null)
+      .refine((v) => v === null || z.uuid().safeParse(v).success, "Choose who was paid."),
+    receiptId: z
+      .string()
+      .optional()
+      .transform((v) => v || null)
+      .refine((v) => v === null || z.uuid().safeParse(v).success, "Choose the delivery."),
+    label: optionalText(60, "Keep it under 60 characters."),
+    /** For this order, in the currency owed. */
+    amount: positiveAmount("Enter how much of it was for this order."),
+    currency: currencySchema.optional(),
+    // A transaction already in the books.
+    journalEntryId: z
+      .string()
+      .optional()
+      .transform((v) => v || null),
+    // A new one.
+    date: z.string().optional().default(""),
+    moneyAccountId: z.string().optional().default(""),
+    /** What left the bank account, in its currency. */
+    bankAmount: z.string().trim().optional().default(""),
+    fxRate: z.string().trim().optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.mode === "existing") {
+      if (!v.journalEntryId || !z.uuid().safeParse(v.journalEntryId).success) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["journalEntryId"],
+          message: "Choose the transaction.",
+        });
+      }
+      return;
+    }
+    if (!isIsoDate(v.date)) {
+      ctx.addIssue({ code: "custom", path: ["date"], message: "Choose the day it was paid." });
+    }
+    if (!z.uuid().safeParse(v.moneyAccountId).success) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["moneyAccountId"],
+        message: "Choose the account it was paid from.",
+      });
+    }
+    if (!(isDecimal(v.bankAmount) && Number(v.bankAmount) > 0 && !v.bankAmount.startsWith("-"))) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["bankAmount"],
+        message: "Enter what left the account.",
+      });
+    }
+  });
+export type PurchasePaymentInput = z.input<typeof purchasePaymentSchema>;

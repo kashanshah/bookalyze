@@ -1,3 +1,4 @@
+import type { PaymentPlanPart } from "@bookalyze/core";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -7,6 +8,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   text,
@@ -136,6 +138,8 @@ export const purchaseOrders = pgTable(
     /** The supplier's reference (their order or proforma number). */
     reference: text("reference"),
     notes: text("notes"),
+    /** How the supplier is to be paid: parts, each a percentage or a fixed amount. */
+    paymentPlan: jsonb("payment_plan").$type<PaymentPlanPart[]>().notNull().default([]),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -287,10 +291,17 @@ export const purchaseReceiptCosts = pgTable(
     /** Main-currency value of one unit of `currency`. Null when it is the main currency. */
     exchangeRate: numeric("exchange_rate", { precision: 20, scale: 10 }),
     allocation: text("allocation", { enum: ALLOCATION_METHODS }).notNull(),
+    /** Who it's paid to (a shipping company, a customs broker), when not the supplier. */
+    contactId: uuid("contact_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     unique("purchase_receipt_costs_line_key").on(t.receiptId, t.lineNo),
+    foreignKey({
+      name: "purchase_receipt_costs_contact_fk",
+      columns: [t.organizationId, t.contactId],
+      foreignColumns: [contacts.organizationId, contacts.id],
+    }),
     foreignKey({
       name: "purchase_receipt_costs_receipt_fk",
       columns: [t.organizationId, t.receiptId],
@@ -310,6 +321,62 @@ export const purchaseReceiptCosts = pgTable(
       sql`${t.exchangeRate} is null or ${t.exchangeRate} > 0`,
     ),
     tenantIsolationPolicy("purchase_receipt_costs", t.organizationId),
+  ],
+);
+
+/**
+ * A payment toward a purchase order: a bank transaction (its journal entry) and how much of it
+ * went to this order, in `currency`. Paid to the supplier, or to someone else for a delivery's
+ * extra costs (freight, duty…). An entry corrected later carries its payments over; one removed
+ * from the books (reversed) no longer counts.
+ */
+export const purchasePayments = pgTable(
+  "purchase_payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    purchaseOrderId: uuid("purchase_order_id").notNull(),
+    /** The delivery whose extra costs it pays, when it isn't paid to the supplier. */
+    receiptId: uuid("receipt_id"),
+    /** Who was paid. */
+    contactId: uuid("contact_id").notNull(),
+    journalEntryId: uuid("journal_entry_id").notNull(),
+    /** "Upfront", "On completion"… */
+    label: text("label"),
+    amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
+    currency: char("currency", { length: 3 })
+      .notNull()
+      .references(() => currencies.code),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("purchase_payments_po_idx").on(t.purchaseOrderId),
+    index("purchase_payments_entry_idx").on(t.journalEntryId),
+    foreignKey({
+      name: "purchase_payments_po_fk",
+      columns: [t.organizationId, t.purchaseOrderId],
+      foreignColumns: [purchaseOrders.organizationId, purchaseOrders.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "purchase_payments_receipt_fk",
+      columns: [t.organizationId, t.receiptId],
+      foreignColumns: [purchaseReceipts.organizationId, purchaseReceipts.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "purchase_payments_contact_fk",
+      columns: [t.organizationId, t.contactId],
+      foreignColumns: [contacts.organizationId, contacts.id],
+    }),
+    foreignKey({
+      name: "purchase_payments_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    check("purchase_payments_amount_positive", sql`${t.amount} > 0`),
+    tenantIsolationPolicy("purchase_payments", t.organizationId),
   ],
 );
 

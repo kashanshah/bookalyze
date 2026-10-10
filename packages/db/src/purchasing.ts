@@ -1,4 +1,5 @@
 import {
+  type PaymentPlanPart,
   purchaseLineTotal,
   purchaseOrderTotal,
   receiptProblems,
@@ -83,6 +84,7 @@ export type PurchaseReceipt = {
 
 export type PurchaseOrderDetail = Omit<PurchaseOrderListRow, "units" | "received"> & {
   notes: string | null;
+  paymentPlan: PaymentPlanPart[];
   createdAt: Date;
   lines: PurchaseOrderLine[];
   receipts: PurchaseReceipt[];
@@ -182,7 +184,12 @@ export async function getPurchaseOrder(
   id: string,
 ): Promise<PurchaseOrderDetail | null> {
   const [po] = await tx
-    .select({ ...PO_COLUMNS, notes: purchaseOrders.notes, createdAt: purchaseOrders.createdAt })
+    .select({
+      ...PO_COLUMNS,
+      notes: purchaseOrders.notes,
+      paymentPlan: purchaseOrders.paymentPlan,
+      createdAt: purchaseOrders.createdAt,
+    })
     .from(purchaseOrders)
     .innerJoin(contacts, eq(contacts.id, purchaseOrders.supplierId))
     .where(eq(purchaseOrders.id, id));
