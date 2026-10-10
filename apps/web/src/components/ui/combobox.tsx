@@ -221,7 +221,10 @@ export function Combobox({
               className,
             )}
           >
-            <span className={cn("min-w-0 flex-1 truncate", !selected && "text-muted-foreground")}>
+            <span
+              title={selected?.label}
+              className={cn("min-w-0 flex-1 truncate", !selected && "text-muted-foreground")}
+            >
               {selected?.label ?? placeholder}
             </span>
             <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />

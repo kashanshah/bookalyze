@@ -1684,6 +1684,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     arrives), the payment processing fee, and the contract currency with its total and rate
     ("Contract currency USD: USD 2,171.00 (1 USD = 3.739012 AED)").
 - **Not read:** the buyer and ship-to blocks (personal addresses) and the payments.
+- **Long product names** (Amazon-style titles) are cut short with "…" in the product dropdown, so
+  quantity, cost and total stay in view; hovering shows the whole name (every `Combobox` does).
 - **Code:** core `inventory/alibaba-receipt.ts` (`readAlibabaReceipt`: positioned text → seller,
   order, items, totals; `alibabaPurchaseDraft`: receipt + vendors + products → the form;
   `matchAlibabaProduct`, `looseName`, `alibabaDate`, `alibabaMoney`). Web
