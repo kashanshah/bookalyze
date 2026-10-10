@@ -404,6 +404,7 @@ export function TransactionList({
                 picked={picked.has(row.id)}
                 onTogglePicked={() => togglePicked(row.id)}
                 onEdit={(r) => setDialog({ mode: "edit", row: r })}
+                onCopy={() => setDialog({ mode: "copy", row })}
                 onRemove={() => setRemoving(row)}
                 onToggleReviewed={() => toggleReviewed(row)}
                 onReviewDuplicate={() => setReviewing(row)}

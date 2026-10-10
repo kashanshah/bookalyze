@@ -86,6 +86,8 @@ const newSplit = (accountId = "", amount = "", taxRateId = ""): Split => ({
 export type DialogState =
   | { mode: "create"; kind: TransactionKind; moneyAccountId?: string }
   | { mode: "edit"; row: TxRow }
+  /** A new transaction filled in from an existing one (today's date), to check and add. */
+  | { mode: "copy"; row: TxRow }
   | null;
 
 export function TransactionDialog({
@@ -104,7 +106,7 @@ export function TransactionDialog({
       <DialogContent className="sm:max-w-2xl">
         {state ? (
           <TransactionForm
-            key={state.mode === "edit" ? state.row.id : `new-${state.kind}`}
+            key={state.mode === "create" ? `new-${state.kind}` : `${state.mode}-${state.row.id}`}
             state={state}
             ctx={ctx}
             onDone={onClose}
@@ -128,28 +130,34 @@ function TransactionForm({
   onCategoryCreated?: (category: NewCategory) => void;
 }) {
   const row = state.mode === "edit" ? state.row : null;
+  // What the fields start from: the transaction being edited or copied.
+  const source = state.mode === "create" ? null : state.row;
   const firstMoney = ctx.moneyAccounts[0]?.id ?? "";
   const [kind, setKind] = useState<TransactionKind>(
-    row?.kind ?? (state.mode === "create" ? state.kind : "deposit"),
+    source?.kind ?? (state.mode === "create" ? state.kind : "deposit"),
   );
   const [date, setDate] = useState(row?.date ?? ctx.today);
-  const [memo, setMemo] = useState(row?.memo ?? "");
-  const [contactId, setContactId] = useState(row?.contactId ?? "");
+  const [memo, setMemo] = useState(source?.memo ?? "");
+  const [contactId, setContactId] = useState(source?.contactId ?? "");
   const [contacts, setContacts] = useState(ctx.contacts);
   const [moneyAccountId, setMoneyAccountId] = useState(
-    (row?.needsAccount ? "" : row?.moneyAccountIds[0]) ??
+    (source?.needsAccount ? (row ? "" : undefined) : source?.moneyAccountIds[0]) ??
       (state.mode === "create" ? state.moneyAccountId : undefined) ??
       firstMoney,
   );
-  const [fromAccountId, setFromAccountId] = useState(row?.fromAccountId ?? firstMoney);
+  const [fromAccountId, setFromAccountId] = useState(source?.fromAccountId ?? firstMoney);
   const [toAccountId, setToAccountId] = useState(
-    row?.toAccountId ?? ctx.moneyAccounts.find((a) => a.id !== firstMoney)?.id ?? "",
+    source?.toAccountId ?? ctx.moneyAccounts.find((a) => a.id !== firstMoney)?.id ?? "",
   );
-  const [amount, setAmount] = useState(row && row.kind === "transfer" ? toInput(row.amount) : "");
-  const [received, setReceived] = useState(row?.receivedAmount ? toInput(row.receivedAmount) : "");
+  const [amount, setAmount] = useState(
+    source && source.kind === "transfer" ? toInput(source.amount) : "",
+  );
+  const [received, setReceived] = useState(
+    source?.receivedAmount ? toInput(source.receivedAmount) : "",
+  );
   const [splits, setSplits] = useState<Split[]>(() =>
-    row && row.kind !== "transfer" && row.splits.length
-      ? row.splits.map((s) => ({
+    source && source.kind !== "transfer" && source.splits.length
+      ? source.splits.map((s) => ({
           ...newSplit(s.accountId, toInput(s.amount), s.taxRateId ?? ""),
           description: s.description ?? "",
         }))
@@ -333,13 +341,17 @@ function TransactionForm({
       }}
     >
       <DialogHeader>
-        <DialogTitle>{row ? "Edit transaction" : "Add a transaction"}</DialogTitle>
+        <DialogTitle>
+          {row ? "Edit transaction" : source ? "Copy of a transaction" : "Add a transaction"}
+        </DialogTitle>
         <DialogDescription>
-          {row?.matchedTransfer
-            ? "Matched from two bank transactions. If you make it income or an expense instead, the other account's transaction comes back on its own."
-            : row
-              ? `Saving replaces ${row.number} with a corrected entry. The original stays in the journal.`
-              : "Record money that came in, went out, or moved between your accounts."}
+          {source && !row
+            ? `Filled in from ${source.number}, dated today. Check it, change what's different, then add it.`
+            : row?.matchedTransfer
+              ? "Matched from two bank transactions. If you make it income or an expense instead, the other account's transaction comes back on its own."
+              : row
+                ? `Saving replaces ${row.number} with a corrected entry. The original stays in the journal.`
+                : "Record money that came in, went out, or moved between your accounts."}
         </DialogDescription>
       </DialogHeader>
 
