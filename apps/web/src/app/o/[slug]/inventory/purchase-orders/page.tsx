@@ -1,5 +1,5 @@
 import { PURCHASE_ORDER_STATUS_LABELS, purchaseOrderNumber } from "@bookalyze/core";
-import { listPurchaseOrders, type PurchaseOrderStatus } from "@bookalyze/db";
+import { getPurchaseSettings, listPurchaseOrders, type PurchaseOrderStatus } from "@bookalyze/db";
 import { ClipboardList, Plus, Search } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -7,10 +7,12 @@ import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatDate } from "@/lib/dates";
+import { formatDate, nowIn, openDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
 import { getInventoryContext } from "@/server/inventory";
+import { isOrgAdmin } from "@/server/org";
+import { PurchaseBooksSetting } from "./books-setting";
 import { StatusBadge } from "./status-badge";
 
 export const metadata: Metadata = { title: "Purchase orders" };
@@ -36,12 +38,14 @@ export default async function PurchaseOrdersPage({
   const q = (sp.q ?? "").trim().slice(0, 100);
   const ctx = await getInventoryContext(slug, "inventory.purchasing");
   const { locale } = ctx.profile;
-  const rows = await inOrg(ctx, (tx) =>
-    listPurchaseOrders(tx, {
+  const { rows, settings } = await inOrg(ctx, async (tx) => ({
+    rows: await listPurchaseOrders(tx, {
       ...(tab === "all" ? {} : { status: tab as PurchaseOrderStatus | "open" }),
       ...(q ? { search: q } : {}),
     }),
-  );
+    settings: await getPurchaseSettings(tx),
+  }));
+  const today = nowIn(ctx.profile.timezone).date;
   const base = `/o/${slug}/inventory/purchase-orders`;
   const href = (status: Tab) => {
     const p = new URLSearchParams();
@@ -65,6 +69,14 @@ export default async function PurchaseOrdersPage({
             </Link>
           </Button>
         }
+      />
+
+      <PurchaseBooksSetting
+        slug={slug}
+        locale={locale}
+        postFrom={settings?.postFrom ?? null}
+        suggested={openDate(`${today.slice(0, 8)}01`, ctx.profile.booksLockedThrough)}
+        canManage={isOrgAdmin(ctx)}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">

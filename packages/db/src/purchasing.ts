@@ -8,6 +8,7 @@ import {
 import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { buildLots } from "./landed-costs";
+import { postDelivery } from "./purchase-books";
 import { contacts } from "./schema/accounting";
 import {
   products,
@@ -489,6 +490,13 @@ export async function receivePurchaseOrder(
     baseCurrency: input.baseCurrency,
   });
   if (!costing.ok) throw new PurchasingError(costing.problem);
+  // An order in the books moves the delivery's cost from Supplier deposits into Inventory.
+  await postDelivery(tx, {
+    orgId: input.orgId,
+    userId: input.userId ?? null,
+    baseCurrency: input.baseCurrency,
+    receiptId: receipt.id,
+  });
   return { receiptId: receipt.id, status };
 }
 

@@ -7,6 +7,7 @@ import {
 import { asc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { lotsConsumed } from "./cogs";
+import { postDelivery } from "./purchase-books";
 import { PurchasingError } from "./purchasing";
 import { contacts } from "./schema/accounting";
 import {
@@ -197,6 +198,7 @@ export async function saveDeliveryCosts(
   tx: Transaction,
   input: {
     orgId: string;
+    userId?: string | null;
     receiptId: string;
     baseCurrency: string;
     exchangeRate: string | null;
@@ -254,6 +256,7 @@ export async function saveDeliveryCosts(
   }
   const costing = await buildLots(tx, input);
   if (!costing.ok) throw new PurchasingError(costing.problem);
+  await postDelivery(tx, { ...input, userId: input.userId ?? null });
   return costing;
 }
 

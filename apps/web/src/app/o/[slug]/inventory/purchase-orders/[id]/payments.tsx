@@ -40,6 +40,8 @@ import {
   recordPurchasePaymentAction,
   removePurchasePaymentAction,
   savePaymentPlanAction,
+  settleOrderAction,
+  undoSettlementAction,
 } from "../actions";
 
 export type PaymentView = {
@@ -77,6 +79,14 @@ type Props = {
   moneyAccounts: { id: string; label: string; currency: string }[];
   vendors: { id: string; name: string }[];
   currencies: { code: string; name: string }[];
+  /** The order is in the books: payments on Supplier deposits, deliveries posted from there. */
+  books: {
+    paidIn: string;
+    intoStock: string;
+    left: string;
+    settlementEntryId: string | null;
+    settlementNumber: string | null;
+  } | null;
 };
 
 /** a − b, exactly. */
@@ -192,6 +202,8 @@ export function PurchasePayments(props: Props) {
             })}
           </ol>
         ) : null}
+
+        {props.books ? <DepositsPanel {...props} books={props.books} /> : null}
 
         {payments.length ? (
           <ul aria-label="Payments made" className="divide-y rounded-xl border">
@@ -543,6 +555,7 @@ function PaymentDialog({
   moneyAccounts,
   vendors,
   currencies,
+  books,
   open,
   onClose,
 }: Props & { paid: string; open: boolean; onClose: () => void }) {
@@ -651,7 +664,9 @@ function PaymentDialog({
       }
       toast.success(result.message, {
         description:
-          mode === "new" ? "It's in Transactions too, as money out to Inventory." : undefined,
+          mode === "new"
+            ? `It's in Transactions too, as money out to ${books ? "Supplier deposits" : "Inventory"}.`
+            : undefined,
       });
       onClose();
       router.refresh();
@@ -856,7 +871,9 @@ function PaymentDialog({
                 />
               )}
               <p className="text-muted-foreground text-xs sm:col-span-2">
-                Saving adds it to Transactions as money out, categorised to Inventory.
+                {books
+                  ? "Saving adds it to Transactions as money out, held on Supplier deposits until the goods arrive."
+                  : "Saving adds it to Transactions as money out, categorised to Inventory."}
               </p>
             </div>
           ) : (
@@ -924,5 +941,100 @@ function PaymentDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// -------------------------------------------------------------------------------------------
+// Supplier deposits for an order in the books
+
+function DepositsPanel({
+  slug,
+  locale,
+  baseCurrency,
+  po,
+  books,
+}: Props & { books: NonNullable<Props["books"]> }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const left = books.left;
+  const received = po.status === "received";
+  const run = (action: typeof settleOrderAction, done: string) =>
+    start(async () => {
+      const result = await action(slug, po.id);
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success(done);
+      router.refresh();
+    });
+  return (
+    <section
+      aria-label="Supplier deposits for this order"
+      className="grid gap-3 rounded-xl border border-dashed p-3 text-sm"
+    >
+      <div className="grid grid-cols-3 gap-3">
+        <Stat label="Paid in">
+          <Amount value={books.paidIn} currency={baseCurrency} locale={locale} />
+        </Stat>
+        <Stat label="Into stock">
+          <Amount value={books.intoStock} currency={baseCurrency} locale={locale} />
+        </Stat>
+        <Stat label={isNegative(left) ? "Owed" : "Left on deposits"}>
+          <Amount
+            value={abs(left)}
+            currency={baseCurrency}
+            locale={locale}
+            className={isNegative(left) ? "text-destructive" : undefined}
+          />
+        </Stat>
+      </div>
+      {books.settlementEntryId ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-muted-foreground">
+            Settled to exchange gains and losses in{" "}
+            <Link
+              href={`/o/${slug}/accounting/journal/${books.settlementEntryId}`}
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              {books.settlementNumber}
+            </Link>
+            .
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={pending}
+            onClick={() => run(undoSettlementAction, "Settlement undone")}
+          >
+            Undo
+          </Button>
+        </div>
+      ) : received && !isPositive(abs(left)) ? (
+        <p className="text-success">Everything paid in is in stock. Nothing to settle.</p>
+      ) : received ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="min-w-[14rem] flex-1 text-muted-foreground">
+            Everything has arrived.{" "}
+            {isNegative(left)
+              ? "The stock is valued above what's been paid: finish paying first, or settle the difference as an exchange gain."
+              : "What's left is the difference between the rates you paid at and the rate the goods were valued at, plus any cost that changed."}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            onClick={() => run(settleOrderAction, "Order settled")}
+          >
+            {pending ? <Spinner /> : null}
+            Settle the difference
+          </Button>
+        </div>
+      ) : (
+        <p className="text-muted-foreground">
+          Payments wait here until the goods arrive. Each delivery moves its cost into stock.
+        </p>
+      )}
+    </section>
   );
 }

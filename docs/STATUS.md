@@ -28,7 +28,7 @@ back into stock, losses written off, like Amazon's FBA ledger)._
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
-| 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) done. Next: slice 9, purchases in the books through a supplier deposits account. Next: Noon (phase 4c), with bundles from day one |
+| 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: "your stock against Noon's" from the ledger summary view. Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable) and 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices) done. Next: eBay orders. See §3 "Phase 4d" |
 
@@ -1659,6 +1659,59 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   apart, fulfilment checked, orders shown without a connection, Amazon.ae's upload unaffected);
   e2e "noon: add a Noon country, say who ships, and link a SKU on it".
 
+### Phase 5, slice 9: purchases in the books
+
+- **What it is:** Purchase orders → **Put purchases in the books** (admins), from a date. For
+  orders dated from then:
+  - Payments go to **Supplier deposits** (system key `supplier_deposits`, new template account
+    1250, an asset: paid, not yet in stock). A new payment is categorised there. Linking a
+    transaction moves its single category there, through a corrected entry (`moveToAccount` →
+    `replaceJournalEntry`). A transaction split across categories, or with tax, is refused with
+    a hint. Taking a payment off such an order puts the transaction back on Inventory when no
+    other order uses it.
+  - Each **delivery** posts its landed cost on the day it arrived: Dr Inventory / Cr Supplier
+    deposits (source `purchase`, `purchase_receipts.journal_entry_id`). This applies when it's
+    recorded and whenever its costs or rate change. A changed cost reverses the old entry and
+    posts a new one; the same cost changes nothing (`postDelivery`).
+  - Freight and other costs paid to someone else are linked to the order (slice 8), so they're
+    on deposits too, and the delivery's landed cost takes them off.
+  - Once everything has arrived, **Settle the difference** posts what's left for the order:
+    more paid than went into stock goes to Exchange losses, less goes to Exchange gains. That
+    covers rates that moved between paying and receiving, and a cost that changed. It's dated
+    today, or the first open day. **Undo** reverses it (`settleOrder`, `undoSettlement`).
+- **On the order page:** a "Supplier deposits for this order" panel shows paid in, into stock,
+  and left on deposits (or owed). Paid in is each payment's share of what its transaction put on
+  deposits, split between orders by amount (`orderDeposits`). The payment dialog says where a
+  new payment goes.
+- **Switching on or moving the start** brings in every order dated from then
+  (`savePurchaseSettings` → `syncOrderBooks`): payments onto deposits, deliveries posted.
+  - What couldn't be moved (split transactions) is reported in the toast.
+  - The start can't be on or before the books' closing date.
+  - It can't move later once deliveries of orders it would leave out are posted.
+  - Orders before the start stay as before: payments categorised to Inventory by hand, nothing
+    posted for deliveries.
+- **Known simplification:** an order received before it's fully paid shows as owed on the same
+  account (Supplier deposits runs below zero for it). A separate Accounts payable step can come
+  later if needed.
+- **Schema** (migration `0058_purchases_in_books`): `purchase_settings` (one row per company:
+  `post_from`), `purchase_receipts.journal_entry_id`, `purchase_orders.settlement_entry_id`.
+  The system key and journal source checks gain `supplier_deposits` and `purchase`. All under
+  RLS.
+- **Code:** db `purchase-books.ts` (`getPurchaseSettings`, `orderInBooks`, `moveToAccount`,
+  `postDelivery`, `syncOrderBooks`, `orderDeposits`, `settleOrder`, `undoSettlement`,
+  `savePurchaseSettings`). Hooks in `receivePurchaseOrder`, `saveDeliveryCosts`,
+  `addPurchasePayment` and `removePurchasePayment`. `postLines` and `ensureSystemAccount` (cogs)
+  serve purchases too. Actions `savePurchaseSettingsAction`, `settleOrderAction` and
+  `undoSettlementAction`, audited. Web `purchase-orders/books-setting.tsx` and the deposits panel
+  in `[id]/payments.tsx`.
+- Tests:
+  - db `purchase-books.test.ts`: orders before the start untouched; two payments at different
+    rates on deposits; the delivery posted at its rate; freight paid to a shipper and the
+    delivery re-posted; settling to exchange losses and undoing it; a payment taken off goes
+    back to Inventory; split transactions refused; no settling before everything arrives; the
+    start can't move later.
+  - e2e "purchase orders in the books: payments on deposits, deliveries into stock, settling".
+
 ### Phase 5, slice 8: paying for purchase orders
 
 - **What it is:** a **Payments** section on every purchase order that has been sent (not
@@ -1694,8 +1747,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     removed from the books stays listed, dimmed, and no longer counts.
 - **Delivery costs** can say who they're **paid to** (Landed cost page, "Paid to (optional)"),
   kept when costs are saved again.
-- **Not yet in the books differently:** payments still go to Inventory as before. Slice 9 moves
-  them to a supplier deposits account and posts deliveries, so exchange differences show up.
+- **In the books:** payments go to Inventory as before, unless purchases are in the books
+  (slice 9).
 - **Schema** (migration `0057_po_payments`): `purchase_orders.payment_plan` (jsonb, default
   `[]`), `purchase_payments` (order, optional delivery, payee contact, journal entry, label,
   amount > 0, currency; composite FKs; cascade from the order and the delivery),
@@ -1976,7 +2029,7 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
    order, and other suppliers' receipts or proforma invoices.
 8. [x] **Paying for purchase orders.** Done in slice 8: a payment plan (percentages or fixed
    amounts), payments to the supplier and to others (freight), new or already in the books.
-9. [ ] **Purchases in the books.** Payments go to a Supplier deposits account; each delivery posts
+9. [x] **Purchases in the books.** Done in slice 9. Payments go to a Supplier deposits account; each delivery posts
    its landed cost (Dr Inventory, Cr Supplier deposits), reposted when its costs change; a
    received order settles what's left as an exchange difference. From a start date, so earlier
    months (payments categorised to Inventory) stay as they are.

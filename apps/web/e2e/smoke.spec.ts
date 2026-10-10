@@ -2590,6 +2590,40 @@ test("purchase orders: a payment plan, payments to the supplier and to a shipper
   await expect(freight).toHaveCount(0);
 });
 
+test("purchase orders in the books: payments on deposits, deliveries into stock, settling", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Purchase orders", exact: true }).click();
+
+  // Switched on for orders from September: the Alibaba order's upfront payment moves to deposits.
+  const setting = page.getByRole("region", { name: "Purchases in your books" });
+  await expect(setting).toContainText("Purchases aren't in your books yet.");
+  await setting.getByRole("button", { name: "Put purchases in the books" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("For orders dated from").fill("2026-09-01");
+  await dialog.getByRole("button", { name: "Put them in the books" }).click();
+  await expect(page.getByText(/Purchase orders are in the books from that date/)).toBeVisible();
+  await expect(setting).toContainText("In your books for orders from September 1, 2026.");
+
+  await page.getByRole("link", { name: /Maple Glassworks/ }).click();
+  const deposits = page.getByRole("region", { name: "Supplier deposits for this order" });
+  await expect(deposits).toContainText("Paid in$236.00");
+  await expect(deposits).toContainText("Into stock$0.00");
+  await expect(deposits).toContainText("Payments wait here until the goods arrive.");
+
+  // Everything arrives at 1.36: USD 493.00 is CAD 670.48 into stock, more than paid so far.
+  await page.getByRole("button", { name: "Record a delivery" }).click();
+  const delivery = page.getByRole("dialog");
+  await delivery.getByLabel("Exchange rate").fill("1.36");
+  await delivery.getByRole("button", { name: "Record delivery" }).click();
+  await expect(page.getByText("Everything on this order has arrived.").first()).toBeVisible();
+  await expect(deposits).toContainText("Into stock$670.48");
+  await expect(deposits).toContainText("Owed$434.48");
+  await expect(deposits.getByRole("button", { name: "Settle the difference" })).toBeVisible();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

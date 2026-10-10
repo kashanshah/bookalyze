@@ -140,6 +140,8 @@ export const purchaseOrders = pgTable(
     notes: text("notes"),
     /** How the supplier is to be paid: parts, each a percentage or a fixed amount. */
     paymentPlan: jsonb("payment_plan").$type<PaymentPlanPart[]>().notNull().default([]),
+    /** The entry that settled what was left on Supplier deposits once it was all in and paid. */
+    settlementEntryId: uuid("settlement_entry_id"),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -216,6 +218,8 @@ export const purchaseReceipts = pgTable(
     notes: text("notes"),
     /** Main-currency value of one unit of the PO's currency, for costing. Null if the same. */
     exchangeRate: numeric("exchange_rate", { precision: 20, scale: 10 }),
+    /** The entry that put it in stock (Dr Inventory / Cr Supplier deposits), when in the books. */
+    journalEntryId: uuid("journal_entry_id"),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -322,6 +326,24 @@ export const purchaseReceiptCosts = pgTable(
     ),
     tenantIsolationPolicy("purchase_receipt_costs", t.organizationId),
   ],
+);
+
+/**
+ * Purchase orders in the books (phase 5, slice 9): orders dated from `post_from` pay into
+ * Supplier deposits and post each delivery's landed cost from it. Earlier orders stay as they
+ * were (payments categorised to Inventory by hand).
+ */
+export const purchaseSettings = pgTable(
+  "purchase_settings",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    postFrom: date("post_from").notNull(),
+    updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [tenantIsolationPolicy("purchase_settings", t.organizationId)],
 );
 
 /**

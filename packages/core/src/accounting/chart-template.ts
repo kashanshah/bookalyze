@@ -32,6 +32,15 @@ export const DEFAULT_CHART: readonly ChartTemplateAccount[] = [
     description: "What your stock cost. Supplier payments go here; it goes down as units sell.",
     systemKey: "inventory",
   },
+  {
+    code: "1250",
+    name: "Supplier deposits",
+    type: "asset",
+    subtype: "vendor_prepayments",
+    description:
+      "Paid to suppliers for goods on order. It goes down as deliveries arrive and become stock.",
+    systemKey: "supplier_deposits",
+  },
   { code: "1300", name: "Prepaid expenses", type: "asset", subtype: "vendor_prepayments" },
   { code: "1500", name: "Equipment", type: "asset", subtype: "fixed_assets" },
   {

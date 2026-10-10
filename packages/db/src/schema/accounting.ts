@@ -50,6 +50,8 @@ export const JOURNAL_SOURCES = [
   "opening_stock",
   /** A month of Noon's transactions in one country (commerce noon_periods). */
   "noon",
+  /** A purchase order in the books: a delivery's landed cost, or settling what's left. */
+  "purchase",
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 

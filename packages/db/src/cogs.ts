@@ -44,7 +44,13 @@ const cancelled = sql.raw(ORDER_STATUS_GROUPS.cancelled.map((s) => `'${s}'`).joi
 
 type InventoryKey = Extract<
   SystemAccountKey,
-  "inventory" | "cost_of_goods_sold" | "opening_balance_equity" | "inventory_write_offs"
+  | "inventory"
+  | "cost_of_goods_sold"
+  | "opening_balance_equity"
+  | "inventory_write_offs"
+  | "supplier_deposits"
+  | "fx_gain"
+  | "fx_loss"
 >;
 
 /**
@@ -104,7 +110,7 @@ export async function ensureSystemAccount(
 }
 
 /** Posts an entry in the main currency from signed amounts per account (+ debit, − credit). */
-async function postLines(
+export async function postLines(
   tx: Transaction,
   input: {
     orgId: string;
@@ -112,8 +118,9 @@ async function postLines(
     baseCurrency: string;
     date: string;
     memo: string;
-    source: "cogs" | "opening_stock";
+    source: "cogs" | "opening_stock" | "purchase";
     sourceId: string;
+    contactId?: string | null;
     lines: { accountId: string; amount: bigint }[];
   },
 ): Promise<string | null> {
@@ -160,6 +167,7 @@ async function postLines(
     memo: input.memo,
     source: input.source,
     sourceId: input.sourceId,
+    contactId: input.contactId ?? null,
     entry: prepared.entry,
   });
   return entry.id;
