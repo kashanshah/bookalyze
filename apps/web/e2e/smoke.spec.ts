@@ -2207,7 +2207,7 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await dialog.getByLabel("Key file").setInputFiles(await keyFile("/test/key-file"));
   await dialog.getByRole("button", { name: "Check and connect" }).click();
   await expect(page.getByText("Noon connected")).toBeVisible();
-  await expect(page.getByText("3 reports available, payouts included").first()).toBeVisible();
+  await expect(page.getByText("4 reports available, payouts included").first()).toBeVisible();
   await expect(noon.getByText("Connected", { exact: true })).toBeVisible();
   await expect(noon.getByText(/Project PRJ000001/)).toBeVisible();
 
@@ -2229,7 +2229,7 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
 
   // Every report the key can download is listed with its own check, to find the one a new task
   // needs by its columns.
-  await noon.getByText("Reports this key can download (3)").click();
+  await noon.getByText("Reports this key can download (4)").click();
   const orders = noon.getByRole("listitem").filter({ hasText: "noon_orders_report" });
   await expect(orders.getByText("Orders report", { exact: true })).toBeVisible();
   await orders.getByRole("button", { name: "Check", exact: true }).click();
@@ -2268,6 +2268,26 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await expect(page.getByText("Noon's transactions are up to date")).toBeVisible({
     timeout: 30_000,
   });
+  // Noon's FBN inventory ledger, a year back: returns go back into stock, losses are written
+  // off, and a type not read yet is listed.
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Stock movements", exact: true }).click();
+  await page.getByRole("button", { name: "Bring in from Amazon and Noon" }).click();
+  await expect(page.getByText(/\d+ movements? brought in/)).toBeVisible({ timeout: 60_000 });
+  await expect(
+    page
+      .getByText("Noon UAE", { exact: true })
+      .locator("xpath=../..")
+      .getByText(/^In through /),
+  ).toBeVisible();
+  // The latest month with Noon's rows (this month's may have none yet).
+  const noonMug = page.getByRole("listitem", { name: "NOON-MAPLE-MUG", exact: true }).first();
+  await expect(noonMug).toContainText("Maple leaf ceramic mug");
+  await expect(noonMug).toContainText("+1");
+  await expect(noonMug).toContainText("-1");
+  const notCounted = page.getByRole("region", { name: "Movements not counted yet" });
+  await expect(notCounted.getByText(/^relabel ·/)).toBeVisible();
+
   await page.getByRole("link", { name: "Channels", exact: true }).click();
   await page.getByRole("link", { name: /^Noon UAE/ }).click();
 

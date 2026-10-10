@@ -1,5 +1,12 @@
 import "server-only";
-import { can, getPlan, isModuleKey, type ModuleKey, monthEnd } from "@bookalyze/core";
+import {
+  can,
+  getPlan,
+  isModuleKey,
+  type ModuleKey,
+  monthEnd,
+  NOON_LEDGER_EXPORT,
+} from "@bookalyze/core";
 import {
   getDb,
   getNoonAccounts,
@@ -17,6 +24,7 @@ import { nowIn } from "@/lib/dates";
 import { audit } from "./audit";
 import { suggestRate } from "./fx";
 import { logError, logWarn } from "./log";
+import { syncNoonLedger } from "./noon-ledger";
 import { syncNoonTransactions } from "./noon-transactions";
 
 /**
@@ -31,6 +39,8 @@ import { syncNoonTransactions } from "./noon-transactions";
 export type NoonDailyResult = {
   companies: number;
   added: number;
+  /** FBN ledger movements brought in. */
+  movements: number;
   posted: number;
   matched: number;
   failed: number;
@@ -41,7 +51,14 @@ const PER_COMPANY_MS = 25_000;
 
 export async function runNoonDaily(budgetMs: number): Promise<NoonDailyResult> {
   const deadline = Date.now() + budgetMs;
-  const result: NoonDailyResult = { companies: 0, added: 0, posted: 0, matched: 0, failed: 0 };
+  const result: NoonDailyResult = {
+    companies: 0,
+    added: 0,
+    movements: 0,
+    posted: 0,
+    matched: 0,
+    failed: 0,
+  };
   const orgs = await getDb().select({ id: schema.organization.id }).from(schema.organization);
   for (const org of orgs) {
     if (Date.now() > deadline) break;
@@ -61,9 +78,16 @@ export async function runNoonDaily(budgetMs: number): Promise<NoonDailyResult> {
           connection.status !== "disconnected" &&
           Boolean(connection.settings.payoutsReport);
         if (!live && !settings.autoPost) return null;
+        const reports = Array.isArray(connection?.settings.reports)
+          ? connection.settings.reports
+          : [];
         return {
           profile,
           live,
+          ledger:
+            Boolean(live) &&
+            reports.includes(NOON_LEDGER_EXPORT) &&
+            can(getPlan(profile.planKey), enabled, "inventory.cogs"),
           settings,
           sales: (await getNoonAccounts(tx)).sales ?? null,
         };
@@ -80,6 +104,18 @@ export async function runNoonDaily(budgetMs: number): Promise<NoonDailyResult> {
           result.added += synced.added;
           if (synced.error) {
             logWarn("noon.daily_sync_error", { orgId: org.id, error: synced.error });
+          }
+        }
+        // The FBN ledger, where the key can download it and Inventory is on: it waits for
+        // cost of goods sold.
+        if (setup.ledger) {
+          const ledgerBudget = Math.min(PER_COMPANY_MS, Math.max(0, deadline - Date.now()));
+          const ledger = await syncNoonLedger(ctx, today, ledgerBudget);
+          if (ledger) {
+            result.movements += ledger.added;
+            if (ledger.error) {
+              logWarn("noon.daily_ledger_error", { orgId: org.id, error: ledger.error });
+            }
           }
         }
       }

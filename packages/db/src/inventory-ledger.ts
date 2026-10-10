@@ -1,5 +1,5 @@
 import type { LedgerEvent } from "@bookalyze/core";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { salesChannels } from "./schema/commerce";
 import { inventoryLedgerEvents } from "./schema/inventory";
@@ -119,12 +119,49 @@ export async function ledgerByMonth(
   }));
 }
 
-/** Each Amazon marketplace's ledger state: in through, a report waiting, rows brought in. */
+/**
+ * Noon's FBN ledger covers every Noon country at once: each row goes to the company's Noon
+ * channel for its country, and every Noon channel counts as brought in through `through` (a
+ * country with no movements had none). Rows for a country the company hasn't added are left out
+ * and named, so it can be added.
+ */
+export async function importNoonLedger(
+  tx: Transaction,
+  input: { orgId: string; events: readonly LedgerEvent[]; through: string | null },
+): Promise<{ added: number; countriesMissing: string[] }> {
+  const channels = await tx
+    .select({ id: salesChannels.id, country: salesChannels.country })
+    .from(salesChannels)
+    .where(eq(salesChannels.kind, "noon"));
+  let added = 0;
+  for (const channel of channels) {
+    const events = input.events.filter((e) => e.country === channel.country);
+    const r = await importLedgerEvents(tx, {
+      orgId: input.orgId,
+      channelId: channel.id,
+      events,
+      through: input.through,
+    });
+    added += r.added;
+  }
+  const known = new Set(channels.map((c) => c.country));
+  const countriesMissing = [
+    ...new Set(input.events.map((e) => e.country ?? "").filter((c) => c && !known.has(c))),
+  ].sort();
+  return { added, countriesMissing };
+}
+
+/**
+ * Each channel whose warehouse stock has a ledger (Amazon marketplaces, Noon countries): in
+ * through, a report waiting, rows brought in.
+ */
 export async function ledgerChannels(tx: Transaction) {
   const channels = await tx
     .select({
       id: salesChannels.id,
       name: salesChannels.name,
+      kind: salesChannels.kind,
+      country: salesChannels.country,
       isActive: salesChannels.isActive,
       ordersFrom: salesChannels.ordersFrom,
       through: salesChannels.ledgerSyncedThrough,
@@ -132,9 +169,34 @@ export async function ledgerChannels(tx: Transaction) {
       events: sql<number>`(select count(*) from inventory_ledger_events e where e.channel_id = "sales_channels"."id")::int`,
     })
     .from(salesChannels)
-    .where(eq(salesChannels.kind, "amazon"))
+    .where(inArray(salesChannels.kind, ["amazon", "noon"]))
     .orderBy(salesChannels.name);
   return channels.map((c) => ({ ...c, events: Number(c.events) }));
+}
+
+/**
+ * Movement types a marketplace used that aren't read yet ("Other": they change nothing), with
+ * how many rows and units, so they can be told apart later.
+ */
+export async function ledgerOtherTypes(tx: Transaction) {
+  const rows = await tx.execute<{
+    channel_id: string;
+    reason: string | null;
+    rows: number;
+    units: number;
+  }>(sql`
+    select e.channel_id, e.reason, count(*)::int as rows, sum(e.quantity)::int as units
+    from inventory_ledger_events e
+    where e.event_type = 'Other'
+    group by e.channel_id, e.reason
+    order by count(*) desc
+    limit 50`);
+  return rows.rows.map((r) => ({
+    channelId: r.channel_id,
+    type: r.reason,
+    rows: Number(r.rows),
+    units: Number(r.units),
+  }));
 }
 
 /** Remembers a ledger report asked of Amazon (or clears it once it's in). */

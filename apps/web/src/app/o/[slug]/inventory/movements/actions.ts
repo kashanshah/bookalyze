@@ -1,26 +1,52 @@
 "use server";
 
 import { LEDGER_EVENT_TYPES } from "@bookalyze/core";
-import { importLedgerEvents, inventoryChannels } from "@bookalyze/db";
+import {
+  importLedgerEvents,
+  importNoonLedger,
+  inventoryChannels,
+  ledgerChannels,
+} from "@bookalyze/db";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { isIsoDate } from "@/lib/dates";
+import { isIsoDate, nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { syncChannelLedger } from "@/server/amazon-ledger";
 import { audit } from "@/server/audit";
 import { getInventoryContext } from "@/server/inventory";
+import { syncNoonLedger } from "@/server/noon-ledger";
 
 const FEATURE = "inventory.cogs";
-type Result = { ok: true; added: number; waiting?: boolean } | { ok: false; message: string };
+type Result =
+  | { ok: true; added: number; waiting?: boolean; countriesMissing?: string[] }
+  | { ok: false; message: string };
 
-/** Brings in each active marketplace's FBA inventory ledger from Amazon, up to yesterday. */
+/**
+ * Brings in each active Amazon marketplace's FBA inventory ledger from Amazon, and Noon's FBN
+ * ledger (all its countries at once) from Noon, up to yesterday.
+ */
 export async function syncLedgerAction(slug: string): Promise<Result> {
   const ctx = await getInventoryContext(slug, FEATURE);
-  const channels = (await inOrg(ctx, (tx) => inventoryChannels(tx))).filter((c) => c.isActive);
+  const all = (await inOrg(ctx, (tx) => ledgerChannels(tx))).filter((c) => c.isActive);
+  const channels = all.filter((c) => c.kind === "amazon");
   const deadline = Date.now() + 50_000;
   let added = 0;
   let waiting = false;
   let error: string | null = null;
+  let countriesMissing: string[] = [];
+  if (all.some((c) => c.kind === "noon")) {
+    const noon = await syncNoonLedger(
+      { orgId: ctx.org.id, userId: ctx.session.user.id },
+      nowIn(ctx.profile.timezone).date,
+      channels.length ? 25_000 : 50_000,
+    );
+    if (noon) {
+      added += noon.added;
+      waiting ||= noon.more;
+      error ??= noon.error;
+      countriesMissing = noon.countriesMissing;
+    }
+  }
   for (const channel of channels) {
     if (Date.now() >= deadline) {
       waiting = true;
@@ -37,7 +63,7 @@ export async function syncLedgerAction(slug: string): Promise<Result> {
   }
   revalidatePath(`/o/${slug}/inventory`, "layout");
   if (error && !added) return { ok: false, message: error };
-  return { ok: true, added, waiting };
+  return { ok: true, added, waiting, countriesMissing };
 }
 
 const day = z.string().refine(isIsoDate);
@@ -57,7 +83,8 @@ const eventSchema = z.object({
   key: z.string().min(1).max(1000),
 });
 const uploadSchema = z.object({
-  channelId: z.uuid(),
+  /** A channel, or "noon": Noon's ledger, each row to the Noon country it's for. */
+  channelId: z.union([z.uuid(), z.literal("noon")]),
   events: z.array(eventSchema).max(2000),
   /** Set on the last part of a file: the day the report runs to. */
   through: day.nullable(),
@@ -69,6 +96,22 @@ export async function uploadLedgerAction(slug: string, input: unknown): Promise<
   const parsed = uploadSchema.safeParse(input);
   if (!parsed.success) return { ok: false, message: "That file couldn't be read as a ledger." };
   const { channelId, events, through } = parsed.data;
+  if (channelId === "noon") {
+    const r = await inOrg(ctx, async (tx) => {
+      const saved = await importNoonLedger(tx, { orgId: ctx.org.id, events, through });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "inventory_ledger.uploaded",
+        entityType: "organization",
+        entityId: ctx.org.id,
+        after: { provider: "noon", rows: events.length, added: saved.added, through },
+      });
+      return saved;
+    });
+    revalidatePath(`/o/${slug}/inventory`, "layout");
+    return { ok: true, added: r.added, countriesMissing: r.countriesMissing };
+  }
   const added = await inOrg(ctx, async (tx) => {
     const channels = await inventoryChannels(tx);
     if (!channels.some((c) => c.id === channelId)) return null;

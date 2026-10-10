@@ -171,8 +171,17 @@ export type NoonTransactionsSync = {
   refreshedAt: string | null;
 };
 
-export function noonSyncState(settings: Record<string, unknown>): NoonTransactionsSync {
-  const raw = settings.transactions;
+/**
+ * Where a Noon export sync is, kept on the connection: `transactions` (the transaction view) or
+ * `ledger` (the FBN inventory ledger).
+ */
+export type NoonSyncKey = "transactions" | "ledger";
+
+export function noonSyncState(
+  settings: Record<string, unknown>,
+  key: NoonSyncKey = "transactions",
+): NoonTransactionsSync {
+  const raw = settings[key];
   const s = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const p =
     s.pending && typeof s.pending === "object" ? (s.pending as Record<string, unknown>) : null;
@@ -193,11 +202,12 @@ export async function saveNoonSyncState(
   tx: Transaction,
   connectionId: string,
   state: NoonTransactionsSync,
+  key: NoonSyncKey = "transactions",
 ) {
   await tx
     .update(connections)
     .set({
-      settings: sql`${connections.settings} || jsonb_build_object('transactions', ${JSON.stringify(state)}::jsonb)`,
+      settings: sql`${connections.settings} || jsonb_build_object(${key}::text, ${JSON.stringify(state)}::jsonb)`,
     })
     .where(and(eq(connections.id, connectionId), eq(connections.provider, "noon")));
 }
