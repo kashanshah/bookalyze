@@ -183,7 +183,8 @@ export const purchaseOrderLines = pgTable(
     lineNo: integer("line_no").notNull(),
     productId: uuid("product_id").notNull(),
     quantity: integer("quantity").notNull(),
-    unitCost: numeric("unit_cost", { precision: 20, scale: 4 }).notNull(),
+    /** Cost of one, to 10 places so a line total typed in comes back exactly. */
+    unitCost: numeric("unit_cost", { precision: 24, scale: 10 }).notNull(),
   },
   (t) => [
     unique("purchase_order_lines_org_id_key").on(t.organizationId, t.id),

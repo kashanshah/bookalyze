@@ -24,7 +24,7 @@ export const purchaseLineSchema = z.object({
     .string()
     .trim()
     .refine((v) => isDecimal(v) && !v.startsWith("-"), "Enter the cost of one, e.g. 2.45.")
-    .refine((v) => !isDecimal(v) || decimalPlaces(v) <= 4, "Use at most 4 decimal places."),
+    .refine((v) => !isDecimal(v) || decimalPlaces(v) <= 10, "Use at most 10 decimal places."),
 });
 
 export const purchaseOrderSchema = z

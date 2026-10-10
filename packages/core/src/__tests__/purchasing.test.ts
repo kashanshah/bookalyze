@@ -5,6 +5,8 @@ import {
   purchaseOrderTotal,
   receiptProblems,
   receivingStatus,
+  spreadTotal,
+  unitCostFromTotal,
 } from "../inventory/purchasing";
 
 describe("purchase orders", () => {
@@ -57,5 +59,29 @@ describe("purchase orders", () => {
     expect(receiptProblems(lines, { a: 1.5 }).lines.a).toBe("Use a whole number.");
     expect(receiptProblems(lines, { a: 0 }).form).toMatch(/at least one/);
     expect(receiptProblems(lines, { z: 1 }).lines.z).toMatch(/isn't on the order/);
+  });
+});
+
+describe("line totals typed in", () => {
+  it("keeps the cost of one exact enough to give the total back", () => {
+    expect(unitCostFromTotal("3514.77", 200)).toBe("17.57385");
+    expect(unitCostFromTotal("100", 3)).toBe("33.3333333333");
+    expect(purchaseLineTotal(3, "33.3333333333", "USD")).toBe("100.0000");
+    expect(unitCostFromTotal("10", 0)).toBeNull();
+    // Any total gives itself back, even for big quantities.
+    for (const [total, quantity] of [
+      ["7537.85", 560],
+      ["99999.99", 9_999_991],
+      ["0.01", 7],
+    ] as const) {
+      const cost = unitCostFromTotal(total, quantity) ?? "";
+      expect(purchaseLineTotal(quantity, cost, "USD")).toBe(`${total}00`);
+    }
+  });
+
+  it("spreads an order total over the lines by their totals", () => {
+    expect(spreadTotal("1000", ["100", "300"], "USD")).toEqual(["250.0000", "750.0000"]);
+    expect(spreadTotal("100", ["1", "1", "1"], "USD")).toEqual(["33.3400", "33.3300", "33.3300"]);
+    expect(spreadTotal("100", ["0", "0"], "USD")).toBeNull();
   });
 });

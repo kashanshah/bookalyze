@@ -1,5 +1,6 @@
 import { minorUnits } from "../currency";
-import { AMOUNT_SCALE, formatDecimal, parseDecimal, roundUnits } from "../money";
+import { AMOUNT_SCALE, divRound, formatDecimal, parseDecimal, roundUnits } from "../money";
+import { splitByWeights } from "./landed";
 
 /**
  * Purchase orders (phase 5, slice 2): numbering, line and order totals in the PO's currency,
@@ -21,10 +22,45 @@ export function purchaseOrderNumber(n: number): string {
   return `PO-${String(n).padStart(4, "0")}`;
 }
 
+/**
+ * Decimal places kept for a cost of one. Ten, so a cost worked out from a line total
+ * (total ÷ quantity) gives that total back to the cent for any quantity an order can hold.
+ */
+export const UNIT_COST_SCALE = 10;
+
 /** quantity × unit cost, rounded to the currency's minor units ("12.5000" × 3 → "37.5000"). */
 export function purchaseLineTotal(quantity: number, unitCost: string, currency: string): string {
-  const units = parseDecimal(unitCost) * BigInt(quantity);
+  const exact = parseDecimal(unitCost, UNIT_COST_SCALE) * BigInt(quantity);
+  const units = divRound(exact, 10n ** BigInt(UNIT_COST_SCALE - AMOUNT_SCALE));
   return formatDecimal(roundUnits(units, Math.min(minorUnits(currency), AMOUNT_SCALE)));
+}
+
+/**
+ * The cost of one that makes `quantity` come to `total` ("3514.77" for 200 → "17.57385"),
+ * to UNIT_COST_SCALE places, trailing zeros dropped. Null for no quantity.
+ */
+export function unitCostFromTotal(total: string, quantity: number): string | null {
+  if (!Number.isInteger(quantity) || quantity <= 0) return null;
+  const units = divRound(parseDecimal(total, UNIT_COST_SCALE), BigInt(quantity));
+  const text = formatDecimal(units, UNIT_COST_SCALE);
+  return text.includes(".") ? text.replace(/0+$/, "").replace(/\.$/, "") : text;
+}
+
+/**
+ * Spreads an order total over its lines in proportion to `weights` (their current totals, or
+ * quantities when nothing is priced yet), to the minor unit: the parts add up to `total`.
+ */
+export function spreadTotal(
+  total: string,
+  weights: readonly string[],
+  currency: string,
+): string[] | null {
+  const shares = splitByWeights(
+    parseDecimal(total),
+    weights.map((w) => parseDecimal(w)),
+    currency,
+  );
+  return shares ? shares.map((s) => formatDecimal(s)) : null;
 }
 
 /** The sum of the line totals. */

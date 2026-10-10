@@ -1659,6 +1659,34 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   apart, fulfilment checked, orders shown without a connection, Amazon.ae's upload unaffected);
   e2e "noon: add a Noon country, say who ships, and link a SKU on it".
 
+### Purchase orders: type the cost of one, the line total or the order total
+
+- **Why:** suppliers are sometimes paid a total per line or for the whole order, and the cost
+  of one is worked out later.
+- **How it works:**
+  - **Line total is a field.** Each line's Quantity, Cost of one and Line total can be typed.
+    Whichever of cost or total was typed last is kept as typed; the other is worked out and
+    shown dimmed, with a hover saying so. A caption above the lines explains it.
+  - **Changing the quantity** keeps the typed field and works out the other.
+  - **The order Total is a field too.** Typing a total (Enter or leaving the field) spreads it
+    over the lines in proportion to their totals, or their quantities when nothing is priced
+    yet, to the cent (`spreadTotal`, largest remainder through `splitByWeights`). Those lines
+    then keep their totals. Escape cancels.
+- **Exact totals:** a cost of one is now kept to **10 decimal places** (`UNIT_COST_SCALE`;
+  migration `0059_po_unit_cost_scale` widens `purchase_order_lines.unit_cost` to
+  numeric(24,10)). `unitCostFromTotal(total, quantity)` gives a cost whose line total
+  (`purchaseLineTotal`) is the typed total to the cent for any quantity an order can hold.
+  - The form shows a worked-out cost to 4 places ("17.5739") and keeps the exact one.
+  - An order opened for editing with a cost of more than 4 places keeps its line total.
+  - `Amount` reads up to 10 places.
+- **Alibaba receipts** now work the cost of one out exactly, so their lines add up to the
+  receipt to the cent (no "a few fils short" check any more).
+- **Errors** under a line field go as soon as it's edited (they used to stay until the next
+  save, so a fixed cost still said "Enter the cost of one").
+- Tests: core `purchasing.test.ts` (exact costs from totals, including 9,999,991 units;
+  spreading a total) and `alibaba-receipt.test.ts`; e2e "purchase orders: type the cost of
+  one, the line total or the order total".
+
 ### Phase 5, slice 9: purchases in the books
 
 - **What it is:** Purchase orders → **Put purchases in the books** (admins), from a date. For
