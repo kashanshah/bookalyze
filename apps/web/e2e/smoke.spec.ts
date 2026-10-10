@@ -442,6 +442,33 @@ test("transactions: add a category on the spot, change values on the list, remov
   await expect(courier).toBeVisible();
   await expect(page.locator("li", { hasText: "Client payment" })).toHaveCount(0);
 
+  // Copy it as a new transaction: filled in from the original and dated today, saved only
+  // once checked.
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    new Date(),
+  );
+  await courier.getByRole("button", { name: /^More for / }).click();
+  await page.getByRole("menuitem", { name: "Copy as a new transaction" }).click();
+  const copy = page.getByRole("dialog");
+  await expect(copy.getByRole("heading", { name: "Copy of a transaction" })).toBeVisible();
+  await expect(copy.locator("#tx-date")).toHaveValue(today);
+  await expect(copy.locator("#tx-memo")).toHaveValue("Courier to Ottawa");
+  await expect(copy.getByLabel("Amount 1")).toHaveValue("21.50");
+  await expect(copy.getByLabel("Category 1", { exact: true })).toHaveText(
+    "6400 · Shipping and postage",
+  );
+  await copy.locator("#tx-memo").fill("Parcel to Montreal");
+  await copy.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added")).toBeVisible();
+  const montreal = page.locator("li", { hasText: "Parcel to Montreal" });
+  await expect(montreal).toContainText("−$21.50");
+  await expect(courier).toBeVisible();
+  await montreal.getByRole("button", { name: /^More for / }).click();
+  await page.getByRole("menuitem", { name: "Remove" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Remove transaction" }).click();
+  await expect(montreal).toHaveCount(0);
+  await expect(page.getByText("Transaction removed")).toHaveCount(0, { timeout: 10_000 });
+
   // The row menu removes it after a confirmation.
   await courier.getByRole("button", { name: /^More for / }).click();
   await page.getByRole("menuitem", { name: "Remove" }).click();

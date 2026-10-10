@@ -5,6 +5,7 @@ import {
   ArrowRightLeft,
   Check,
   Copy,
+  CopyPlus,
   Ellipsis,
   ExternalLink,
   FileCheck2,
@@ -48,6 +49,7 @@ export function TransactionRow({
   picked,
   onTogglePicked,
   onEdit,
+  onCopy,
   onRemove,
   onToggleReviewed,
   onReviewDuplicate,
@@ -63,6 +65,8 @@ export function TransactionRow({
   onTogglePicked: () => void;
   /** Opens the full transaction; `row` may carry a change that needs more than the list shows. */
   onEdit: (row: TxRow) => void;
+  /** Opens a new transaction filled in from this one, dated today. */
+  onCopy: () => void;
   onRemove: () => void;
   onToggleReviewed: () => void;
   onReviewDuplicate: () => void;
@@ -407,7 +411,14 @@ export function TransactionRow({
             strokeWidth={2.5}
           />
         </button>
-        <RowMenu row={row} ctx={ctx} readOnly={readOnly} onEdit={open} onRemove={onRemove} />
+        <RowMenu
+          row={row}
+          ctx={ctx}
+          readOnly={readOnly}
+          onEdit={open}
+          onCopy={onCopy}
+          onRemove={onRemove}
+        />
       </div>
 
       {row.transfer ? (
@@ -458,12 +469,14 @@ function RowMenu({
   ctx,
   readOnly,
   onEdit,
+  onCopy,
   onRemove,
 }: {
   row: TxRow;
   ctx: TxFormContext;
   readOnly: boolean;
   onEdit: () => void;
+  onCopy: () => void;
   onRemove: () => void;
 }) {
   const ruleCategory =
@@ -482,6 +495,10 @@ function RowMenu({
         <DropdownMenuItem onSelect={onEdit}>
           <Pencil />
           {readOnly ? "View details" : "Edit details"}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onCopy}>
+          <CopyPlus />
+          Copy as a new transaction
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href={`/o/${ctx.slug}/accounting/journal/${row.id}`}>

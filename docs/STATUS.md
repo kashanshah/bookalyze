@@ -546,8 +546,15 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   - Phones and tablets: the row is a compact summary and a tap anywhere opens the dialog (one
     set of cells, placed by the grid; a capture-phase click handler sends narrow-screen taps to
     the dialog). The table layout starts at `lg` (was `md`).
-- **Row menu** (… at the end): Edit details (View details when read-only), Journal entry JE-…,
-  Make a rule, Remove (asks first, `deleteTransactionAction`).
+- **Row menu** (… at the end): Edit details (View details when read-only), **Copy as a new
+  transaction**, Journal entry JE-…, Make a rule, Remove (asks first, `deleteTransactionAction`).
+- **Copy as a new transaction** (for entries that repeat): opens Add a transaction titled "Copy of
+  a transaction", filled in from the row (kind, account or from/to, description, customer or
+  vendor, every split with its category, amount, description and tax) and dated today. Nothing is
+  saved until **Add transaction**. Not copied: the receipts, the review tick, and the exchange
+  rate (it's for the new date, so the rate field asks again). Works on reconciled rows and closed
+  periods too, since the copy is new. The dialog's state is `{ mode: "copy", row }`; the form
+  fills from `source` (edit or copy) while `row` stays the one being edited.
 - **"Add a new category" in every category dropdown** (`components/accounting/category-picker.tsx`):
   the transaction dialog, the list rows and the rule form. Typing a name that doesn't exist offers
   "Add “…” as a new category", which opens a small form on top (type, what it's for, name, optional
