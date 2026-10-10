@@ -91,32 +91,34 @@ export function NewPurchaseOrder({
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <ListChecks className="size-5" />
             </span>
-            <div className="min-w-0 flex-1">
-              <p className="font-medium">Filled in from {filled.file}</p>
+            <div className="min-w-[14rem] flex-1">
+              <p className="break-words font-medium">Filled in from {filled.file}</p>
               <p className="text-muted-foreground text-sm">
                 Check everything below, change what's needed, then save it as a draft. Nothing is
                 saved yet.
               </p>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => input.current?.click()}
-              disabled={reading}
-            >
-              {reading ? <Spinner /> : <FileText />}
-              Another receipt
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Start over without the receipt"
-              onClick={() => setFilled(null)}
-            >
-              <X />
-            </Button>
+            <div className="ms-auto flex items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => input.current?.click()}
+                disabled={reading}
+              >
+                {reading ? <Spinner /> : <FileText />}
+                Another receipt
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Start over without the receipt"
+                onClick={() => setFilled(null)}
+              >
+                <X />
+              </Button>
+            </div>
           </div>
           {draft.checks.length ? (
             <ul className="grid gap-1.5 ps-12 text-sm">

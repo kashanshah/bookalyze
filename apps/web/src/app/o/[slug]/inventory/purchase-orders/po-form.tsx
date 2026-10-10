@@ -202,7 +202,7 @@ export function PurchaseOrderForm({
           />
           {suggested && !supplierId ? (
             <div className="fade-in-0 mt-2 flex animate-in flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-dashed bg-muted/30 px-3 py-2.5 text-sm">
-              <p className="min-w-0 flex-1">
+              <p className="min-w-[10rem] flex-1">
                 <span className="text-muted-foreground">The receipt's seller: </span>
                 <span className="font-medium">{suggested.name}</span>
               </p>
