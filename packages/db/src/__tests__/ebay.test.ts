@@ -1,8 +1,18 @@
 import { ebayMarketplace } from "@bookalyze/core";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createConnection, getConnection, listConnections, setConnectionSecret } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
-import { addEbayChannel, listEbayChannels, listNoonChannels, setChannelActive } from "../commerce";
+import {
+  addEbayChannel,
+  attachEbayChannels,
+  disconnectEbay,
+  forgetEbayUser,
+  getEbayConnection,
+  listEbayChannels,
+  listNoonChannels,
+  setChannelActive,
+} from "../commerce";
 import * as schema from "../schema";
 
 const ownerUrl =
@@ -95,5 +105,63 @@ describe("eBay channels", () => {
         .set({ kind: "etsy" as never })
         .where(eq(schema.salesChannels.id, channel?.id ?? "")),
     ).rejects.toThrow();
+  });
+
+  it("puts the company's eBay sites on its eBay connection, and takes them off on disconnect", async () => {
+    const connection = await scoped(async (tx) => {
+      const c = await createConnection(tx, {
+        orgId,
+        userId: null,
+        provider: "ebay",
+        name: "eBay · maple_goods",
+        settings: { userId: "ebay-user-1", username: "maple_goods" },
+      });
+      await setConnectionSecret(tx, c.id, "sealed-refresh-token");
+      await attachEbayChannels(tx, c.id);
+      return c;
+    });
+    const sites = await scoped((tx) => listEbayChannels(tx));
+    expect(sites.every((c) => c.connectionId === connection.id)).toBe(true);
+    expect((await scoped((tx) => getEbayConnection(tx)))?.hasSecret).toBe(true);
+
+    // A site added later joins the live connection.
+    const uk = ebayMarketplace("EBAY_GB");
+    if (!uk) throw new Error("eBay UK is missing.");
+    const added = await scoped((tx) => addEbayChannel(tx, { orgId, marketplace: uk }));
+    expect(added.channel.connectionId).toBe(connection.id);
+
+    // Not a bank: Bank accounts doesn't list it. Another company doesn't see it.
+    expect((await scoped((tx) => listConnections(tx))).map((c) => c.provider)).not.toContain(
+      "ebay",
+    );
+    expect(await scoped((tx) => getEbayConnection(tx), otherOrgId)).toBeNull();
+
+    await scoped((tx) => disconnectEbay(tx, connection.id));
+    const after = await scoped((tx) => getConnection(tx, connection.id));
+    expect(after).toMatchObject({ status: "disconnected", secret: null });
+    expect((await scoped((tx) => listEbayChannels(tx))).every((c) => c.connectionId === null)).toBe(
+      true,
+    );
+  });
+
+  it("forgets an eBay user who closed their account, in the company that connected them", async () => {
+    const connection = await scoped(async (tx) => {
+      const c = await createConnection(tx, {
+        orgId,
+        userId: null,
+        provider: "ebay",
+        name: "eBay · maple_goods",
+        settings: { userId: "ebay-user-2", username: "maple_goods", marketplace: "EBAY_CA" },
+      });
+      await setConnectionSecret(tx, c.id, "sealed-refresh-token");
+      await attachEbayChannels(tx, c.id);
+      return c;
+    });
+    // Another company's lookup doesn't reach it.
+    expect(await scoped((tx) => forgetEbayUser(tx, "ebay-user-2"), otherOrgId)).toBe(0);
+    expect(await scoped((tx) => forgetEbayUser(tx, "ebay-user-2"))).toBe(1);
+    const after = await scoped((tx) => getConnection(tx, connection.id));
+    expect(after).toMatchObject({ status: "disconnected", secret: null, name: "eBay" });
+    expect(after?.settings).toEqual({ marketplace: "EBAY_CA", forgotten: true });
   });
 });

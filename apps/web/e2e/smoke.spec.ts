@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import {
@@ -2055,6 +2056,74 @@ test("ebay: add eBay sites, switch one off and back on, and link a SKU on it", a
   await dialog.getByRole("button", { name: "Link SKU" }).click();
   await expect(page.getByText("EBAY-MAPLE-MUG linked")).toBeVisible();
   await expect(dialog.getByText(/eBay US · 1 unit per listing/)).toBeVisible();
+});
+
+test("ebay: connect the eBay account on eBay's page, test it, and handle eBay's notices", async ({
+  page,
+  request,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^eBay Canada/ }).click();
+  const account = page.getByRole("region", { name: "eBay account" });
+
+  // Declined on eBay's page: nothing is connected.
+  await fetch("http://localhost:4013/test/decline-next");
+  await account.getByRole("button", { name: "Connect eBay" }).click();
+  await expect(page.getByText("eBay wasn't connected")).toBeVisible();
+  await expect(page).not.toHaveURL(/ebay=/);
+  await expect(account.getByRole("button", { name: "Connect eBay" })).toBeVisible();
+
+  // Agreed: eBay sends the admin back to the site's page, connected.
+  await account.getByRole("button", { name: "Connect eBay" }).click();
+  await expect(page.getByText("eBay connected")).toBeVisible();
+  await expect(account.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(account.getByText(/Signed in as maple_goods_e2e/)).toBeVisible();
+  await account.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByText("eBay answered")).toBeVisible();
+
+  // Every eBay site shares the account.
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await expect(page.getByRole("link", { name: /^eBay US/ })).toContainText("Connected");
+
+  // eBay's endpoint check, and an account-deletion notice: a forged one is refused, eBay's own
+  // forgets the account.
+  const check = await request.get("/api/ebay/account-deletion?challenge_code=e2e-challenge");
+  const expected = createHash("sha256")
+    .update("e2e-challenge")
+    .update("e2e-verification-token-0000000000000000")
+    .update("http://localhost:3000/api/ebay/account-deletion")
+    .digest("hex");
+  expect(await check.json()).toEqual({ challengeResponse: expected });
+  const notice = (await (await fetch("http://localhost:4013/test/deletion-notice")).json()) as {
+    body: string;
+    header: string;
+  };
+  const forged = await request.post("/api/ebay/account-deletion", {
+    data: notice.body.replace("maple_goods_e2e", "someone_else"),
+    headers: { "Content-Type": "application/json", "X-EBAY-SIGNATURE": notice.header },
+  });
+  expect(forged.status()).toBe(412);
+  await page.reload();
+  await expect(page.getByRole("link", { name: /^eBay US/ })).toContainText("Connected");
+  const real = await request.post("/api/ebay/account-deletion", {
+    data: notice.body,
+    headers: { "Content-Type": "application/json", "X-EBAY-SIGNATURE": notice.header },
+  });
+  expect(real.status()).toBe(204);
+  await page.reload();
+  await expect(page.getByRole("link", { name: /^eBay US/ })).toContainText("Not connected");
+
+  // Connected again, then disconnected by hand: the sites stay.
+  await page.getByRole("link", { name: /^eBay Canada/ }).click();
+  await account.getByRole("button", { name: "Connect eBay" }).click();
+  await expect(page.getByText("eBay connected")).toBeVisible();
+  await account.getByRole("button", { name: "Disconnect" }).click();
+  await account.getByRole("button", { name: "Click again to disconnect" }).click();
+  await expect(page.getByText("eBay disconnected")).toBeVisible();
+  await expect(account.getByRole("button", { name: "Connect eBay" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "eBay Canada" })).toBeVisible();
 });
 
 test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ page }) => {

@@ -40,6 +40,12 @@ export default defineConfig({
       reuseExistingServer: true,
     },
     {
+      // A stand-in for eBay's consent page and APIs (e2e/ebay-mock.mjs).
+      command: "node e2e/ebay-mock.mjs",
+      url: "http://localhost:4013/health",
+      reuseExistingServer: true,
+    },
+    {
       command: "pnpm start",
       url: `http://localhost:${port}/sign-in`,
       reuseExistingServer: true,
@@ -49,6 +55,15 @@ export default defineConfig({
         AMAZON_LWA_URL: process.env.AMAZON_LWA_URL ?? "http://localhost:4011/auth/o2/token",
         AMAZON_SPAPI_URL: process.env.AMAZON_SPAPI_URL ?? "http://localhost:4011",
         NOON_API_URL: process.env.NOON_API_URL ?? "http://localhost:4012",
+        // Test-only eBay app keys, accepted by the stand-in only.
+        EBAY_CLIENT_ID: "Bookalyz-e2e-SBX-0000",
+        EBAY_CLIENT_SECRET: "SBX-e2e-client-secret-0000",
+        EBAY_RU_NAME: "Bookalyze-e2e-RuName",
+        EBAY_ENVIRONMENT: "sandbox",
+        EBAY_VERIFICATION_TOKEN: "e2e-verification-token-0000000000000000",
+        EBAY_AUTH_URL: process.env.EBAY_AUTH_URL ?? "http://localhost:4013",
+        EBAY_API_URL: process.env.EBAY_API_URL ?? "http://localhost:4013",
+        EBAY_APIZ_URL: process.env.EBAY_APIZ_URL ?? "http://localhost:4013",
         // Test-only key for the credential vault (32 zero bytes); real keys live in Vercel.
         APP_ENCRYPTION_KEY:
           process.env.APP_ENCRYPTION_KEY ?? "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",

@@ -57,6 +57,31 @@ Neon branches copy roles, so a `preview` branch works the same way with its own 
 3. The daily cron (`vercel.json`, weekdays) syncs every connection after fetching exchange rates;
    "Sync now" does it on demand.
 
+## eBay (Connect eBay)
+
+Bookalyze is **one eBay developer app**: its keys are system secrets (Vercel env vars), and each
+company connects its own eBay seller account from an eBay site's page (Channels → eBay … →
+Connect eBay) by agreeing on eBay's page. A company's refresh token is kept encrypted with
+`APP_ENCRYPTION_KEY`, like other connections. Without the keys, Connect eBay says it isn't
+available yet; eBay sites still work for linking SKUs.
+
+1. Sign in at developer.ebay.com with a Bookalyze (not a seller) eBay account and create an
+   application. Use the **Production** keyset (Sandbox to try things out).
+2. **User Tokens → Get a Token from eBay via Your Application → Add eBay Redirect URL**: set
+   "Your auth accepted URL" and "Your auth declined URL" to
+   `https://app.bookalyze.com/api/ebay/callback`, and "Privacy policy URL" to the site's. Note the
+   **RuName** it shows (e.g. `Bookalyze-Bookalyz-Bookal-abcdef`).
+3. **Alerts & Notifications → Marketplace account deletion**: endpoint
+   `https://app.bookalyze.com/api/ebay/account-deletion` and a verification token you make up
+   (32–80 letters, digits, `_` or `-`). Set the env vars below and deploy first: eBay checks the
+   endpoint when you save. eBay then sends a notice when a seller closes their eBay account, and
+   Bookalyze disconnects and forgets them.
+4. In Vercel (Production; Preview only with Sandbox keys): `EBAY_CLIENT_ID` (App ID),
+   `EBAY_CLIENT_SECRET` (Cert ID), `EBAY_RU_NAME`, `EBAY_VERIFICATION_TOKEN`, and
+   `EBAY_ENVIRONMENT=sandbox` when using Sandbox keys (production is the default).
+5. Call limits are per app, shared by every connected account. eBay's "Application Growth Check"
+   raises them when needed.
+
 ## Vercel
 
 1. Import the GitHub repository. Set **Root Directory** to `apps/web` (framework: Next.js). Vercel

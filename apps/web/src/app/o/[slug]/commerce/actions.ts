@@ -23,8 +23,11 @@ import {
   attachNoonChannels,
   createConnection,
   disconnectAmazon,
+  disconnectEbay,
   disconnectNoon,
+  getChannel,
   getConnection,
+  getEbayConnection,
   getNoonConnection,
   listAmazonConnections,
   recordConnectionSync,
@@ -38,6 +41,7 @@ import {
 } from "@bookalyze/db";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { z } from "zod";
 import { isIsoDate, nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
@@ -51,6 +55,16 @@ import {
   sealAmazonCredentials,
   sealNoonCredentials,
 } from "@/server/commerce";
+import {
+  EBAY_STATE_COOKIE,
+  EbayError,
+  ebayAccessToken,
+  ebayApp,
+  ebayConsentLink,
+  getEbayUser,
+  openEbayCredentials,
+  signEbayState,
+} from "@/server/ebay";
 import { logError, logInfo, logWarn } from "@/server/log";
 import {
   checkNoonKey,
@@ -70,7 +84,7 @@ function revalidate(slug: string) {
 }
 
 function failure(error: unknown): { ok: false; message: string } {
-  if (error instanceof AmazonError || error instanceof NoonError) {
+  if (error instanceof AmazonError || error instanceof NoonError || error instanceof EbayError) {
     return { ok: false, message: error.message };
   }
   if (error instanceof VaultError) {
@@ -363,6 +377,98 @@ export async function addEbayChannelAction(
     created: result.created,
     channelId: result.channel.id,
   };
+}
+
+// --- eBay ------------------------------------------------------------------------------------
+
+/**
+ * Starts connecting the company's eBay account from one of its eBay sites: returns eBay's
+ * consent page, with a signed state that comes back to the callback (and a cookie tying it to
+ * this browser).
+ */
+export async function startEbayConnectAction(
+  slug: string,
+  channelId: string,
+): Promise<CommerceResult<{ url: string }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  if (!z.string().uuid().safeParse(channelId).success) {
+    return { ok: false, message: "Unknown channel." };
+  }
+  if (!ebayApp()) {
+    return {
+      ok: false,
+      message:
+        "eBay isn't set up on this server yet: its eBay app keys are missing (docs/SETUP.md → eBay).",
+    };
+  }
+  const channel = await inOrg(ctx, (tx) => getChannel(tx, channelId));
+  if (!channel || channel.kind !== "ebay") return { ok: false, message: "Unknown channel." };
+  const { state, nonce } = signEbayState({ slug, channelId, userId: ctx.session.user.id });
+  (await cookies()).set(EBAY_STATE_COOKIE, nonce, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/api/ebay",
+    maxAge: 10 * 60,
+  });
+  return { ok: true, url: ebayConsentLink(state) };
+}
+
+/** Asks eBay again with the saved sign-in: a fresh access token, and who the account is. */
+export async function testEbayAction(slug: string): Promise<CommerceResult<{ username: string }>> {
+  const ctx = await getCommerceContext(slug);
+  const connection = await inOrg(ctx, async (tx) => {
+    const found = await getEbayConnection(tx);
+    return found ? getConnection(tx, found.id) : null;
+  });
+  if (!connection?.secret || connection.status === "disconnected") {
+    return { ok: false, message: "eBay isn't connected. Connect eBay first." };
+  }
+  let error: string | null = null;
+  let username = "";
+  try {
+    const creds = openEbayCredentials(ctx.org.id, connection.id, connection.secret);
+    const user = await getEbayUser(await ebayAccessToken(creds.refreshToken, true));
+    username = user.username;
+    await inOrg(ctx, (tx) =>
+      tx
+        .update(schema.connections)
+        .set({
+          settings: { ...connection.settings, username: user.username, userId: user.userId },
+          name: `eBay · ${user.username}`,
+        })
+        .where(eq(schema.connections.id, connection.id)),
+    );
+  } catch (e) {
+    error = failure(e).message;
+  }
+  await inOrg(ctx, (tx) => recordConnectionSync(tx, connection.id, { at: new Date(), error }));
+  revalidate(slug);
+  return error ? { ok: false, message: error } : { ok: true, username };
+}
+
+/** Deletes the eBay sign-in. The eBay sites stay, with everything brought in. */
+export async function disconnectEbayAction(slug: string): Promise<CommerceResult> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const done = await inOrg(ctx, async (tx) => {
+    const connection = await getEbayConnection(tx);
+    if (!connection || connection.status === "disconnected") return false;
+    await disconnectEbay(tx, connection.id);
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "connection.disconnected",
+      entityType: "connection",
+      entityId: connection.id,
+      after: { provider: "ebay" },
+    });
+    return true;
+  });
+  if (!done) return { ok: false, message: "eBay isn't connected." };
+  revalidate(slug);
+  return { ok: true };
 }
 
 /** Who ships a channel's orders (Noon: FBN, FBP or both). */

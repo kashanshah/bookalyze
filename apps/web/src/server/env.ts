@@ -41,6 +41,21 @@ const schema = z.object({
   AMAZON_SPAPI_URL: z.url().optional(),
   /** Noon's partner API base URL. Tests point it at a stand-in; leave unset in production. */
   NOON_API_URL: z.url().optional(),
+  /**
+   * Bookalyze's own eBay developer app (one app; each company connects its own seller account
+   * by consent). Without these three, Connect eBay is unavailable. See docs/SETUP.md → eBay.
+   */
+  EBAY_CLIENT_ID: z.string().optional(),
+  EBAY_CLIENT_SECRET: z.string().optional(),
+  /** The app's redirect name (RuName) from eBay's developer site, not a URL. */
+  EBAY_RU_NAME: z.string().optional(),
+  EBAY_ENVIRONMENT: z.enum(["production", "sandbox"]).default("production"),
+  /** The token chosen for eBay's account-deletion notices (32–80 letters, digits, _ or -). */
+  EBAY_VERIFICATION_TOKEN: z.string().optional(),
+  /** eBay's consent, API and apiz base URLs. Tests point them at a stand-in. */
+  EBAY_AUTH_URL: z.url().optional(),
+  EBAY_API_URL: z.url().optional(),
+  EBAY_APIZ_URL: z.url().optional(),
   /** Secret Vercel Cron sends as a bearer token to scheduled routes (e.g. the daily FX sync). */
   CRON_SECRET: z.string().min(16).optional(),
   /** "s3", or "local" to keep files on disk (development and CI only). */

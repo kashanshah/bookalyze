@@ -76,7 +76,7 @@ export async function listConnections(tx: Transaction) {
     })
     .from(connections)
     // Marketplace connections live under Commerce.
-    .where(notInArray(connections.provider, ["amazon_sp", "noon"]))
+    .where(notInArray(connections.provider, ["amazon_sp", "noon", "ebay"]))
     .orderBy(asc(connections.createdAt));
   const feeds = await tx
     .select({

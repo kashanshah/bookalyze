@@ -7,6 +7,7 @@ import {
   isFulfilmentMode,
 } from "@bookalyze/core";
 import {
+  getEbayConnection,
   getNoonConnection,
   listAmazonConnections,
   listEbayChannels,
@@ -31,12 +32,18 @@ const NOON_SHIPPING: Record<FulfilmentMode, string> = {
 export default async function ChannelsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const ctx = await getCommerceContext(slug);
-  const { connections, ebay, noon, noonConnection } = await inOrg(ctx, async (tx) => ({
-    connections: await listAmazonConnections(tx),
-    ebay: await listEbayChannels(tx),
-    noon: await listNoonChannels(tx),
-    noonConnection: await getNoonConnection(tx),
-  }));
+  const { connections, ebay, noon, noonConnection, ebayConnection } = await inOrg(
+    ctx,
+    async (tx) => ({
+      ebayConnection: await getEbayConnection(tx),
+      connections: await listAmazonConnections(tx),
+      ebay: await listEbayChannels(tx),
+      noon: await listNoonChannels(tx),
+      noonConnection: await getNoonConnection(tx),
+    }),
+  );
+  const ebayLive =
+    ebayConnection && ebayConnection.status !== "disconnected" ? ebayConnection : null;
   const noonLive =
     noonConnection && noonConnection.status !== "disconnected" ? noonConnection : null;
   const rows: ChannelRowView[] = [
@@ -63,7 +70,11 @@ export default async function ChannelsPage({ params }: { params: Promise<{ slug:
       currency: ch.currency,
       isActive: ch.isActive,
       shipping: "You ship",
-      account: "none" as const,
+      account: ebayLive
+        ? ebayLive.status === "error"
+          ? ("attention" as const)
+          : ("connected" as const)
+        : ("none" as const),
     })),
     ...noon.map((ch) => ({
       id: ch.id,

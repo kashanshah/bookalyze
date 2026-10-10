@@ -1,5 +1,10 @@
 import { can, isFulfilmentMode, noonReportInputs } from "@bookalyze/core";
-import { getChannel, getNoonConnection, listAmazonConnections } from "@bookalyze/db";
+import {
+  getChannel,
+  getEbayConnection,
+  getNoonConnection,
+  listAmazonConnections,
+} from "@bookalyze/db";
 import { ArrowLeft, ArrowRight, BookCheck, ListOrdered, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -8,9 +13,10 @@ import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
+import { ebayApp } from "@/server/ebay";
 import { isOrgAdmin } from "@/server/org";
 import { AmazonAccount } from "../amazon";
-import { EbayAccount } from "../ebay";
+import { EbayAccount, EbayConnectNotice } from "../ebay";
 import { NoonAccount, type NoonConnectionView, NoonFulfilment } from "../noon";
 import { PLATFORMS } from "../platforms";
 import { ChannelSwitch } from "./channel-settings";
@@ -25,10 +31,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export default async function ChannelPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string; id: string }>;
+  /** `ebay` (connected, declined, failed) and `message`: eBay's callback sending the admin back. */
+  searchParams: Promise<{ ebay?: string; message?: string }>;
 }) {
   const { slug, id } = await params;
+  const sp = await searchParams;
   if (!UUID.test(id)) notFound();
   const ctx = await getCommerceContext(slug);
   const data = await inOrg(ctx, async (tx) => {
@@ -41,6 +51,7 @@ export default async function ChannelPage({
           ? ((await listAmazonConnections(tx)).find((c) => c.id === channel.connectionId) ?? null)
           : null,
       noon: channel.kind === "noon" ? await getNoonConnection(tx) : null,
+      ebay: channel.kind === "ebay" ? await getEbayConnection(tx) : null,
     };
   });
   if (!data) notFound();
@@ -185,7 +196,38 @@ export default async function ChannelPage({
         </>
       ) : null}
 
-      {ch.kind === "ebay" ? <EbayAccount /> : null}
+      {ch.kind === "ebay" ? (
+        <>
+          <EbayAccount
+            slug={slug}
+            locale={locale}
+            canManage={canManage}
+            channelId={ch.id}
+            configured={Boolean(ebayApp())}
+            connection={
+              data.ebay
+                ? {
+                    status: data.ebay.status,
+                    username:
+                      typeof data.ebay.settings.username === "string"
+                        ? data.ebay.settings.username
+                        : null,
+                    marketplace:
+                      typeof data.ebay.settings.marketplace === "string"
+                        ? data.ebay.settings.marketplace
+                        : null,
+                    lastSyncedAt: data.ebay.lastSyncedAt?.toISOString() ?? null,
+                    lastError: data.ebay.lastError,
+                  }
+                : null
+            }
+          />
+          <EbayConnectNotice
+            result={sp.ebay ?? null}
+            message={typeof sp.message === "string" ? sp.message : null}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
