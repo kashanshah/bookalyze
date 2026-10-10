@@ -500,7 +500,7 @@ export async function supplierOptions(tx: Transaction) {
  */
 export async function addSupplier(
   tx: Transaction,
-  input: { orgId: string; userId: string; name: string; address: string | null },
+  input: { orgId: string; userId: string | null; name: string; address: string | null },
 ): Promise<{ id: string; name: string; created: boolean }> {
   const [found] = await tx
     .select({ id: contacts.id, name: contacts.name, type: contacts.type })
