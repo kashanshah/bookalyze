@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
 import { createProduct } from "../inventory";
 import {
+  addSupplier,
   cancelPurchaseOrder,
   createPurchaseOrder,
   deletePurchaseOrder,
@@ -225,5 +226,32 @@ describe("purchase orders", () => {
     await expect(
       scoped((tx) => createPurchaseOrder(tx, { ...draft(), orgId: otherOrgId }), otherOrgId),
     ).rejects.toThrow();
+  });
+
+  it("adds a receipt's seller as a vendor, or finds the one already there", async () => {
+    const add = (name: string, org = orgId) =>
+      scoped(
+        (tx) => addSupplier(tx, { orgId: org, userId: null, name, address: "No. 1, Example Road" }),
+        org,
+      );
+    // The vendor already there, whatever the case.
+    expect(await add("NINGBO CERAMICS")).toEqual({
+      id: supplierId,
+      name: "Ningbo Ceramics",
+      created: false,
+    });
+    // A new one, with the seller's address.
+    const added = await add("Maple Glassworks Co., Ltd.");
+    expect(added.created).toBe(true);
+    expect((await scoped((tx) => supplierOptions(tx))).map((s) => s.name)).toContain(
+      "Maple Glassworks Co., Ltd.",
+    );
+    // A customer of that name becomes a customer and vendor.
+    expect(await add("a buyer")).toMatchObject({ id: customerId, created: false });
+    expect((await scoped((tx) => supplierOptions(tx))).map((s) => s.id)).toContain(customerId);
+    // Another company gets its own.
+    const other = await add("Maple Glassworks Co., Ltd.", otherOrgId);
+    expect(other.created).toBe(true);
+    expect(other.id).not.toBe(added.id);
   });
 });

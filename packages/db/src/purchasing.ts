@@ -494,6 +494,41 @@ export async function supplierOptions(tx: Transaction) {
     .orderBy(asc(contacts.name));
 }
 
+/**
+ * A vendor by name for a purchase order (Alibaba's seller): the one already there with that
+ * name, brought back if archived, or a new vendor. A customer of the same name becomes "both".
+ */
+export async function addSupplier(
+  tx: Transaction,
+  input: { orgId: string; userId: string | null; name: string; address: string | null },
+): Promise<{ id: string; name: string; created: boolean }> {
+  const [found] = await tx
+    .select({ id: contacts.id, name: contacts.name, type: contacts.type })
+    .from(contacts)
+    .where(sql`lower(${contacts.name}) = lower(${input.name})`)
+    .orderBy(sql`case ${contacts.type} when 'vendor' then 0 when 'both' then 1 else 2 end`)
+    .limit(1);
+  if (found) {
+    await tx
+      .update(contacts)
+      .set({ isArchived: false, type: found.type === "customer" ? "both" : found.type })
+      .where(eq(contacts.id, found.id));
+    return { id: found.id, name: found.name, created: false };
+  }
+  const [created] = await tx
+    .insert(contacts)
+    .values({
+      organizationId: input.orgId,
+      type: "vendor",
+      name: input.name,
+      address: input.address,
+      createdBy: input.userId,
+    })
+    .returning({ id: contacts.id, name: contacts.name });
+  if (!created) throw new Error("The vendor wasn't saved.");
+  return { ...created, created: true };
+}
+
 /** Units on order (sent, not yet arrived) per product, for the Products list. */
 export async function unitsOnOrder(tx: Transaction): Promise<Map<string, number>> {
   const rows = await tx

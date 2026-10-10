@@ -3,8 +3,8 @@ import { PageHeader } from "@/components/shell/page-header";
 import { nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getInventoryContext } from "@/server/inventory";
-import { PurchaseOrderForm } from "../po-form";
 import { formOptions } from "../shared";
+import { NewPurchaseOrder } from "./new-order";
 
 export const metadata: Metadata = { title: "New purchase order" };
 
@@ -24,7 +24,7 @@ export default async function NewPurchaseOrderPage({
         title="New purchase order"
         description="What you're buying from a supplier, and at what cost. It stays a draft until you mark it as sent; then you can record deliveries as they arrive."
       />
-      <PurchaseOrderForm
+      <NewPurchaseOrder
         slug={slug}
         locale={locale}
         {...options}

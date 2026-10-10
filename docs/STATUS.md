@@ -28,7 +28,7 @@ back into stock, losses written off, like Amazon's FBA ledger)._
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
-| 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off) and slice 6 (bundles) done. Next: Noon (phase 4c), with bundles from day one |
+| 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles) and slice 7 (a purchase order filled in from an Alibaba.com receipt) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: "your stock against Noon's" from the ledger summary view. Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable) and 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices) done. Next: eBay orders. See §3 "Phase 4d" |
 
@@ -1652,6 +1652,42 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   apart, fulfilment checked, orders shown without a connection, Amazon.ae's upload unaffected);
   e2e "noon: add a Noon country, say who ships, and link a SKU on it".
 
+### Phase 5, slice 7: purchase orders from Alibaba.com receipts
+
+- **What it is:** New purchase order → **Fill in from an Alibaba receipt**. Drop in (or choose) the
+  receipt PDF from an Alibaba.com order's page. It's read in the browser with pdf.js (`readPdfItems`
+  in `lib/pdf-items.ts`, shared with bank statements), never uploaded, and only fills the form. A
+  banner lists what to check, and nothing is saved until **Save draft**.
+- **What it fills:**
+  - The supplier: the vendor whose name matches the seller (`looseName` drops case, punctuation and
+    Co./Ltd./Limited…). If none does, **Add as a vendor** under the supplier field adds the seller
+    with its address (`addSupplier` in db: the one with that name if there, unarchived; a customer
+    of that name becomes "both").
+  - Currency as printed, the order date, and Alibaba's order number as the supplier's reference.
+  - One line per item. Products are matched by SKU in the title, or by a product name whose words
+    all appear in it (the longest wins). Under each line is "On the receipt: …" so the right
+    product can be picked.
+  - Cost of one: Alibaba rounds the price it prints (560 × AED 13.47 is not AED 7,537.85), so
+    when quantity × price misses the line total, the cost is worked back from the total to 4
+    decimals and the line says so. If the lines still miss Alibaba's subtotal by a cent or two, a
+    check says by how much.
+  - Lines billed by amount, not units (freight services print "411.25 × USD 1.0000"): one unit
+    for the whole amount, flagged, with a hint that freight usually belongs on a delivery's costs.
+  - Notes: the Alibaba order number, the shipping fee (to add to the delivery's costs when it
+    arrives), the payment processing fee, and the contract currency with its total and rate
+    ("Contract currency USD: USD 2,171.00 (1 USD = 3.739012 AED)").
+- **Not read:** the buyer and ship-to blocks (personal addresses) and the payments.
+- **Code:** core `inventory/alibaba-receipt.ts` (`readAlibabaReceipt`: positioned text → seller,
+  order, items, totals; `alibabaPurchaseDraft`: receipt + vendors + products → the form;
+  `matchAlibabaProduct`, `looseName`, `alibabaDate`, `alibabaMoney`). Web
+  `purchase-orders/new/new-order.tsx` (the drop zone and banner around `PurchaseOrderForm`, which
+  now takes `suggestedSupplier` and `lineHints`), `addSupplierAction` (audited `contact.created`).
+- Tests: core `alibaba-receipt.test.ts` (a synthetic receipt: wrapped titles, totals, contract
+  currency, "-" shipping, not a receipt; draft costs, matching, notes, checks), db
+  `purchasing.test.ts` (adding a seller), e2e "purchase orders: fill one in from an Alibaba
+  receipt, check it, then save it" (a synthetic PDF built by `e2e/alibaba-receipt-pdf.ts` on the
+  shared `e2e/text-pdf.ts`).
+
 ### Phase 5, slice 6: bundles
 
 - **What it is:** one marketplace listing that holds several products (a gift set, a kit, a
@@ -1871,6 +1907,9 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 4. [x] **Inventory movements.** Done in slice 5 (the FBA inventory ledger: returns, losses, found).
 5. [x] **Opening stock and cost of goods sold.** Done in slice 4 (monthly per marketplace).
 6. [x] **Bundles.** Done in slice 6 (a SKU linked to several products).
+7. [x] **Purchase orders from Alibaba.com receipts.** Done in slice 7. Later: remember which
+   product each Alibaba title was (so the next receipt matches it), keep the receipt PDF on the
+   order, and other suppliers' receipts or proforma invoices.
 
 ### Phase 4c: Noon (as a product: UAE, KSA, Egypt; FBN and FBP)
 Noon's partner API (docs: noon-docs.noonpartners.dev; its `llms.txt` lists every page, and the

@@ -2,6 +2,7 @@
 
 import { purchaseOrderNumber } from "@bookalyze/core";
 import {
+  addSupplier,
   cancelPurchaseOrder,
   createPurchaseOrder,
   deletePurchaseOrder,
@@ -265,4 +266,43 @@ export async function saveDeliveryCostsAction(
   } catch (error) {
     return friendly(error);
   }
+}
+
+const newSupplierSchema = z.object({
+  name: z.string().trim().min(1, "Enter the vendor's name.").max(200, "Keep the name under 200."),
+  address: z
+    .string()
+    .trim()
+    .max(500)
+    .nullish()
+    .transform((v) => v || null),
+});
+
+export type AddSupplierResult = { ok: true; id: string; name: string } | Fail;
+
+/** Adds a receipt's seller as a vendor (or finds the one with that name) for the order form. */
+export async function addSupplierAction(slug: string, input: unknown): Promise<AddSupplierResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  const parsed = newSupplierSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Check the vendor's name." };
+  }
+  const saved = await inOrg(ctx, async (tx) => {
+    const supplier = await addSupplier(tx, {
+      ...parsed.data,
+      orgId: ctx.org.id,
+      userId: ctx.session.user.id,
+    });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: supplier.created ? "contact.created" : "contact.updated",
+      entityType: "contact",
+      entityId: supplier.id,
+      after: { name: supplier.name, type: "vendor", source: "alibaba_receipt" },
+    });
+    return supplier;
+  });
+  revalidatePath(`/o/${slug}/accounting`, "layout");
+  return { ok: true, id: saved.id, name: saved.name };
 }
