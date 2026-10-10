@@ -156,14 +156,16 @@ createServer((req, res) => {
       }
       if (
         body.export_category_code === "noon_fbn_stock_report" &&
-        (!params.country || !params.noon_status)
+        (!params.country ||
+          !params.noon_status ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(String(params.close_date ?? "")))
       ) {
         return send(
           res,
           400,
           error(
             "INVALID_ARGUMENT",
-            "AssertionError('Missing required fields: country, noon_status')",
+            "AssertionError('Missing required fields: country, noon_status, close_date')",
           ),
         );
       }

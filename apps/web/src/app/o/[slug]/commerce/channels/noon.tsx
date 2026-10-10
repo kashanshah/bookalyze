@@ -3,9 +3,11 @@
 import {
   FULFILMENT_MODES,
   type FulfilmentMode,
+  isNoonDateInput,
   NOON_FULFILMENT,
   NOON_MARKETPLACES,
   NOON_TRANSACTIONS_EXPORT,
+  noonDateRole,
   noonMissingFields,
   noonReportName,
 } from "@bookalyze/core";
@@ -613,15 +615,20 @@ function ReportCheck({
         <div className="grid gap-3 sm:grid-cols-2">
           {fields.map((f) => {
             const id = `${category}-${f.name}`;
+            const day = isNoonDateInput(f.name);
             return (
               <Field
                 key={f.name}
                 label={inputLabel(f.name)}
                 htmlFor={id}
                 hint={
-                  f.hint
-                    ? `Noon describes it as: ${f.hint}`
-                    : `Noon's name for it: ${f.name}. Its own reports page shows the choices.`
+                  day
+                    ? noonDateRole(f.name)
+                      ? "Left empty, the check uses the last 7 days."
+                      : "Pick the day the report is for."
+                    : f.hint
+                      ? `Noon describes it as: ${f.hint}`
+                      : `Noon's name for it: ${f.name}. Its own reports page shows the choices.`
                 }
                 error={
                   needed.includes(f.name) && !values[f.name]?.trim()
@@ -631,11 +638,12 @@ function ReportCheck({
               >
                 <Input
                   id={id}
+                  type={day ? "date" : "text"}
                   value={values[f.name] ?? ""}
                   onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
                   autoComplete="off"
                   spellCheck={false}
-                  className="font-mono"
+                  className={day ? undefined : "font-mono"}
                 />
               </Field>
             );

@@ -2244,8 +2244,12 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await stock.getByRole("button", { name: "Check", exact: true }).click();
   await expect(page.getByText("Noon needs a few details for this report")).toBeVisible();
   await expect(stock.getByLabel("Country")).toHaveValue("ae");
-  await expect(stock.getByText("Noon needs this for the report.")).toBeVisible();
+  // Status and close date are still empty.
+  await expect(stock.getByText("Noon needs this for the report.")).toHaveCount(2);
   await stock.getByLabel("Noon status").fill("active");
+  // A day is picked with a date control, sent as YYYY-MM-DD.
+  await expect(stock.getByLabel("Close date")).toHaveAttribute("type", "date");
+  await stock.getByLabel("Close date").fill("2026-10-01");
   await stock.getByRole("button", { name: "Check", exact: true }).click();
   await expect(page.getByText("Fbn stock report checked")).toBeVisible({ timeout: 30_000 });
 
