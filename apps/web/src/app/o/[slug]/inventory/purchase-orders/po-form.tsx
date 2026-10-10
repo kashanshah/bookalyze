@@ -303,7 +303,7 @@ export function PurchaseOrderForm({
                 key={line.key}
                 className="fade-in-0 grid animate-in grid-cols-2 items-start gap-3 px-4 py-3 sm:px-5 md:grid-cols-[minmax(0,1fr)_6rem_8rem_8rem_2.25rem]"
               >
-                <div className="col-span-2 grid gap-1 md:col-span-1">
+                <div className="col-span-2 grid min-w-0 grid-cols-1 gap-1 md:col-span-1">
                   <Combobox
                     aria-label={`Product ${index + 1}`}
                     value={line.productId}
