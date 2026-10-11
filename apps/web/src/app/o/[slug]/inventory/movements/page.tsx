@@ -154,7 +154,7 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
                       key={row.productId}
                       aria-label={row.productName}
                       className={cn(
-                        "grid items-center gap-x-4 gap-y-1 px-5 py-3 text-sm",
+                        "grid items-start gap-x-4 gap-y-1 px-5 py-3 text-sm sm:items-center",
                         showAmazon && showNoon
                           ? "grid-cols-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]"
                           : "grid-cols-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]",
