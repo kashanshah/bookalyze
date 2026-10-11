@@ -17,7 +17,7 @@ import {
 import { Banknote, ExternalLink, Layers, ListChecks, Plus, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useId, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Amount } from "@/components/accounting/amount";
 import { RateField } from "@/components/accounting/rate-field";
@@ -47,6 +47,7 @@ import {
   settleOrderAction,
   undoSettlementAction,
 } from "../actions";
+import { addVendorFooter } from "../new-vendor";
 
 export type PaymentView = {
   id: string;
@@ -810,6 +811,8 @@ function PaymentDialog({
   const formId = useId();
   const [pending, start] = useTransition();
   const [contactId, setContactId] = useState(po.supplierId);
+  // Vendors added from the "Paid to" list while the dialog is open.
+  const [added, setAdded] = useState<{ id: string; name: string }[]>([]);
   const [receiptId, setReceiptId] = useState("");
   const [costId, setCostId] = useState("");
   const [costKind, setCostKind] = useState<LandedCostKind>("freight");
@@ -828,9 +831,16 @@ function PaymentDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
 
-  // The next part of the plan that isn't paid yet suggests the amount and label.
+  // The next part of the plan that isn't paid yet suggests the amount and label. Only when the
+  // dialog opens: a refresh while it's open (say, after adding a vendor) keeps what's typed.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      wasOpen.current = false;
+      return;
+    }
+    if (wasOpen.current) return;
+    wasOpen.current = true;
     const progress = planProgress(planAmounts(plan, po.total, po.currency), paid);
     const nextIndex = progress.parts.findIndex((p) => p.status !== "paid");
     const next = nextIndex >= 0 ? plan[nextIndex] : undefined;
@@ -958,7 +968,9 @@ function PaymentDialog({
 
   const vendorOptions = [
     { value: po.supplierId, label: po.supplierName, description: "The supplier" },
-    ...vendors.filter((v) => v.id !== po.supplierId).map((v) => ({ value: v.id, label: v.name })),
+    ...[...vendors, ...added.filter((a) => !vendors.some((v) => v.id === a.id))]
+      .filter((v) => v.id !== po.supplierId)
+      .map((v) => ({ value: v.id, label: v.name })),
   ];
 
   return (
@@ -989,7 +1001,13 @@ function PaymentDialog({
                   if (id !== po.supplierId) setHow("amount");
                 }}
                 placeholder="Choose who you paid"
-                searchPlaceholder="Search vendors"
+                searchPlaceholder="Search or add a vendor"
+                emptyText="No vendor by that name yet."
+                footer={addVendorFooter(slug, (vendor) => {
+                  setAdded((all) => [...all, vendor]);
+                  setContactId(vendor.id);
+                  setHow("amount");
+                })}
                 searchable
                 options={vendorOptions}
               />

@@ -2711,9 +2711,17 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   // Who was paid isn't known yet: it's asked for.
   await payCost.getByRole("button", { name: "Record payment" }).click();
   await expect(payCost.getByText(/Choose who you paid/)).toBeVisible();
-  await choose(payCost.getByLabel("Paid to", { exact: true }), "Office Depot");
+  // A customs broker that isn't a vendor yet is added from the list itself.
+  await payCost.getByLabel("Paid to", { exact: true }).click();
+  await page.getByPlaceholder("Search or add a vendor").fill("Harbour Customs Brokers");
+  await page.getByRole("button", { name: "Add “Harbour Customs Brokers” as a new vendor" }).click();
+  await expect(page.getByText("Harbour Customs Brokers added as a vendor")).toBeVisible();
+  await expect(payCost.getByLabel("Paid to", { exact: true })).toContainText(
+    "Harbour Customs Brokers",
+  );
   await payCost.getByRole("button", { name: "Record payment" }).click();
   await expect(page.getByText("The delivery's landed cost now uses what you paid.")).toBeVisible();
+  await expect(payments.getByText(/to Harbour Customs Brokers/)).toBeVisible();
   await expect(deposits).toContainText("Into stock$735.48");
   await expect(deposits).toContainText("Owed$434.48");
 });
