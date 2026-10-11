@@ -1322,11 +1322,14 @@ test("company: profile, registration numbers, people, documents and the complian
   await licence.getByRole("button", { name: /as done$/ }).click();
   await expect(page.getByText("Marked as done")).toBeVisible();
 
-  // Home shows what's coming up, without the done item.
+  // Home shows the next few open items (at most 5, overdue first), without the done one. Which
+  // ones depends on today's date (filings due around now can fill it), so the insurance
+  // certificate is checked on the calendar above.
   await page.getByRole("link", { name: "Home", exact: true }).click();
-  const comingUp = page.locator("section", { hasText: "Coming up" });
-  await expect(comingUp.getByText("Insurance certificate expires")).toBeVisible();
-  await expect(comingUp.getByText("Renew business licence")).toHaveCount(0);
+  const comingUp = page.locator("section", { hasText: "Coming up" }).getByRole("listitem");
+  await expect(comingUp.first()).toBeVisible();
+  expect(await comingUp.count()).toBeLessThanOrEqual(5);
+  await expect(comingUp.filter({ hasText: "Renew business licence" })).toHaveCount(0);
 });
 
 test("commerce: connect Amazon Seller Central, choose marketplaces, test and disconnect", async ({
