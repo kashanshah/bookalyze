@@ -115,18 +115,24 @@ export function PurchaseBooksSetting({
           <ul className="grid gap-2 text-sm">
             <li className="flex gap-2">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-              Payments on an order go to <strong>Supplier deposits</strong>: paid, but not in stock
-              yet.
+              <span>
+                Payments on an order go to <strong>Supplier deposits</strong>: paid, but not in
+                stock yet.
+              </span>
             </li>
             <li className="flex gap-2">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-              Each delivery moves its landed cost (the order price, freight, duty…) from there into{" "}
-              <strong>Inventory</strong>.
+              <span>
+                Each delivery moves its landed cost (the order price, freight, duty…) from there
+                into <strong>Inventory</strong>.
+              </span>
             </li>
             <li className="flex gap-2">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-              When everything has arrived, what's left (exchange rates that moved, a cost that
-              changed) is settled as an exchange gain or loss.
+              <span>
+                When everything has arrived, what's left (exchange rates that moved, a cost that
+                changed) is settled as an exchange gain or loss.
+              </span>
             </li>
           </ul>
           <form
