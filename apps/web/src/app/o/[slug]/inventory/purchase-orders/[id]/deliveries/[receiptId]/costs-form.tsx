@@ -24,6 +24,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { saveDeliveryCostsAction } from "../../../actions";
+import { addVendorFooter } from "../../../new-vendor";
 
 type Line = {
   id: string;
@@ -113,6 +114,9 @@ export function DeliveryCostsForm({
     })),
   );
   const [nextKey, setNextKey] = useState(initialCosts.length);
+  // Vendors added from a "Paid to" list on this page.
+  const [added, setAdded] = useState<{ id: string; name: string }[]>([]);
+  const allVendors = [...vendors, ...added.filter((a) => !vendors.some((v) => v.id === a.id))];
   // Paying a cost happens on the order's page, so unsaved changes here would be lost on the way.
   const [saved] = useState(() => JSON.stringify({ rate, costs }));
   const dirty = JSON.stringify({ rate, costs }) !== saved;
@@ -345,12 +349,16 @@ export function DeliveryCostsForm({
                       onChange={(contactId) => update(cost.key, { contactId })}
                       disabled={paid}
                       placeholder="Paid to (optional)"
-                      searchPlaceholder="Search vendors"
+                      searchPlaceholder="Search or add a vendor"
                       searchable
-                      emptyText="No vendor by that name."
+                      emptyText="No vendor by that name yet."
+                      footer={addVendorFooter(slug, (vendor) => {
+                        setAdded((all) => [...all, vendor]);
+                        update(cost.key, { contactId: vendor.id });
+                      })}
                       options={[
                         { value: "", label: "Not said" },
-                        ...vendors.map((v) => ({ value: v.id, label: v.name })),
+                        ...allVendors.map((v) => ({ value: v.id, label: v.name })),
                       ]}
                     />
                   </div>

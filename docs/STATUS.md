@@ -1744,6 +1744,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   when the cost doesn't say (a delivery payment can't go to the supplier by default: the action
   refuses it without a payee). "A new payment" or "Already in my books" then links it as above.
   With unsaved changes on the page it asks to save first.
+- **New vendors from "Paid to":** the payment dialog's and the landed cost rows' "Paid to" lists
+  end with **Add "…" as a new vendor** (type a name): it adds the vendor (`addSupplierAction`,
+  finds one with the same name) and picks it (`purchase-orders/new-vendor.tsx`).
 - **On the landed cost page:** a paid cost shows "Paid on …" with its journal entry; its amount,
   currency, rate and payee are locked and it can't be removed. Saving keeps them as the
   payment's whatever the form sends, and refuses a save that drops it. Taking the payment off

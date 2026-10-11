@@ -47,6 +47,7 @@ import {
   settleOrderAction,
   undoSettlementAction,
 } from "../actions";
+import { addVendorFooter } from "../new-vendor";
 
 export type PaymentView = {
   id: string;
@@ -810,6 +811,8 @@ function PaymentDialog({
   const formId = useId();
   const [pending, start] = useTransition();
   const [contactId, setContactId] = useState(po.supplierId);
+  // Vendors added from the "Paid to" list while the dialog is open.
+  const [added, setAdded] = useState<{ id: string; name: string }[]>([]);
   const [receiptId, setReceiptId] = useState("");
   const [costId, setCostId] = useState("");
   const [costKind, setCostKind] = useState<LandedCostKind>("freight");
@@ -958,7 +961,9 @@ function PaymentDialog({
 
   const vendorOptions = [
     { value: po.supplierId, label: po.supplierName, description: "The supplier" },
-    ...vendors.filter((v) => v.id !== po.supplierId).map((v) => ({ value: v.id, label: v.name })),
+    ...[...vendors, ...added.filter((a) => !vendors.some((v) => v.id === a.id))]
+      .filter((v) => v.id !== po.supplierId)
+      .map((v) => ({ value: v.id, label: v.name })),
   ];
 
   return (
@@ -989,7 +994,13 @@ function PaymentDialog({
                   if (id !== po.supplierId) setHow("amount");
                 }}
                 placeholder="Choose who you paid"
-                searchPlaceholder="Search vendors"
+                searchPlaceholder="Search or add a vendor"
+                emptyText="No vendor by that name yet."
+                footer={addVendorFooter(slug, (vendor) => {
+                  setAdded((all) => [...all, vendor]);
+                  setContactId(vendor.id);
+                  setHow("amount");
+                })}
                 searchable
                 options={vendorOptions}
               />
