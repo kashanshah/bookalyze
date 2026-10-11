@@ -100,6 +100,12 @@ export const deliveryCostSchema = z
       .optional()
       .transform((v) => v || null)
       .refine((v) => v === null || z.uuid().safeParse(v).success, "Choose who it was paid to."),
+    /** The payment on the order that paid it: its amount, currency and rate stay the payment's. */
+    paymentId: z
+      .string()
+      .optional()
+      .transform((v) => v || null)
+      .refine((v) => v === null || z.uuid().safeParse(v).success, "That payment is unknown."),
   })
   .refine((v) => decimalPlaces(v.amount) <= Math.max(getCurrency(v.currency)?.minorUnits ?? 2, 0), {
     path: ["amount"],
@@ -147,6 +153,19 @@ export const purchasePaymentSchema = z
       .transform((v) => v || null)
       .refine((v) => v === null || z.uuid().safeParse(v).success, "Choose the delivery."),
     label: optionalText(60, "Keep it under 60 characters."),
+    /**
+     * For a delivery's extra cost: the cost on its landed cost that it pays, or empty to add it
+     * as a new cost of `costKind`.
+     */
+    costId: z
+      .string()
+      .optional()
+      .transform((v) => v || null)
+      .refine((v) => v === null || z.uuid().safeParse(v).success, "Choose the cost."),
+    costKind: z
+      .enum(["freight", "duty", "brokerage", "prep", "other"], "Choose what it was for.")
+      .optional()
+      .default("freight"),
     /** For this order, in the currency owed. */
     amount: positiveAmount("Enter how much of it was for this order."),
     currency: currencySchema.optional(),
@@ -192,3 +211,13 @@ export const purchasePaymentSchema = z
     }
   });
 export type PurchasePaymentInput = z.input<typeof purchasePaymentSchema>;
+
+/** Puts a payment already on the order on its delivery's landed cost. */
+export const paymentCostSchema = z.object({
+  costId: z
+    .string()
+    .optional()
+    .transform((v) => v || null)
+    .refine((v) => v === null || z.uuid().safeParse(v).success, "Choose the cost."),
+  costKind: z.enum(["freight", "duty", "brokerage", "prep", "other"], "Choose what it was for."),
+});

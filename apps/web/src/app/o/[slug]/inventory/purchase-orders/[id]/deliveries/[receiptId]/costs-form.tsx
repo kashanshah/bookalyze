@@ -9,7 +9,7 @@ import {
   LANDED_COST_KIND_LABELS,
   type LandedCostKind,
 } from "@bookalyze/core";
-import { Info, Plus, Save, Trash2 } from "lucide-react";
+import { ExternalLink, Info, Link2, Plus, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { formatDate } from "@/lib/dates";
 import { saveDeliveryCostsAction } from "../../../actions";
 
 type Line = {
@@ -42,6 +43,9 @@ type Cost = {
   allocation: AllocationMethod;
   /** Who it's paid to: a shipping company, a customs broker… Empty for the supplier. */
   contactId: string;
+  /** The payment on the order that paid it; its amount, currency and rate are then fixed. */
+  paymentId: string;
+  paidBy: { date: string; entryNumber: string; journalEntryId: string } | null;
 };
 
 /** "70.0000" → "70", "1.3650000000" → "1.365". */
@@ -127,6 +131,8 @@ export function DeliveryCostsForm({
         exchangeRate: "",
         allocation: split === "weight" && noWeight.length ? "units" : split,
         contactId: "",
+        paymentId: "",
+        paidBy: null,
       },
     ]);
     setNextKey((k) => k + 1);
@@ -157,7 +163,7 @@ export function DeliveryCostsForm({
     start(async () => {
       const result = await saveDeliveryCostsAction(slug, receiptId, {
         exchangeRate: foreign ? rate : "",
-        costs: costs.map(({ key: _key, ...cost }) => ({
+        costs: costs.map(({ key: _key, paidBy: _paidBy, ...cost }) => ({
           ...cost,
           exchangeRate: cost.currency === baseCurrency ? "" : cost.exchangeRate,
         })),
@@ -239,6 +245,7 @@ export function DeliveryCostsForm({
             {costs.map((cost, index) => {
               const err = (field: string) => lineErrors[`${index}.${field}`];
               const other = cost.currency !== baseCurrency;
+              const paid = Boolean(cost.paymentId);
               return (
                 <li
                   key={cost.key}
@@ -269,6 +276,7 @@ export function DeliveryCostsForm({
                       inputMode="decimal"
                       value={cost.amount}
                       onChange={(e) => update(cost.key, { amount: e.target.value.trim() })}
+                      readOnly={paid}
                       placeholder="0.00"
                       aria-invalid={Boolean(err("amount"))}
                       className="text-end tabular-nums"
@@ -281,6 +289,7 @@ export function DeliveryCostsForm({
                     aria-label={`Currency ${index + 1}`}
                     value={cost.currency}
                     onChange={(currency) => update(cost.key, { currency })}
+                    disabled={paid}
                     searchPlaceholder="Search currencies"
                     options={currencies.map((c) => ({
                       value: c.code,
@@ -308,21 +317,24 @@ export function DeliveryCostsForm({
                     />
                   </div>
                   <div className="flex items-start justify-end">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Remove cost ${index + 1}`}
-                      onClick={() => setCosts((all) => all.filter((c) => c.key !== cost.key))}
-                    >
-                      <Trash2 />
-                    </Button>
+                    {paid ? null : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Remove cost ${index + 1}`}
+                        onClick={() => setCosts((all) => all.filter((c) => c.key !== cost.key))}
+                      >
+                        <Trash2 />
+                      </Button>
+                    )}
                   </div>
                   <div className="sm:col-span-2 lg:col-span-2">
                     <Combobox
                       aria-label={`Paid to, cost ${index + 1}`}
                       value={cost.contactId}
                       onChange={(contactId) => update(cost.key, { contactId })}
+                      disabled={paid}
                       placeholder="Paid to (optional)"
                       searchPlaceholder="Search vendors"
                       searchable
@@ -333,7 +345,12 @@ export function DeliveryCostsForm({
                       ]}
                     />
                   </div>
-                  {other ? (
+                  {other && paid ? (
+                    <p className="self-center text-muted-foreground text-sm sm:col-span-2 lg:col-span-3">
+                      1 {cost.currency} = {plain(cost.exchangeRate)} {baseCurrency}, the rate it was
+                      paid at
+                    </p>
+                  ) : other ? (
                     <RateField
                       slug={slug}
                       id={`${formId}-rate-${cost.key}`}
@@ -346,6 +363,25 @@ export function DeliveryCostsForm({
                       locale={locale}
                       className="sm:col-span-2 lg:col-span-3"
                     />
+                  ) : null}
+                  {cost.paidBy ? (
+                    <p className="flex flex-wrap items-center gap-x-1.5 text-muted-foreground text-xs sm:col-span-full">
+                      <Link2 className="size-3.5 shrink-0 text-success" />
+                      Paid on {formatDate(cost.paidBy.date, locale)}, so its amount and rate are the
+                      payment's. To change them, take the payment off the order.
+                      <Link
+                        href={`/o/${slug}/accounting/journal/${cost.paidBy.journalEntryId}`}
+                        className="inline-flex items-center gap-1 hover:text-foreground"
+                      >
+                        {cost.paidBy.entryNumber}
+                        <ExternalLink className="size-3" />
+                      </Link>
+                    </p>
+                  ) : costed && !paid && cost.contactId ? (
+                    <p className="text-muted-foreground text-xs sm:col-span-full">
+                      Not paid yet. Record its payment on the order for this delivery and this cost
+                      becomes what you paid, at the rate you paid.
+                    </p>
                   ) : null}
                 </li>
               );

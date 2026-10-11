@@ -2,7 +2,10 @@
 
 import {
   formatDecimal,
+  formatMoney,
   isDecimal,
+  LANDED_COST_KIND_LABELS,
+  type LandedCostKind,
   type PaymentPlanPart,
   paidPercent,
   parseDecimal,
@@ -11,7 +14,7 @@ import {
   planProgress,
   sumDecimals,
 } from "@bookalyze/core";
-import { Banknote, ExternalLink, ListChecks, Plus, Trash2, X } from "lucide-react";
+import { Banknote, ExternalLink, Layers, ListChecks, Plus, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState, useTransition } from "react";
@@ -35,6 +38,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import {
+  linkPaymentCostAction,
   type PaymentCandidate,
   paymentCandidatesAction,
   recordPurchasePaymentAction,
@@ -47,6 +51,8 @@ import {
 export type PaymentView = {
   id: string;
   receiptId: string | null;
+  /** The delivery cost it pays, on the landed cost. */
+  costId: string | null;
   contactId: string;
   contactName: string;
   label: string | null;
@@ -75,7 +81,7 @@ type Props = {
   };
   plan: PaymentPlanPart[];
   payments: PaymentView[];
-  deliveries: { id: string; label: string }[];
+  deliveries: { id: string; label: string; unpaidCosts: UnpaidCost[] }[];
   moneyAccounts: { id: string; label: string; currency: string }[];
   vendors: { id: string; name: string }[];
   currencies: { code: string; name: string }[];
@@ -88,6 +94,100 @@ type Props = {
     settlementNumber: string | null;
   } | null;
 };
+
+/** An extra cost on a delivery that no payment pays yet. */
+type UnpaidCost = {
+  id: string;
+  kind: LandedCostKind;
+  description: string | null;
+  amount: string;
+  currency: string;
+  contactId: string | null;
+};
+
+const KINDS = Object.entries(LANDED_COST_KIND_LABELS).map(([value, label]) => ({ value, label }));
+
+/**
+ * The cost a payment most likely pays: the same currency and amount, else one for the same
+ * vendor. None (a new cost) otherwise.
+ */
+function likelyCost(
+  costs: UnpaidCost[],
+  payment: { contactId: string; amount: string; currency: string },
+): string {
+  const same = costs.find(
+    (c) =>
+      c.currency === payment.currency &&
+      isDecimal(payment.amount) &&
+      parseDecimal(c.amount) === parseDecimal(payment.amount),
+  );
+  return (same ?? costs.find((c) => c.contactId === payment.contactId))?.id ?? "";
+}
+
+/**
+ * Which of a delivery's costs a payment pays, or a new one of a kind. The cost then takes the
+ * payment's amount, at the rate it was paid.
+ */
+function CostPicker({
+  id,
+  locale,
+  costs,
+  costId,
+  onCostId,
+  kind,
+  onKind,
+  error,
+}: {
+  id: string;
+  locale: string;
+  costs: UnpaidCost[];
+  costId: string;
+  onCostId: (id: string) => void;
+  kind: LandedCostKind;
+  onKind: (kind: LandedCostKind) => void;
+  error?: string;
+}) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <Field
+        label="On the delivery's landed cost"
+        htmlFor={`${id}-cost`}
+        error={error}
+        hint={
+          costId
+            ? "That cost becomes what you paid, at the rate you paid."
+            : "Added as a new cost, split across the products by value."
+        }
+      >
+        <Combobox
+          id={`${id}-cost`}
+          value={costId}
+          onChange={onCostId}
+          options={[
+            { value: "", label: "Add it as a new cost" },
+            ...costs.map((c) => ({
+              value: c.id,
+              label: c.description
+                ? `${LANDED_COST_KIND_LABELS[c.kind]} · ${c.description}`
+                : LANDED_COST_KIND_LABELS[c.kind],
+              description: `${formatMoney(c.amount, c.currency, locale)}, not paid yet`,
+            })),
+          ]}
+        />
+      </Field>
+      {costId ? null : (
+        <Field label="Kind of cost" htmlFor={`${id}-kind`}>
+          <Combobox
+            id={`${id}-kind`}
+            value={kind}
+            onChange={(v) => onKind((v || "freight") as LandedCostKind)}
+            options={KINDS}
+          />
+        </Field>
+      )}
+    </div>
+  );
+}
 
 /** a − b, exactly. */
 const minus = (a: string, b: string) => formatDecimal(parseDecimal(a) - parseDecimal(b));
@@ -238,10 +338,17 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-function PaymentRow({ slug, locale, po, payment: p }: Props & { payment: PaymentView }) {
+function PaymentRow({
+  slug,
+  locale,
+  po,
+  deliveries,
+  payment: p,
+}: Props & { payment: PaymentView }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [confirm, setConfirm] = useState(false);
+  const [linking, setLinking] = useState(false);
   useEffect(() => {
     if (!confirm) return;
     const t = setTimeout(() => setConfirm(false), 3000);
@@ -260,6 +367,8 @@ function PaymentRow({ slug, locale, po, payment: p }: Props & { payment: Payment
       router.refresh();
     });
   const other = p.contactId !== po.supplierId;
+  const delivery = p.receiptId ? deliveries.find((d) => d.id === p.receiptId) : undefined;
+  const canLink = other && delivery && !p.costId && !p.removed;
   return (
     <li
       aria-label={`Payment ${p.label ?? ""} ${p.entryNumber}`.replace(/\s+/g, " ")}
@@ -284,6 +393,21 @@ function PaymentRow({ slug, locale, po, payment: p }: Props & { payment: Payment
             account
           </span>
         ) : null}
+        {other && p.costId && delivery ? (
+          <span className="block text-muted-foreground text-xs">
+            On the landed cost of the {delivery.label.toLowerCase()}
+          </span>
+        ) : null}
+        {canLink ? (
+          <button
+            type="button"
+            onClick={() => setLinking(true)}
+            className="mt-0.5 inline-flex items-center gap-1 text-primary text-xs hover:underline"
+          >
+            <Layers className="size-3" />
+            Add to the {delivery.label.toLowerCase()}'s landed cost
+          </button>
+        ) : null}
       </span>
       <Amount value={p.amount} currency={p.currency} locale={locale} className="tabular-nums" />
       <Link
@@ -305,6 +429,17 @@ function PaymentRow({ slug, locale, po, payment: p }: Props & { payment: Payment
       >
         {pending ? <Spinner /> : confirm ? <Trash2 /> : <X />}
       </Button>
+      {canLink ? (
+        <LinkCostDialog
+          slug={slug}
+          locale={locale}
+          poId={po.id}
+          payment={p}
+          delivery={delivery}
+          open={linking}
+          onClose={() => setLinking(false)}
+        />
+      ) : null}
     </li>
   );
 }
@@ -540,6 +675,89 @@ function PlanDialog({
   );
 }
 
+/** Puts a payment already on the order (freight, duty…) on its delivery's landed cost. */
+function LinkCostDialog({
+  slug,
+  locale,
+  poId,
+  payment,
+  delivery,
+  open,
+  onClose,
+}: {
+  slug: string;
+  locale: string;
+  poId: string;
+  payment: PaymentView;
+  delivery: { label: string; unpaidCosts: UnpaidCost[] };
+  open: boolean;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const formId = useId();
+  const [pending, start] = useTransition();
+  const [costId, setCostId] = useState("");
+  const [kind, setKind] = useState<LandedCostKind>("freight");
+  useEffect(() => {
+    if (open) setCostId(likelyCost(delivery.unpaidCosts, payment));
+  }, [open, delivery.unpaidCosts, payment]);
+  const submit = () =>
+    start(async () => {
+      const result = await linkPaymentCostAction(slug, poId, payment.id, {
+        costId,
+        costKind: kind,
+      });
+      if (!result.ok) {
+        toast.error(result.message ?? "That didn't work.");
+        return;
+      }
+      toast.success("Added to the landed cost", {
+        description: "The delivery's stock lots are costed again.",
+      });
+      onClose();
+      router.refresh();
+    });
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Add to the landed cost</DialogTitle>
+          <DialogDescription>
+            {formatMoney(payment.amount, payment.currency, locale)} to {payment.contactName}, on the{" "}
+            {delivery.label.toLowerCase()}. Its stock lots are costed again with it.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          id={formId}
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <CostPicker
+            id={formId}
+            locale={locale}
+            costs={delivery.unpaidCosts}
+            costId={costId}
+            onCostId={setCostId}
+            kind={kind}
+            onKind={setKind}
+          />
+        </form>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button type="submit" form={formId} disabled={pending}>
+            {pending ? <Spinner /> : <Layers />}
+            Add to the landed cost
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // -------------------------------------------------------------------------------------------
 // Recording a payment
 
@@ -564,6 +782,8 @@ function PaymentDialog({
   const [pending, start] = useTransition();
   const [contactId, setContactId] = useState(po.supplierId);
   const [receiptId, setReceiptId] = useState("");
+  const [costId, setCostId] = useState("");
+  const [costKind, setCostKind] = useState<LandedCostKind>("freight");
   const [how, setHow] = useState<"amount" | "percent">("amount");
   const [value, setValue] = useState("");
   const [currency, setCurrency] = useState(baseCurrency);
@@ -588,6 +808,8 @@ function PaymentDialog({
     const left = nextIndex >= 0 ? progress.parts[nextIndex] : undefined;
     setContactId(po.supplierId);
     setReceiptId("");
+    setCostId("");
+    setCostKind("freight");
     setLabel(next?.label ?? "");
     if (next && left) {
       const due = minus(left.amount, left.paid);
@@ -621,6 +843,12 @@ function PaymentDialog({
         ? percentOfTotal(po.total, value, po.currency)
         : ""
       : value;
+  const delivery = toSupplier ? undefined : deliveries.find((d) => d.id === receiptId);
+  // A delivery picked (or the vendor changed) suggests the cost it most likely pays.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only when the delivery or vendor changes.
+  useEffect(() => {
+    setCostId(delivery ? likelyCost(delivery.unpaidCosts, { contactId, amount, currency }) : "");
+  }, [delivery?.id, contactId]);
   const account = moneyAccounts.find((a) => a.id === moneyAccountId);
   const accountCurrency = account?.currency ?? baseCurrency;
   const sameCurrency = accountCurrency === owedIn;
@@ -649,6 +877,8 @@ function PaymentDialog({
         contactId: toSupplier ? "" : contactId,
         receiptId: toSupplier ? "" : receiptId,
         label,
+        costId: delivery ? costId : "",
+        costKind,
         amount,
         currency: owedIn,
         journalEntryId: picked?.id ?? "",
@@ -662,12 +892,15 @@ function PaymentDialog({
         setMessage(result.message ?? null);
         return;
       }
-      toast.success(result.message, {
-        description:
-          mode === "new"
-            ? `It's in Transactions too, as money out to ${books ? "Supplier deposits" : "Inventory"}.`
-            : undefined,
-      });
+      const description = [
+        mode === "new"
+          ? `It's in Transactions too, as money out to ${books ? "Supplier deposits" : "Inventory"}.`
+          : null,
+        result.note ?? null,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      toast.success(result.message, description ? { description } : {});
       onClose();
       router.refresh();
     });
@@ -753,6 +986,19 @@ function PaymentDialog({
               </>
             )}
           </div>
+
+          {delivery ? (
+            <CostPicker
+              id={formId}
+              locale={locale}
+              costs={delivery.unpaidCosts}
+              costId={costId}
+              onCostId={setCostId}
+              kind={costKind}
+              onKind={setCostKind}
+              error={errors.costId}
+            />
+          ) : null}
 
           <Field
             label={toSupplier ? `How much (${po.currency})` : `How much (${currency})`}

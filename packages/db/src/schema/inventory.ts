@@ -298,10 +298,21 @@ export const purchaseReceiptCosts = pgTable(
     allocation: text("allocation", { enum: ALLOCATION_METHODS }).notNull(),
     /** Who it's paid to (a shipping company, a customs broker), when not the supplier. */
     contactId: uuid("contact_id"),
+    /**
+     * The payment on the order that paid it: its amount, currency and rate come from that
+     * payment (what actually left the bank), so the two can't drift apart.
+     */
+    paymentId: uuid("payment_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     unique("purchase_receipt_costs_line_key").on(t.receiptId, t.lineNo),
+    unique("purchase_receipt_costs_payment_key").on(t.paymentId),
+    foreignKey({
+      name: "purchase_receipt_costs_payment_fk",
+      columns: [t.organizationId, t.paymentId],
+      foreignColumns: [purchasePayments.organizationId, purchasePayments.id],
+    }),
     foreignKey({
       name: "purchase_receipt_costs_contact_fk",
       columns: [t.organizationId, t.contactId],
@@ -376,6 +387,7 @@ export const purchasePayments = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    unique("purchase_payments_org_id_key").on(t.organizationId, t.id),
     index("purchase_payments_po_idx").on(t.purchaseOrderId),
     index("purchase_payments_entry_idx").on(t.journalEntryId),
     foreignKey({

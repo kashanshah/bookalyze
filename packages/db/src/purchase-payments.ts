@@ -1,11 +1,17 @@
-import { MONEY_ACCOUNT_SUBTYPES, type PaymentPlanPart } from "@bookalyze/core";
+import { type LandedCostKind, MONEY_ACCOUNT_SUBTYPES, type PaymentPlanPart } from "@bookalyze/core";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { ensureSystemAccount } from "./cogs";
+import { linkPaymentCost, type PaymentCostResult } from "./landed-costs";
 import { getPurchaseSettings, moveToAccount, orderInBooks } from "./purchase-books";
 import { PurchasingError } from "./purchasing";
 import { accounts, contacts, journalEntries, journalLines } from "./schema/accounting";
-import { purchaseOrders, purchasePayments, purchaseReceipts } from "./schema/inventory";
+import {
+  purchaseOrders,
+  purchasePayments,
+  purchaseReceiptCosts,
+  purchaseReceipts,
+} from "./schema/inventory";
 
 /**
  * Paying for purchase orders (phase 5, slice 8): the order's payment plan, and payments linked
@@ -29,6 +35,8 @@ export type PurchasePaymentRow = {
   memo: string | null;
   /** Removed from the books (reversed): it no longer counts. */
   removed: boolean;
+  /** The delivery cost it pays (on the landed cost), if any. */
+  costId: string | null;
   /** What left the bank, in the bank account's currency (positive), and in the main currency. */
   bank: { accountId: string; amount: string; currency: string; baseAmount: string } | null;
 };
@@ -52,6 +60,8 @@ export async function listPurchasePayments(
       date: journalEntries.date,
       memo: journalEntries.memo,
       reversedBy: journalEntries.reversedByEntryId,
+      costId: sql<string | null>`(select c.id from ${purchaseReceiptCosts} c
+        where c.payment_id = ${purchasePayments.id})`,
       bank: sql<{
         accountId: string;
         amount: string;
@@ -93,7 +103,9 @@ async function orderForPayment(tx: Transaction, purchaseOrderId: string) {
 
 /**
  * Links a transaction to the order as a payment. To the supplier (in the order's currency) by
- * default; with `receiptId`, a delivery's extra cost paid to someone else, in any currency.
+ * default; with `receiptId`, a delivery's extra cost paid to someone else, in any currency. With
+ * `cost` (and `baseCurrency`), such a payment also goes on the delivery's landed cost: a new
+ * cost, or one entered by hand before (`cost.costId`). See `linkPaymentCost`.
  */
 export async function addPurchasePayment(
   tx: Transaction,
@@ -107,8 +119,10 @@ export async function addPurchasePayment(
     label: string | null;
     amount: string;
     currency?: string | null;
+    baseCurrency?: string;
+    cost?: { costId: string | null; kind: LandedCostKind; description: string | null } | null;
   },
-): Promise<{ id: string }> {
+): Promise<{ id: string; cost: PaymentCostResult | null }> {
   const po = await orderForPayment(tx, input.purchaseOrderId);
   if (po.status === "cancelled") {
     throw new PurchasingError("This order was cancelled, so it takes no more payments.");
@@ -171,18 +185,33 @@ export async function addPurchasePayment(
       accountId: await ensureSystemAccount(tx, input.orgId, "supplier_deposits"),
     });
   }
-  return row;
+  const cost =
+    input.cost && input.receiptId && contactId !== po.supplierId && input.baseCurrency
+      ? await linkPaymentCost(tx, {
+          orgId: input.orgId,
+          userId: input.userId,
+          baseCurrency: input.baseCurrency,
+          paymentId: row.id,
+          ...input.cost,
+        })
+      : null;
+  return { id: row.id, cost };
 }
 
 /**
  * Unlinks a payment from its order. The bank transaction stays in the books; on an order in the
- * books, one no longer paying any order goes back from Supplier deposits to Inventory.
+ * books, one no longer paying any order goes back from Supplier deposits to Inventory. A cost it
+ * paid stays on the delivery's landed cost, no longer linked (it can be edited again).
  */
 export async function removePurchasePayment(
   tx: Transaction,
   input: { orgId: string; userId: string | null; purchaseOrderId: string; paymentId: string },
 ) {
   const po = await orderForPayment(tx, input.purchaseOrderId);
+  await tx
+    .update(purchaseReceiptCosts)
+    .set({ paymentId: null })
+    .where(eq(purchaseReceiptCosts.paymentId, input.paymentId));
   const removed = await tx
     .delete(purchasePayments)
     .where(

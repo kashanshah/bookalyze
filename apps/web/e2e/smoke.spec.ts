@@ -2657,6 +2657,33 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   await expect(deposits).toContainText("Into stock$670.48");
   await expect(deposits).toContainText("Owed$434.48");
   await expect(deposits.getByRole("button", { name: "Settle the difference" })).toBeVisible();
+
+  // Freight for that delivery, paid to a shipper: it goes on the delivery's landed cost too, so
+  // the stock carries what was paid.
+  const payments = page.getByRole("region", { name: "Payments" });
+  await payments.getByRole("button", { name: "Record a payment" }).click();
+  const pay = page.getByRole("dialog");
+  await choose(pay.getByLabel("Paid to", { exact: true }), "Office Depot");
+  await pay.getByLabel("What it's for (optional)").fill("Sea freight");
+  await choose(pay.getByLabel("For which delivery (optional)"), /^Delivery of /);
+  await expect(pay.getByLabel("On the delivery's landed cost")).toContainText(
+    "Add it as a new cost",
+  );
+  await expect(pay.getByLabel("Kind of cost")).toContainText("Freight");
+  await pay.getByLabel(/How much/).fill("40");
+  await pay.getByRole("button", { name: "Record payment" }).click();
+  await expect(page.getByText("Added to the delivery's landed cost.")).toBeVisible();
+  await expect(deposits).toContainText("Into stock$710.48");
+  await expect(deposits).toContainText("Owed$434.48");
+  const freight = payments.getByRole("listitem", { name: /Payment Sea freight/ });
+  await expect(freight).toContainText(/On the landed cost of the delivery of/);
+
+  // On the landed cost page it shows as paid: its amount is the payment's.
+  await page.getByRole("link", { name: /^Landed cost of the delivery on / }).click();
+  await expect(page.getByLabel("Amount 1")).toHaveValue("40");
+  await expect(page.getByLabel("Amount 1")).toHaveAttribute("readonly", "");
+  await expect(page.getByText(/so its amount and rate are the payment's/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove cost 1" })).toHaveCount(0);
 });
 
 test("purchase orders: type the cost of one, the line total or the order total", async ({

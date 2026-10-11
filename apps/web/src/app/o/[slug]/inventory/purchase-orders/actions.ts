@@ -12,6 +12,7 @@ import {
   getPurchaseOrder,
   getPurchaseSettings,
   LedgerError,
+  linkPaymentCost,
   listTransactions,
   markPurchaseOrderOrdered,
   orderInBooks,
@@ -30,6 +31,7 @@ import { z } from "zod";
 import { isIsoDate, nowIn, openDate } from "@/lib/dates";
 import {
   deliveryCostsSchema,
+  paymentCostSchema,
   paymentPlanSchema,
   purchaseOrderSchema,
   purchasePaymentSchema,
@@ -413,7 +415,7 @@ export async function paymentCandidatesAction(
 }
 
 export type RecordPaymentResult =
-  | { ok: true; message: string }
+  | { ok: true; message: string; note?: string }
   | { ok: false; message?: string; errors?: Record<string, string> };
 
 /**
@@ -481,8 +483,10 @@ export async function recordPurchasePaymentAction(
   }
   if (!entryId) return { ok: false, errors: { journalEntryId: "Choose the transaction." } };
   const journalEntryId = entryId;
+  // A payment for a delivery's extra costs goes on its landed cost too.
+  const forCost = Boolean(value.receiptId) && contactId !== po.supplierId;
   try {
-    await inOrg(ctx, async (tx) => {
+    const payment = await inOrg(ctx, async (tx) => {
       const payment = await addPurchasePayment(tx, {
         orgId: ctx.org.id,
         userId: ctx.session.user.id,
@@ -493,6 +497,10 @@ export async function recordPurchasePaymentAction(
         label: value.label,
         amount: value.amount,
         currency: value.currency,
+        baseCurrency: ctx.profile.baseCurrency,
+        cost: forCost
+          ? { costId: value.costId, kind: value.costKind, description: value.label }
+          : null,
       });
       await audit(tx, {
         orgId: ctx.org.id,
@@ -506,19 +514,71 @@ export async function recordPurchasePaymentAction(
           contactId,
           amount: value.amount,
           created: value.mode === "new",
+          costId: payment.cost?.ok ? payment.cost.costId : null,
         },
       });
+      return payment;
     });
+    revalidatePath(base(slug), "layout");
+    revalidatePath(`/o/${slug}/accounting`, "layout");
+    return {
+      ok: true,
+      message: value.mode === "new" ? "Payment recorded" : "Payment linked to the order",
+      note: payment.cost
+        ? payment.cost.ok
+          ? payment.cost.added
+            ? "Added to the delivery's landed cost."
+            : "The delivery's landed cost now uses what you paid."
+          : payment.cost.problem
+        : undefined,
+    };
   } catch (error) {
     const failed = friendly(error);
     return { ok: false, message: failed.message };
   }
-  revalidatePath(base(slug), "layout");
-  revalidatePath(`/o/${slug}/accounting`, "layout");
-  return {
-    ok: true,
-    message: value.mode === "new" ? "Payment recorded" : "Payment linked to the order",
-  };
+}
+
+/** Puts a payment already on the order (freight, duty…) on its delivery's landed cost. */
+export async function linkPaymentCostAction(
+  slug: string,
+  id: string,
+  paymentId: string,
+  input: unknown,
+): Promise<PurchaseOrderActionResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  if (!validId(id) || !validId(paymentId)) return gone;
+  const parsed = paymentCostSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Choose the cost it paid." };
+  try {
+    const result = await inOrg(ctx, async (tx) => {
+      const linked = await linkPaymentCost(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        baseCurrency: ctx.profile.baseCurrency,
+        paymentId,
+        purchaseOrderId: id,
+        costId: parsed.data.costId,
+        kind: parsed.data.costKind,
+        description: null,
+      });
+      if (linked.ok) {
+        await audit(tx, {
+          orgId: ctx.org.id,
+          actorUserId: ctx.session.user.id,
+          action: "purchase_order.payment_cost_linked",
+          entityType: "purchase_order",
+          entityId: id,
+          after: { paymentId, costId: linked.costId, added: linked.added },
+        });
+      }
+      return linked;
+    });
+    if (!result.ok) return { ok: false, message: result.problem };
+    revalidatePath(base(slug), "layout");
+    return { ok: true };
+  } catch (error) {
+    return friendly(error);
+  }
 }
 
 /** Takes a payment off the order. Its bank transaction stays in the books. */
