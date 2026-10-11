@@ -1303,12 +1303,31 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   job brings it in for companies whose key can download it and that have Inventory on.
   Amazon's ledger sync now runs for Amazon channels only (Noon and eBay channels used to make
   it stop with "This marketplace no longer exists").
-- Not yet: "your stock against Noon's" from `fbn_inventoryv2_ledgersummaryview` (closing
-  quantities); FBP stock (the seller's own).
-- Tests: core `noon-ledger.test.ts` (types, rows, keys, stock changes); db `noon-ledger.test.ts`
-  (rows per country, every country in, missing countries named, cost of goods sold sees Noon's
-  returns and losses, types not read); e2e "noon: connect…" brings the ledger in from the mock
-  (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema).
+- **Noon's stock and its ledger checked** (`fbn_inventoryv2_ledgersummaryview`, the summary
+  view): core `noon-stock.ts` (`parseNoonStockSummary`: rows by day, warehouse, partner SKU and
+  condition, each movement column kept; `noonLedgerMismatches`). Stored in `noon_stock_days`
+  (migration `0060_noon_stock_days`, RLS; a day brought in again replaces the row). It has no
+  country: a warehouse finds its Noon channel through the detailed ledger's warehouse codes
+  (else the company's only Noon channel). db `noon-stock.ts`: `importNoonStockDays`,
+  `noonStockByProduct` (sellable and other units on the summary's latest day, linked SKUs ×
+  units), `noonLedgerCheck` (per day and SKU, closing − opening against the detailed ledger's
+  movements, on the days both cover: up to the day every active Noon channel's ledger is in
+  through). Server `syncNoonLedger` brings the summary in after the detailed ledger with the
+  same export loop (`runExport`; state in `settings.summary`), where the key can download it;
+  the detailed ledger goes first, since cost of goods sold waits on it. **Upload a ledger file**
+  takes the summary too (told apart by `opening_quantity`/`closing_quantity`).
+- On Stock movements: **Your stock against Amazon's and Noon's** has an "At Noon" column (units
+  not sellable shown under it; the difference beside your lots is against both marketplaces),
+  and **Noon's numbers checked** lists the days and SKUs where Noon's two reports disagree (up to
+  20, with a count), or says they agree.
+- Not yet: FBP stock (the seller's own).
+- Tests: core `noon-ledger.test.ts` (types, rows, keys, stock changes) and `noon-stock.test.ts`
+  (summary rows, mismatches); db `noon-ledger.test.ts` (rows per country, every country in,
+  missing countries named, cost of goods sold sees Noon's returns and losses, types not read)
+  and `noon-stock.test.ts` (days replaced, stock per product through each warehouse's channel,
+  the check on the days both cover); e2e "noon: connect…" brings the ledger and its summary in
+  from the mock (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema; the
+  summary disagrees on one day last month), then uploads a summary file.
 
 ### Phase 4d, slice 2: Connect eBay
 
@@ -2109,8 +2128,9 @@ pasted in when needed:
    counted: FBP returns (goods sent back to the seller show only as a refund in Noon's rows, and
    whether they're resellable isn't known). Test: db `noon-ledger.test.ts` (a Noon month waiting
    for Noon's ledger).
-8. [x] **FBN stock**: returns back into stock, losses written off (slice 8). Still to do:
-   "your stock against Noon's".
+8. [x] **FBN stock**: returns back into stock, losses written off (slice 8), and what Noon
+   holds beside your lots, with Noon's summary checking its detailed ledger day by day (the
+   summary view; see slice 8 above).
    Slice 7 lists every report with a check of its columns. Kazomo's key can download these
    (columns checked 2026-10-10, column names only):
    - `fbn_inventoryv2_ledgerdetailedview` (**the one for FBN stock**, like Amazon's FBA ledger):
@@ -2130,8 +2150,8 @@ pasted in when needed:
      `noon_catalog_reports_productviewsandsalesdata` (visits and units; inputs language,
      country), `noon_catalog_catalogexport` and `noon_catalog_globalcatalogexport` (listings,
      prices and FBN stock; inputs country and noon_status, `active`).
-   Done in slice 8: the detailed ledger (returns back into stock, losses written off). Next:
-   "your stock against Noon's" from the summary view, and Kazomo's transaction types checked
+   Done in slice 8: the detailed ledger (returns back into stock, losses written off) and the
+   summary view (stock at Noon, the ledger checked). Next: Kazomo's transaction types checked
    against what Stock movements lists as not counted.
 
 ### Phase 4d: eBay (as a product: any eBay site; the seller ships)

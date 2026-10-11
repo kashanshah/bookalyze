@@ -1,5 +1,12 @@
-import { ledgerByMonth, ledgerChannels, ledgerOtherTypes, stockComparison } from "@bookalyze/db";
-import { ArrowLeftRight, CheckCircle2, Clock } from "lucide-react";
+import {
+  ledgerByMonth,
+  ledgerChannels,
+  ledgerOtherTypes,
+  noonLedgerCheck,
+  noonStockByProduct,
+  stockComparison,
+} from "@bookalyze/db";
+import { ArrowLeftRight, CheckCircle2, Clock, TriangleAlert } from "lucide-react";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -31,12 +38,20 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
   const { slug } = await params;
   const ctx = await getInventoryContext(slug, "inventory.cogs");
   const { locale } = ctx.profile;
-  const { channels, months, compare, others } = await inOrg(ctx, async (tx) => ({
+  const { channels, months, compare, others, atNoon, check } = await inOrg(ctx, async (tx) => ({
     channels: await ledgerChannels(tx),
     months: await ledgerByMonth(tx, { months: 6 }),
     compare: await stockComparison(tx),
     others: await ledgerOtherTypes(tx),
+    atNoon: await noonStockByProduct(tx),
+    check: await noonLedgerCheck(tx),
   }));
+  const noonByProduct = new Map(atNoon.products.map((p) => [p.productId, p]));
+  const showAmazon = compare.some((r) => r.atAmazon !== null);
+  const showNoon = atNoon.date !== null;
+  const against = [showAmazon || !showNoon ? "Amazon's" : null, showNoon ? "Noon's" : null]
+    .filter(Boolean)
+    .join(" and ");
   const active = channels.filter((c) => c.isActive);
   const sources = (["amazon", "noon"] as const).filter((k) => active.some((c) => c.kind === k));
   const sourceNames = sources.map((k) => (k === "amazon" ? "Amazon" : "Noon")).join(" and ");
@@ -113,46 +128,145 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
             >
               <div className="border-b px-5 py-3">
                 <h2 id="compare-title" className="font-medium text-sm">
-                  Your stock against Amazon's
+                  Your stock against {against}
                 </h2>
                 <p className="mt-0.5 text-muted-foreground text-xs">
-                  Units left in your stock lots, and what Amazon holds to sell now (from Check
-                  Amazon for all SKUs on Products). Some difference is normal: units on their way
-                  in, reserved for orders, or with you.
+                  Units left in your stock lots, and what{" "}
+                  {showAmazon || !showNoon
+                    ? "Amazon holds to sell now (from Check Amazon for all SKUs on Products)"
+                    : null}
+                  {showAmazon && showNoon ? " and " : null}
+                  {showNoon
+                    ? `Noon held to sell on ${formatDate(atNoon.date ?? "", locale, "long")} (from its FBN ledger summary)`
+                    : null}
+                  . Some difference is normal: units on their way in, reserved for orders, or with
+                  you.
                 </p>
               </div>
               <ul className="divide-y">
                 {compare.map((row) => {
-                  const diff = row.atAmazon === null ? null : row.inLots - row.atAmazon;
+                  const noon = noonByProduct.get(row.productId);
+                  const known = row.atAmazon !== null || noon !== undefined;
+                  const held = (row.atAmazon ?? 0) + (noon?.sellable ?? 0);
+                  const diff = known ? row.inLots - held : null;
                   return (
                     <li
                       key={row.productId}
                       aria-label={row.productName}
-                      className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 px-5 py-3 text-sm"
+                      className={cn(
+                        "grid items-center gap-x-4 gap-y-1 px-5 py-3 text-sm",
+                        showAmazon && showNoon
+                          ? "grid-cols-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]"
+                          : "grid-cols-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]",
+                      )}
                     >
-                      <span className="truncate">{row.productName}</span>
-                      <span className="text-end tabular-nums">
+                      <span
+                        className={cn(
+                          "truncate",
+                          showAmazon && showNoon ? "col-span-3" : "col-span-2",
+                          "sm:col-span-1",
+                        )}
+                      >
+                        {row.productName}
+                      </span>
+                      <span className="tabular-nums sm:text-end">
                         <span className="block text-muted-foreground text-xs">In your lots</span>
                         {plain.format(row.inLots)}
-                      </span>
-                      <span className="w-28 text-end tabular-nums">
-                        <span className="block text-muted-foreground text-xs">At Amazon</span>
-                        {row.atAmazon === null ? "—" : plain.format(row.atAmazon)}
                         {diff ? (
                           <span
                             className={cn(
                               "ms-1.5 text-xs",
-                              diff > 0 ? "text-muted-foreground" : "text-destructive",
+                              diff < 0 ? "text-destructive" : "text-muted-foreground",
                             )}
+                            title="Your lots against what the marketplaces hold"
                           >
-                            ({n.format(-diff)})
+                            ({n.format(diff)})
                           </span>
                         ) : null}
                       </span>
+                      {showAmazon || !showNoon ? (
+                        <span className="tabular-nums sm:w-24 sm:text-end">
+                          <span className="block text-muted-foreground text-xs">At Amazon</span>
+                          {row.atAmazon === null ? "—" : plain.format(row.atAmazon)}
+                        </span>
+                      ) : null}
+                      {showNoon ? (
+                        <span className="tabular-nums sm:w-24 sm:text-end">
+                          <span className="block text-muted-foreground text-xs">At Noon</span>
+                          {noon ? plain.format(noon.sellable) : "—"}
+                          {noon?.other ? (
+                            <span className="block text-muted-foreground text-xs">
+                              +{plain.format(noon.other)} not sellable
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : null}
                     </li>
                   );
                 })}
               </ul>
+            </section>
+          ) : null}
+
+          {check.to ? (
+            <section
+              aria-labelledby="noon-check-title"
+              className="overflow-hidden rounded-2xl border bg-card shadow-xs"
+            >
+              <div className="border-b px-5 py-3">
+                <h2 id="noon-check-title" className="font-medium text-sm">
+                  Noon's numbers checked
+                </h2>
+                <p className="mt-0.5 text-muted-foreground text-xs">
+                  Each day from {formatDate(check.from ?? "", locale, "long")} to{" "}
+                  {formatDate(check.to, locale, "long")}, Noon's FBN ledger summary (stock at the
+                  start and end of the day) against its detailed ledger (every movement), SKU by
+                  SKU. Cost of goods sold uses the detailed ledger.
+                </p>
+              </div>
+              {check.mismatches.length === 0 ? (
+                <p className="flex items-center gap-2 px-5 py-3 text-sm">
+                  <CheckCircle2 className="size-4 shrink-0 text-success" />
+                  They agree on every day.
+                </p>
+              ) : (
+                <>
+                  <p className="flex items-start gap-2 border-b bg-warning/10 px-5 py-3 text-sm">
+                    <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+                    <span>
+                      {plain.format(check.mismatches.length)}{" "}
+                      {check.mismatches.length === 1 ? "day doesn't" : "days don't"} add up: a
+                      movement is missing from one of Noon's reports. Ask Noon's seller support
+                      about {check.mismatches.length === 1 ? "it" : "them"}, with the SKU and day.
+                    </span>
+                  </p>
+                  <ul className="divide-y">
+                    {check.mismatches.slice(0, 20).map((m) => (
+                      <li
+                        key={`${m.date}:${m.sku}`}
+                        aria-label={`${m.sku} on ${m.date}`}
+                        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-5 py-2.5 text-sm"
+                      >
+                        <span className="min-w-0 truncate">
+                          {m.sku}
+                          <span className="text-muted-foreground">
+                            {" "}
+                            · {formatDate(m.date, locale, "long")}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+                          Summary {n.format(m.summary)} · Ledger {n.format(m.ledger)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {check.mismatches.length > 20 ? (
+                    <p className="border-t px-5 py-2.5 text-muted-foreground text-xs">
+                      And {plain.format(check.mismatches.length - 20)} more.
+                    </p>
+                  ) : null}
+                </>
+              )}
             </section>
           ) : null}
 

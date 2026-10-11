@@ -175,7 +175,7 @@ export type NoonTransactionsSync = {
  * Where a Noon export sync is, kept on the connection: `transactions` (the transaction view) or
  * `ledger` (the FBN inventory ledger).
  */
-export type NoonSyncKey = "transactions" | "ledger";
+export type NoonSyncKey = "transactions" | "ledger" | "summary";
 
 export function noonSyncState(
   settings: Record<string, unknown>,

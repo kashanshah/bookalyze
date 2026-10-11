@@ -224,7 +224,10 @@ export type StockComparison = {
   atAmazon: number | null;
 };
 
-/** Per product: what your lots say you own against what Amazon says it holds to sell. */
+/**
+ * Per product: what your lots say you own against what Amazon says it holds to sell (Noon's
+ * comes from `noonStockByProduct`).
+ */
 export async function stockComparison(tx: Transaction): Promise<StockComparison[]> {
   const rows = await tx.execute<{
     product_id: string;
@@ -241,7 +244,9 @@ export async function stockComparison(tx: Transaction): Promise<StockComparison[
     from products p
     where not p.is_archived
       and (exists (select 1 from inventory_lots l where l.product_id = p.id)
-        or exists (select 1 from product_skus ps join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku where ps.product_id = p.id))
+        or exists (select 1 from product_skus ps join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku where ps.product_id = p.id)
+        or exists (select 1 from product_skus ps join sales_channels c on c.id = ps.channel_id and c.kind = 'noon'
+          where ps.product_id = p.id and exists (select 1 from noon_stock_days d where d.sku = ps.sku)))
     order by p.name`);
   return rows.rows.map((r) => ({
     productId: r.product_id,

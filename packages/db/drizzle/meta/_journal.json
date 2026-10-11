@@ -421,6 +421,13 @@
       "when": 1791659189653,
       "tag": "0059_po_unit_cost_scale",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1791684267841,
+      "tag": "0060_noon_stock_days",
+      "breakpoints": true
     }
   ]
 }
