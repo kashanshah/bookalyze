@@ -1,0 +1,68 @@
+name: Deploy
+
+# Production deploys: after CI passes on main (a merged PR), apply the pending database
+# migrations that are safe to run unattended, then ask Vercel to deploy. A migration that could
+# lose data or break the running app stops the deploy until a person runs it (see docs/SETUP.md
+# → Deploys). Vercel doesn't deploy main on its own (apps/web/vercel.json), so new code never
+# goes live before its migrations.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      allow_migrations:
+        description: Migrations you've checked and allow, by tag (e.g. 0062_drop_old_column), comma separated
+        required: false
+        default: ""
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Migrate and deploy
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Apply safe migrations
+        run: pnpm --filter @bookalyze/db deploy-migrate
+        env:
+          DATABASE_URL_MIGRATOR: ${{ secrets.DATABASE_URL_MIGRATOR }}
+          ALLOW_MIGRATIONS: ${{ inputs.allow_migrations }}
+
+      - name: Deploy to Vercel
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::error::Add the VERCEL_DEPLOY_HOOK_URL secret (docs/SETUP.md → Deploys)."
+            exit 1
+          fi
+          # The hook deploys main's latest commit. If main moved on, that commit's own run
+          # migrates and deploys it.
+          latest=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$latest" != "$SHA" ]; then
+            echo "main is now at $latest; its own Deploy run takes it from here."
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK" > /dev/null
+          echo "Vercel is deploying $SHA." >> "$GITHUB_STEP_SUMMARY"
