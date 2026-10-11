@@ -16,6 +16,7 @@ export * from "./landed-costs";
 export * from "./ledger";
 export * from "./listings";
 export * from "./noon-posting";
+export * from "./noon-stock";
 export * from "./noon-transactions";
 export * from "./purchase-books";
 export * from "./purchase-payments";

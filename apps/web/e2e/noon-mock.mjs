@@ -52,6 +52,11 @@ const categories = {
         required: ["from_date", "to_date"],
       },
     },
+    // Noon's FBN ledger summary: stock per day, warehouse and SKU.
+    {
+      export_category_code: "fbn_inventoryv2_ledgersummaryview",
+      params: { from_date: "string", to_date: "string" },
+    },
     // Like Noon's stock reports: it needs inputs its description leaves out.
     {
       export_category_code: "noon_fbn_stock_report",
@@ -93,6 +98,34 @@ function ledgerCsv(from, to) {
     for (const [day, line] of lines) if (day >= from && day <= to) rows.push(line);
     month = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1));
   }
+  return rows.join("\r\n");
+}
+
+// Noon's FBN ledger summary view, its real header. Synthetic rows agreeing with the detailed
+// ledger above (the return, the loss, the relabel), the last day of each export holding 40, and
+// one day last month (the 20th) where a unit leaves that the detailed ledger doesn't have.
+const SUMMARY_HEADER =
+  "date,location,nfsku,sku,partner_sku,partner_barcode,inventory_condition,opening_quantity,inbound_quantity,vendor_return_quantity,disposal_quantity,customer_outbound_quantity,customer_return_quantity,transfer_in_quantity,transfer_out_quantity,transit_quantity,lost_quantity,found_quantity,damaged_quantity,other_quantity,closing_quantity";
+function summaryCsv(from, to) {
+  const rows = [SUMMARY_HEADER];
+  const row = (day, opening, outbound, returned, lost, closing) =>
+    `${day},DXB01,N1,Z1,NOON-MAPLE-MUG,0001,sellable,${opening},0,0,0,${outbound},${returned},0,0,0,${lost},0,0,0,${closing}`;
+  const now = new Date();
+  const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+    .toISOString()
+    .slice(0, 7);
+  const days = new Map();
+  const start = new Date(`${from.slice(0, 7)}-01T00:00:00Z`);
+  for (let month = start; month.toISOString().slice(0, 10) <= to; ) {
+    const ym = month.toISOString().slice(0, 7);
+    days.set(`${ym}-10`, row(`${ym}-10`, 39, 0, 1, 0, 40));
+    days.set(`${ym}-12`, row(`${ym}-12`, 40, 0, 0, 1, 39));
+    days.set(`${ym}-14`, row(`${ym}-14`, 39, 0, 0, 0, 39));
+    if (ym === lastMonth) days.set(`${ym}-20`, row(`${ym}-20`, 40, 1, 0, 0, 39));
+    month = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1));
+  }
+  if (!days.has(to)) days.set(to, row(to, 40, 0, 0, 0, 40));
+  for (const [day, line] of [...days].sort()) if (day >= from && day <= to) rows.push(line);
   return rows.join("\r\n");
 }
 
@@ -164,7 +197,9 @@ createServer((req, res) => {
       const csv =
         found.category === "fbn_inventoryv2_ledgerdetailedview"
           ? ledgerCsv(found.from, found.to)
-          : transactionsCsv(found.from, found.to);
+          : found.category === "fbn_inventoryv2_ledgersummaryview"
+            ? summaryCsv(found.from, found.to)
+            : transactionsCsv(found.from, found.to);
       return res.end(gzipSync(csv));
     }
     if (!req.headers["user-agent"])

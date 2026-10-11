@@ -11,6 +11,7 @@ export * from "./noon-api";
 export * from "./noon-ledger";
 export * from "./noon-orders";
 export * from "./noon-posting";
+export * from "./noon-stock";
 export * from "./noon-transactions";
 export * from "./orders";
 export * from "./refunds";

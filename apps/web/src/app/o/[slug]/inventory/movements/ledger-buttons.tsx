@@ -1,6 +1,13 @@
 "use client";
 
-import { type LedgerEvent, parseInventoryLedger, parseNoonLedger } from "@bookalyze/core";
+import {
+  isNoonSummaryHeader,
+  type LedgerEvent,
+  type NoonStockDay,
+  parseInventoryLedger,
+  parseNoonLedger,
+  parseNoonStockSummary,
+} from "@bookalyze/core";
 import { FileUp, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useRef, useState, useTransition } from "react";
@@ -18,7 +25,7 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { syncLedgerAction, uploadLedgerAction } from "./actions";
+import { syncLedgerAction, uploadLedgerAction, uploadNoonSummaryAction } from "./actions";
 
 const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
@@ -61,8 +68,9 @@ export function SyncLedgerButton({ slug, sources }: { slug: string; sources: Sou
 }
 
 /**
- * Uploads a ledger file: Amazon's (Seller Central, for one marketplace) or Noon's FBN ledger
- * (every row goes to the Noon country it's for), told apart by its columns.
+ * Uploads a ledger file: Amazon's (Seller Central, for one marketplace), Noon's FBN ledger
+ * (every row goes to the Noon country it's for) or Noon's FBN ledger summary (what Noon holds
+ * each day), told apart by their columns.
  */
 export function UploadLedgerButton({
   slug,
@@ -83,6 +91,9 @@ export function UploadLedgerButton({
     events: LedgerEvent[];
     from: string | null;
     noon: boolean;
+    /** Noon's summary view: days, not movements. */
+    days: NoonStockDay[] | null;
+    to: string | null;
   } | null>(null);
   const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
   const [through, setThrough] = useState("");
@@ -93,7 +104,26 @@ export function UploadLedgerButton({
     if (!f) return;
     const text = await f.text();
     if (input.current) input.current.value = "";
-    const isNoon = /quantity[_ ]?delta/i.test(text.slice(0, 2000).split(/\r?\n/)[0] ?? "");
+    const header = text.slice(0, 2000).split(/\r?\n/)[0] ?? "";
+    if (isNoonSummaryHeader(header.split(/[,\t]/))) {
+      const summary = parseNoonStockSummary(text);
+      if (!summary.ok) return void toast.error(`${f.name}: ${summary.error}`);
+      if (!noon) {
+        return void toast.error(`${f.name} is Noon's ledger summary`, {
+          description: "Add your Noon country on Commerce → Channels first.",
+        });
+      }
+      setFile({
+        name: f.name,
+        events: [],
+        from: summary.from,
+        noon: true,
+        days: summary.rows,
+        to: summary.to,
+      });
+      return;
+    }
+    const isNoon = /quantity[_ ]?delta/i.test(header);
     const parsed = isNoon ? parseNoonLedger(text) : parseInventoryLedger(text);
     if (!parsed.ok) return void toast.error(`${f.name}: ${parsed.error}`);
     if (isNoon && !noon) {
@@ -106,13 +136,36 @@ export function UploadLedgerButton({
         description: "Connect Amazon on Commerce → Channels first.",
       });
     }
-    setFile({ name: f.name, events: parsed.events, from: parsed.from, noon: isNoon });
+    setFile({
+      name: f.name,
+      events: parsed.events,
+      from: parsed.from,
+      noon: isNoon,
+      days: null,
+      to: parsed.to,
+    });
     setThrough(parsed.to ?? "");
   };
 
   const submit = () =>
     start(async () => {
       if (!file) return;
+      if (file.days) {
+        let saved = 0;
+        for (let i = 0; i < Math.max(1, file.days.length); i += 2000) {
+          const result = await uploadNoonSummaryAction(slug, {
+            rows: file.days.slice(i, i + 2000),
+          });
+          if (!result.ok) return void toast.error(result.message);
+          saved += result.added;
+        }
+        setFile(null);
+        toast.success("Noon's stock added", {
+          description: `${plural(saved, "row")} (a SKU on a day). Your lots are compared with it, and Noon's ledger checked against it.`,
+        });
+        router.refresh();
+        return;
+      }
       let added = 0;
       const parts = Math.max(1, Math.ceil(file.events.length / 2000));
       for (let i = 0; i < parts; i++) {
@@ -150,10 +203,20 @@ export function UploadLedgerButton({
           <DialogHeader>
             <DialogTitle>Add {file?.name}</DialogTitle>
             <DialogDescription>
-              {file ? `${plural(file.events.length, "movement")}` : ""}
-              {file?.from ? ` from ${file.from}` : ""}.
-              {file?.noon ? " Noon's ledger: each row goes to the Noon country it's for." : ""} Rows
-              already brought in are skipped.
+              {file?.days ? (
+                <>
+                  Noon's FBN ledger summary: what Noon held of each SKU each day
+                  {file.from ? `, ${file.from} to ${file.to}` : ""}. Days already brought in are
+                  replaced.
+                </>
+              ) : (
+                <>
+                  {file ? `${plural(file.events.length, "movement")}` : ""}
+                  {file?.from ? ` from ${file.from}` : ""}.
+                  {file?.noon ? " Noon's ledger: each row goes to the Noon country it's for." : ""}{" "}
+                  Rows already brought in are skipped.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <form
@@ -164,7 +227,7 @@ export function UploadLedgerButton({
               submit();
             }}
           >
-            {!file?.noon && channels.length > 1 ? (
+            {file?.days ? null : !file?.noon && channels.length > 1 ? (
               <Field label="Marketplace" htmlFor={`${formId}-channel`}>
                 <Combobox
                   id={`${formId}-channel`}
@@ -174,22 +237,24 @@ export function UploadLedgerButton({
                 />
               </Field>
             ) : null}
-            <Field
-              label="The report runs to"
-              htmlFor={`${formId}-through`}
-              hint={
-                file?.noon
-                  ? "The last day the file covers. Months up to it can then be posted for your Noon countries."
-                  : "The last day you chose in Seller Central. Months up to it can then be posted."
-              }
-            >
-              <Input
-                id={`${formId}-through`}
-                type="date"
-                value={through}
-                onChange={(e) => setThrough(e.target.value)}
-              />
-            </Field>
+            {file?.days ? null : (
+              <Field
+                label="The report runs to"
+                htmlFor={`${formId}-through`}
+                hint={
+                  file?.noon
+                    ? "The last day the file covers. Months up to it can then be posted for your Noon countries."
+                    : "The last day you chose in Seller Central. Months up to it can then be posted."
+                }
+              >
+                <Input
+                  id={`${formId}-through`}
+                  type="date"
+                  value={through}
+                  onChange={(e) => setThrough(e.target.value)}
+                />
+              </Field>
+            )}
           </form>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setFile(null)} disabled={pending}>
@@ -197,7 +262,7 @@ export function UploadLedgerButton({
             </Button>
             <Button type="submit" form={formId} disabled={pending || (!file?.noon && !channelId)}>
               {pending ? <Spinner /> : <FileUp />}
-              Add movements
+              {file?.days ? "Add Noon's stock" : "Add movements"}
             </Button>
           </DialogFooter>
         </DialogContent>

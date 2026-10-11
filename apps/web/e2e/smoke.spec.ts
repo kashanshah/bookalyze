@@ -2236,7 +2236,7 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await dialog.getByLabel("Key file").setInputFiles(await keyFile("/test/key-file"));
   await dialog.getByRole("button", { name: "Check and connect" }).click();
   await expect(page.getByText("Noon connected")).toBeVisible();
-  await expect(page.getByText("4 reports available, payouts included").first()).toBeVisible();
+  await expect(page.getByText("5 reports available, payouts included").first()).toBeVisible();
   await expect(noon.getByText("Connected", { exact: true })).toBeVisible();
   await expect(noon.getByText(/Project PRJ000001/)).toBeVisible();
 
@@ -2258,7 +2258,7 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
 
   // Every report the key can download is listed with its own check, to find the one a new task
   // needs by its columns.
-  await noon.getByText("Reports this key can download (4)").click();
+  await noon.getByText("Reports this key can download (5)").click();
   const orders = noon.getByRole("listitem").filter({ hasText: "noon_orders_report" });
   await expect(orders.getByText("Orders report", { exact: true })).toBeVisible();
   await orders.getByRole("button", { name: "Check", exact: true }).click();
@@ -2316,6 +2316,40 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await expect(noonMug).toContainText("-1");
   const notCounted = page.getByRole("region", { name: "Movements not counted yet" });
   await expect(notCounted.getByText(/^relabel ·/)).toBeVisible();
+
+  // Noon's ledger summary comes in after it: what Noon holds on its latest day, beside your
+  // lots, and each day's movements checked against the detailed ledger.
+  const againstNoon = page.getByRole("region", { name: /^Your stock against .*Noon's$/ });
+  const mugAtNoon = againstNoon.getByRole("listitem", {
+    name: "Maple leaf ceramic mug",
+    exact: true,
+  });
+  await expect(mugAtNoon).toContainText(/At Noon\s*(39|40)/);
+  const checked = page.getByRole("region", { name: "Noon's numbers checked" });
+  await expect(checked.getByText(/1 day doesn't add up/)).toBeVisible();
+  const now = new Date();
+  const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+    .toISOString()
+    .slice(0, 7);
+  await expect(
+    checked.getByRole("listitem", { name: `NOON-MAPLE-MUG on ${lastMonth}-20` }),
+  ).toContainText("Summary -1 · Ledger 0");
+  // Or uploaded: a later day says what Noon holds now.
+  const today = now.toISOString().slice(0, 10);
+  await page.getByLabel("Inventory ledger file").setInputFiles({
+    name: "noon-summary.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      [
+        "date,location,nfsku,sku,partner_sku,partner_barcode,inventory_condition,opening_quantity,inbound_quantity,vendor_return_quantity,disposal_quantity,customer_outbound_quantity,customer_return_quantity,transfer_in_quantity,transfer_out_quantity,transit_quantity,lost_quantity,found_quantity,damaged_quantity,other_quantity,closing_quantity",
+        `${today},DXB01,N1,Z1,NOON-MAPLE-MUG,0001,sellable,25,0,0,0,0,0,0,0,0,0,0,0,0,25`,
+        `${today},DXB01,N1,Z1,NOON-MAPLE-MUG,0001,damaged,2,0,0,0,0,0,0,0,0,0,0,0,0,2`,
+      ].join("\n"),
+    ),
+  });
+  await page.getByRole("button", { name: "Add Noon's stock" }).click();
+  await expect(page.getByText("Noon's stock added")).toBeVisible();
+  await expect(mugAtNoon).toContainText(/At Noon\s*25\s*\+2 not sellable/);
 
   await page.getByRole("link", { name: "Channels", exact: true }).click();
   await page.getByRole("link", { name: /^Noon UAE/ }).click();

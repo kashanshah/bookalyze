@@ -2,9 +2,11 @@ import "server-only";
 import {
   addDaysIso,
   NOON_LEDGER_EXPORT,
+  NOON_SUMMARY_EXPORT,
   nextNoonWindow,
   noonReportParams,
   parseNoonLedger,
+  parseNoonStockSummary,
   previewReport,
 } from "@bookalyze/core";
 import {
@@ -12,9 +14,12 @@ import {
   getDb,
   getNoonConnection,
   importNoonLedger,
+  importNoonStockDays,
+  type NoonSyncKey,
   type NoonTransactionsSync,
   noonSyncState,
   saveNoonSyncState,
+  type Transaction,
   withOrg,
 } from "@bookalyze/db";
 import { audit } from "./audit";
@@ -28,7 +33,8 @@ import { createNoonExport, downloadNoonExport, NoonError, noonExportStatus } fro
  * then. One export covers every Noon country; each row goes to the company's Noon channel for
  * its country. An export not ready yet is kept on the connection (`settings.ledger`) and the next
  * run carries on with it. Nothing here posts: the movements count when a month's cost of goods
- * sold is posted.
+ * sold is posted. Noon's summary view comes in the same way after it (`settings.summary`), where
+ * the key can download it: it says what Noon holds, and checks the detailed ledger.
  */
 
 export type NoonLedgerResult = {
@@ -39,9 +45,27 @@ export type NoonLedgerResult = {
   /** Countries in Noon's ledger the company hasn't added as Noon channels. */
   countriesMissing: string[];
   error: string | null;
+  /** Noon's summary view: days saved, in through. Null when the key can't download it. */
+  summary: { saved: number; through: string | null; more: boolean; error: string | null } | null;
 };
 
 type SyncContext = { orgId: string; userId: string | null };
+
+type Saved = { added: number; countriesMissing: string[]; rows: number; skipped: number };
+
+/** One of Noon's FBN ledger exports, brought in a month at a time. */
+type LedgerExport = {
+  name: string;
+  key: NoonSyncKey;
+  /** Log event prefix: `noon.${log}_imported`… */
+  log: string;
+  /** "FBN ledger", "FBN ledger summary": for messages. */
+  label: string;
+  /** Reads one window's file; null when it isn't in a layout this page reads. */
+  read: (text: string) => ((tx: Transaction, window: { to: string }) => Promise<Saved>) | null;
+};
+
+type ExportRun = Omit<NoonLedgerResult, "summary">;
 
 const POLL_MS = 2_500;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -58,9 +82,86 @@ export async function syncNoonLedger(
     return found ? getConnection(tx, found.id) : null;
   });
   if (!connection?.secret || connection.status === "disconnected") return null;
+  const conn = { id: connection.id, secret: connection.secret, settings: connection.settings };
+  const reports = Array.isArray(connection.settings.reports) ? connection.settings.reports : [];
+  const ledger: LedgerExport = {
+    name: NOON_LEDGER_EXPORT,
+    key: "ledger",
+    log: "ledger",
+    label: "FBN ledger",
+    read: (text) => {
+      // A month without a single movement may come back empty.
+      const parsed = text.trim()
+        ? parseNoonLedger(text)
+        : ({ ok: true, events: [], from: null, to: null, skipped: 0 } as const);
+      if (!parsed.ok) return null;
+      return async (tx, window) => ({
+        ...(await importNoonLedger(tx, {
+          orgId: ctx.orgId,
+          events: parsed.events,
+          through: window.to,
+        })),
+        rows: parsed.events.length,
+        skipped: parsed.skipped,
+      });
+    },
+  };
+  const summary: LedgerExport = {
+    name: NOON_SUMMARY_EXPORT,
+    key: "summary",
+    log: "summary",
+    label: "FBN ledger summary",
+    read: (text) => {
+      const parsed = text.trim()
+        ? parseNoonStockSummary(text)
+        : ({ ok: true, rows: [], from: null, to: null, skipped: 0 } as const);
+      if (!parsed.ok) return null;
+      return async (tx) => {
+        const saved = await importNoonStockDays(tx, { orgId: ctx.orgId, rows: parsed.rows });
+        return {
+          added: saved.saved,
+          countriesMissing: [],
+          rows: parsed.rows.length,
+          skipped: parsed.skipped,
+        };
+      };
+    },
+  };
 
-  let state: NoonTransactionsSync = noonSyncState(connection.settings, "ledger");
   const result: NoonLedgerResult = {
+    ...(reports.includes(NOON_LEDGER_EXPORT)
+      ? await runExport(ctx, conn, ledger, today, deadline)
+      : {
+          added: 0,
+          through: noonSyncState(connection.settings, "ledger").through,
+          working: null,
+          more: false,
+          countriesMissing: [],
+          error:
+            "Noon's key can't download the FBN inventory ledger. Give the service account a role that can see FBN inventory, then test the connection again.",
+        }),
+    summary: null,
+  };
+  if (reports.includes(NOON_SUMMARY_EXPORT)) {
+    // The detailed ledger first: cost of goods sold waits for it. The summary gets what's left.
+    const run = result.more ? null : await runExport(ctx, conn, summary, today, deadline);
+    const state = noonSyncState(connection.settings, "summary");
+    result.summary = run
+      ? { saved: run.added, through: run.through, more: run.more, error: run.error }
+      : { saved: 0, through: state.through, more: true, error: null };
+  }
+  return result;
+}
+
+async function runExport(
+  ctx: SyncContext,
+  connection: { id: string; secret: string; settings: Record<string, unknown> },
+  report: LedgerExport,
+  today: string,
+  deadline: number,
+): Promise<ExportRun> {
+  let state: NoonTransactionsSync = noonSyncState(connection.settings, report.key);
+  const result: ExportRun = {
     added: 0,
     through: state.through,
     working: null,
@@ -68,18 +169,12 @@ export async function syncNoonLedger(
     countriesMissing: [],
     error: null,
   };
-  const reports = Array.isArray(connection.settings.reports) ? connection.settings.reports : [];
-  if (!reports.includes(NOON_LEDGER_EXPORT)) {
-    result.error =
-      "Noon's key can't download the FBN inventory ledger. Give the service account a role that can see FBN inventory, then test the connection again.";
-    return result;
-  }
   const params =
     connection.settings.reportParams && typeof connection.settings.reportParams === "object"
-      ? (connection.settings.reportParams as Record<string, unknown>)[NOON_LEDGER_EXPORT]
+      ? (connection.settings.reportParams as Record<string, unknown>)[report.name]
       : null;
   const save = (next: NoonTransactionsSync) =>
-    withOrg(getDb(), ctx, (tx) => saveNoonSyncState(tx, connection.id, next, "ledger"));
+    withOrg(getDb(), ctx, (tx) => saveNoonSyncState(tx, connection.id, next, report.key));
   const log = { orgId: ctx.orgId, connectionId: connection.id };
 
   try {
@@ -95,21 +190,25 @@ export async function syncNoonLedger(
         if (!window) break;
         const exportCode = await createNoonExport(
           creds,
-          NOON_LEDGER_EXPORT,
+          report.name,
           noonReportParams(params, window.from, window.to),
         );
         pending = { exportCode, from: window.from, to: window.to };
         state = { ...state, pending };
         await save(state);
-        logInfo("noon.ledger_export_created", { ...log, ...pending });
+        logInfo(`noon.${report.log}_export_created`, { ...log, ...pending });
       }
 
       const status = await noonExportStatus(creds, pending.exportCode);
       if (status.state === "failed") {
-        logWarn("noon.ledger_export_failed", { ...log, ...pending, status: status.status });
+        logWarn(`noon.${report.log}_export_failed`, {
+          ...log,
+          ...pending,
+          status: status.status,
+        });
         state = { ...state, pending: null };
         await save(state);
-        result.error = `Noon couldn't make the FBN ledger for ${pending.from} to ${pending.to} (it says “${status.status}”). Try again later.`;
+        result.error = `Noon couldn't make the ${report.label} for ${pending.from} to ${pending.to} (it says “${status.status}”). Try again later.`;
         break;
       }
       if (status.state !== "ready" || !status.downloadUrl) {
@@ -123,14 +222,10 @@ export async function syncNoonLedger(
       }
 
       const file = await downloadNoonExport(creds, status.downloadUrl);
-      const text = new TextDecoder("utf-8").decode(file.bytes);
-      // A month without a single movement may come back empty.
-      const parsed = text.trim()
-        ? parseNoonLedger(text)
-        : ({ ok: true, events: [], from: null, to: null, skipped: 0 } as const);
-      if (!parsed.ok) {
+      const write = report.read(new TextDecoder("utf-8").decode(file.bytes));
+      if (!write) {
         const preview = previewReport(file.bytes, file.gzip);
-        logWarn("noon.ledger_unreadable", {
+        logWarn(`noon.${report.log}_unreadable`, {
           ...log,
           ...pending,
           kind: preview.kind,
@@ -139,28 +234,23 @@ export async function syncNoonLedger(
         });
         state = { ...state, pending: null };
         await save(state);
-        result.error =
-          "Noon's FBN ledger came back in a layout this page can't read yet. The details are in the server logs (noon.ledger_unreadable).";
+        result.error = `Noon's ${report.label} came back in a layout this page can't read yet. The details are in the server logs (noon.${report.log}_unreadable).`;
         break;
       }
 
       const window = pending;
       const imported = await withOrg(getDb(), ctx, async (tx) => {
-        const saved = await importNoonLedger(tx, {
-          orgId: ctx.orgId,
-          events: parsed.events,
-          through: window.to,
-        });
+        const saved = await write(tx, window);
         const through = state.through && state.through > window.to ? state.through : window.to;
         const refreshedAt =
           window.to >= addDaysIso(today, -1) ? new Date().toISOString() : state.refreshedAt;
         state = { through, pending: null, refreshedAt };
-        await saveNoonSyncState(tx, connection.id, state, "ledger");
+        await saveNoonSyncState(tx, connection.id, state, report.key);
         if (saved.added) {
           await audit(tx, {
             orgId: ctx.orgId,
             actorUserId: ctx.userId,
-            action: "inventory_ledger.imported",
+            action: report.key === "ledger" ? "inventory_ledger.imported" : "noon_stock.imported",
             entityType: "connection",
             entityId: connection.id,
             after: { provider: "noon", from: window.from, to: window.to, added: saved.added },
@@ -168,12 +258,12 @@ export async function syncNoonLedger(
         }
         return saved;
       });
-      logInfo("noon.ledger_imported", {
+      logInfo(`noon.${report.log}_imported`, {
         ...log,
         from: window.from,
         to: window.to,
-        rows: parsed.events.length,
-        skipped: parsed.skipped,
+        rows: imported.rows,
+        skipped: imported.skipped,
         added: imported.added,
         countriesMissing: imported.countriesMissing,
       });

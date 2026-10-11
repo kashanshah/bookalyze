@@ -608,3 +608,33 @@ export const inventoryLedgerEvents = pgTable(
     tenantIsolationPolicy("inventory_ledger_events", t.organizationId),
   ],
 );
+
+/**
+ * Noon's FBN inventory ledger, summary view: per day, warehouse (`location`), seller SKU and
+ * condition, the units Noon held at the start and end of the day and each kind of movement. It
+ * says what Noon holds now and checks the detailed ledger. A day brought in again replaces the
+ * row. The warehouse finds its Noon channel through the detailed ledger's warehouse codes.
+ */
+export const noonStockDays = pgTable(
+  "noon_stock_days",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    location: text("location").notNull(),
+    sku: text("sku").notNull(),
+    nfsku: text("nfsku"),
+    condition: text("condition").notNull(),
+    opening: integer("opening").notNull(),
+    closing: integer("closing").notNull(),
+    movements: jsonb("movements").$type<Record<string, number>>().notNull().default({}),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("noon_stock_days_key").on(t.organizationId, t.date, t.location, t.sku, t.condition),
+    index("noon_stock_days_sku_idx").on(t.organizationId, t.sku, t.date),
+    tenantIsolationPolicy("noon_stock_days", t.organizationId),
+  ],
+);

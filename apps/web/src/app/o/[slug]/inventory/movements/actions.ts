@@ -1,9 +1,10 @@
 "use server";
 
-import { LEDGER_EVENT_TYPES } from "@bookalyze/core";
+import { LEDGER_EVENT_TYPES, NOON_STOCK_MOVEMENT_NAMES } from "@bookalyze/core";
 import {
   importLedgerEvents,
   importNoonLedger,
+  importNoonStockDays,
   inventoryChannels,
   ledgerChannels,
 } from "@bookalyze/db";
@@ -42,8 +43,8 @@ export async function syncLedgerAction(slug: string): Promise<Result> {
     );
     if (noon) {
       added += noon.added;
-      waiting ||= noon.more;
-      error ??= noon.error;
+      waiting ||= noon.more || Boolean(noon.summary?.more);
+      error ??= noon.error ?? noon.summary?.error ?? null;
       countriesMissing = noon.countriesMissing;
     }
   }
@@ -129,4 +130,39 @@ export async function uploadLedgerAction(slug: string, input: unknown): Promise<
   if (added === null) return { ok: false, message: "Choose a marketplace." };
   revalidatePath(`/o/${slug}/inventory`, "layout");
   return { ok: true, added };
+}
+
+const units = z.number().int().min(-10_000_000).max(10_000_000);
+const stockDaySchema = z.object({
+  date: day,
+  location: z.string().max(40),
+  sku: z.string().min(1).max(200),
+  nfsku: z.string().max(50).nullable(),
+  condition: z.string().min(1).max(50),
+  opening: units,
+  closing: units,
+  movements: z.partialRecord(z.enum(NOON_STOCK_MOVEMENT_NAMES), units),
+});
+
+/** One part (up to 2,000 rows) of Noon's FBN ledger summary read in the browser. */
+export async function uploadNoonSummaryAction(slug: string, input: unknown): Promise<Result> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  const parsed = z.object({ rows: z.array(stockDaySchema).max(2000) }).safeParse(input);
+  if (!parsed.success)
+    return { ok: false, message: "That file couldn't be read as Noon's summary." };
+  const { rows } = parsed.data;
+  const saved = await inOrg(ctx, async (tx) => {
+    const r = await importNoonStockDays(tx, { orgId: ctx.org.id, rows });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "noon_stock.uploaded",
+      entityType: "organization",
+      entityId: ctx.org.id,
+      after: { rows: rows.length, saved: r.saved },
+    });
+    return r.saved;
+  });
+  revalidatePath(`/o/${slug}/inventory`, "layout");
+  return { ok: true, added: saved };
 }
