@@ -705,6 +705,7 @@ function PaymentDialog({
                   if (id !== po.supplierId) setHow("amount");
                 }}
                 searchPlaceholder="Search vendors"
+                searchable
                 options={vendorOptions}
               />
             </Field>

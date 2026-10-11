@@ -312,6 +312,7 @@ export function PurchaseOrderForm({
             onChange={setSupplierId}
             placeholder="Choose a supplier…"
             searchPlaceholder="Search vendors"
+            searchable
             emptyText="No vendor by that name."
             invalid={Boolean(errors.supplierId)}
             options={supplierList.map((s) => ({ value: s.id, label: s.name }))}
@@ -436,6 +437,7 @@ export function PurchaseOrderForm({
                     onChange={(productId) => update(line.key, { productId })}
                     placeholder="Choose a product…"
                     searchPlaceholder="Search products"
+                    searchable
                     emptyText="No product by that name. Add it under Products first."
                     invalid={Boolean(err("productId"))}
                     options={productOptions}

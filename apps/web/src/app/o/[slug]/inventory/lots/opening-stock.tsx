@@ -108,6 +108,7 @@ export function OpeningStockDialog({
               onChange={setProductId}
               placeholder="Choose a product…"
               searchPlaceholder="Search products"
+              searchable
               invalid={Boolean(errors.productId)}
               options={products.map((p) => ({
                 value: p.id,

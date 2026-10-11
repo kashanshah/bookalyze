@@ -325,6 +325,7 @@ export function DeliveryCostsForm({
                       onChange={(contactId) => update(cost.key, { contactId })}
                       placeholder="Paid to (optional)"
                       searchPlaceholder="Search vendors"
+                      searchable
                       emptyText="No vendor by that name."
                       options={[
                         { value: "", label: "Not said" },

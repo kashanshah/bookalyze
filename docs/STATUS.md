@@ -2284,7 +2284,7 @@ screenshots work well).
 - Unhandled server errors are logged once by `src/instrumentation.ts` (`onRequestError`, event
   `request.failed`, with the route and Next's `digest`).
 
-**Dropdowns:** use `Combobox` from `src/components/ui/combobox.tsx` for every choice list.
+**Dropdowns:** use `Combobox` from `src/components/ui/combobox.tsx` for every choice list. Pickers of products, vendors and customers always show search (`searchable`), however few there are; others show it from 8 options.
 - Options are `{ value, label, group?, description?, keywords?, disabled? }`.
 - `group` lists options under headings (account types, "All time zones").
 - `keywords` are searched but not shown (codes, currency names).
