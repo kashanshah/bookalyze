@@ -1,16 +1,16 @@
 name: Deploy
 
-# Production deploys: after CI passes on main (a merged PR), apply the pending database
-# migrations that are safe to run unattended, then ask Vercel to deploy. A migration that could
-# lose data or break the running app stops the deploy until a person runs it (see docs/SETUP.md
-# → Deploys). Vercel doesn't deploy main on its own (apps/web/vercel.json), so new code never
-# goes live before its migrations.
+# Production migrations, as a Vercel Deployment Check. Vercel builds main as usual; when a
+# production build is ready it tells GitHub (repository_dispatch). This waits for CI on that
+# commit, applies the pending database migrations that are safe to run unattended, and reports
+# the check "Bookalyze: migrations". Vercel puts the build live only once it passes (Project →
+# Settings → Deployment Checks), so new code never goes live before its migrations. A migration
+# that could lose data or break the running app fails the check until a person runs it (see
+# docs/SETUP.md → Deploys).
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  repository_dispatch:
+    types: [vercel.deployment.ready]
   workflow_dispatch:
     inputs:
       allow_migrations:
@@ -18,21 +18,52 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: read
+  checks: read
+  statuses: write
+
 concurrency:
-  group: deploy-production
+  group: production-migrations
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Migrate and deploy
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+  migrate:
+    name: Database migrations
+    if: github.event_name == 'workflow_dispatch' || github.event.client_payload.environment == 'production'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     env:
-      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      SHA: ${{ github.event.client_payload.git.sha || github.sha }}
     steps:
+      # Sets the commit's "Bookalyze: migrations" status: pending now, then passed or failed
+      # with this job. The name is the one chosen under Deployment Checks.
+      - name: Report to Vercel
+        if: github.event_name == 'repository_dispatch'
+        uses: vercel/repository-dispatch/actions/status@v1
+        with:
+          name: "Bookalyze: migrations"
+
+      - name: Wait for CI on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          check="Lint, typecheck, test, build, e2e"
+          for _ in $(seq 1 70); do
+            read -r status conclusion < <(gh api \
+              "repos/${{ github.repository }}/commits/$SHA/check-runs?check_name=$(jq -rn --arg c "$check" '$c|@uri')" \
+              --jq '[.check_runs[] | select(.app.slug == "github-actions")] | sort_by(.started_at) | last | "\(.status // "missing") \(.conclusion // "-")"')
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then echo "CI passed on $SHA."; exit 0; fi
+              echo "::error::CI didn't pass on $SHA ($conclusion), so it won't go live."
+              exit 1
+            fi
+            echo "CI on $SHA: ${status}…"
+            sleep 30
+          done
+          echo "::error::CI on $SHA didn't finish in 35 minutes."
+          exit 1
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.SHA }}
@@ -48,21 +79,3 @@ jobs:
         env:
           DATABASE_URL_MIGRATOR: ${{ secrets.DATABASE_URL_MIGRATOR }}
           ALLOW_MIGRATIONS: ${{ inputs.allow_migrations }}
-
-      - name: Deploy to Vercel
-        env:
-          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
-        run: |
-          if [ -z "$HOOK" ]; then
-            echo "::error::Add the VERCEL_DEPLOY_HOOK_URL secret (docs/SETUP.md → Deploys)."
-            exit 1
-          fi
-          # The hook deploys main's latest commit. If main moved on, that commit's own run
-          # migrates and deploys it.
-          latest=$(git ls-remote origin refs/heads/main | cut -f1)
-          if [ "$latest" != "$SHA" ]; then
-            echo "main is now at $latest; its own Deploy run takes it from here."
-            exit 0
-          fi
-          curl -fsS -X POST "$HOOK" > /dev/null
-          echo "Vercel is deploying $SHA." >> "$GITHUB_STEP_SUMMARY"
