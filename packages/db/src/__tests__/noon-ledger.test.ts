@@ -1,7 +1,7 @@
 import { noonMarketplace, parseNoonLedger } from "@bookalyze/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
-import { salesByMonth } from "../cogs";
+import { previewCogs, salesByMonth } from "../cogs";
 import { addNoonChannel } from "../commerce";
 import { importNoonLedger, ledgerChannels, ledgerOtherTypes } from "../inventory-ledger";
 import * as schema from "../schema";
@@ -80,5 +80,21 @@ describe("Noon's FBN inventory ledger", () => {
     ]);
     const others = await scoped((tx) => ledgerOtherTypes(tx));
     expect(others.map((o) => [o.type, o.rows, o.units])).toEqual([["mystery", 1, 3]]);
+  });
+
+  it("names Noon's ledger when a Noon month waits for it", async () => {
+    const [uae] = (await scoped((tx) => ledgerChannels(tx))).filter((c) => c.name === "Noon UAE");
+    const preview = await scoped((tx) =>
+      previewCogs(tx, {
+        channelId: uae?.id ?? "",
+        month: "2026-10",
+        timezone: "Asia/Dubai",
+        baseCurrency: "AED",
+      }),
+    );
+    expect(preview.kind).toBe("noon");
+    expect(preview.problems).toContain(
+      "Noon's FBN inventory ledger is in through 2026-09-30. Bring it in through 2026-10-31 first (Inventory → Stock movements), so returns and losses are counted.",
+    );
   });
 });

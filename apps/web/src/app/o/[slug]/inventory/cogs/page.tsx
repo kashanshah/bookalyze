@@ -240,6 +240,16 @@ function MonthRow({
             <li key={problem}>{problem}</li>
           ),
         )}
+        {preview.unlinkedSkus.length ? (
+          <li>
+            <Link
+              href={`/o/${slug}/inventory/products#unlinked-title`}
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Link the SKUs
+            </Link>
+          </li>
+        ) : null}
       </ul>
     );
   } else {
