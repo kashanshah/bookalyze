@@ -22,6 +22,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 import { saveDeliveryCostsAction } from "../../../actions";
 
 type Line = {
@@ -279,7 +280,10 @@ export function DeliveryCostsForm({
                       readOnly={paid}
                       placeholder="0.00"
                       aria-invalid={Boolean(err("amount"))}
-                      className="text-end tabular-nums"
+                      className={cn(
+                        "text-end tabular-nums",
+                        paid && "bg-muted/50 text-muted-foreground",
+                      )}
                     />
                     {err("amount") ? (
                       <p className="text-destructive text-xs">{err("amount")}</p>
@@ -365,17 +369,20 @@ export function DeliveryCostsForm({
                     />
                   ) : null}
                   {cost.paidBy ? (
-                    <p className="flex flex-wrap items-center gap-x-1.5 text-muted-foreground text-xs sm:col-span-full">
-                      <Link2 className="size-3.5 shrink-0 text-success" />
-                      Paid on {formatDate(cost.paidBy.date, locale)}, so its amount and rate are the
-                      payment's. To change them, take the payment off the order.
-                      <Link
-                        href={`/o/${slug}/accounting/journal/${cost.paidBy.journalEntryId}`}
-                        className="inline-flex items-center gap-1 hover:text-foreground"
-                      >
-                        {cost.paidBy.entryNumber}
-                        <ExternalLink className="size-3" />
-                      </Link>
+                    <p className="flex items-start gap-1.5 text-muted-foreground text-xs sm:col-span-full">
+                      <Link2 className="mt-px size-3.5 shrink-0 text-success" />
+                      <span>
+                        Paid on {formatDate(cost.paidBy.date, locale)}, so its{" "}
+                        {other ? "amount and rate are" : "amount is"} the payment's. To change{" "}
+                        {other ? "them" : "it"}, take the payment off the order.{" "}
+                        <Link
+                          href={`/o/${slug}/accounting/journal/${cost.paidBy.journalEntryId}`}
+                          className="inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground"
+                        >
+                          {cost.paidBy.entryNumber}
+                          <ExternalLink className="size-3" />
+                        </Link>
+                      </span>
                     </p>
                   ) : costed && !paid && cost.contactId ? (
                     <p className="text-muted-foreground text-xs sm:col-span-full">

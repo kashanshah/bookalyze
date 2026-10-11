@@ -189,6 +189,9 @@ function CostPicker({
   );
 }
 
+/** "Delivery of Oct 10, 2026" → "delivery of Oct 10, 2026", to sit inside a sentence. */
+const inSentence = (label: string) => label.charAt(0).toLowerCase() + label.slice(1);
+
 /** a − b, exactly. */
 const minus = (a: string, b: string) => formatDecimal(parseDecimal(a) - parseDecimal(b));
 const isNegative = (a: string) => parseDecimal(a) < 0n;
@@ -395,7 +398,7 @@ function PaymentRow({
         ) : null}
         {other && p.costId && delivery ? (
           <span className="block text-muted-foreground text-xs">
-            On the landed cost of the {delivery.label.toLowerCase()}
+            On the landed cost of the {inSentence(delivery.label)}
           </span>
         ) : null}
         {canLink ? (
@@ -405,7 +408,7 @@ function PaymentRow({
             className="mt-0.5 inline-flex items-center gap-1 text-primary text-xs hover:underline"
           >
             <Layers className="size-3" />
-            Add to the {delivery.label.toLowerCase()}'s landed cost
+            Add to the {inSentence(delivery.label)}'s landed cost
           </button>
         ) : null}
       </span>
@@ -724,7 +727,7 @@ function LinkCostDialog({
           <DialogTitle>Add to the landed cost</DialogTitle>
           <DialogDescription>
             {formatMoney(payment.amount, payment.currency, locale)} to {payment.contactName}, on the{" "}
-            {delivery.label.toLowerCase()}. Its stock lots are costed again with it.
+            {inSentence(delivery.label)}. Its stock lots are costed again with it.
           </DialogDescription>
         </DialogHeader>
         <form

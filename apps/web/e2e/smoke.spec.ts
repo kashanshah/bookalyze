@@ -2682,7 +2682,7 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   await page.getByRole("link", { name: /^Landed cost of the delivery on / }).click();
   await expect(page.getByLabel("Amount 1")).toHaveValue("40");
   await expect(page.getByLabel("Amount 1")).toHaveAttribute("readonly", "");
-  await expect(page.getByText(/so its amount and rate are the payment's/)).toBeVisible();
+  await expect(page.getByText(/so its amount (and rate )?(is|are) the payment's/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove cost 1" })).toHaveCount(0);
 });
 
