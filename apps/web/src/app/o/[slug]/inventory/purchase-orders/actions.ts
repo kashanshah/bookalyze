@@ -439,6 +439,12 @@ export async function recordPurchasePaymentAction(
   const value = parsed.data;
   const po = await inOrg(ctx, (tx) => getPurchaseOrder(tx, id));
   if (!po) return gone;
+  if (value.receiptId && !value.contactId) {
+    return {
+      ok: false,
+      errors: { contactId: "Choose who you paid: the shipping company, broker…" },
+    };
+  }
   const contactId = value.contactId || po.supplierId;
   if (contactId !== po.supplierId) {
     const contact = await inOrg(ctx, (tx) => getContact(tx, contactId));

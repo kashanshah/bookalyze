@@ -9,7 +9,7 @@ import {
   LANDED_COST_KIND_LABELS,
   type LandedCostKind,
 } from "@bookalyze/core";
-import { ExternalLink, Info, Link2, Plus, Save, Trash2 } from "lucide-react";
+import { Banknote, ExternalLink, Info, Link2, Plus, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
@@ -36,6 +36,8 @@ type Line = {
 
 type Cost = {
   key: number;
+  /** Saved costs only: a new row has none until the landed cost is saved. */
+  id?: string;
   kind: LandedCostKind;
   description: string;
   amount: string;
@@ -111,6 +113,9 @@ export function DeliveryCostsForm({
     })),
   );
   const [nextKey, setNextKey] = useState(initialCosts.length);
+  // Paying a cost happens on the order's page, so unsaved changes here would be lost on the way.
+  const [saved] = useState(() => JSON.stringify({ rate, costs }));
+  const dirty = JSON.stringify({ rate, costs }) !== saved;
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [lineErrors, setLineErrors] = useState<Record<string, string>>({});
   const foreign = poCurrency !== baseCurrency;
@@ -384,11 +389,25 @@ export function DeliveryCostsForm({
                         </Link>
                       </span>
                     </p>
-                  ) : costed && !paid && cost.contactId ? (
-                    <p className="text-muted-foreground text-xs sm:col-span-full">
-                      Not paid yet. Record its payment on the order for this delivery and this cost
-                      becomes what you paid, at the rate you paid.
-                    </p>
+                  ) : costed && cost.id ? (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground text-xs sm:col-span-full">
+                      <span>
+                        Not paid yet. Record its payment, or link one already in your books, and
+                        this cost becomes what you paid, at the rate you paid.
+                      </span>
+                      {dirty ? (
+                        <span>Save the landed cost first.</span>
+                      ) : (
+                        <Button variant="outline" size="sm" asChild>
+                          <Link
+                            href={`/o/${slug}/inventory/purchase-orders/${purchaseOrderId}?pay=${cost.id}#payments-heading`}
+                          >
+                            <Banknote />
+                            Pay or link
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
                   ) : null}
                 </li>
               );
