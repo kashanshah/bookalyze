@@ -1,6 +1,7 @@
 import { sumDecimals } from "@bookalyze/core";
 import {
   type CogsPreview,
+  channelsNotCosted,
   listCogsPeriods,
   type MonthSales,
   previewCogs,
@@ -33,7 +34,7 @@ export default async function CogsPage({ params }: { params: Promise<{ slug: str
   const { locale, timezone, baseCurrency } = ctx.profile;
   const current = nowIn(timezone).date.slice(0, 7);
 
-  const { sales, periods, previews } = await inOrg(ctx, async (tx) => {
+  const { sales, periods, previews, notCosted } = await inOrg(ctx, async (tx) => {
     const [sales, periods] = [await salesByMonth(tx, { timezone }), await listCogsPeriods(tx)];
     const done = new Set(periods.map((p) => `${p.channelId}:${p.month}`));
     const latestPosted = periods.reduce((m, p) => (p.month > m ? p.month : m), "");
@@ -53,7 +54,7 @@ export default async function CogsPage({ params }: { params: Promise<{ slug: str
         );
       }
     }
-    return { sales, periods, previews };
+    return { sales, periods, previews, notCosted: await channelsNotCosted(tx, { timezone }) };
   });
 
   const posted = new Map(periods.map((p) => [`${p.channelId}:${p.month}`, p]));
@@ -70,6 +71,14 @@ export default async function CogsPage({ params }: { params: Promise<{ slug: str
         description="Each month, the units you shipped on each marketplace are costed from your oldest stock lots first (FIFO), and posted to your books: cost of goods sold up, inventory down. Months post in order, once they're over."
       />
 
+      {notCosted.length ? (
+        <p className="text-muted-foreground text-sm">
+          Not counted here: {notCosted.join(", ")}.{" "}
+          {notCosted.length === 1 ? "Its account is" : "Their accounts are"} disconnected or
+          switched off on Channels, so {notCosted.length === 1 ? "its" : "their"} sales don't hold
+          up the months after them.
+        </p>
+      ) : null}
       {months.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed p-10 text-center">
           <span className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">

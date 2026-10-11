@@ -14,7 +14,7 @@ import {
   type SystemAccountKey,
   takeFifo,
 } from "@bookalyze/core";
-import { and, asc, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lte, type SQL, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { postJournalEntry, reverseJournalEntry } from "./ledger";
 import { accounts } from "./schema/accounting";
@@ -192,11 +192,22 @@ export type MonthSales = {
 /** The month a ledger day or an order falls in, as SQL. */
 const ledgerMonth = sql`to_char(e.event_date, 'YYYY-MM')`;
 
+/**
+ * Marketplaces costed: switched on, of an account still connected (or added by hand, like Noon).
+ * A disconnected account's or a switched-off marketplace's months are left out, like its orders
+ * and settlements, so they don't hold up the months after them; months already posted stay.
+ */
+const costedChannel = sql`(sc.is_active and (sc.connection_id is null or exists (
+  select 1 from connections c where c.id = sc.connection_id and c.status <> 'disconnected')))`;
+const postedMonth = (month: SQL) =>
+  sql`exists (select 1 from cogs_periods p where p.channel_id = sc.id and p.month = ${month})`;
+
 /** Units shipped (orders) and moved (ledger) per marketplace and month, newest first. */
 export async function salesByMonth(
   tx: Transaction,
   options: { timezone: string },
 ): Promise<MonthSales[]> {
+  const orderMonth = sql`to_char(o.purchased_at at time zone ${options.timezone}, 'YYYY-MM')`;
   const sold = await tx.execute<{
     channel_id: string;
     channel_name: string;
@@ -206,7 +217,7 @@ export async function salesByMonth(
     unlinked_skus: string[] | null;
   }>(sql`
     select o.channel_id, sc.name as channel_name,
-      to_char(o.purchased_at at time zone ${options.timezone}, 'YYYY-MM') as month,
+      ${orderMonth} as month,
       coalesce(sum(oi.quantity_shipped * ps.units) filter (where ps.id is not null), 0)::int as units,
       coalesce(sum(oi.quantity_shipped) filter (where ps.id is null), 0)::int as unlinked_units,
       array_agg(distinct oi.sku) filter (where ps.id is null) as unlinked_skus
@@ -215,6 +226,7 @@ export async function salesByMonth(
     join sales_channels sc on sc.id = o.channel_id
     left join product_skus ps on ps.channel_id = o.channel_id and ps.sku = oi.sku
     where oi.quantity_shipped > 0 and o.status not in (${cancelled})
+      and (${costedChannel} or ${postedMonth(orderMonth)})
     group by o.channel_id, sc.name, 3`);
   const moved = await tx.execute<{
     channel_id: string;
@@ -232,6 +244,7 @@ export async function salesByMonth(
     join sales_channels sc on sc.id = e.channel_id
     left join product_skus ps on ps.channel_id = e.channel_id and ps.sku = e.sku
     where e.event_type in ('CustomerReturns', 'Adjustments')
+      and (${costedChannel} or ${postedMonth(ledgerMonth)})
     group by e.channel_id, sc.name, 3`);
   const map = new Map<string, MonthSales>();
   const entry = (channelId: string, channelName: string, month: string) => {
@@ -271,6 +284,22 @@ export async function salesByMonth(
     .sort((a, b) =>
       a.month === b.month ? a.channelName.localeCompare(b.channelName) : a.month < b.month ? 1 : -1,
     );
+}
+
+/** Marketplaces with sales left out of cost of goods sold (disconnected or switched off). */
+export async function channelsNotCosted(
+  tx: Transaction,
+  options: { timezone: string },
+): Promise<string[]> {
+  const rows = await tx.execute<{ name: string }>(sql`
+    select sc.name from sales_channels sc
+    where not ${costedChannel}
+      and exists (select 1 from orders o join order_items oi on oi.order_id = o.id
+        where o.channel_id = sc.id and oi.quantity_shipped > 0 and o.status not in (${cancelled})
+          and not exists (select 1 from cogs_periods p where p.channel_id = sc.id
+            and p.month = to_char(o.purchased_at at time zone ${options.timezone}, 'YYYY-MM')))
+    order by sc.name`);
+  return rows.rows.map((r) => r.name);
 }
 
 /** Product units shipped on one marketplace in one month. */

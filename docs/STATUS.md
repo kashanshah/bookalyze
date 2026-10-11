@@ -1992,6 +1992,11 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   (an advisory lock per company), only once over; `undoCogs` reverses the entry and gives the
   units back, newest month first. A delivery whose stock is already costed can't have its
   landed costs changed until those months are undone.
+- **Only marketplaces still connected and switched on are costed** (`salesByMonth`, like orders
+  and settlements): a disconnected account's or a switched-off marketplace's unposted months are
+  left out, so they don't hold up the months after them (e.g. another company's Amazon.ae
+  connected by mistake); months already posted stay. The page names the marketplaces left out
+  (`channelsNotCosted`).
 - **Opening stock** (Stock lots → **Add opening stock**): product, how many, cost of one, the day
   it was counted, a note. A lot with `source = 'opening'`, posted Dr Inventory / Cr Opening
   balance equity (source `opening_stock`); removable (entry reversed) until something is sold
