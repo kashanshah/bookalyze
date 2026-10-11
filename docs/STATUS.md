@@ -51,7 +51,17 @@ Real company details are entered in the app and never committed.
 - **Monorepo and tooling:**
   - pnpm and Turborepo, TypeScript 6.0.3 (pinned), Biome, Vitest, Playwright.
     A pre-commit hook (`prepare`: Husky + lint-staged) runs `biome check --write` on staged files.
-  - GitHub Actions CI: lint → typecheck → migrate → unit and DB tests → build → e2e.
+  - GitHub Actions CI: lint → typecheck → migrate → unit and DB tests → build → e2e. On PRs it
+    also warns about migrations that can't run unattended (`check-migrations`).
+  - **Deploys** (`.github/workflows/deploy.yml`, docs/SETUP.md → Deploys): after CI passes on
+    `main`, safe pending migrations are applied to production (`deploy-migrate`, under an
+    advisory lock), then Vercel is asked to deploy through a deploy hook. Vercel doesn't deploy
+    `main` itself (`apps/web/vercel.json`), so code never goes live before its migrations. A
+    migration that drops, deletes, empties, renames or changes a column's type stops the deploy
+    until a person allows it (Run workflow → Allow migrations) or runs it. The rules are in db
+    `migration-safety.ts` (`migrationConcerns`; function bodies, comments and strings ignored;
+    tested against every migration so far, which flags only 0059). Secrets:
+    `DATABASE_URL_MIGRATOR` (owner, direct) and `VERCEL_DEPLOY_HOOK_URL`, in GitHub only.
 - **Database:**
   - Drizzle and PostgreSQL with row-level security on every tenant table, set by `withOrg()`.
   - The runtime role can't bypass RLS. Migrations run as the owner role.
@@ -2451,6 +2461,9 @@ screenshots work well).
   trigger** (`DISABLE TRIGGER` … `ENABLE TRIGGER`, see `0010_fx.sql`). Otherwise its pending
   events block any later `ALTER TABLE` in the same migration run. Test databases start empty, so
   CI won't catch this. Apply new migrations to a dev database that has entries before pushing.
+- **Removing or renaming a column or table takes two PRs:** first code that stops using it
+  (deploys as usual), then the migration that drops it. Deploy stops on that migration until a
+  person allows it (docs/SETUP.md → Deploys), because the version still running may use it.
 - **This sandbox can't reach bankofcanada.ca** (egress policy). Rate tests use a sample of
   Valet's format, and the e2e test stores today's rate itself. Live fetching happens on Vercel.
 - **Mobile inputs must be at least 16px** or iOS zooms in on focus. `Input` and `Combobox` (its

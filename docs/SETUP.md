@@ -88,9 +88,38 @@ available yet; eBay sites still work for linking SKUs.
    detects the pnpm workspace automatically.
 2. Add the environment variables from `.env.example` for Production (and Preview, pointing at a Neon
    preview branch). Don't set `EMAIL_DEV_LOG` in production.
-3. Run migrations before deploying a change that includes a new migration:
-   `DATABASE_URL_MIGRATOR=… pnpm db:migrate` (owner, direct string). Automating this comes later.
+3. Production deploys go through GitHub (below, **Deploys**): Vercel doesn't deploy `main` on its
+   own (`apps/web/vercel.json`). Branches still get preview deployments as usual.
 4. Add the domain `app.bookalyze.com` under Project → Domains.
+
+## Deploys
+
+Merging a PR into `main` runs CI. When it passes, the **Deploy** workflow
+(`.github/workflows/deploy.yml`):
+
+1. Applies pending database migrations, **only if every one is safe to run unattended**: it adds
+   or widens (tables, columns, indexes, constraints, backfills). One that drops a table or column,
+   empties or deletes rows, renames something or changes a column's type stops the deploy, names
+   the statement, and changes nothing. PRs that add such a migration get a warning in CI.
+2. Asks Vercel to deploy (a deploy hook). New code never goes live before its migrations.
+
+**One-time setup** (GitHub → the repo → Settings → Secrets and variables → Actions → New
+repository secret):
+
+- `DATABASE_URL_MIGRATOR`: Neon's **owner** connection, the **direct** string (not the pooled
+  one: the workflow holds a lock for the whole run). Only GitHub has it; the app never does.
+- `VERCEL_DEPLOY_HOOK_URL`: Vercel → Project → Settings → Git → Deploy Hooks → create one for the
+  branch `main`, copy its URL.
+
+**When Deploy stops on a migration:** read what it names (the run's summary). If it's intended
+(the data it drops is no longer needed, and the version running doesn't use it), run the Deploy
+workflow by hand (Actions → Deploy → Run workflow) with that migration's tag in **Allow
+migrations**, or run `DATABASE_URL_MIGRATOR=… pnpm db:migrate` yourself and re-run Deploy. Safer
+still: ship such changes in two PRs, first code that stops using the column, then the migration
+that drops it.
+
+**By hand** (as before): `DATABASE_URL_MIGRATOR=… pnpm db:migrate` applies everything pending,
+safe or not.
 
 ## Google sign-in
 

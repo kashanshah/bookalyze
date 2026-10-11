@@ -40,6 +40,9 @@ jobs:
       PLATFORM_ADMIN_EMAILS: owner@example.com
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The PR's base too, to check the migrations it adds.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -50,6 +53,11 @@ jobs:
       - name: Create database roles
         run: psql postgres://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -f packages/db/scripts/dev-db-init.sql
 
+      - name: Migrations that can't run on their own after merging
+        if: github.event_name == 'pull_request'
+        run: pnpm --filter @bookalyze/db check-migrations
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
       - run: pnpm lint
       - run: pnpm typecheck
       - name: Migrate and seed

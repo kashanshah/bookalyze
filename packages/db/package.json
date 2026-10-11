@@ -12,7 +12,9 @@
     "test": "vitest run",
     "generate": "drizzle-kit generate",
     "migrate": "tsx scripts/migrate.ts",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "deploy-migrate": "tsx scripts/deploy-migrate.ts",
+    "check-migrations": "tsx scripts/check-migrations.ts"
   },
   "dependencies": {
     "@bookalyze/core": "workspace:*",
