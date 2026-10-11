@@ -17,7 +17,7 @@ import {
 import { Banknote, ExternalLink, Layers, ListChecks, Plus, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useId, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Amount } from "@/components/accounting/amount";
 import { RateField } from "@/components/accounting/rate-field";
@@ -831,9 +831,16 @@ function PaymentDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
 
-  // The next part of the plan that isn't paid yet suggests the amount and label.
+  // The next part of the plan that isn't paid yet suggests the amount and label. Only when the
+  // dialog opens: a refresh while it's open (say, after adding a vendor) keeps what's typed.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      wasOpen.current = false;
+      return;
+    }
+    if (wasOpen.current) return;
+    wasOpen.current = true;
     const progress = planProgress(planAmounts(plan, po.total, po.currency), paid);
     const nextIndex = progress.parts.findIndex((p) => p.status !== "paid");
     const next = nextIndex >= 0 ? plan[nextIndex] : undefined;
