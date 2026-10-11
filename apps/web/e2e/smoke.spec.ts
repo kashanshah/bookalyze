@@ -2694,6 +2694,28 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   await expect(page.getByLabel("Amount 1")).toHaveAttribute("readonly", "");
   await expect(page.getByText(/so its amount (and rate )?(is|are) the payment's/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove cost 1" })).toHaveCount(0);
+
+  // A cost entered by hand (CAD 25 of duty) is paid from its own row: "Pay or link" opens the
+  // order's payment dialog with the delivery, the cost and the amount filled in.
+  await page.getByRole("button", { name: "Add a cost" }).click();
+  await page.getByLabel("Amount 2", { exact: true }).fill("25");
+  await page.getByRole("button", { name: "Save landed cost" }).click();
+  await expect(page.getByText("Landed cost saved")).toBeVisible();
+  await expect(deposits).toContainText("Into stock$735.48");
+  await page.getByRole("link", { name: /^Landed cost of the delivery on / }).click();
+  await expect(page.getByText(/^Not paid yet\./)).toBeVisible();
+  await page.getByRole("link", { name: "Pay or link" }).click();
+  const payCost = page.getByRole("dialog");
+  await expect(payCost.getByLabel(/How much/)).toHaveValue("25");
+  await expect(payCost.getByLabel("On the delivery's landed cost")).toContainText("Duty");
+  // Who was paid isn't known yet: it's asked for.
+  await payCost.getByRole("button", { name: "Record payment" }).click();
+  await expect(payCost.getByText(/Choose who you paid/)).toBeVisible();
+  await choose(payCost.getByLabel("Paid to", { exact: true }), "Office Depot");
+  await payCost.getByRole("button", { name: "Record payment" }).click();
+  await expect(page.getByText("The delivery's landed cost now uses what you paid.")).toBeVisible();
+  await expect(deposits).toContainText("Into stock$735.48");
+  await expect(deposits).toContainText("Owed$434.48");
 });
 
 test("purchase orders: type the cost of one, the line total or the order total", async ({

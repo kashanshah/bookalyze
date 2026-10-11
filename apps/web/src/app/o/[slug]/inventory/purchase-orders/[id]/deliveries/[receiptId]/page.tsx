@@ -73,6 +73,7 @@ export default async function DeliveryCostsPage({
           currency: cost.currency,
           exchangeRate: cost.exchangeRate ?? "",
           allocation: cost.allocation,
+          id: cost.id,
           paymentId: cost.paymentId ?? "",
           paidBy: cost.paidBy
             ? {

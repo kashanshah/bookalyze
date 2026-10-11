@@ -1738,6 +1738,12 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     recorded, the landed cost is left alone, and the toast says why.
   - A payment already on the order for a delivery (recorded before this) has **Add to the …
     delivery's landed cost** in the payments list, with the same choice.
+- **Paying from the landed cost page:** each saved cost not paid yet says so and has **Pay or
+  link**. It opens the order's payment dialog (`?pay=<cost id>` on the order page) with the
+  delivery, that cost, its amount, currency and description filled in; who was paid is asked for
+  when the cost doesn't say (a delivery payment can't go to the supplier by default: the action
+  refuses it without a payee). "A new payment" or "Already in my books" then links it as above.
+  With unsaved changes on the page it asks to save first.
 - **On the landed cost page:** a paid cost shows "Paid on …" with its journal entry; its amount,
   currency, rate and payee are locked and it can't be removed. Saving keeps them as the
   payment's whatever the form sends, and refuses a save that drops it. Taking the payment off

@@ -1,4 +1,8 @@
-import { isMoneyAccountSubtype, purchaseOrderNumber } from "@bookalyze/core";
+import {
+  isMoneyAccountSubtype,
+  LANDED_COST_KIND_LABELS,
+  purchaseOrderNumber,
+} from "@bookalyze/core";
 import {
   deliveryCostSummary,
   formatEntryNumber,
@@ -32,10 +36,14 @@ export const metadata: Metadata = { title: "Purchase order" };
 
 export default async function PurchaseOrderPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string; id: string }>;
+  /** `pay`: a delivery cost to pay or link (from the landed cost page). */
+  searchParams: Promise<{ pay?: string }>;
 }) {
   const { slug, id } = await params;
+  const { pay } = await searchParams;
   if (!z.uuid().safeParse(id).success) notFound();
   const ctx = await getInventoryContext(slug, "inventory.purchasing");
   const { locale, timezone } = ctx.profile;
@@ -212,6 +220,19 @@ export default async function PurchaseOrderPage({
                 removed: p.removed,
                 bank: p.bank ? { amount: p.bank.amount, currency: p.bank.currency } : null,
               }))}
+              payFor={(() => {
+                const cost = pay ? unpaid.find((c) => c.id === pay) : undefined;
+                return cost
+                  ? {
+                      receiptId: cost.receiptId,
+                      costId: cost.id,
+                      contactId: cost.contactId,
+                      amount: cost.amount,
+                      currency: cost.currency,
+                      label: cost.description ?? LANDED_COST_KIND_LABELS[cost.kind],
+                    }
+                  : null;
+              })()}
               deliveries={po.receipts.map((r) => ({
                 id: r.id,
                 label: `Delivery of ${formatDate(r.receivedOn, locale)}`,

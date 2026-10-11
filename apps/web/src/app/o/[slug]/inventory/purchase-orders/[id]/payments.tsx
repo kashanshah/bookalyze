@@ -16,7 +16,7 @@ import {
 } from "@bookalyze/core";
 import { Banknote, ExternalLink, Layers, ListChecks, Plus, Trash2, X } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Amount } from "@/components/accounting/amount";
@@ -85,6 +85,11 @@ type Props = {
   moneyAccounts: { id: string; label: string; currency: string }[];
   vendors: { id: string; name: string }[];
   currencies: { code: string; name: string }[];
+  /**
+   * Opens the payment dialog for an unpaid delivery cost (from the landed cost page's "Pay or
+   * link"), with its delivery, cost, amount and currency filled in.
+   */
+  payFor?: PayFor | null;
   /** The order is in the books: payments on Supplier deposits, deliveries posted from there. */
   books: {
     paidIn: string;
@@ -93,6 +98,16 @@ type Props = {
     settlementEntryId: string | null;
     settlementNumber: string | null;
   } | null;
+};
+
+/** A delivery cost to pay, filled into the payment dialog. */
+export type PayFor = {
+  receiptId: string;
+  costId: string;
+  contactId: string | null;
+  amount: string;
+  currency: string;
+  label: string;
 };
 
 /** An extra cost on a delivery that no payment pays yet. */
@@ -205,7 +220,17 @@ const abs = (a: string) => (isNegative(a) ? a.slice(1) : a);
 export function PurchasePayments(props: Props) {
   const { po, plan, payments, locale } = props;
   const [planOpen, setPlanOpen] = useState(false);
-  const [payOpen, setPayOpen] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const [payOpen, setPayOpen] = useState(Boolean(props.payFor));
+  const [prefill, setPrefill] = useState(props.payFor ?? null);
+  const closePay = () => {
+    setPayOpen(false);
+    if (prefill) {
+      setPrefill(null);
+      router.replace(pathname, { scroll: false });
+    }
+  };
   const counted = payments.filter((p) => !p.removed);
   const toSupplier = counted.filter((p) => p.contactId === po.supplierId);
   const paid = sumDecimals(toSupplier.map((p) => p.amount));
@@ -323,7 +348,7 @@ export function PurchasePayments(props: Props) {
       </div>
 
       <PlanDialog {...props} open={planOpen} onClose={() => setPlanOpen(false)} />
-      <PaymentDialog {...props} paid={paid} open={payOpen} onClose={() => setPayOpen(false)} />
+      <PaymentDialog {...props} paid={paid} prefill={prefill} open={payOpen} onClose={closePay} />
     </section>
   );
 }
@@ -777,9 +802,10 @@ function PaymentDialog({
   vendors,
   currencies,
   books,
+  prefill,
   open,
   onClose,
-}: Props & { paid: string; open: boolean; onClose: () => void }) {
+}: Props & { paid: string; prefill: PayFor | null; open: boolean; onClose: () => void }) {
   const router = useRouter();
   const formId = useId();
   const [pending, start] = useTransition();
@@ -836,7 +862,18 @@ function PaymentDialog({
     setPicked(null);
     setErrors({});
     setMessage(null);
-  }, [open, plan, po.total, po.currency, po.supplierId, paid, today]);
+    if (prefill) {
+      // A cost on a delivery: paid to whoever it says (or chosen now), in its own currency.
+      setContactId(
+        prefill.contactId && prefill.contactId !== po.supplierId ? prefill.contactId : "",
+      );
+      setReceiptId(prefill.receiptId);
+      setCurrency(prefill.currency);
+      setHow("amount");
+      setValue(trimZeros(prefill.amount));
+      setLabel(prefill.label);
+    }
+  }, [open, plan, po.total, po.currency, po.supplierId, paid, today, prefill]);
 
   const toSupplier = contactId === po.supplierId;
   const owedIn = toSupplier ? po.currency : currency;
@@ -850,7 +887,14 @@ function PaymentDialog({
   // A delivery picked (or the vendor changed) suggests the cost it most likely pays.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only when the delivery or vendor changes.
   useEffect(() => {
-    setCostId(delivery ? likelyCost(delivery.unpaidCosts, { contactId, amount, currency }) : "");
+    if (!delivery) {
+      setCostId("");
+      return;
+    }
+    const asked = prefill && delivery.unpaidCosts.some((c) => c.id === prefill.costId);
+    setCostId(
+      asked ? prefill.costId : likelyCost(delivery.unpaidCosts, { contactId, amount, currency }),
+    );
   }, [delivery?.id, contactId]);
   const account = moneyAccounts.find((a) => a.id === moneyAccountId);
   const accountCurrency = account?.currency ?? baseCurrency;
@@ -875,6 +919,10 @@ function PaymentDialog({
     start(async () => {
       setErrors({});
       setMessage(null);
+      if (!contactId) {
+        setErrors({ contactId: "Choose who you paid: the shipping company, broker…" });
+        return;
+      }
       const result = await recordPurchasePaymentAction(slug, po.id, {
         mode,
         contactId: toSupplier ? "" : contactId,
@@ -940,6 +988,7 @@ function PaymentDialog({
                   setContactId(id || po.supplierId);
                   if (id !== po.supplierId) setHow("amount");
                 }}
+                placeholder="Choose who you paid"
                 searchPlaceholder="Search vendors"
                 searchable
                 options={vendorOptions}
