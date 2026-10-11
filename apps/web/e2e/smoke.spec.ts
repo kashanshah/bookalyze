@@ -1322,11 +1322,14 @@ test("company: profile, registration numbers, people, documents and the complian
   await licence.getByRole("button", { name: /as done$/ }).click();
   await expect(page.getByText("Marked as done")).toBeVisible();
 
-  // Home shows what's coming up, without the done item.
+  // Home shows the next few open items (at most 5, overdue first), without the done one. Which
+  // ones depends on today's date (filings due around now can fill it), so the insurance
+  // certificate is checked on the calendar above.
   await page.getByRole("link", { name: "Home", exact: true }).click();
-  const comingUp = page.locator("section", { hasText: "Coming up" });
-  await expect(comingUp.getByText("Insurance certificate expires")).toBeVisible();
-  await expect(comingUp.getByText("Renew business licence")).toHaveCount(0);
+  const comingUp = page.locator("section", { hasText: "Coming up" }).getByRole("listitem");
+  await expect(comingUp.first()).toBeVisible();
+  expect(await comingUp.count()).toBeLessThanOrEqual(5);
+  await expect(comingUp.filter({ hasText: "Renew business licence" })).toHaveCount(0);
 });
 
 test("commerce: connect Amazon Seller Central, choose marketplaces, test and disconnect", async ({
@@ -2309,8 +2312,19 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
       .locator("xpath=../..")
       .getByText(/^In through /),
   ).toBeVisible();
-  // The latest month with Noon's rows (this month's may have none yet).
-  const noonMug = page.getByRole("listitem", { name: "NOON-MAPLE-MUG", exact: true }).first();
+  // Last month: the mock's return (the 10th) and loss (the 12th) are both in it, whatever today
+  // is (this month's may have only one of them yet).
+  const now = new Date();
+  const lastMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const lastMonth = lastMonthStart.toISOString().slice(0, 7);
+  const lastMonthName = lastMonthStart.toLocaleDateString("en-CA", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  const noonMug = page
+    .getByRole("region", { name: `Movements in ${lastMonthName}` })
+    .getByRole("listitem", { name: "NOON-MAPLE-MUG", exact: true });
   await expect(noonMug).toContainText("Maple leaf ceramic mug");
   await expect(noonMug).toContainText("+1");
   await expect(noonMug).toContainText("-1");
@@ -2327,10 +2341,6 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await expect(mugAtNoon).toContainText(/At Noon\s*(39|40)/);
   const checked = page.getByRole("region", { name: "Noon's numbers checked" });
   await expect(checked.getByText(/1 day doesn't add up/)).toBeVisible();
-  const now = new Date();
-  const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
-    .toISOString()
-    .slice(0, 7);
   await expect(
     checked.getByRole("listitem", { name: `NOON-MAPLE-MUG on ${lastMonth}-20` }),
   ).toContainText("Summary -1 · Ledger 0");

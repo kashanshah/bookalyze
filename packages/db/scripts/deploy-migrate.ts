@@ -9,10 +9,10 @@ import { grantAppRole } from "./app-role";
 import { migratorUrl } from "./migrator-url";
 
 /**
- * Production migrations after a merge (the Deploy workflow). Applies what's pending only when
- * every pending migration is safe to run unattended (`migrationConcerns`); otherwise it applies
- * nothing, names what needs a person, and fails, so the new version isn't deployed against the
- * old database. ALLOW_MIGRATIONS (tags, comma separated) lets named ones through once a person
+ * Production migrations for a ready production build (the Deploy workflow, a Vercel Deployment
+ * Check). Applies what's pending only when every pending migration is safe to run unattended
+ * (`migrationConcerns`); otherwise it applies nothing, names what needs a person, and fails, so
+ * the new version doesn't go live against the old database. ALLOW_MIGRATIONS (tags, comma separated) lets named ones through once a person
  * has checked them. One run at a time (an advisory lock).
  */
 
@@ -70,7 +70,7 @@ try {
         }
       }
       summary(
-        "\nCheck them, then run the Deploy workflow by hand with these tags in “Allow migrations”, or run `pnpm db:migrate` yourself and re-run Deploy.",
+        "\nCheck them, then run the Deploy workflow by hand with these tags in “Allow migrations”, or run `pnpm db:migrate` yourself. Then re-run this run's jobs: with nothing left to apply, Vercel puts the build live.",
       );
     } else {
       await migrate(drizzle(client), {

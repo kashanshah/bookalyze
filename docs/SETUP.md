@@ -88,35 +88,40 @@ available yet; eBay sites still work for linking SKUs.
    detects the pnpm workspace automatically.
 2. Add the environment variables from `.env.example` for Production (and Preview, pointing at a Neon
    preview branch). Don't set `EMAIL_DEV_LOG` in production.
-3. Production deploys go through GitHub (below, **Deploys**): Vercel doesn't deploy `main` on its
-   own (`apps/web/vercel.json`). Branches still get preview deployments as usual.
+3. Production waits for its database migrations (below, **Deploys**): Vercel builds `main` as
+   usual, and puts a build live once the "Bookalyze: migrations" check passes.
 4. Add the domain `app.bookalyze.com` under Project → Domains.
 
 ## Deploys
 
-Merging a PR into `main` runs CI. When it passes, the **Deploy** workflow
-(`.github/workflows/deploy.yml`):
+Merging a PR into `main` makes Vercel build it. When the production build is ready, Vercel
+tells GitHub, and the **Deploy** workflow (`.github/workflows/deploy.yml`):
 
-1. Applies pending database migrations, **only if every one is safe to run unattended**: it adds
+1. Waits for CI on that commit. If CI fails, the build doesn't go live.
+2. Applies pending database migrations, **only if every one is safe to run unattended**: it adds
    or widens (tables, columns, indexes, constraints, backfills). One that drops a table or column,
-   empties or deletes rows, renames something or changes a column's type stops the deploy, names
-   the statement, and changes nothing. PRs that add such a migration get a warning in CI.
-2. Asks Vercel to deploy (a deploy hook). New code never goes live before its migrations.
+   empties or deletes rows, renames something or changes a column's type applies nothing, names
+   the statement, and fails. PRs that add such a migration get a warning in CI.
+3. Reports the check **Bookalyze: migrations** on the commit. Vercel puts the build live only
+   once it passes (Deployment Checks), so new code never goes live before its migrations. Until
+   then the previous version keeps running.
 
-**One-time setup** (GitHub → the repo → Settings → Secrets and variables → Actions → New
-repository secret):
+**One-time setup:**
 
-- `DATABASE_URL_MIGRATOR`: Neon's **owner** connection, the **direct** string (not the pooled
-  one: the workflow holds a lock for the whole run). Only GitHub has it; the app never does.
-- `VERCEL_DEPLOY_HOOK_URL`: Vercel → Project → Settings → Git → Deploy Hooks → create one for the
-  branch `main`, copy its URL.
+- GitHub → the repo → Settings → Secrets and variables → Actions → New repository secret:
+  `DATABASE_URL_MIGRATOR`, Neon's **owner** connection, the **direct** string (not the pooled
+  one: the workflow holds a lock for the whole run). Only GitHub has it; the app never does. The
+  app's own `DATABASE_URL` can't be used: it lives in Vercel, and its role can't change tables.
+- Vercel → Project → Settings → Deployment Checks → add **Bookalyze: migrations** (it's listed
+  once the workflow has reported it, after the first production build with it).
 
-**When Deploy stops on a migration:** read what it names (the run's summary). If it's intended
-(the data it drops is no longer needed, and the version running doesn't use it), run the Deploy
-workflow by hand (Actions → Deploy → Run workflow) with that migration's tag in **Allow
-migrations**, or run `DATABASE_URL_MIGRATOR=… pnpm db:migrate` yourself and re-run Deploy. Safer
-still: ship such changes in two PRs, first code that stops using the column, then the migration
-that drops it.
+**When the check fails on a migration:** read what it names (the run's summary). If it's
+intended (the data it drops is no longer needed, and the version running doesn't use it), run the
+Deploy workflow by hand (Actions → Deploy → Run workflow) with that migration's tag in **Allow
+migrations**, or run `DATABASE_URL_MIGRATOR=… pnpm db:migrate` yourself. Then re-run the failed
+run (Actions → the run → Re-run jobs): with nothing left to apply it passes and Vercel puts the
+build live. Safer still: ship such changes in two PRs, first code that stops using the column,
+then the migration that drops it.
 
 **By hand** (as before): `DATABASE_URL_MIGRATOR=… pnpm db:migrate` applies everything pending,
 safe or not.
