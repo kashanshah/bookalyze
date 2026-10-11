@@ -1,5 +1,5 @@
 import { purchaseOrderNumber } from "@bookalyze/core";
-import { getDeliveryCosting, supplierOptions } from "@bookalyze/db";
+import { formatEntryNumber, getDeliveryCosting, supplierOptions } from "@bookalyze/db";
 import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -73,6 +73,14 @@ export default async function DeliveryCostsPage({
           currency: cost.currency,
           exchangeRate: cost.exchangeRate ?? "",
           allocation: cost.allocation,
+          paymentId: cost.paymentId ?? "",
+          paidBy: cost.paidBy
+            ? {
+                date: cost.paidBy.date,
+                entryNumber: formatEntryNumber(cost.paidBy.entryNumber),
+                journalEntryId: cost.paidBy.journalEntryId,
+              }
+            : null,
         }))}
       />
     </div>

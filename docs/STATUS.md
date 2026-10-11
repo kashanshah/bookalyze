@@ -28,7 +28,7 @@ back into stock, losses written off, like Amazon's FBA ledger)._
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
-| 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) done. Next: Noon (phase 4c), with bundles from day one |
+| 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) and slice 10 (a freight payment is its delivery's cost) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: "your stock against Noon's" from the ledger summary view. Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable) and 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices) done. Next: eBay orders. See §3 "Phase 4d" |
 
@@ -1705,6 +1705,48 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `purchasing.test.ts` (exact costs from totals, including 9,999,991 units;
   spreading a total) and `alibaba-receipt.test.ts`; e2e "purchase orders: type the cost of
   one, the line total or the order total".
+
+### Phase 5, slice 10: a freight payment is its delivery's cost
+
+- **Why:** freight, duty and other costs paid to someone else were entered twice, once as a
+  cost on the delivery's landed cost (to split it across the products) and once as a payment
+  on the order (the money), with nothing tying them together. A difference only showed up when
+  settling.
+- **Now:** recording a payment to someone other than the supplier **for a delivery** also puts
+  it on that delivery's landed cost. The dialog asks **On the delivery's landed cost**: a cost
+  entered by hand and not paid yet (suggested when the currency and amount match, else the same
+  vendor), or **Add it as a new cost** of a kind (freight by default, split by value, the
+  payment's label as its description).
+  - The cost takes the payment's amount and currency, **at the rate it was paid**: what left the
+    bank in the main currency over the payment's amount, shared by amount when the transaction
+    pays several things in that currency (`paidRate`). So landed cost and Supplier deposits
+    agree for it, and settling has nothing left over from it.
+  - The delivery's lots are re-costed and, for an order in the books, the delivery re-posted.
+  - When the delivery's stock is already in a month's cost of goods sold, the payment is still
+    recorded, the landed cost is left alone, and the toast says why.
+  - A payment already on the order for a delivery (recorded before this) has **Add to the …
+    delivery's landed cost** in the payments list, with the same choice.
+- **On the landed cost page:** a paid cost shows "Paid on …" with its journal entry; its amount,
+  currency, rate and payee are locked and it can't be removed. Saving keeps them as the
+  payment's whatever the form sends, and refuses a save that drops it. Taking the payment off
+  the order keeps the cost, unlinked and editable again. An unpaid cost with a payee says it
+  becomes what was paid once its payment is recorded.
+- Known simplification: a transaction corrected later (its amount changed) keeps the cost's
+  amount and rate from when it was linked. Take the payment off and record it again.
+- **Schema** (migration `0061_cost_paid_by`): `purchase_receipt_costs.payment_id` (unique,
+  composite FK to `purchase_payments`, which gains `purchase_payments_org_id_key`).
+- **Code:** db `landed-costs.ts` (`linkPaymentCost`, `paidRate`, `unpaidDeliveryCosts`; costs
+  carry `paymentId` and `paidBy`; `saveDeliveryCosts` keeps paid costs), `purchase-payments.ts`
+  (`addPurchasePayment` takes `cost` and `baseCurrency`; `removePurchasePayment` unlinks;
+  payments carry `costId`). Actions `recordPurchasePaymentAction` (costId, costKind; a `note`
+  for the toast) and `linkPaymentCostAction` (audited `purchase_order.payment_cost_linked`).
+  Web: `CostPicker` and `LinkCostDialog` in `[id]/payments.tsx`; `costs-form.tsx` locks paid
+  costs.
+- Tests: db `purchase-books.test.ts` ("puts a freight payment on its delivery's landed cost, at
+  the rate it was paid": USD freight paid from CAD at 1.40, a hand-entered duty paid later, a
+  save can't change or drop a paid cost, the payment taken off keeps it). e2e "purchase orders
+  in the books…" records freight for the delivery and checks deposits, the payment and the
+  locked cost.
 
 ### Phase 5, slice 9: purchases in the books
 

@@ -9,6 +9,7 @@ import {
   orderInBooks,
   schema,
   supplierOptions,
+  unpaidDeliveryCosts,
 } from "@bookalyze/db";
 import { asc, eq } from "drizzle-orm";
 import { ArrowLeft, ChevronRight, Truck } from "lucide-react";
@@ -46,6 +47,7 @@ export default async function PurchaseOrderPage({
       po.receipts.map((receipt) => receipt.id),
     );
     const payments = await listPurchasePayments(tx, po.id);
+    const unpaid = await unpaidDeliveryCosts(tx, po.id);
     const vendors = await supplierOptions(tx);
     const accounts = await tx
       .select()
@@ -63,10 +65,10 @@ export default async function PurchaseOrderPage({
             .where(eq(schema.journalEntries.id, deposits.settlementEntryId))
         )[0]?.n
       : undefined;
-    return { po, costs, payments, vendors, accounts, deposits, settlement };
+    return { po, costs, payments, unpaid, vendors, accounts, deposits, settlement };
   });
   if (!found) notFound();
-  const { po, costs, payments, vendors, accounts, deposits, settlement } = found;
+  const { po, costs, payments, unpaid, vendors, accounts, deposits, settlement } = found;
   const { baseCurrency } = ctx.profile;
   const moneyAccounts = accounts
     .filter((a) => isMoneyAccountSubtype(a.subtype) && !a.isArchived)
@@ -198,6 +200,7 @@ export default async function PurchaseOrderPage({
               payments={payments.map((p) => ({
                 id: p.id,
                 receiptId: p.receiptId,
+                costId: p.costId,
                 contactId: p.contactId,
                 contactName: p.contactName,
                 label: p.label,
@@ -212,6 +215,16 @@ export default async function PurchaseOrderPage({
               deliveries={po.receipts.map((r) => ({
                 id: r.id,
                 label: `Delivery of ${formatDate(r.receivedOn, locale)}`,
+                unpaidCosts: unpaid
+                  .filter((c) => c.receiptId === r.id)
+                  .map((c) => ({
+                    id: c.id,
+                    kind: c.kind,
+                    description: c.description,
+                    amount: c.amount,
+                    currency: c.currency,
+                    contactId: c.contactId,
+                  })),
               }))}
               moneyAccounts={moneyAccounts}
               vendors={vendors}

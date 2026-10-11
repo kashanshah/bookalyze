@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
 import { createProduct } from "../inventory";
-import { saveDeliveryCosts } from "../landed-costs";
+import { getDeliveryCosting, saveDeliveryCosts } from "../landed-costs";
 import { createDefaultChart, postJournalEntry } from "../ledger";
 import {
   orderDeposits,
@@ -291,5 +291,134 @@ describe("purchase orders in the books", () => {
     await expect(
       scoped((tx) => savePurchaseSettings(tx, { ...ctx(), postFrom: "2026-11-01" })),
     ).rejects.toThrow(/can't move later/);
+  });
+
+  it("puts a freight payment on its delivery's landed cost, at the rate it was paid", async () => {
+    const inventoryBefore = await balance("inventory");
+    const po = await sentOrder("2026-09-10");
+    const { receiptId } = await scoped(async (tx) => {
+      const detail = await getPurchaseOrder(tx, po.id);
+      return receivePurchaseOrder(tx, {
+        id: po.id,
+        orgId,
+        userId: null,
+        baseCurrency: "CAD",
+        receivedOn: "2026-10-05",
+        exchangeRate: "1.38",
+        notes: null,
+        quantities: Object.fromEntries((detail?.lines ?? []).map((l) => [l.id, l.quantity])),
+      });
+    });
+    const stock = async () => (await balance("inventory")) - inventoryBefore;
+    const costs = async () =>
+      (await scoped((tx) => getDeliveryCosting(tx, receiptId)))?.costs ?? [];
+    expect(await stock()).toBe(cad("2760"));
+
+    // USD 100 of sea freight paid from the CAD account: CAD 140 left the bank, so 1.40.
+    const freight = await paid("140.00", "2026-10-06");
+    const linked = await scoped((tx) =>
+      addPurchasePayment(tx, {
+        orgId,
+        userId: null,
+        purchaseOrderId: po.id,
+        journalEntryId: freight.id,
+        contactId: shipperId,
+        receiptId,
+        label: "Sea",
+        amount: "100.00",
+        currency: "USD",
+        baseCurrency: "CAD",
+        cost: { costId: null, kind: "freight", description: "Sea" },
+      }),
+    );
+    expect(linked.cost).toMatchObject({ ok: true, added: true });
+    expect(await costs()).toEqual([
+      expect.objectContaining({
+        kind: "freight",
+        description: "Sea",
+        amount: "100.0000",
+        currency: "USD",
+        exchangeRate: "1.4000000000",
+        contactId: shipperId,
+        paymentId: linked.id,
+        paidBy: expect.objectContaining({ date: "2026-10-06" }),
+      }),
+    ]);
+    expect(await stock()).toBe(cad("2900"));
+
+    // Duty entered by hand. Saving again keeps the freight as paid, whatever the form sends.
+    const save = (list: Parameters<typeof saveDeliveryCosts>[1]["costs"]) =>
+      scoped((tx) =>
+        saveDeliveryCosts(tx, {
+          orgId,
+          userId: null,
+          receiptId,
+          baseCurrency: "CAD",
+          exchangeRate: "1.38",
+          costs: list,
+        }),
+      );
+    const freightCost = {
+      kind: "freight" as const,
+      description: "Sea",
+      amount: "999.00",
+      currency: "CAD",
+      exchangeRate: null,
+      allocation: "value" as const,
+      paymentId: linked.id,
+    };
+    const duty = {
+      kind: "duty" as const,
+      description: null,
+      amount: "50.00",
+      currency: "CAD",
+      exchangeRate: null,
+      allocation: "value" as const,
+      contactId: shipperId,
+    };
+    await save([freightCost, duty]);
+    expect(
+      (await costs()).map((c) => [c.kind, c.amount, c.currency, Boolean(c.paymentId)]),
+    ).toEqual([
+      ["freight", "100.0000", "USD", true],
+      ["duty", "50.0000", "CAD", false],
+    ]);
+    expect(await stock()).toBe(cad("2950"));
+
+    // Paying the duty links it: the cost becomes what was paid.
+    const dutyId = (await costs())[1]?.id ?? null;
+    const dutyPaid = await paid("55.00", "2026-10-07");
+    const second = await scoped((tx) =>
+      addPurchasePayment(tx, {
+        orgId,
+        userId: null,
+        purchaseOrderId: po.id,
+        journalEntryId: dutyPaid.id,
+        contactId: shipperId,
+        receiptId,
+        label: null,
+        amount: "55.00",
+        currency: "CAD",
+        baseCurrency: "CAD",
+        cost: { costId: dutyId, kind: "duty", description: null },
+      }),
+    );
+    expect(second.cost).toEqual({ ok: true, costId: dutyId, added: false });
+    expect((await costs())[1]).toMatchObject({ amount: "55.0000", paymentId: second.id });
+    expect(await stock()).toBe(cad("2955"));
+
+    // A paid cost can't be dropped from the form; taking its payment off keeps it, unlinked.
+    await expect(save([duty])).rejects.toThrow(/Sea was paid by a payment on the order/);
+    await scoped((tx) =>
+      removePurchasePayment(tx, {
+        orgId,
+        userId: null,
+        purchaseOrderId: po.id,
+        paymentId: linked.id,
+      }),
+    );
+    expect((await costs())[0]).toMatchObject({ amount: "100.0000", paymentId: null, paidBy: null });
+    // The bank transaction goes back on Inventory, as for any payment taken off.
+    expect(await stock()).toBe(cad("3095"));
   });
 });
