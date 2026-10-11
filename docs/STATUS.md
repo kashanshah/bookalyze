@@ -2100,8 +2100,15 @@ pasted in when needed:
    payouts matched to deposits, balance check).
 6. [x] **Channel profit and the daily job** for Noon: done in slice 5. Still to do: VAT inside
    Noon's fees as recoverable input tax, for a registered company (owner input 4).
-7. [ ] **Cost of goods sold for Noon**, per month and marketplace, bundles included. Works through
-   Noon orders (slice 6) once SKUs are linked; check it with Kazomo's products.
+7. [x] **Cost of goods sold for Noon**, per month and marketplace, bundles included: Noon orders
+   (slice 6) count once their SKUs are linked, FBN returns and losses come from the FBN ledger
+   (slice 8), and a Noon month waits until that ledger is in through its end. A Noon month that
+   needs attention names **Noon's FBN inventory ledger** (it said Amazon's), units Noon found
+   become lots "Found by Noon", and a month with SKUs not linked links straight to them on
+   Products ("Link the SKUs"). `CogsPreview.kind` carries the platform for the wording. Not
+   counted: FBP returns (goods sent back to the seller show only as a refund in Noon's rows, and
+   whether they're resellable isn't known). Test: db `noon-ledger.test.ts` (a Noon month waiting
+   for Noon's ledger).
 8. [x] **FBN stock**: returns back into stock, losses written off (slice 8). Still to do:
    "your stock against Noon's".
    Slice 7 lists every report with a check of its columns. Kazomo's key can download these
@@ -2277,7 +2284,7 @@ screenshots work well).
 - Unhandled server errors are logged once by `src/instrumentation.ts` (`onRequestError`, event
   `request.failed`, with the route and Next's `digest`).
 
-**Dropdowns:** use `Combobox` from `src/components/ui/combobox.tsx` for every choice list.
+**Dropdowns:** use `Combobox` from `src/components/ui/combobox.tsx` for every choice list. Pickers of products, vendors and customers always show search (`searchable`), however few there are; others show it from 8 options.
 - Options are `{ value, label, group?, description?, keywords?, disabled? }`.
 - `group` lists options under headings (account types, "All time zones").
 - `keywords` are searched but not shown (codes, currency names).

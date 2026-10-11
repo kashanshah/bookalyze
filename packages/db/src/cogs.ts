@@ -416,7 +416,9 @@ export type CogsPreview = {
   found: number;
   foundCost: string;
   unlinkedSkus: string[];
-  /** Amazon's inventory ledger is in through this day (null: never brought in). */
+  /** The marketplace's platform ("amazon", "noon"…), for wording. */
+  kind: string;
+  /** Its inventory ledger (Amazon's FBA, Noon's FBN) is in through this day (null: never). */
   ledgerThrough: string | null;
   /** Plain-language reasons it can't be posted yet; empty when it can. */
   problems: string[];
@@ -433,10 +435,12 @@ export async function previewCogs(
   const currency = input.baseCurrency;
   const monthEnd = monthBounds(input.month).to;
   const [channel] = await tx
-    .select({ ledgerThrough: salesChannels.ledgerSyncedThrough })
+    .select({ ledgerThrough: salesChannels.ledgerSyncedThrough, kind: salesChannels.kind })
     .from(salesChannels)
     .where(eq(salesChannels.id, input.channelId));
   const ledgerThrough = channel?.ledgerThrough ?? null;
+  const kind = channel?.kind ?? "amazon";
+  const ledgerName = kind === "noon" ? "Noon's FBN inventory ledger" : "Amazon's inventory ledger";
   const sold = await unitsByProduct(tx, input);
   const moved = ledgerThrough ? await ledgerByProduct(tx, input) : new Map();
   const ids = [...new Set([...sold.keys(), ...moved.keys()])];
@@ -511,7 +515,7 @@ export async function previewCogs(
   const unlinkedSkus = month?.unlinkedSkus ?? [];
   if (ledgerThrough && ledgerThrough < monthEnd) {
     problems.unshift(
-      `Amazon's inventory ledger is in through ${ledgerThrough}. Bring it in through ${monthEnd} first (Inventory → Stock movements), so returns and losses are counted.`,
+      `${ledgerName} is in through ${ledgerThrough}. Bring it in through ${monthEnd} first (Inventory → Stock movements), so returns and losses are counted.`,
     );
   }
   if (unlinkedSkus.length) {
@@ -540,6 +544,7 @@ export async function previewCogs(
     found: count((l) => l.found),
     foundCost: sum((l) => l.foundCost),
     unlinkedSkus,
+    kind,
     ledgerThrough,
     problems,
   };
@@ -685,7 +690,10 @@ export async function postCogs(
         currency: input.baseCurrency,
         productCost: lot.cost,
         landedCost: "0",
-        notes: lot.source === "return" ? "Returned by customers" : "Found by Amazon",
+        notes:
+          lot.source === "return"
+            ? "Returned by customers"
+            : `Found by ${preview.kind === "noon" ? "Noon" : "Amazon"}`,
       })),
     );
   }
