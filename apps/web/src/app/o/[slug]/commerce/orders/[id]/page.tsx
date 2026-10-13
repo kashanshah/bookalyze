@@ -465,13 +465,14 @@ export default async function OrderPage({
                 </>
               ) : items.length === 0 || order.total == null ? (
                 <p className="mt-2 text-muted-foreground text-sm">
-                  You can create an invoice once Amazon has priced this order.
+                  You can create an invoice once the marketplace has priced this order.
                 </p>
               ) : (
                 <>
                   <p className="mt-2 text-muted-foreground text-sm leading-relaxed">
-                    A PDF for the buyer, from this order. Upload it in Seller Central on their
-                    invoice request. Sending it from here comes later.
+                    {channel.kind === "amazon"
+                      ? "A PDF for the buyer, from this order. Upload it in Seller Central on their invoice request. Sending it from here comes later."
+                      : "A PDF for the buyer, from this order, to send them yourself."}
                   </p>
                   <div className="mt-4">
                     <InvoiceDialog slug={slug} orderId={order.id} locale={locale} mode="create" />
