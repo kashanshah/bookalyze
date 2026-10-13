@@ -32,7 +32,9 @@ back into stock, losses written off, like Amazon's FBA ledger)._
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: "your stock against Noon's" from the ledger summary view. Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable) and 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices) done. Next: eBay orders. See §3 "Phase 4d" |
 
-**Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. A static landing page
+**Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
+`/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
+sign-in pages and given to eBay). Every environment variable is listed in `.env.example`. A static landing page
 with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
 for every PR.
 
@@ -2551,8 +2553,9 @@ cases. These answers only help pick sensible defaults and test data:
    status values are in Noon's own reports page for that report.
 5. eBay (phase 4d): which company sells on which eBay sites (Channels → Add a channel → eBay). For
    connecting: an eBay developer account (developer.ebay.com, free), a production keyset, and a
-   redirect (RuName) whose "auth accepted" URL is `https://app.bookalyze.com/api/ebay/callback`,
-   and the account-deletion endpoint; then set `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`,
+   redirect (RuName) whose "auth accepted" URL is `https://app.bookalyze.com/api/ebay/callback`
+   and privacy policy URL is `https://app.bookalyze.com/privacy-policy`, and the account-deletion
+   endpoint; then set `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`,
    `EBAY_RU_NAME` and `EBAY_VERIFICATION_TOKEN` in Vercel (steps in `docs/SETUP.md` → eBay).
    These are Bookalyze's own app keys, not a company's; each company's eBay access comes from
    its own consent and is kept encrypted. Then Connect eBay on each company's eBay site.

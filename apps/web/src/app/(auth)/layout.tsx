@@ -14,7 +14,12 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             {children}
           </div>
         </div>
-        <p className="text-muted-foreground text-xs">© {new Date().getFullYear()} Bookalyze</p>
+        <p className="flex flex-wrap gap-x-4 text-muted-foreground text-xs">
+          <span>© {new Date().getFullYear()} Bookalyze</span>
+          <Link href="/privacy-policy" className="hover:text-foreground">
+            Privacy policy
+          </Link>
+        </p>
       </div>
       <BrandPanel />
     </div>
