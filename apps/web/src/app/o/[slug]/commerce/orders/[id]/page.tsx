@@ -3,6 +3,8 @@ import {
   BUYER_CLAIMS,
   type BuyerClaim,
   can,
+  ebayMarketplace,
+  ebayOrderUrl,
   formatDecimal,
   formatInvoiceNumber,
   ORDER_STATUS_GROUPS,
@@ -69,7 +71,13 @@ export default async function OrderPage({
   });
   const currency = order.currency ?? channel.currency;
   const status = orderStatusLabel(order.status);
-  const link = sellerCentralOrderUrl(channel.name, order.externalId);
+  const ebaySite = channel.kind === "ebay" ? ebayMarketplace(channel.marketplaceId ?? "") : null;
+  const link = ebaySite
+    ? { href: ebayOrderUrl(ebaySite.site, order.externalId), label: "Open in Seller Hub" }
+    : (() => {
+        const href = sellerCentralOrderUrl(channel.name, order.externalId);
+        return href ? { href, label: "Open in Seller Central" } : null;
+      })();
   const placed = formatPurchaseDate(order.purchasedAt, locale, timezone);
   const refundDay = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
 
@@ -257,9 +265,9 @@ export default async function OrderPage({
         actions={
           link ? (
             <Button asChild variant="outline">
-              <a href={link} target="_blank" rel="noreferrer">
+              <a href={link.href} target="_blank" rel="noreferrer">
                 <ExternalLink />
-                Open in Seller Central
+                {link.label}
               </a>
             </Button>
           ) : null
@@ -303,7 +311,7 @@ export default async function OrderPage({
             <div className="flex flex-col items-center gap-2 px-5 py-10 text-center text-muted-foreground text-sm">
               <Package className="size-6" />
               {order.itemsSyncedAt
-                ? "Amazon didn't list any items for this order."
+                ? "The marketplace didn't list any items for this order."
                 : "Item details come in with the next sync, once Amazon has priced the order."}
             </div>
           ) : (
@@ -316,7 +324,10 @@ export default async function OrderPage({
                   <span className="min-w-0">
                     <span className="block font-medium text-sm">{i.title ?? i.sku ?? i.asin}</span>
                     <span className="block text-muted-foreground text-xs">
-                      {[i.sku && `SKU ${i.sku}`, i.asin && `ASIN ${i.asin}`]
+                      {[
+                        i.sku && `SKU ${i.sku}`,
+                        i.asin && (channel.kind === "ebay" ? `Item ${i.asin}` : `ASIN ${i.asin}`),
+                      ]
                         .filter(Boolean)
                         .join(" · ")}
                     </span>

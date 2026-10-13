@@ -1,5 +1,5 @@
-// A stand-in for eBay's consent page, OAuth token endpoint, Commerce Identity API and the
-// Notification API's public keys, for end-to-end tests only. Synthetic data. It makes its own EC
+// A stand-in for eBay's consent page, OAuth token endpoint, Commerce Identity API, the
+// Fulfillment API's orders and the Notification API's public keys, for end-to-end tests only. Synthetic data. It makes its own EC
 // key pair when it starts (nothing secret is kept in the repo) and signs account-deletion notices
 // with it the way eBay does (ECDSA over SHA-1, the key named in X-EBAY-SIGNATURE).
 import { createSign, generateKeyPairSync } from "node:crypto";
@@ -32,6 +32,82 @@ const send = (res, status, body, headers = {}) => {
   res.writeHead(status, { "Content-Type": "application/json", ...headers });
   res.end(JSON.stringify(body));
 };
+
+// Orders on two sites, a few days old: eBay US's shipped mug (a SKU linked to a product), and
+// eBay Canada's order to ship and a cancelled one. No real buyers: synthetic names and places.
+const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString();
+const money = (value, currency) => ({ value, currency });
+const ebayOrder = ({ id, site, currency, days, status, cancelled, sku, title, qty, price }) => ({
+  orderId: id,
+  creationDate: daysAgo(days),
+  lastModifiedDate: daysAgo(days - 1),
+  orderFulfillmentStatus: status,
+  orderPaymentStatus: "PAID",
+  cancelStatus: { cancelState: cancelled ? "CANCELED" : "NONE_REQUESTED" },
+  pricingSummary: { total: money(price, currency) },
+  fulfillmentStartInstructions: [
+    {
+      maxEstimatedDeliveryDate: daysAgo(days - 6),
+      shippingStep: {
+        shipTo: {
+          fullName: "Synthetic Buyer",
+          contactAddress: {
+            countryCode: site === "EBAY_US" ? "US" : "CA",
+            stateOrProvince: site === "EBAY_US" ? "WA" : "ON",
+          },
+        },
+      },
+    },
+  ],
+  lineItems: [
+    {
+      lineItemId: `${id}-1`,
+      legacyItemId: `1105${id.slice(-5)}`,
+      sku,
+      title,
+      quantity: qty,
+      lineItemCost: money(price, currency),
+      lineItemFulfillmentStatus: status === "FULFILLED" ? "FULFILLED" : "NOT_STARTED",
+      listingMarketplaceId: site,
+    },
+  ],
+});
+const ORDERS = [
+  ebayOrder({
+    id: "11-00001-00001",
+    site: "EBAY_US",
+    currency: "USD",
+    days: 6,
+    status: "FULFILLED",
+    sku: "EBAY-MAPLE-MUG",
+    title: "Maple leaf ceramic mug",
+    qty: 2,
+    price: "31.98",
+  }),
+  ebayOrder({
+    id: "11-00002-00002",
+    site: "EBAY_CA",
+    currency: "CAD",
+    days: 4,
+    status: "NOT_STARTED",
+    sku: "EBAY-CA-TOTE",
+    title: "Canvas market tote",
+    qty: 1,
+    price: "24.50",
+  }),
+  ebayOrder({
+    id: "11-00003-00003",
+    site: "EBAY_CA",
+    currency: "CAD",
+    days: 3,
+    status: "NOT_STARTED",
+    cancelled: true,
+    sku: "EBAY-CA-TOTE",
+    title: "Canvas market tote",
+    qty: 1,
+    price: "24.50",
+  }),
+];
 
 createServer((req, res) => {
   let raw = "";
@@ -141,6 +217,30 @@ createServer((req, res) => {
         return send(res, 401, { errors: [{ errorId: 1001, message: "Invalid access token" }] });
       }
       return send(res, 200, USER);
+    }
+
+    if (req.method === "GET" && url.pathname === "/sell/fulfillment/v1/order") {
+      if (req.headers.authorization !== `Bearer ${ACCESS}`) {
+        return send(res, 401, { errors: [{ errorId: 1001, message: "Invalid access token" }] });
+      }
+      const match = /^(creationdate|lastmodifieddate):\[(.*)\.\.(.*)\]$/.exec(
+        url.searchParams.get("filter") ?? "",
+      );
+      if (!match) {
+        return send(res, 400, { errors: [{ errorId: 30700, message: "Invalid filter" }] });
+      }
+      const [, by, after, before] = match;
+      const field = by === "creationdate" ? "creationDate" : "lastModifiedDate";
+      const inWindow = ORDERS.filter((o) => o[field] >= after && o[field] <= before);
+      const limit = Number(url.searchParams.get("limit") ?? 50);
+      const offset = Number(url.searchParams.get("offset") ?? 0);
+      return send(res, 200, {
+        href: url.toString(),
+        total: inWindow.length,
+        limit,
+        offset,
+        orders: inWindow.slice(offset, offset + limit),
+      });
     }
 
     if (req.method === "GET" && url.pathname === `/commerce/notification/v1/public_key/${KID}`) {

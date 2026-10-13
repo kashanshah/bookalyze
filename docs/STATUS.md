@@ -30,7 +30,7 @@ back into stock, losses written off, like Amazon's FBA ledger)._
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) and slice 10 (a freight payment is its delivery's cost) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: "your stock against Noon's" from the ledger summary view. Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
-| 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable) and 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices) done. Next: eBay orders. See §3 "Phase 4d" |
+| 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices) and 3 (eBay orders from the Fulfillment API, in cost of goods sold) done. Next: eBay's money (Finances API transactions). See §3 "Phase 4d" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
@@ -1343,6 +1343,38 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   from the mock (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema; the
   summary disagrees on one day last month), then uploads a summary file.
 
+### Phase 4d, slice 3: eBay orders
+- **From the Fulfillment API** (core `ebay-orders.ts`: `ebayOrdersQuery`, `parseEbayOrdersPage`,
+  `ebayOrderStatus`; server `ebay-orders.ts` `syncEbayChannelOrders`; db `saveOrdersWithItems`):
+  `GET /sell/fulfillment/v1/order`, 200 a page by offset. The first sync asks by `creationdate`
+  from the start date (past eBay's default 90 days); later ones by `lastmodifieddate` since the
+  last sync, through the same window helper as Amazon (`orderSyncWindow`: a little overlap, a
+  short lag). The page's offset and the window's end are kept on the channel
+  (`orders_next_token`, `orders_window_end`), so a long history carries on run after run.
+  `ebaySellGet` renews an expired access token once and doesn't call a malformed request a
+  sign-in problem.
+- **Same tables as Amazon and Noon** (`orders`, `order_items`), each page saved with its items at
+  once (no waiting on items). An older copy (read again in the overlap) changes nothing. The
+  account's one connection serves every site; each site keeps the orders listed on it
+  (`listingMarketplaceId`). Statuses in the Orders screen's words: cancelled → Canceled, unpaid →
+  Pending, FULFILLED → Shipped, IN_PROGRESS → PartiallyShipped, else Unshipped. Fulfilment is
+  always `merchant` ("You"). Items: the seller's SKU (a listing without one is matched by its item
+  number), eBay's item number in `asin` (shown as "Item …"), price for the whole quantity,
+  shipping, eBay-collected tax, promotions. Only the ship-to country and region are kept, no
+  buyer details. eBay's fees come with the Finances slice.
+- **Where:** `syncChannelOrders` hands eBay channels to `syncEbayChannelOrders`, so the
+  every-5-minutes job, "Bring in new orders" and "Bring theirs in too" cover eBay. The Orders page
+  and `startOrdersAction` list channels through db `listOrderConnections` (Amazon and eBay, not
+  disconnected, switched on). An eBay site's page has **Its orders**; an eBay order has **Open in
+  Seller Hub** on its own site.
+- **Cost of goods sold** counts eBay as it does Noon: units shipped by order month, once the SKUs
+  are linked (Products → SKUs from orders).
+- Tests: core `ebay-orders.test.ts` (query, statuses, parsing without buyer details, other sites
+  left out, SKU fallback, paging); db `ebay-orders.test.ts` (saved with items, brought up to date,
+  older copy ignored, start date, cost of goods sold, isolation); e2e "ebay: bring in eBay
+  orders…" (the mock's `/sell/fulfillment/v1/order`: a shipped eBay US order with a linked SKU, an
+  eBay Canada order to ship and a cancelled one).
+
 ### Phase 4d, slice 2: Connect eBay
 
 - **One app, many accounts:** Bookalyze's own eBay developer app (env vars `EBAY_CLIENT_ID`,
@@ -2240,8 +2272,8 @@ Built like Amazon and Noon: channels first, then the account, orders, money and 
 1. [x] **eBay channels.** Done in slice 1.
 2. [x] **Connect eBay.** Done in slice 2 (needs the app keys in Vercel to be used: owner
    input 5).
-3. [ ] **Orders** from the Fulfillment API, a year back and daily; SKUs, so cost of goods sold
-   counts eBay.
+3. [x] **Orders** from the Fulfillment API, a year back and every few minutes; SKUs, so cost of
+   goods sold counts eBay. Done in slice 3.
 4. [ ] **Transactions** from the Finances API kept row by row (a year back), with the transaction
    report upload as the fallback; monthly totals.
 5. [ ] **Posting and deposit matching**: monthly entries per eBay site to an eBay balance
