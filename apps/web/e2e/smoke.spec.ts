@@ -2170,15 +2170,27 @@ test("ebay: bring in eBay orders, each on its own site, and open one", async ({ 
   // The site's page leads to its orders; the eBay sites join the orders already coming in.
   await page.getByRole("link", { name: "Its orders" }).click();
   await expect(page).toHaveURL(/\/commerce\/orders\?channel=/);
+  // Amazon's orders started more than two years back (marketplaces keep about two): the eBay
+  // sites still join, from as far back as allowed, and Amazon keeps its own date.
+  const longAgo = `${new Date().getFullYear() - 3}-01-01`;
+  await withOwnerDb((db) =>
+    db.query(
+      `update sales_channels set orders_from = $1 where kind = 'amazon' and orders_from is not null`,
+      [longAgo],
+    ),
+  );
   await page.getByRole("link", { name: "Orders", exact: true }).click();
-  const start = page
-    .getByRole("button", { name: "Bring theirs in too" })
-    .or(page.getByRole("button", { name: /^Bring in orders from/ }));
-  await expect(start).toBeVisible();
-  await start.click();
+  await page.getByRole("button", { name: "Bring theirs in too" }).click();
   const rows = page.getByRole("main");
   await expect(rows.getByText("11-00001-00001")).toBeVisible({ timeout: 30_000 });
   await expect(rows.getByText("11-00002-00002")).toBeVisible();
+  const starts = await withOwnerDb((db) =>
+    db.query<{ kind: string; from: string }>(
+      `select distinct kind, orders_from::text as from from sales_channels where orders_from is not null order by kind`,
+    ),
+  );
+  expect(starts.rows.find((r) => r.kind === "amazon")?.from).toBe(longAgo);
+  expect(starts.rows.find((r) => r.kind === "ebay")?.from).not.toBe(longAgo);
 
   // Each order is on the site it was listed on, and eBay's states read like the others.
   await page.goto(page.url().split("?")[0] ?? page.url());

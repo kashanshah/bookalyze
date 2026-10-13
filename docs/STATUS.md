@@ -1366,7 +1366,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   shipping, eBay-collected tax, promotions. Only the ship-to country and region are kept, no
   buyer details. eBay's fees come with the Finances slice.
 - **Where:** `syncChannelOrders` hands eBay channels to `syncEbayChannelOrders`, so the
-  every-5-minutes job, "Bring in new orders" and "Bring theirs in too" cover eBay. The Orders page
+  every-5-minutes job, "Bring in new orders" and "Bring theirs in too" cover eBay. **Bring theirs
+  in too** (`includeOrderChannelsAction`) starts only the channels not bringing orders in yet,
+  from the others' first start date or two years back, whichever is later (an Amazon start over
+  two years old used to be refused), and leaves the others' dates alone. The Orders page
   and `startOrdersAction` list channels through db `listOrderConnections` (Amazon and eBay, not
   disconnected, switched on). An eBay site's page has **Its orders**; an eBay order has **Open in
   Seller Hub** on its own site.

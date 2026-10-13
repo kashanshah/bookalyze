@@ -208,17 +208,7 @@ export default async function OrdersPage({
             switched on later and {notStarted.length === 1 ? "isn't" : "aren't"} bringing orders in
             yet.
           </span>
-          {canManage ? (
-            <IncludeChannels
-              slug={slug}
-              from={
-                syncing
-                  .map((s) => s.ordersFrom)
-                  .filter((d): d is string => Boolean(d))
-                  .sort()[0] ?? today
-              }
-            />
-          ) : null}
+          {canManage ? <IncludeChannels slug={slug} /> : null}
         </div>
       ) : null}
 
