@@ -24,6 +24,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
+import { Badge } from "@/components/ui/badge";
 import { formatDate, nowIn } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
@@ -37,6 +38,8 @@ export const metadata: Metadata = { title: "Channel profit" };
 
 type Column = {
   key: string;
+  /** The sales channel, when the column is one (not "All channels"). */
+  channelId?: string | null;
   label: string;
   currency: string;
   totals: GroupTotals;
@@ -92,7 +95,7 @@ export default async function ChannelProfitPage({
     today,
     fiscalConfigOf(ctx.profile),
   );
-  const { rows, noon, feeTaxRecoverable } = await inOrg(ctx, async (tx) => {
+  const { rows, noon, feeTaxRecoverable, channelStates } = await inOrg(ctx, async (tx) => {
     // Tax on fees recoverable: its account is an asset or liability (input tax), not the fees.
     const feeTax = (await getSettlementAccounts(tx)).feeTax;
     const [account] = feeTax
@@ -105,6 +108,15 @@ export default async function ChannelProfitPage({
       rows: await settlementsForProfit(tx, { from, to, timezone }),
       noon: await noonMonthsForProfit(tx, { from, to }),
       feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
+      // A channel switched off, or whose account was disconnected, still shows what it earned.
+      channelStates: await tx
+        .select({
+          id: schema.salesChannels.id,
+          isActive: schema.salesChannels.isActive,
+          connection: schema.connections.status,
+        })
+        .from(schema.salesChannels)
+        .leftJoin(schema.connections, eq(schema.connections.id, schema.salesChannels.connectionId)),
     };
   });
 
@@ -126,6 +138,7 @@ export default async function ChannelProfitPage({
     const key = `${s.channelId ?? s.marketplace ?? "amazon"}:${s.currency}`;
     const column = columns.get(key) ?? {
       key,
+      channelId: s.channelId,
       label: s.channelName ?? s.marketplace ?? "Amazon",
       currency: s.currency,
       totals: emptyGroupTotals(),
@@ -163,6 +176,7 @@ export default async function ChannelProfitPage({
     const key = `noon:${m.channelId}:${m.currency}`;
     const column = columns.get(key) ?? {
       key,
+      channelId: m.channelId,
       label: m.channelName,
       currency: m.currency,
       totals: emptyGroupTotals(),
@@ -197,6 +211,25 @@ export default async function ChannelProfitPage({
   const showAll =
     channels.length > 1 || channels.some((c) => c.currency !== baseCurrency) || unconverted > 0;
   const shown = showAll ? [...channels, all] : channels;
+  /** Why a channel's column is past earnings only: switched off, or its account disconnected. */
+  const stateOf = (c: Column) => {
+    const state = c.channelId ? channelStates.find((s) => s.id === c.channelId) : undefined;
+    if (!state) return null;
+    if (state.connection === "disconnected") {
+      return {
+        label: "Disconnected",
+        hint: "Its account was disconnected: what it earned before stays here.",
+      };
+    }
+    if (!state.isActive) {
+      return {
+        label: "Switched off",
+        hint: "Switched off on Channels: what it earned before stays here.",
+      };
+    }
+    return null;
+  };
+
   const results = shown.map((c) => ({
     column: c,
     profit: channelProfit(c.totals, { feeTaxRecoverable }),
@@ -232,12 +265,20 @@ export default async function ChannelProfitPage({
                 <th className="px-5 py-3 text-start font-medium">
                   {formatDate(from, locale)} – {formatDate(to, locale)}
                 </th>
-                {results.map(({ column }) => (
-                  <th key={column.key} className="px-5 py-3 text-end font-medium">
-                    <span className="block text-foreground">{column.label}</span>
-                    <span className="block font-normal">{countOf(column)}</span>
-                  </th>
-                ))}
+                {results.map(({ column }) => {
+                  const state = stateOf(column);
+                  return (
+                    <th key={column.key} className="px-5 py-3 text-end align-top font-medium">
+                      <span className="block text-foreground">{column.label}</span>
+                      {state ? (
+                        <Badge variant="outline" className="my-1 font-normal" title={state.hint}>
+                          {state.label}
+                        </Badge>
+                      ) : null}
+                      <span className="block font-normal">{countOf(column)}</span>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -296,7 +337,7 @@ export default async function ChannelProfitPage({
           own day, and Noon's "held back and released" is what stayed in your Noon balance, so "paid
           out" is what Noon paid. Amounts in another currency are in {baseCurrency} at the rate they
           posted at, or that day's rate if they aren't in your books yet. Product costs come with
-          inventory.
+          inventory. Channels switched off or disconnected still show what they earned before.
           {feeTaxRecoverable
             ? " Tax on Amazon's fees posts to a recoverable tax account, so it isn't counted as a cost."
             : ""}

@@ -2537,6 +2537,20 @@ test("noon: choose how Noon posts, post a month and check the Noon balance", asy
     page.getByRole("columnheader", { name: /Noon UAE.*Noon transactions/ }),
   ).toBeVisible();
   await expect(page.getByRole("rowheader", { name: "Promotions and subsidies" })).toBeVisible();
+  const profitUrl = page.url();
+
+  // Switched off, it keeps what it earned, tagged so it reads as past earnings.
+  await expect(page.getByRole("columnheader", { name: /Switched off/ })).toHaveCount(0);
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Noon UAE/ }).click();
+  await page.getByRole("switch", { name: "Use Noon UAE" }).click();
+  await expect(page.getByText("Switched off", { exact: true })).toBeVisible();
+  await page.goto(profitUrl);
+  await expect(page.getByRole("columnheader", { name: /Noon UAE.*Switched off/ })).toBeVisible();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Noon UAE/ }).click();
+  await page.getByRole("switch", { name: "Use Noon UAE" }).click();
+  await expect(page.getByRole("switch", { name: "Use Noon UAE" })).toBeChecked();
 });
 
 test("purchase orders: fill one in from an Alibaba receipt, check it, then save it", async ({
