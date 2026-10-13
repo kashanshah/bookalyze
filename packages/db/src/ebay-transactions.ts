@@ -183,6 +183,8 @@ export type EbaySyncState = {
   through: string | null;
   refreshedAt: string | null;
   pending: { from: string; to: string; offset: number } | null;
+  /** Payouts are in through this day (they come in with each window, from slice 5). */
+  payoutsThrough: string | null;
 };
 
 export function ebaySyncState(settings: Record<string, unknown>): EbaySyncState {
@@ -197,6 +199,7 @@ export function ebaySyncState(settings: Record<string, unknown>): EbaySyncState 
       p && typeof p.from === "string" && typeof p.to === "string" && typeof p.offset === "number"
         ? { from: p.from, to: p.to, offset: p.offset }
         : null,
+    payoutsThrough: typeof s.payoutsThrough === "string" ? s.payoutsThrough : null,
   };
 }
 

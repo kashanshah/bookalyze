@@ -24,6 +24,7 @@ export function SyncEbayMoneyButton({ slug, locale }: { slug: string; locale: st
     start(async () => {
       let added = 0;
       let updated = 0;
+      let payouts = 0;
       for (let round = 0; round < MAX_ROUNDS; round++) {
         const result = await syncEbayMoneyAction(slug);
         if (!result.ok) {
@@ -32,15 +33,20 @@ export function SyncEbayMoneyButton({ slug, locale }: { slug: string; locale: st
         }
         added += result.added;
         updated += result.updated;
+        payouts += result.payouts;
         router.refresh();
         if (result.error) {
           toast.error(result.error);
           break;
         }
         if (!result.more) {
+          const also = [
+            payouts ? `${plural(payouts, "payout")} brought in.` : "",
+            updated ? `${plural(updated, "transaction")} refreshed.` : "",
+          ].filter(Boolean);
           toast.success(
             added ? `${plural(added, "transaction")} brought in` : "eBay's money is up to date",
-            { description: updated ? `${plural(updated, "transaction")} refreshed.` : undefined },
+            { description: also.length ? also.join(" ") : undefined },
           );
           break;
         }

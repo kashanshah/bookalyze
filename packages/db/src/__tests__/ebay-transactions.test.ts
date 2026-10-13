@@ -191,6 +191,7 @@ describe("eBay transactions", () => {
       through: "2026-09-30",
       refreshedAt: null,
       pending: { from: "2026-10-01", to: "2026-10-12", offset: 1000 },
+      payoutsThrough: "2026-09-30",
     };
     await scoped((tx) => saveEbaySyncState(tx, id, state));
     const [saved] = await scoped((tx) => tx.select().from(schema.connections).where(eqId(id)));

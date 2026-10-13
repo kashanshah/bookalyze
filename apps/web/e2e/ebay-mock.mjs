@@ -1,5 +1,5 @@
 // A stand-in for eBay's consent page, OAuth token endpoint, Commerce Identity API, the
-// Fulfillment API's orders, the Finances API's transactions and the Notification API's public keys, for end-to-end tests only. Synthetic data. It makes its own EC
+// Fulfillment API's orders, the Finances API's transactions and payouts, and the Notification API's public keys, for end-to-end tests only. Synthetic data. It makes its own EC
 // key pair when it starts (nothing secret is kept in the repo) and signs account-deletion notices
 // with it the way eBay does (ECDSA over SHA-1, the key named in X-EBAY-SIGNATURE).
 import { createSign, generateKeyPairSync } from "node:crypto";
@@ -170,6 +170,41 @@ const TRANSACTIONS = [
   },
 ];
 
+// The 10th of the month before last, at noon UTC: a finished month to post.
+const monthBeforeLast = (() => {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 2, 10, 12)).toISOString();
+})();
+// A sale with no order in (its order is older than what came in): on the site in its currency.
+TRANSACTIONS.push({
+  transactionId: "TX-SALE-OLD",
+  transactionType: "SALE",
+  transactionStatus: "PAYOUT",
+  transactionDate: monthBeforeLast,
+  orderId: "11-00009-00009",
+  payoutId: "PO-1",
+  bookingEntry: "CREDIT",
+  amount: money("22.10", "CAD"),
+  totalFeeAmount: money("2.90", "CAD"),
+});
+
+// eBay paying the balance to the bank: one sent, one that failed (never matched).
+const PAYOUTS = [
+  {
+    payoutId: "PO-1",
+    payoutStatus: "SUCCEEDED",
+    payoutDate: daysAgo(3),
+    amount: money("22.10", "CAD"),
+    payoutInstrument: { instrumentType: "BANK", accountLastFourDigits: "4321" },
+  },
+  {
+    payoutId: "PO-2",
+    payoutStatus: "TERMINAL_FAILED",
+    payoutDate: daysAgo(2),
+    amount: money("3.00", "CAD"),
+  },
+];
+
 createServer((req, res) => {
   let raw = "";
   req.on("data", (chunk) => {
@@ -324,6 +359,27 @@ createServer((req, res) => {
         limit,
         offset,
         transactions: inWindow.slice(offset, offset + limit),
+      });
+    }
+
+    if (req.method === "GET" && url.pathname === "/sell/finances/v1/payout") {
+      if (req.headers.authorization !== `Bearer ${ACCESS}`) {
+        return send(res, 401, { errors: [{ errorId: 1001, message: "Invalid access token" }] });
+      }
+      const match = /^payoutDate:\[(.*)\.\.(.*)\]$/.exec(url.searchParams.get("filter") ?? "");
+      if (!match) {
+        return send(res, 400, { errors: [{ errorId: 135001, message: "Invalid filter" }] });
+      }
+      const [, after, before] = match;
+      const inWindow = PAYOUTS.filter((p) => p.payoutDate >= after && p.payoutDate <= before);
+      const limit = Number(url.searchParams.get("limit") ?? 20);
+      const offset = Number(url.searchParams.get("offset") ?? 0);
+      return send(res, 200, {
+        href: url.toString(),
+        total: inWindow.length,
+        limit,
+        offset,
+        payouts: inWindow.slice(offset, offset + limit),
       });
     }
 

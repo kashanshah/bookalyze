@@ -906,3 +906,152 @@ export const ebayTransactions = pgTable(
     tenantIsolationPolicy("ebay_transactions", t.organizationId),
   ],
 );
+
+/**
+ * An eBay payout (phase 4d, slice 5): eBay sending the seller's balance to the bank. Matched to
+ * its bank deposit, which then moves out of the eBay balance: the deposit as it is now and as it
+ * was before (put back on unmatch).
+ */
+export const ebayPayouts = pgTable(
+  "ebay_payouts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    payoutId: text("payout_id").notNull(),
+    /** INITIATED, SUCCEEDED, RETRYABLE_FAILED, TERMINAL_FAILED, REVERSED. */
+    status: text("status").notNull(),
+    payoutAt: timestamp("payout_at", { withTimezone: true }).notNull(),
+    payoutDate: date("payout_date").notNull(),
+    currency: char("currency", { length: 3 }).notNull(),
+    amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
+    accountLast4: text("account_last4"),
+    depositEntryId: uuid("deposit_entry_id"),
+    depositOriginalEntryId: uuid("deposit_original_entry_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("ebay_payouts_org_id_key").on(t.organizationId, t.id),
+    unique("ebay_payouts_ebay_key").on(t.organizationId, t.payoutId),
+    foreignKey({
+      name: "ebay_payouts_deposit_entry_fk",
+      columns: [t.organizationId, t.depositEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    foreignKey({
+      name: "ebay_payouts_deposit_original_entry_fk",
+      columns: [t.organizationId, t.depositOriginalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    tenantIsolationPolicy("ebay_payouts", t.organizationId),
+  ],
+);
+
+/**
+ * An eBay site's month in the books: one entry, and what it held when posted (`net`, `rows`), so
+ * later changes to eBay's rows show as "changed since posted". Posted while its entry isn't
+ * reversed.
+ */
+export const ebayPeriods = pgTable(
+  "ebay_periods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    /** "2026-09". */
+    month: char("month", { length: 7 }).notNull(),
+    currency: char("currency", { length: 3 }).notNull(),
+    net: numeric("net", { precision: 20, scale: 4 }).notNull(),
+    rows: integer("rows").notNull(),
+    journalEntryId: uuid("journal_entry_id"),
+    /** Main-currency units per one unit of the month's currency ("1" in the main currency). */
+    postedFxRate: numeric("posted_fx_rate", { precision: 20, scale: 10 }),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("ebay_periods_channel_month_key").on(t.organizationId, t.channelId, t.month),
+    foreignKey({
+      name: "ebay_periods_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "ebay_periods_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    check("ebay_periods_month_valid", sql`${t.month} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
+    tenantIsolationPolicy("ebay_periods", t.organizationId),
+  ],
+);
+
+/** The account each kind of eBay amount posts to (core `EBAY_ACCOUNT_KEYS`). */
+export const ebayAccounts = pgTable(
+  "ebay_accounts",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    accountId: uuid("account_id").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.organizationId, t.key] }),
+    foreignKey({
+      name: "ebay_accounts_account_fk",
+      columns: [t.organizationId, t.accountId],
+      foreignColumns: [accounts.organizationId, accounts.id],
+    }),
+    tenantIsolationPolicy("ebay_accounts", t.organizationId),
+  ],
+);
+
+/** When eBay starts posting (the first day of a month), and whether the daily job posts. */
+export const ebaySettings = pgTable(
+  "ebay_settings",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    postFrom: date("post_from").notNull(),
+    autoPost: boolean("auto_post").notNull().default(false),
+    updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [tenantIsolationPolicy("ebay_settings", t.organizationId)],
+);
+
+/** Bank deposits someone said aren't an eBay payout, so they aren't suggested for it again. */
+export const ebayDepositDismissals = pgTable(
+  "ebay_deposit_dismissals",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    payoutId: uuid("payout_id").notNull(),
+    journalEntryId: uuid("journal_entry_id").notNull(),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.payoutId, t.journalEntryId] }),
+    foreignKey({
+      name: "ebay_deposit_dismissals_payout_fk",
+      columns: [t.organizationId, t.payoutId],
+      foreignColumns: [ebayPayouts.organizationId, ebayPayouts.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "ebay_deposit_dismissals_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("ebay_deposit_dismissals", t.organizationId),
+  ],
+);

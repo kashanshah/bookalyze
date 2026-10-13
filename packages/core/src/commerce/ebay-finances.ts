@@ -188,3 +188,68 @@ export function ebayProfitTotals(
 export function ebayTransactionsUrl(site: string): string {
   return `https://www.${site}/sh/fin`;
 }
+
+// --- Payouts ------------------------------------------------------------------------------------
+
+export const EBAY_PAYOUTS_PATH = "/sell/finances/v1/payout";
+/** eBay's largest page of payouts. */
+export const EBAY_PAYOUTS_PAGE = 200;
+
+/** The query for one page of payouts dated in a window of days (YYYY-MM-DD, both included). */
+export function ebayPayoutsQuery(input: { from: string; to: string; offset: number }): string {
+  const params = new URLSearchParams({
+    filter: `payoutDate:[${input.from}T00:00:00.000Z..${input.to}T23:59:59.999Z]`,
+    limit: String(EBAY_PAYOUTS_PAGE),
+    offset: String(input.offset),
+  });
+  return `${EBAY_PAYOUTS_PATH}?${params.toString()}`;
+}
+
+export type EbayPayout = {
+  payoutId: string;
+  /** INITIATED, SUCCEEDED, RETRYABLE_FAILED, TERMINAL_FAILED, REVERSED. */
+  status: string;
+  /** ISO timestamp (UTC). */
+  payoutDate: string;
+  currency: string;
+  /** What eBay sent to the bank (positive). */
+  amount: string;
+  /** The bank account's last four digits, when eBay gives them. */
+  accountLast4: string | null;
+};
+
+/** Payouts that left eBay (or are on their way): the ones a bank deposit can match. */
+export const ebayPayoutSent = (status: string) => status === "SUCCEEDED" || status === "INITIATED";
+
+/** Parses one page of payouts; `next` is the next page's offset, or null on the last one. */
+export function parseEbayPayoutsPage(json: unknown): {
+  payouts: EbayPayout[];
+  next: number | null;
+} {
+  const page = record(json);
+  if (!("total" in page) && !Array.isArray(page.payouts)) {
+    throw new Error("Unexpected response from eBay.");
+  }
+  const raw = list(page.payouts);
+  const seen = count(page.offset) + raw.length;
+  const next = raw.length && seen < count(page.total) ? seen : null;
+  const payouts = raw.flatMap((r): EbayPayout[] => {
+    const p = record(r);
+    const payoutId = text(p.payoutId);
+    const payoutDate = text(p.payoutDate);
+    const amount = record(p.amount);
+    const currency = text(amount.currency);
+    if (!payoutId || !payoutDate || !currency) return [];
+    return [
+      {
+        payoutId,
+        status: text(p.payoutStatus) || "INITIATED",
+        payoutDate,
+        currency,
+        amount: formatDecimal(units(amount)),
+        accountLast4: text(record(p.payoutInstrument).accountLastFourDigits) || null,
+      },
+    ];
+  });
+  return { payouts, next };
+}

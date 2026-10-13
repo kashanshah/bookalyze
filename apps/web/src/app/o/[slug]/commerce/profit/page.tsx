@@ -14,6 +14,7 @@ import {
 } from "@bookalyze/core";
 import {
   ebayMonths,
+  ebayPostedRates,
   getSettlementAccounts,
   noonMonthsForProfit,
   schema,
@@ -102,31 +103,38 @@ export default async function ChannelProfitPage({
     today,
     fiscalConfigOf(ctx.profile),
   );
-  const { rows, noon, ebay, feeTaxRecoverable, channelStates } = await inOrg(ctx, async (tx) => {
-    // Tax on fees recoverable: its account is an asset or liability (input tax), not the fees.
-    const feeTax = (await getSettlementAccounts(tx)).feeTax;
-    const [account] = feeTax
-      ? await tx
-          .select({ type: schema.accounts.type })
-          .from(schema.accounts)
-          .where(eq(schema.accounts.id, feeTax))
-      : [];
-    return {
-      rows: await settlementsForProfit(tx, { from, to, timezone }),
-      noon: await noonMonthsForProfit(tx, { from, to }),
-      ebay: await ebayMonths(tx, { from, to }),
-      feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
-      // A channel switched off, or whose account was disconnected, still shows what it earned.
-      channelStates: await tx
-        .select({
-          id: schema.salesChannels.id,
-          isActive: schema.salesChannels.isActive,
-          connection: schema.connections.status,
-        })
-        .from(schema.salesChannels)
-        .leftJoin(schema.connections, eq(schema.connections.id, schema.salesChannels.connectionId)),
-    };
-  });
+  const { rows, noon, ebay, ebayRates, feeTaxRecoverable, channelStates } = await inOrg(
+    ctx,
+    async (tx) => {
+      // Tax on fees recoverable: its account is an asset or liability (input tax), not the fees.
+      const feeTax = (await getSettlementAccounts(tx)).feeTax;
+      const [account] = feeTax
+        ? await tx
+            .select({ type: schema.accounts.type })
+            .from(schema.accounts)
+            .where(eq(schema.accounts.id, feeTax))
+        : [];
+      return {
+        rows: await settlementsForProfit(tx, { from, to, timezone }),
+        noon: await noonMonthsForProfit(tx, { from, to }),
+        ebay: await ebayMonths(tx, { from, to }),
+        ebayRates: await ebayPostedRates(tx),
+        feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
+        // A channel switched off, or whose account was disconnected, still shows what it earned.
+        channelStates: await tx
+          .select({
+            id: schema.salesChannels.id,
+            isActive: schema.salesChannels.isActive,
+            connection: schema.connections.status,
+          })
+          .from(schema.salesChannels)
+          .leftJoin(
+            schema.connections,
+            eq(schema.connections.id, schema.salesChannels.connectionId),
+          ),
+      };
+    },
+  );
 
   // One column per channel, in its own currency; plus all of them in the main currency.
   const columns = new Map<string, Column>();
@@ -215,8 +223,8 @@ export default async function ChannelProfitPage({
     );
     all.transactions += m.rows;
   }
-  // eBay: its money rows in the period, a month at a time (each at its last day's rate). Payouts
-  // aren't in yet, so what was paid out isn't shown.
+  // eBay: its money rows in the period, a month at a time (each at the rate it posted at, else its
+  // last day's rate). Payouts are for the whole eBay account, not a site, so they aren't shown.
   for (const m of ebay) {
     const key = `ebay:${m.channelId}:${m.currency}`;
     const column = columns.get(key) ?? {
@@ -233,7 +241,8 @@ export default async function ChannelProfitPage({
     ebayProfitTotals(m.sums, undefined, column.totals);
     column.ebayRows = (column.ebayRows ?? 0) + m.rows;
     columns.set(key, column);
-    let rate: string | null = m.currency === baseCurrency ? "1" : null;
+    let rate: string | null =
+      m.currency === baseCurrency ? "1" : (ebayRates.get(`${m.channelId}|${m.month}`) ?? null);
     if (!rate) {
       const date = monthEnd(m.month) < to ? monthEnd(m.month) : to;
       const cacheKey = `${m.currency}:${date}`;
