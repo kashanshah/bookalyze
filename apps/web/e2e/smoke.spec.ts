@@ -2239,6 +2239,51 @@ test("ebay: bring in eBay orders, each on its own site, and open one", async ({ 
   await expect(page.getByText("Opening stock removed")).toBeVisible();
 });
 
+test("ebay: bring in eBay's money, see each site's month and Channel profit", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^eBay Canada/ }).click();
+  await page.getByRole("link", { name: /eBay money/ }).click();
+  await expect(page.getByRole("heading", { name: "eBay money" })).toBeVisible();
+  await page.getByRole("button", { name: "Bring in from eBay" }).click();
+  await expect(page.getByText("5 transactions brought in")).toBeVisible({ timeout: 30_000 });
+
+  // The sale and its refund are on the US order's site: sales before fees, fees given back.
+  const us = page.getByRole("region", { name: "eBay US money" });
+  const usMonth = us.getByRole("row").nth(1);
+  await expect(usMonth).toContainText("2 rows");
+  await expect(usMonth).toContainText("$43.00");
+  await expect(usMonth).toContainText("($11.00)");
+  await expect(usMonth).toContainText("($4.50)");
+  await expect(usMonth).toContainText("$27.50");
+  // The label is on its order's site; the ad fee and the transfer on the site in their currency.
+  const ca = page.getByRole("region", { name: "eBay Canada money" });
+  const caMonth = ca.getByRole("row").nth(1);
+  await expect(caMonth).toContainText("($2.25)");
+  await expect(caMonth).toContainText("($8.40)");
+  await expect(caMonth).toContainText("($10.65)");
+  await expect(caMonth).toContainText("($5.00) moved");
+  await expect(page.getByText("synthetic_buyer")).toHaveCount(0);
+
+  // Brought in again: nothing new.
+  await page.getByRole("button", { name: "Bring in from eBay" }).click();
+  await expect(page.getByText("eBay's money is up to date")).toBeVisible({ timeout: 30_000 });
+
+  // Channel profit has a column per eBay site; what eBay paid out isn't known yet.
+  const from = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const to = new Date().toISOString().slice(0, 10);
+  const slug = new URL(page.url()).pathname.split("/")[2];
+  await page.goto(`/o/${slug}/commerce/profit?from=${from}&to=${to}`);
+  await expect(
+    page.getByRole("columnheader", { name: /eBay US.*2 eBay transactions/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: /eBay Canada.*3 eBay transactions/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("row", { name: /^Paid out/ })).toContainText("—");
+});
+
 test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Commerce", exact: true }).click();

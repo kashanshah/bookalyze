@@ -3,6 +3,7 @@ import {
   can,
   channelProfit,
   convertUnits,
+  ebayProfitTotals,
   emptyGroupTotals,
   type GroupTotals,
   localDate,
@@ -12,6 +13,7 @@ import {
   SETTLEMENT_GROUPS,
 } from "@bookalyze/core";
 import {
+  ebayMonths,
   getSettlementAccounts,
   noonMonthsForProfit,
   schema,
@@ -46,6 +48,10 @@ type Column = {
   settlements: number;
   /** Noon's rows (Noon has no settlements). */
   transactions: number;
+  /** eBay's money rows. */
+  ebayRows?: number;
+  /** eBay's payouts aren't in yet: what was paid out isn't known. */
+  noPayouts?: boolean;
 };
 
 const plural = (n: number, one: string, many = `${one}s`) =>
@@ -56,6 +62,7 @@ const countOf = (c: Column) =>
   [
     c.settlements ? plural(c.settlements, "settlement") : null,
     c.transactions ? plural(c.transactions, "Noon transaction") : null,
+    c.ebayRows ? plural(c.ebayRows, "eBay transaction") : null,
   ]
     .filter(Boolean)
     .join(" · ") || "Nothing yet";
@@ -95,7 +102,7 @@ export default async function ChannelProfitPage({
     today,
     fiscalConfigOf(ctx.profile),
   );
-  const { rows, noon, feeTaxRecoverable, channelStates } = await inOrg(ctx, async (tx) => {
+  const { rows, noon, ebay, feeTaxRecoverable, channelStates } = await inOrg(ctx, async (tx) => {
     // Tax on fees recoverable: its account is an asset or liability (input tax), not the fees.
     const feeTax = (await getSettlementAccounts(tx)).feeTax;
     const [account] = feeTax
@@ -107,6 +114,7 @@ export default async function ChannelProfitPage({
     return {
       rows: await settlementsForProfit(tx, { from, to, timezone }),
       noon: await noonMonthsForProfit(tx, { from, to }),
+      ebay: await ebayMonths(tx, { from, to }),
       feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
       // A channel switched off, or whose account was disconnected, still shows what it earned.
       channelStates: await tx
@@ -207,6 +215,46 @@ export default async function ChannelProfitPage({
     );
     all.transactions += m.rows;
   }
+  // eBay: its money rows in the period, a month at a time (each at its last day's rate). Payouts
+  // aren't in yet, so what was paid out isn't shown.
+  for (const m of ebay) {
+    const key = `ebay:${m.channelId}:${m.currency}`;
+    const column = columns.get(key) ?? {
+      key,
+      channelId: m.channelId,
+      label: m.channelName,
+      currency: m.currency,
+      totals: emptyGroupTotals(),
+      settlements: 0,
+      transactions: 0,
+      ebayRows: 0,
+      noPayouts: true,
+    };
+    ebayProfitTotals(m.sums, undefined, column.totals);
+    column.ebayRows = (column.ebayRows ?? 0) + m.rows;
+    columns.set(key, column);
+    let rate: string | null = m.currency === baseCurrency ? "1" : null;
+    if (!rate) {
+      const date = monthEnd(m.month) < to ? monthEnd(m.month) : to;
+      const cacheKey = `${m.currency}:${date}`;
+      if (!rates.has(cacheKey)) {
+        rates.set(cacheKey, (await suggestRate(baseCurrency, m.currency, date))?.rate ?? null);
+      }
+      rate = rates.get(cacheKey) ?? null;
+    }
+    if (!rate) {
+      unconverted++;
+      continue;
+    }
+    const r = rate;
+    ebayProfitTotals(
+      m.sums,
+      (units) => (m.currency === baseCurrency ? units : convertUnits(units, r, decimals)),
+      all.totals,
+    );
+    all.ebayRows = (all.ebayRows ?? 0) + m.rows;
+    all.noPayouts = true;
+  }
   const channels = [...columns.values()].sort((a, b) => a.label.localeCompare(b.label));
   const showAll =
     channels.length > 1 || channels.some((c) => c.currency !== baseCurrency) || unconverted > 0;
@@ -235,7 +283,15 @@ export default async function ChannelProfitPage({
     profit: channelProfit(c.totals, { feeTaxRecoverable }),
   }));
 
-  const cell = (key: string, profit: ReturnType<typeof channelProfit>, currency: string) => {
+  const cell = (
+    key: string,
+    profit: ReturnType<typeof channelProfit>,
+    currency: string,
+    noPayouts?: boolean,
+  ) => {
+    if (noPayouts && (key === "payout" || key === "reserve")) {
+      return <span title="eBay's payouts aren't brought in yet">—</span>;
+    }
     if (key === "margin") {
       return profit.margin === null
         ? "—"
@@ -253,11 +309,11 @@ export default async function ChannelProfitPage({
       <PageHeader
         eyebrow="Commerce"
         title="Channel profit"
-        description="What each marketplace earned you: sales less refunds, promotions, the marketplace's fees and advertising, from Amazon's settlements and Noon's transactions. Before the cost of the products sold."
+        description="What each marketplace earned you: sales less refunds, promotions, the marketplace's fees and advertising, from Amazon's settlements and Noon's and eBay's transactions. Before the cost of the products sold."
       />
       <RangeControls from={from} to={to} presets={presets} />
 
-      {rows.length || noon.length ? (
+      {rows.length || noon.length || ebay.length ? (
         <div className="overflow-x-auto rounded-2xl border bg-card shadow-xs">
           <table className="w-full min-w-[32rem] text-sm">
             <thead>
@@ -297,7 +353,7 @@ export default async function ChannelProfitPage({
                   </th>
                   {results.map(({ column, profit }) => (
                     <td key={column.key} className="tabular px-5 py-2.5 text-end">
-                      {cell(row.key, profit, column.currency)}
+                      {cell(row.key, profit, column.currency, column.noPayouts)}
                     </td>
                   ))}
                 </tr>
@@ -338,6 +394,8 @@ export default async function ChannelProfitPage({
           out" is what Noon paid. Amounts in another currency are in {baseCurrency} at the rate they
           posted at, or that day's rate if they aren't in your books yet. Product costs come with
           inventory. Channels switched off or disconnected still show what they earned before.
+          eBay's rows count on their own day; its payouts aren't in yet, so what eBay paid out shows
+          as —.
           {feeTaxRecoverable
             ? " Tax on Amazon's fees posts to a recoverable tax account, so it isn't counted as a cost."
             : ""}

@@ -224,6 +224,19 @@ export default async function ChannelPage({
             result={sp.ebay ?? null}
             message={typeof sp.message === "string" ? sp.message : null}
           />
+          {money ? (
+            <nav
+              aria-label="eBay in your books"
+              className="overflow-hidden rounded-2xl border bg-card shadow-xs"
+            >
+              <LinkRow
+                href={`${base}/ebay`}
+                icon={<ReceiptText />}
+                title="eBay money"
+                text="Every sale, fee, refund and shipping label on your eBay account, month by month, brought in from eBay a year back."
+              />
+            </nav>
+          ) : null}
         </>
       ) : null}
     </div>

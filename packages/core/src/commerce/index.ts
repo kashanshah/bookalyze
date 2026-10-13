@@ -1,6 +1,7 @@
 export * from "./amazon";
 export * from "./ebay";
 export * from "./ebay-api";
+export * from "./ebay-finances";
 export * from "./ebay-orders";
 export * from "./fba-inventory";
 export * from "./glance";
