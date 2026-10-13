@@ -30,7 +30,7 @@ back into stock, losses written off, like Amazon's FBA ledger)._
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) and slice 10 (a freight payment is its delivery's cost) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: "your stock against Noon's" from the ledger summary view. Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
-| 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold) and 4 (eBay money: the Finances API's rows by month, in Channel profit) done. Next: payouts matched to bank deposits and posting to the books. See §3 "Phase 4d" |
+| 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold), 4 (eBay money: the Finances API's rows by month, in Channel profit) and 5 (payouts and posting: each site's month as one entry to an eBay balance account, payouts matched to bank deposits, in the daily job) done. Next: the Seller Hub transaction report upload, and eBay's digital signatures for EU and UK sellers. See §3 "Phase 4d" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
@@ -1346,6 +1346,41 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   from the mock (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema; the
   summary disagrees on one day last month), then uploads a summary file.
 
+### Phase 4d, slice 5: eBay payouts and posting
+- **Payouts** (core `ebayPayoutsQuery`, `parseEbayPayoutsPage`, `ebayPayoutSent`): `GET
+  /sell/finances/v1/payout` on the apiz host, 200 a page, filtered by `payoutDate`. Read with each
+  money window once its last page is in (`syncEbayTransactions` → `readPayouts`); days read before
+  this slice are caught up first, a month at a time (`settings.transactions.payoutsThrough`). Kept
+  in `ebay_payouts` (migration 0063; eBay's payout id, status, date, currency, amount, the bank
+  account's last four digits). Only SUCCEEDED and INITIATED payouts can match a deposit.
+- **How eBay posts** (`/commerce/ebay/accounts`, the shared `PostingAccountsForm`; db
+  `ebay_accounts`, `ebay_settings`): an account for sales, refunds, fees, advertising, shipping
+  labels, credits, other and money moved, plus the **eBay balance** (an asset); the month posting
+  starts; "Post eBay automatically". Refunds and credits fall back to sales, advertising, shipping
+  and other to fees (core `ebay-posting.ts`, `buildEbayEntry`); money moved has no fallback.
+- **Months** (db `ebay-posting.ts`: `ebayPostingMonths`, `postEbayMonth`, `unpostEbayMonth`,
+  `ebayMonthsToPost`; table `ebay_periods`): each eBay site's month posts on its last day as one
+  entry (source `ebay`, reference `EBAY-YYYY-MM`), each group to its account and the net (money
+  moved included) to the eBay balance, in eBay's currency at that day's rate. States as Noon's
+  (`noonMonthState`): a month whose rows changed since posting is reversed and posted again.
+- **Payouts and deposits** (`ebayPayoutCandidates`, `matchEbayPayout`, `unmatchEbayPayout`,
+  `dismissEbayPayoutDeposit`, `ebayPayoutsWithOneDeposit`; table `ebay_deposit_dismissals`): the
+  shared settlements helpers (`depositCandidates`, a few days before eBay's date to ten after,
+  `moveDepositToClearing`, `restoreDeposit`). `depositCandidates` leaves out entries with source
+  `ebay`. Payouts before posting starts are listed only.
+- **eBay money page:** "How eBay posts", "Post N months", "Match N payouts", each month's state
+  with Post / Post again / Take out, and **Payouts to your bank** with the suggested deposit,
+  Match / Not this one / Unmatch. The daily job (`runEbayDaily`) brings rows and payouts in, then
+  with "Post eBay automatically" posts finished months and matches a payout whose one exact
+  deposit is uncategorized or in the eBay sales account. Audit: `ebay.accounts_updated`,
+  `ebay.month_posted` / `_reposted` / `_unposted`, `ebay.payout_matched` / `_unmatched`,
+  `ebay.payout_deposit_dismissed`.
+- Tests: core `ebay-finances.test.ts` (payouts page) and `ebay-posting.test.ts` (fallbacks, net,
+  errors); db `ebay-posting.test.ts` (post, changed and posted again, take out, payout matched,
+  unmatched and dismissed, failed payouts never match, isolation); e2e "ebay: choose how eBay
+  posts, post a month and match a payout…" (the mock's `/sell/finances/v1/payout`: one sent, one
+  failed; a sale the month before last).
+
 ### Phase 4d, slice 4: eBay money
 - **From the Finances API** (core `ebay-finances.ts`: `ebayTransactionsQuery`,
   `parseEbayTransactionsPage`, `ebayGroupTotals`, `ebayProfitTotals`; server `ebay-finances.ts`
@@ -1368,7 +1403,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   shows each site's months with those groups and what the month earned. **Channel profit** has a
   column per eBay site (each month at its last day's rate); "Paid out" and "Held back" show — until
   payouts come in.
-- Not yet: payouts and their bank deposits, posting to the books (slice 5); the Seller Hub
+- Not yet (then): payouts and their bank deposits, posting to the books (slice 5); the Seller Hub
   transaction report upload; eBay's digital signatures (needed for EU and UK sellers' Finances
   calls).
 - Tests: core `ebay-finances.test.ts`; db `ebay-transactions.test.ts` (site by order or currency,
@@ -2318,9 +2353,13 @@ Built like Amazon and Noon: channels first, then the account, orders, money and 
    goods sold counts eBay. Done in slice 3.
 4. [x] **Transactions** from the Finances API kept row by row (a year back), monthly totals, in
    Channel profit. Done in slice 4 (the transaction report upload isn't built yet).
-5. [ ] **Posting and deposit matching**: monthly entries per eBay site to an eBay balance
-   clearing account, payouts matched to bank deposits (the shared settlements helpers).
-6. [ ] **Daily job and Channel profit.**
+5. [x] **Posting and deposit matching**: monthly entries per eBay site to an eBay balance
+   clearing account, payouts matched to bank deposits (the shared settlements helpers). Done in
+   slice 5.
+6. [x] **Daily job and Channel profit.** Done in slices 4 and 5 (Channel profit converts a posted
+   month at its posted rate; payouts are the whole account's, so its "Paid out" stays —).
+7. [ ] **Seller Hub transaction report upload**, and eBay's digital signatures (EU and UK
+   sellers' Finances calls).
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.

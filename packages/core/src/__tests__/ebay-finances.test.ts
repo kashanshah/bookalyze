@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   type EbaySum,
   ebayGroupTotals,
+  ebayPayoutSent,
+  ebayPayoutsQuery,
   ebayProfitTotals,
   ebayTransactionsQuery,
+  parseEbayPayoutsPage,
   parseEbayTransactionsPage,
 } from "../commerce/ebay-finances";
 import { formatDecimal } from "../money";
@@ -140,5 +143,60 @@ describe("ebayGroupTotals", () => {
     expect(formatDecimal(t.reimbursements)).toBe("4.0000");
     expect(formatDecimal(t.other)).toBe("-9.1500");
     expect(t.reserve).toBe(0n);
+  });
+});
+
+describe("eBay payouts", () => {
+  it("asks payouts by date and parses them, sent or not", () => {
+    const params = new URL(
+      `https://x${ebayPayoutsQuery({ from: "2026-09-01", to: "2026-09-30", offset: 0 })}`,
+    ).searchParams;
+    expect(params.get("filter")).toBe(
+      "payoutDate:[2026-09-01T00:00:00.000Z..2026-09-30T23:59:59.999Z]",
+    );
+    const page = parseEbayPayoutsPage({
+      total: 2,
+      offset: 0,
+      payouts: [
+        {
+          payoutId: "P1",
+          payoutStatus: "SUCCEEDED",
+          payoutDate: "2026-09-05T08:00:00.000Z",
+          amount: { value: "120.45", currency: "CAD" },
+          payoutInstrument: {
+            instrumentType: "BANK",
+            nickname: "Chequing",
+            accountLastFourDigits: "1234",
+          },
+        },
+        {
+          payoutId: "P2",
+          payoutStatus: "TERMINAL_FAILED",
+          payoutDate: "2026-09-12T08:00:00.000Z",
+          amount: { value: "50", currency: "CAD" },
+        },
+      ],
+    });
+    expect(page.next).toBeNull();
+    expect(page.payouts).toEqual([
+      {
+        payoutId: "P1",
+        status: "SUCCEEDED",
+        payoutDate: "2026-09-05T08:00:00.000Z",
+        currency: "CAD",
+        amount: "120.4500",
+        accountLast4: "1234",
+      },
+      {
+        payoutId: "P2",
+        status: "TERMINAL_FAILED",
+        payoutDate: "2026-09-12T08:00:00.000Z",
+        currency: "CAD",
+        amount: "50.0000",
+        accountLast4: null,
+      },
+    ]);
+    expect(page.payouts.map((p) => ebayPayoutSent(p.status))).toEqual([true, false]);
+    expect(() => parseEbayPayoutsPage({ errors: [] })).toThrow();
   });
 });

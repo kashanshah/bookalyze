@@ -52,6 +52,8 @@ export const JOURNAL_SOURCES = [
   "noon",
   /** A purchase order in the books: a delivery's landed cost, or settling what's left. */
   "purchase",
+  /** A month of eBay's money on one eBay site (commerce ebay_periods). */
+  "ebay",
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 

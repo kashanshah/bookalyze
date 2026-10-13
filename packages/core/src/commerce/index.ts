@@ -3,6 +3,7 @@ export * from "./ebay";
 export * from "./ebay-api";
 export * from "./ebay-finances";
 export * from "./ebay-orders";
+export * from "./ebay-posting";
 export * from "./fba-inventory";
 export * from "./glance";
 export * from "./inventory-ledger";
