@@ -30,6 +30,7 @@ import {
   getEbayConnection,
   getNoonConnection,
   listAmazonConnections,
+  listOrderConnections,
   recordConnectionSync,
   saveAmazonChannels,
   schema,
@@ -528,7 +529,7 @@ export async function disconnectAmazonAction(
 
 /** How long one "bring in orders" request may run; the screen calls again while there's more. */
 const ORDER_SYNC_BUDGET_MS = 20_000;
-/** Amazon keeps orders about two years back. */
+/** Amazon and eBay keep orders about two years back. */
 const ORDERS_MAX_YEARS = 2;
 
 /**
@@ -548,13 +549,11 @@ export async function startOrdersAction(
   if (from < earliest) {
     return {
       ok: false,
-      message: "Amazon only keeps orders for about two years. Pick a later date.",
+      message: "Marketplaces only keep orders for about two years. Pick a later date.",
     };
   }
   const channels = await inOrg(ctx, async (tx) => {
-    const ids = (await listAmazonConnections(tx))
-      .filter((c) => c.status !== "disconnected")
-      .flatMap((c) => c.channels.filter((ch) => ch.isActive).map((ch) => ch.id));
+    const ids = (await listOrderConnections(tx)).channels.map((ch) => ch.id);
     await startOrderSync(tx, ids, from);
     if (ids.length) {
       await audit(tx, {

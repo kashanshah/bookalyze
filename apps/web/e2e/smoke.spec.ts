@@ -2158,6 +2158,53 @@ test("ebay: connect the eBay account on eBay's page, test it, and handle eBay's 
   await expect(page.getByRole("heading", { name: "eBay Canada" })).toBeVisible();
 });
 
+test("ebay: bring in eBay orders, each on its own site, and open one", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^eBay Canada/ }).click();
+  const account = page.getByRole("region", { name: "eBay account" });
+  await account.getByRole("button", { name: "Connect eBay" }).click();
+  await expect(page.getByText("eBay connected")).toBeVisible();
+
+  // The site's page leads to its orders; the eBay sites join the orders already coming in.
+  await page.getByRole("link", { name: "Its orders" }).click();
+  await expect(page).toHaveURL(/\/commerce\/orders\?channel=/);
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  const start = page
+    .getByRole("button", { name: "Bring theirs in too" })
+    .or(page.getByRole("button", { name: /^Bring in orders from/ }));
+  await expect(start).toBeVisible();
+  await start.click();
+  const rows = page.getByRole("main");
+  await expect(rows.getByText("11-00001-00001")).toBeVisible({ timeout: 30_000 });
+  await expect(rows.getByText("11-00002-00002")).toBeVisible();
+
+  // Each order is on the site it was listed on, and eBay's states read like the others.
+  await page.goto(page.url().split("?")[0] ?? page.url());
+  await page.getByLabel("Search orders").fill("11-00003-00003");
+  await page.keyboard.press("Enter");
+  await expect(rows.getByText("Cancelled").first()).toBeVisible();
+  await expect(rows.getByText(/eBay Canada/).first()).toBeVisible();
+
+  await page.getByLabel("Search orders").fill("11-00001-00001");
+  await page.keyboard.press("Enter");
+  await rows
+    .getByRole("link", { name: /11-00001-00001/ })
+    .first()
+    .click();
+  await expect(page.getByRole("heading", { name: /11-00001-00001/ })).toBeVisible();
+  await expect(page.getByText("eBay US", { exact: true })).toBeVisible();
+  await expect(page.getByText("You (merchant fulfilled)")).toBeVisible();
+  await expect(page.getByText("Maple leaf ceramic mug")).toBeVisible();
+  await expect(page.getByText(/SKU EBAY-MAPLE-MUG · Item 110500001/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open in Seller Hub" })).toHaveAttribute(
+    "href",
+    "https://www.ebay.com/sh/ord/details?orderid=11-00001-00001",
+  );
+  await expect(page.getByText("Synthetic Buyer")).toHaveCount(0);
+});
+
 test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Commerce", exact: true }).click();

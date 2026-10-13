@@ -84,14 +84,12 @@ export default async function ChannelPage({
           .filter(Boolean)
           .join(" · ")}
         actions={
-          ch.kind === "ebay" ? null : (
-            <Button variant="outline" asChild>
-              <Link href={`${base}/orders?channel=${ch.id}`}>
-                <ListOrdered />
-                Its orders
-              </Link>
-            </Button>
-          )
+          <Button variant="outline" asChild>
+            <Link href={`${base}/orders?channel=${ch.id}`}>
+              <ListOrdered />
+              Its orders
+            </Link>
+          </Button>
         }
       />
 

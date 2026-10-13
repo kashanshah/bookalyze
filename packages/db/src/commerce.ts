@@ -40,6 +40,34 @@ export async function listAmazonConnections(tx: Transaction) {
   return rows.map((c) => ({ ...c, channels: channels.filter((ch) => ch.connectionId === c.id) }));
 }
 
+/** Marketplaces whose orders come in by API (Amazon and eBay); Noon's come from its rows. */
+const ORDER_PROVIDERS = ["amazon_sp", "ebay"] as const;
+
+/**
+ * The companies' marketplace connections that can bring orders in (not disconnected), with their
+ * switched-on channels.
+ */
+export async function listOrderConnections(tx: Transaction) {
+  const rows = await tx
+    .select({ id: connections.id, provider: connections.provider })
+    .from(connections)
+    .where(
+      and(
+        inArray(connections.provider, [...ORDER_PROVIDERS]),
+        ne(connections.status, "disconnected"),
+      ),
+    );
+  const ids = rows.map((r) => r.id);
+  const channels = ids.length
+    ? await tx
+        .select()
+        .from(salesChannels)
+        .where(and(inArray(salesChannels.connectionId, ids), eq(salesChannels.isActive, true)))
+        .orderBy(asc(salesChannels.name))
+    : [];
+  return { connections: rows.length, channels };
+}
+
 /**
  * Records the marketplaces an Amazon account sells in as channels. New ones start switched on
  * when the seller participates there; existing ones keep the choice made before, unless
@@ -622,6 +650,61 @@ export async function saveOrderItems(
     );
   }
   await tx.update(orders).set({ itemsSyncedAt: new Date() }).where(eq(orders.id, input.orderId));
+}
+
+/**
+ * Saves a page of orders that come with their items (eBay): the orders as `upsertOrders` does,
+ * then each saved order's items replaced with the ones given. Orders placed before the channel's
+ * start date are left out. Returns how many orders were added or changed.
+ */
+export async function saveOrdersWithItems(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    channelId: string;
+    from: string;
+    orders: readonly { order: AmazonOrder; items: readonly AmazonOrderItem[] }[];
+  },
+): Promise<number> {
+  const changed = await upsertOrders(tx, { ...input, orders: input.orders.map((o) => o.order) });
+  const byId = new Map(input.orders.map((o) => [o.order.orderId, o]));
+  if (!byId.size) return changed;
+  // An older copy of an order (read again in the overlap) doesn't replace newer items.
+  const saved = (
+    await tx
+      .select({ id: orders.id, externalId: orders.externalId, lastUpdatedAt: orders.lastUpdatedAt })
+      .from(orders)
+      .where(
+        and(eq(orders.channelId, input.channelId), inArray(orders.externalId, [...byId.keys()])),
+      )
+      .for("update")
+  ).filter((o) => {
+    const given = byId.get(o.externalId);
+    return given && new Date(given.order.lastUpdatedAt).getTime() >= o.lastUpdatedAt.getTime();
+  });
+  if (!saved.length) return changed;
+  const ids = saved.map((o) => o.id);
+  await tx.delete(orderItems).where(inArray(orderItems.orderId, ids));
+  const rows = saved.flatMap((o) =>
+    (byId.get(o.externalId)?.items ?? []).map((i) => ({
+      organizationId: input.orgId,
+      orderId: o.id,
+      externalId: i.itemId,
+      asin: i.asin || null,
+      sku: i.sku,
+      title: i.title,
+      quantityOrdered: i.quantityOrdered,
+      quantityShipped: i.quantityShipped,
+      itemPrice: i.itemPrice,
+      itemTax: i.itemTax,
+      shippingPrice: i.shippingPrice,
+      shippingTax: i.shippingTax,
+      promotionDiscount: i.promotionDiscount,
+    })),
+  );
+  if (rows.length) await tx.insert(orderItems).values(rows);
+  await tx.update(orders).set({ itemsSyncedAt: new Date() }).where(inArray(orders.id, ids));
+  return changed;
 }
 
 export type OrderFilters = {

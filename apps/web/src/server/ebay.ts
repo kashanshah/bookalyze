@@ -189,6 +189,35 @@ export async function getEbayUser(accessToken: string): Promise<EbayUser> {
   }
 }
 
+/**
+ * A GET on eBay's selling APIs (api host) for a connected account: the parsed answer. An expired
+ * access token is renewed once. A request eBay rejects as malformed isn't a sign-in problem.
+ */
+export async function ebaySellGet(refreshToken: string, pathAndQuery: string): Promise<unknown> {
+  const app = requireApp();
+  const path = pathAndQuery.split("?")[0] ?? pathAndQuery;
+  let token = await ebayAccessToken(refreshToken);
+  for (let attempt = 0; ; attempt++) {
+    const response = await request(`${app.api}${pathAndQuery}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.ok) return json(response);
+    if (response.status === 401 && attempt === 0) {
+      token = await ebayAccessToken(refreshToken, true);
+      continue;
+    }
+    if (response.status === 400) {
+      const detail = ebayErrorDetail(await json(response));
+      logWarn("ebay.request_failed", { path, status: 400, detail });
+      throw new EbayError(
+        `eBay didn't accept the request${detail ? `: ${detail}` : ""}.`,
+        "unexpected",
+      );
+    }
+    return failed(response, path);
+  }
+}
+
 // --- Sealed credentials -------------------------------------------------------------------------
 
 export type EbayCredentials = { refreshToken: string; refreshTokenExpiresAt: string | null };
