@@ -2771,6 +2771,17 @@ test("purchase orders: type the cost of one, the line total or the order total",
   ).toContainText("$1,499.99");
 });
 
+test("the privacy policy is public and linked from sign-in", async ({ browser }) => {
+  const page = await browser.newPage();
+  await page.goto("/sign-in");
+  await page.getByRole("link", { name: "Privacy policy" }).click();
+  await expect(page).toHaveURL(/\/privacy-policy$/);
+  await expect(page.getByRole("heading", { name: "Privacy policy", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connected services" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "privacy@bookalyze.com" }).first()).toBeVisible();
+  await page.close();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();
