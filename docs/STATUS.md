@@ -2450,6 +2450,11 @@ screenshots work well).
 
 ## 6. Gotchas
 
+- **Pages wider than a phone.** A page's outer `grid` has one column that would grow to its widest
+  row's minimum width (a grid item's `min-width: auto`), so a long row or a tab strip made the
+  whole page scroll sideways at 390px. The org template (`app/o/[slug]/template.tsx`) gives the
+  page grid's sections `min-w-0`, so wide content wraps, truncates or scrolls inside its own
+  `overflow-x-auto` instead. Checked by measuring `scrollWidth` on every org page at 390px.
 - **e2e reuses a running app on port 3000.** A `next start` left over (say, for screenshots, without
   the mock servers' URLs) makes provider tests fail against the real services. Stop it first (the
   process shows as `next-server`).
