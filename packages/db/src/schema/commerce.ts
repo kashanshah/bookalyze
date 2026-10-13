@@ -857,3 +857,52 @@ export const noonDepositDismissals = pgTable(
     tenantIsolationPolicy("noon_deposit_dismissals", t.organizationId),
   ],
 );
+
+/**
+ * A row of eBay's Finances API (phase 4d, slice 4): a sale, refund, fee, shipping label, credit
+ * or transfer on the seller's eBay account, in the account's payout currency. `amount` is signed
+ * (what the row added to or took from the eBay balance); `fees` is eBay's fees on it (positive).
+ * Each row sits on the eBay site of its order when known, else the site in its currency. Kept
+ * one by one, keyed by eBay's id and type, so bringing rows in again only updates them.
+ */
+export const ebayTransactions = pgTable(
+  "ebay_transactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    transactionId: text("transaction_id").notNull(),
+    transactionType: text("transaction_type").notNull(),
+    status: text("status"),
+    transactionAt: timestamp("transaction_at", { withTimezone: true }).notNull(),
+    /** The UTC day of `transaction_at`, which months are counted by. */
+    transactionDate: date("transaction_date").notNull(),
+    orderId: text("order_id"),
+    payoutId: text("payout_id"),
+    feeType: text("fee_type"),
+    currency: char("currency", { length: 3 }).notNull(),
+    amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
+    fees: numeric("fees", { precision: 20, scale: 4 }).notNull(),
+    ebayTax: numeric("ebay_tax", { precision: 20, scale: 4 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("ebay_transactions_org_id_key").on(t.organizationId, t.id),
+    unique("ebay_transactions_ebay_key").on(t.organizationId, t.transactionId, t.transactionType),
+    index("ebay_transactions_channel_date_idx").on(
+      t.organizationId,
+      t.channelId,
+      t.transactionDate,
+    ),
+    index("ebay_transactions_order_idx").on(t.organizationId, t.orderId),
+    foreignKey({
+      name: "ebay_transactions_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("ebay_transactions", t.organizationId),
+  ],
+);

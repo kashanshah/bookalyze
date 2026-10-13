@@ -30,7 +30,7 @@ back into stock, losses written off, like Amazon's FBA ledger)._
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) and slice 10 (a freight payment is its delivery's cost) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: "your stock against Noon's" from the ledger summary view. Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
-| 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices) and 3 (eBay orders from the Fulfillment API, in cost of goods sold) done. Next: eBay's money (Finances API transactions). See §3 "Phase 4d" |
+| 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold) and 4 (eBay money: the Finances API's rows by month, in Channel profit) done. Next: payouts matched to bank deposits and posting to the books. See §3 "Phase 4d" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
@@ -1346,6 +1346,36 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   from the mock (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema; the
   summary disagrees on one day last month), then uploads a summary file.
 
+### Phase 4d, slice 4: eBay money
+- **From the Finances API** (core `ebay-finances.ts`: `ebayTransactionsQuery`,
+  `parseEbayTransactionsPage`, `ebayGroupTotals`, `ebayProfitTotals`; server `ebay-finances.ts`
+  `syncEbayTransactions`, `runEbayDaily`; db `ebay-transactions.ts`): `GET
+  /sell/finances/v1/transaction` on the apiz host (`ebaySellGet` with `host: "apiz"` and the
+  account's `X-EBAY-C-MARKETPLACE-ID`), 1,000 rows a page, filtered by `transactionDate`. Windows
+  as Noon's (`nextNoonWindow`): a calendar month at a time from a year back to yesterday, then the
+  last three weeks again at most every six hours. State on the eBay connection
+  (`settings.transactions`: `through`, `refreshedAt`, and a window cut short with its page
+  offset). The daily job runs it for every company with a live eBay connection.
+- **Kept row by row** (`ebay_transactions`, migration 0062): eBay's id and type are the key;
+  status, payout id, order id, fee type, currency (the payout currency), `amount` signed (credit +,
+  debit −), `fees` (eBay's fees on it, positive) and eBay-collected tax. No buyer details. Each row
+  sits on its order's eBay site, else the site in its currency, else the first; rows move to their
+  order's site once it comes in (`placeEbayTransactionsByOrder`).
+- **Groups:** a sale's fees are split out (sales = amount + fees; fees given back on a refund),
+  refunds and disputes, eBay's fees (charges other than ads), advertising (`AD_FEE`, promoted),
+  shipping labels, credits; transfers, withdrawals, loan repayments and purchases are money moved,
+  not earnings. **Commerce → eBay money** (`/commerce/ebay`, linked from each eBay site's page)
+  shows each site's months with those groups and what the month earned. **Channel profit** has a
+  column per eBay site (each month at its last day's rate); "Paid out" and "Held back" show — until
+  payouts come in.
+- Not yet: payouts and their bank deposits, posting to the books (slice 5); the Seller Hub
+  transaction report upload; eBay's digital signatures (needed for EU and UK sellers' Finances
+  calls).
+- Tests: core `ebay-finances.test.ts`; db `ebay-transactions.test.ts` (site by order or currency,
+  re-import, moving to the order's site, monthly sums, sync state, isolation); e2e "ebay: bring in
+  eBay's money…" (the mock's `/sell/finances/v1/transaction`: a sale and its refund on eBay US, an ad
+  fee, a shipping label and a transfer on eBay Canada; Channel profit's eBay columns).
+
 ### Phase 4d, slice 3: eBay orders
 - **From the Fulfillment API** (core `ebay-orders.ts`: `ebayOrdersQuery`, `parseEbayOrdersPage`,
   `ebayOrderStatus`; server `ebay-orders.ts` `syncEbayChannelOrders`; db `saveOrdersWithItems`):
@@ -2286,8 +2316,8 @@ Built like Amazon and Noon: channels first, then the account, orders, money and 
    input 5).
 3. [x] **Orders** from the Fulfillment API, a year back and every few minutes; SKUs, so cost of
    goods sold counts eBay. Done in slice 3.
-4. [ ] **Transactions** from the Finances API kept row by row (a year back), with the transaction
-   report upload as the fallback; monthly totals.
+4. [x] **Transactions** from the Finances API kept row by row (a year back), monthly totals, in
+   Channel profit. Done in slice 4 (the transaction report upload isn't built yet).
 5. [ ] **Posting and deposit matching**: monthly entries per eBay site to an eBay balance
    clearing account, payouts matched to bank deposits (the shared settlements helpers).
 6. [ ] **Daily job and Channel profit.**

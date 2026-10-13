@@ -2,6 +2,7 @@ import { syncAllLedgers } from "@/server/amazon-ledger";
 import { syncAllSettlements } from "@/server/amazon-settlements";
 import { syncAllConnections } from "@/server/banking";
 import { sendComplianceReminders } from "@/server/compliance";
+import { runEbayDaily } from "@/server/ebay-finances";
 import { env } from "@/server/env";
 import { syncBankOfCanada } from "@/server/fx";
 import { jobStep, logInfo } from "@/server/log";
@@ -37,6 +38,7 @@ export async function GET(request: Request) {
   const ledgers = await jobStep("daily", "ledgers", () => syncAllLedgers(60_000));
   const posting = await jobStep("daily", "posting", () => autoPostSettlements());
   const noon = await jobStep("daily", "noon", () => runNoonDaily(60_000));
+  const ebay = await jobStep("daily", "ebay", () => runEbayDaily(40_000));
   const compliance = await jobStep("daily", "compliance", () => sendComplianceReminders());
   logInfo("job.daily", {
     ms: Date.now() - started,
@@ -46,7 +48,8 @@ export async function GET(request: Request) {
     ledgers,
     posting,
     noon,
+    ebay,
     compliance,
   });
-  return Response.json({ stored, banking, settlements, ledgers, posting, noon, compliance });
+  return Response.json({ stored, banking, settlements, ledgers, posting, noon, ebay, compliance });
 }

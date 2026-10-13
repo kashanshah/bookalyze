@@ -1,5 +1,5 @@
 // A stand-in for eBay's consent page, OAuth token endpoint, Commerce Identity API, the
-// Fulfillment API's orders and the Notification API's public keys, for end-to-end tests only. Synthetic data. It makes its own EC
+// Fulfillment API's orders, the Finances API's transactions and the Notification API's public keys, for end-to-end tests only. Synthetic data. It makes its own EC
 // key pair when it starts (nothing secret is kept in the repo) and signs account-deletion notices
 // with it the way eBay does (ECDSA over SHA-1, the key named in X-EBAY-SIGNATURE).
 import { createSign, generateKeyPairSync } from "node:crypto";
@@ -119,6 +119,55 @@ const ORDERS = [
     qty: 1,
     price: "24.50",
   }),
+];
+
+// eBay's money for those orders, in the account's payout currency (CAD): the US sale and its
+// fees, a refund on it, an ad fee and a shipping label, and a transfer (not earnings).
+const TRANSACTIONS = [
+  {
+    transactionId: "TX-SALE-1",
+    transactionType: "SALE",
+    transactionStatus: "PAYOUT",
+    transactionDate: daysAgo(6),
+    orderId: "11-00001-00001",
+    payoutId: "PO-1",
+    bookingEntry: "CREDIT",
+    amount: money("37.50", "CAD"),
+    totalFeeAmount: money("5.50", "CAD"),
+    buyer: { username: "synthetic_buyer" },
+  },
+  {
+    transactionId: "TX-REFUND-1",
+    transactionType: "REFUND",
+    transactionDate: daysAgo(6),
+    orderId: "11-00001-00001",
+    bookingEntry: "DEBIT",
+    amount: money("10.00", "CAD"),
+    totalFeeAmount: money("1.00", "CAD"),
+  },
+  {
+    transactionId: "TX-AD-1",
+    transactionType: "NON_SALE_CHARGE",
+    feeType: "AD_FEE",
+    transactionDate: daysAgo(4),
+    bookingEntry: "DEBIT",
+    amount: money("2.25", "CAD"),
+  },
+  {
+    transactionId: "TX-LABEL-1",
+    transactionType: "SHIPPING_LABEL",
+    transactionDate: daysAgo(4),
+    orderId: "11-00002-00002",
+    bookingEntry: "DEBIT",
+    amount: money("8.40", "CAD"),
+  },
+  {
+    transactionId: "TX-TRANSFER-1",
+    transactionType: "TRANSFER",
+    transactionDate: daysAgo(4),
+    bookingEntry: "DEBIT",
+    amount: money("5.00", "CAD"),
+  },
 ];
 
 createServer((req, res) => {
@@ -252,6 +301,29 @@ createServer((req, res) => {
         limit,
         offset,
         orders: inWindow.slice(offset, offset + limit),
+      });
+    }
+
+    if (req.method === "GET" && url.pathname === "/sell/finances/v1/transaction") {
+      if (req.headers.authorization !== `Bearer ${ACCESS}`) {
+        return send(res, 401, { errors: [{ errorId: 1001, message: "Invalid access token" }] });
+      }
+      const match = /^transactionDate:\[(.*)\.\.(.*)\]$/.exec(url.searchParams.get("filter") ?? "");
+      if (!match) {
+        return send(res, 400, { errors: [{ errorId: 135001, message: "Invalid filter" }] });
+      }
+      const [, after, before] = match;
+      const inWindow = TRANSACTIONS.filter(
+        (t) => t.transactionDate >= after && t.transactionDate <= before,
+      );
+      const limit = Number(url.searchParams.get("limit") ?? 20);
+      const offset = Number(url.searchParams.get("offset") ?? 0);
+      return send(res, 200, {
+        href: url.toString(),
+        total: inWindow.length,
+        limit,
+        offset,
+        transactions: inWindow.slice(offset, offset + limit),
       });
     }
 
