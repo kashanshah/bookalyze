@@ -73,6 +73,18 @@ const ebayOrder = ({ id, site, currency, days, status, cancelled, sku, title, qt
   ],
 });
 const ORDERS = [
+  // From over a year ago, before the company's opening stock.
+  ebayOrder({
+    id: "11-00004-00004",
+    site: "EBAY_US",
+    currency: "USD",
+    days: 450,
+    status: "FULFILLED",
+    sku: "EBAY-MAPLE-MUG",
+    title: "Maple leaf ceramic mug",
+    qty: 1,
+    price: "15.99",
+  }),
   ebayOrder({
     id: "11-00001-00001",
     site: "EBAY_US",

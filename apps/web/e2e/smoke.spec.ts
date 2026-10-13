@@ -2215,6 +2215,28 @@ test("ebay: bring in eBay orders, each on its own site, and open one", async ({ 
     "https://www.ebay.com/sh/ord/details?orderid=11-00001-00001",
   );
   await expect(page.getByText("Synthetic Buyer")).toHaveCount(0);
+
+  // eBay's history reaches back past the opening stock: those months are before the start, not
+  // holding the rest of cost of goods sold up.
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Stock lots", exact: true }).click();
+  await page.getByRole("button", { name: "Add opening stock" }).click();
+  const dialog = page.getByRole("dialog");
+  await choose(dialog.getByLabel("Product", { exact: true }), "Maple leaf ceramic mug");
+  await dialog.getByLabel("How many", { exact: true }).fill("10");
+  await dialog.getByLabel("Cost of one (CAD)", { exact: true }).fill("2");
+  await dialog.getByLabel("Counted on", { exact: true }).fill(`${new Date().getFullYear()}-01-01`);
+  await dialog.getByRole("button", { name: "Add stock" }).click();
+  await expect(page.getByText("Opening stock added")).toBeVisible();
+  await page.getByRole("link", { name: "Cost of goods sold", exact: true }).click();
+  const before = page
+    .getByRole("listitem", { name: /on eBay US$/ })
+    .filter({ hasText: "Before your start" });
+  await expect(before).toHaveCount(1);
+  await expect(before).toContainText("your opening stock covers sales before it");
+  await page.getByRole("link", { name: "Stock lots", exact: true }).click();
+  await page.getByRole("button", { name: /^Remove opening stock from/ }).click();
+  await expect(page.getByText("Opening stock removed")).toBeVisible();
 });
 
 test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ page }) => {

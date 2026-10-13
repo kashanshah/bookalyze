@@ -2024,7 +2024,13 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   with sales, newest first, and each marketplace in it. A row is **Posted** (cost, units, a link
   to the entry, **Undo** on the latest month), **Ready** (cost at FIFO, products × units,
   **Post**), **Needs attention** (an unlinked SKU sold, or more sold than the lots hold by the
-  month's end), **Waiting** (an earlier month first) or **In progress** (the current month).
+  month's end), **Waiting** (names the month that posts first) or **In progress** (the current
+  month).
+- **Start:** cost of goods sold starts at the month of the earliest opening stock, or the first
+  posted month if earlier (db `earliestOpeningStock`, `cogsStartMonth`). Months before it show
+  **Before your start** and never hold the rest up (eBay's two years of orders reached back past
+  Kazomo's opening stock and left every month Waiting). A month after the start that comes
+  before an already posted month shows **Needs attention**: undo back to it, then post in order.
 - **Units sold:** order lines' `quantity_shipped` × the linked SKU's units per listing,
   cancelled orders left out, by purchase date in the company's time zone (orders carry no ship
   date). Refunds and returns don't come back into lots yet: that's the FBA ledger slice.
