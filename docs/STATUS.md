@@ -992,8 +992,11 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   only). The main-currency total uses the rate a settlement posted at, else that day's rate
   (`suggestRate`); without one it's left out and the page says so. Before product costs
   (phase 5).
+- Columns come from the money in the period, not the channel list, so a channel switched off or
+  whose account was disconnected still shows what it earned (the totals keep matching the books),
+  tagged **Switched off** or **Disconnected** under its name (its account's status wins).
 - Tests: core `amazon-settlements.test.ts` (`channelProfit`), db `settlements.test.ts`
-  (`settlementsForProfit`), e2e settlements test (the page shows Amazon.ca's column).
+  (`settlementsForProfit`), e2e settlements test (the page shows Amazon.ca's column); e2e "noon: choose how Noon posts…" switches Noon UAE off and sees its tag.
 
 ### Phase 4b, slice 1: tax on Amazon's fees
 
