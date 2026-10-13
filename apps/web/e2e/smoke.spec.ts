@@ -2925,7 +2925,7 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   await expect(payCost.getByLabel("On the delivery's landed cost")).toContainText("Duty");
   // Who was paid isn't known yet: it's asked for.
   await payCost.getByRole("button", { name: "Record payment" }).click();
-  await expect(payCost.getByText(/Choose who you paid/)).toBeVisible();
+  await expect(payCost.getByText(/Choose who you paid: the shipping company/)).toBeVisible();
   // A customs broker that isn't a vendor yet is added from the list itself.
   await payCost.getByLabel("Paid to", { exact: true }).click();
   await page.getByPlaceholder("Search or add a vendor").fill("Harbour Customs Brokers");
