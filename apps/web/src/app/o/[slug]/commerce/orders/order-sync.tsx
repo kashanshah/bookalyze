@@ -9,7 +9,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/dates";
-import { startOrdersAction, syncOrdersAction } from "../actions";
+import { includeOrderChannelsAction, startOrdersAction, syncOrdersAction } from "../actions";
 
 /** At most this many calls per click: a huge first sync carries on with the background job. */
 const MAX_ROUNDS = 30;
@@ -181,13 +181,16 @@ export function StartOrders({
   );
 }
 
-/** Marketplaces switched on after orders started: bring theirs in from the same date. */
-export function IncludeChannels({ slug, from }: { slug: string; from: string }) {
+/**
+ * Marketplaces switched on (or connected) after orders started: bring theirs in from the same
+ * date, or as far back as marketplaces keep orders.
+ */
+export function IncludeChannels({ slug }: { slug: string }) {
   const [starting, startStarting] = useTransition();
   const { run, pending } = useOrderSync(slug);
   const include = () =>
     startStarting(async () => {
-      const result = await startOrdersAction(slug, from);
+      const result = await includeOrderChannelsAction(slug);
       if (!result.ok) return void toast.error(result.message);
       run();
     });
