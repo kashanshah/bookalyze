@@ -5,6 +5,7 @@ import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import {
   addOpeningStock,
+  channelsNotCosted,
   cogsStartMonth,
   earliestOpeningStock,
   ensureSystemAccount,
@@ -15,7 +16,13 @@ import {
   salesByMonth,
   undoCogs,
 } from "../cogs";
-import { saveAmazonChannels, saveOrderItems, upsertOrders } from "../commerce";
+import {
+  disconnectAmazon,
+  saveAmazonChannels,
+  saveOrderItems,
+  setChannelActive,
+  upsertOrders,
+} from "../commerce";
 import { createProduct, linkSku } from "../inventory";
 import { importLedgerEvents } from "../inventory-ledger";
 import { listLots } from "../landed-costs";
@@ -369,6 +376,73 @@ describe("cost of goods sold", () => {
       return { before: inventory, after: await ensureSystemAccount(tx, orgId, "inventory") };
     });
     expect(id.after).toBe(id.before);
+  });
+
+  it("leaves out a disconnected account's and a switched-off marketplace's months, but not posted ones", async () => {
+    // Another company's marketplace connected here by mistake: an unlinked July sale on it
+    // would hold up every month after it.
+    const aeChannelId = await scoped(async (tx) => {
+      const connection = await createConnection(tx, {
+        orgId,
+        userId: null,
+        provider: "amazon_sp",
+        name: "Amazon Europe",
+        settings: { region: "eu" },
+      });
+      await saveAmazonChannels(tx, {
+        orgId,
+        connectionId: connection.id,
+        marketplaces: [
+          {
+            marketplaceId: "A2VIGQ35RCS4UG",
+            name: "Amazon.ae",
+            country: "AE",
+            currency: "AED",
+            participating: true,
+            hasSuspendedListings: false,
+            storeName: null,
+          },
+        ],
+      });
+      const [ae] = await tx
+        .select()
+        .from(schema.salesChannels)
+        .where(eq(schema.salesChannels.connectionId, connection.id));
+      const aeId = ae?.id ?? "";
+      await upsertOrders(tx, {
+        orgId,
+        channelId: aeId,
+        from: "2000-01-01",
+        orders: [{ ...order("406-1", "2026-07-10T15:00:00Z"), marketplaceId: "A2VIGQ35RCS4UG" }],
+      });
+      const [saved] = await tx
+        .select()
+        .from(schema.orders)
+        .where(eq(schema.orders.channelId, aeId));
+      await saveOrderItems(tx, { orgId, orderId: saved?.id ?? "", items: [item("AE-LAMP", 2)] });
+      return { aeId, connectionId: connection.id };
+    });
+    const channels = async () =>
+      (await scoped((tx) => salesByMonth(tx, { timezone: where.timezone }))).map(
+        (m) => `${m.channelName} ${m.month}`,
+      );
+    expect(await channels()).toContain("Amazon.ae 2026-07");
+
+    await scoped((tx) => disconnectAmazon(tx, aeChannelId.connectionId));
+    expect((await channels()).some((c) => c.startsWith("Amazon.ae"))).toBe(false);
+    expect(await scoped((tx) => channelsNotCosted(tx, { timezone: where.timezone }))).toEqual([
+      "Amazon.ae",
+    ]);
+
+    // Switched off, a marketplace keeps only the months already in the books.
+    const posted = (await scoped((tx) => listCogsPeriods(tx)))
+      .filter((p) => p.channelId === channelId)
+      .map((p) => `Amazon.ca ${p.month}`);
+    expect(posted.length).toBeGreaterThan(0);
+    await scoped((tx) => setChannelActive(tx, channelId, false));
+    expect((await channels()).sort()).toEqual(posted.sort());
+    await scoped((tx) => setChannelActive(tx, channelId, true));
+    expect(await channels()).toContain("Amazon.ca 2026-10");
   });
 
   it("keeps each company's months and lots to itself", async () => {
