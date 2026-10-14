@@ -456,6 +456,13 @@
       "when": 1791958146483,
       "tag": "0064_listing_prices",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1791964238315,
+      "tag": "0065_channel_costs",
+      "breakpoints": true
     }
   ]
 }

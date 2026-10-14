@@ -1898,7 +1898,8 @@ test("settlements: bring in Amazon's settlement report, see the payout, and uplo
   // What each marketplace earned, from its settlements.
   await page.getByRole("link", { name: "Channel profit", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Channel profit" })).toBeVisible();
-  await expect(page.getByRole("rowheader", { name: "Net from the channel" })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "Net from the marketplace" })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "Profit", exact: true })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: /Amazon\.ca/ })).toBeVisible();
 });
 
@@ -2401,6 +2402,51 @@ test("ebay: choose how eBay posts, post a month and match a payout to its deposi
   await month.getByRole("button", { name: `Click again to take ${label} out` }).click();
   await expect(page.getByText(`${label} is out of your books`)).toBeVisible();
   await expect(month.getByText("Ready to post")).toBeVisible();
+});
+
+test("channel profit: an expense category counted against eBay Canada, and cost of goods sold", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  // A cost of selling on eBay, recorded in the books under its own category.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("button", { name: "Add expense" }).click();
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+  await page.locator("#tx-memo").fill("eBay store");
+  await page.getByLabel("Category 1", { exact: true }).click();
+  await page
+    .locator('input[role="combobox"][aria-autocomplete="list"]')
+    .fill("eBay store subscription");
+  await page
+    .getByRole("button", { name: "Add “eBay store subscription” as a new category" })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Add a category" })
+    .getByRole("button", { name: "Add category" })
+    .click();
+  await expect(page.getByLabel("Category 1", { exact: true })).toHaveText(
+    "eBay store subscription",
+  );
+  await page.getByLabel("Amount 1").fill("29.99");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added")).toBeVisible();
+
+  // Counted against eBay Canada on Channel profit.
+  await page.getByRole("link", { name: "Channel profit", exact: true }).click();
+  await page.getByRole("link", { name: "Your own costs" }).click();
+  await expect(page.getByRole("heading", { name: "Your own costs" })).toBeVisible();
+  await choose(page.getByRole("combobox", { name: /eBay store subscription/ }), "eBay Canada");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Channel profit counts these costs")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Channel profit" })).toBeVisible();
+
+  const from = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const to = new Date().toISOString().slice(0, 10);
+  const slug = new URL(page.url()).pathname.split("/")[2];
+  await page.goto(`/o/${slug}/commerce/profit?from=${from}&to=${to}`);
+  await expect(page.getByRole("rowheader", { name: "Cost of goods sold" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /^Your own costs/ })).toContainText("($29.99)");
+  await expect(page.getByRole("rowheader", { name: "Profit", exact: true })).toBeVisible();
 });
 
 test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ page }) => {

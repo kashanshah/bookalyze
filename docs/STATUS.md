@@ -997,13 +997,38 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   lines by `settlementGroup`, `channelProfit` makes the totals. A settlement counts in the
   period its last day falls in (company time zone; db `settlementsForProfit`, shown settlements
   only). The main-currency total uses the rate a settlement posted at, else that day's rate
-  (`suggestRate`); without one it's left out and the page says so. Before product costs
-  (phase 5).
+  (`suggestRate`); without one it's left out and the page says so. Product costs and your own
+  costs came in slice 6.
 - Columns come from the money in the period, not the channel list, so a channel switched off or
   whose account was disconnected still shows what it earned (the totals keep matching the books),
   tagged **Switched off** or **Disconnected** under its name (its account's status wins).
 - Tests: core `amazon-settlements.test.ts` (`channelProfit`), db `settlements.test.ts`
   (`settlementsForProfit`), e2e settlements test (the page shows Amazon.ca's column); e2e "noon: choose how Noon posts…" switches Noon UAE off and sees its tag.
+
+### Phase 4, slice 6: Channel profit with cost of goods sold and your own costs
+
+- **Rows now go on to a profit:** … other → **Net from the marketplace** (subtotal, what was
+  "Net from the channel"), then **Cost of goods sold** (cost less returns), **Stock lost or
+  written off** (lost less found; the row shows only when there is some), **Your own costs**, and
+  **Profit**; the margin is profit over net sales.
+- **Cost of goods sold** (db `cogsForProfit`): each posted `cogs_periods` month whose last day is
+  in the period, on its marketplace's column (in the main currency; converted into another
+  currency's column at that day's rate) and in All channels.
+- **Your own costs** (`/commerce/profit/costs`, "Your own costs" on Channel profit; table
+  `channel_cost_accounts`, migration 0065; db `channelCostCategories`,
+  `saveChannelCostAccounts`, `channelCostsForProfit`; action `saveChannelCostsAction`, audit
+  `commerce.channel_costs_updated`): each expense category is Not counted, Shared (All channels
+  only, not split) or counted against one channel. The report sums each counted category's lines
+  dated in the period, in the main currency (into a channel's currency at the period's last
+  day's rate), leaving out entries the marketplaces' own rows already count (sources
+  `settlement`, `noon`, `ebay`, `cogs`), so an advertising account a settlement posts to isn't
+  counted twice. Cost of goods sold and write-off system accounts aren't offered (they have their
+  rows). A channel with costs but no sales in the period gets its column. The cell's hint lists
+  each category's part.
+- Tests: db `channel-costs.test.ts` (categories and their channel, sums in the period without
+  the marketplaces' entries, cost of goods sold by month end, isolation); e2e "channel profit: an
+  expense category counted against eBay Canada…" and the settlements test (Net from the
+  marketplace, Profit).
 
 ### Phase 4b, slice 1: tax on Amazon's fees
 

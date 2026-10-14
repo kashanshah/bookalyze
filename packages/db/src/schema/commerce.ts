@@ -1136,3 +1136,35 @@ export const priceChanges = pgTable(
     tenantIsolationPolicy("price_changes", t.organizationId),
   ],
 );
+
+/**
+ * Channel profit's own costs: an expense category from the books counted against a sales
+ * channel (`channelId`), or as shared (`channelId` null: under "All channels" only). Categories
+ * not listed aren't in the report.
+ */
+export const channelCostAccounts = pgTable(
+  "channel_cost_accounts",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id").notNull(),
+    channelId: uuid("channel_id"),
+    updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.organizationId, t.accountId] }),
+    foreignKey({
+      name: "channel_cost_accounts_account_fk",
+      columns: [t.organizationId, t.accountId],
+      foreignColumns: [accounts.organizationId, accounts.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "channel_cost_accounts_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("channel_cost_accounts", t.organizationId),
+  ],
+);
