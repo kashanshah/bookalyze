@@ -1702,6 +1702,50 @@ test("bundles: one listing that holds several products", async ({ page }) => {
   await expect(mug.getByText("bundle", { exact: true })).toBeVisible();
 });
 
+test("prices: Amazon prices next to cost, a change with its profit, and a refusal", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Prices", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Prices", exact: true })).toBeVisible();
+
+  // The seller ID comes from the listing's own offer; then each linked SKU's price comes in.
+  await page.getByRole("button", { name: "Check Amazon for prices" }).click();
+  await expect(page.getByText(/prices? checked with Amazon/)).toBeVisible({ timeout: 30_000 });
+  const mug = page.getByRole("listitem", { name: "MAPLE-MUG on Amazon.ca" });
+  await expect(mug.getByText("$24.99")).toBeVisible();
+  await expect(mug.getByText("No cost yet")).toHaveCount(0);
+
+  // Amazon's fees (15% + $3.00 FBA in the stand-in) now and at the new price, then send it.
+  await mug.getByRole("button", { name: "Change price" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("New price", { exact: true }).fill("21.99");
+  await expect(dialog.getByText("Amazon fees (FBA)")).toBeVisible({ timeout: 15_000 });
+  await expect(dialog.getByText("($6.75)")).toBeVisible({ timeout: 15_000 });
+  await expect(dialog.getByText("($6.30)")).toBeVisible({ timeout: 15_000 });
+  await expect(dialog.getByText(/^-?\d+\.\d%$/).first()).toBeVisible();
+  await dialog.getByRole("button", { name: "Update on Amazon" }).click();
+  await expect(page.getByText("New price sent to Amazon")).toBeVisible({ timeout: 15_000 });
+  await expect(mug.getByText("Updating")).toBeVisible();
+  await expect(mug.getByText("$21.99")).toBeVisible();
+
+  // A big cut asks first; Amazon refuses a price under the listing's minimum, in its words.
+  const candle = page.getByRole("listitem", { name: "PINE-CANDLE on Amazon.ca" });
+  await candle.getByRole("button", { name: "Change price" }).click();
+  await dialog.getByLabel("New price", { exact: true }).fill("3");
+  await expect(dialog.getByText(/% lower than now/)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Update on Amazon" })).toBeDisabled();
+  await dialog
+    .getByRole("checkbox", { name: "Yes, change it by this much" })
+    .check({ force: true });
+  await dialog.getByRole("button", { name: "Update on Amazon" }).click();
+  await expect(page.getByText("Amazon didn't change the price")).toBeVisible({ timeout: 15_000 });
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(candle.getByText("Not changed")).toBeVisible();
+  await expect(candle.getByText(/below your minimum price/)).toBeVisible();
+});
+
 test("reviews: ask for a review by hand, then turn on automatic requests", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Features", exact: true }).click();

@@ -98,13 +98,14 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     key: "inventory",
     label: "Inventory",
     description:
-      "The products you sell, linked to your marketplace SKUs, purchase orders to your suppliers, stock lots at their landed cost, and cost of goods sold posted each month at FIFO cost.",
+      "The products you sell, linked to your marketplace SKUs, their Amazon prices with what each sale earns, purchase orders to your suppliers, stock lots at their landed cost, and cost of goods sold posted each month at FIFO cost.",
     basePath: "/inventory",
     phase: "5",
     requires: ["accounting", "commerce"],
-    features: ["inventory.products", "inventory.purchasing", "inventory.cogs"],
+    features: ["inventory.products", "inventory.prices", "inventory.purchasing", "inventory.cogs"],
     nav: [
       { label: "Products", href: "/inventory/products" },
+      { label: "Prices", href: "/inventory/prices" },
       { label: "Purchase orders", href: "/inventory/purchase-orders" },
       { label: "Stock lots", href: "/inventory/lots" },
       { label: "Stock movements", href: "/inventory/movements" },

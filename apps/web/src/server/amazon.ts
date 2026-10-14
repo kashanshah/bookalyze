@@ -3,15 +3,22 @@ import { gunzipSync } from "node:zlib";
 import {
   AMAZON_LWA_TOKEN_URL,
   AMAZON_REGIONS,
+  type AmazonListing,
   type AmazonOrder,
   type AmazonOrderItem,
   type AmazonRefund,
   type AmazonRegion,
   amazonErrorDetail,
+  type FeesEstimate,
+  type ListingPatchResult,
   type MarketplaceParticipation,
   parseBuyerInfo,
   parseFbaInventoryPage,
+  parseFeesEstimate,
+  parseListingItem,
+  parseListingPatchResult,
   parseMarketplaceParticipations,
+  parseMyOfferSellerId,
   parseOrderItemsPage,
   parseOrdersPage,
   parseRefundEventsPage,
@@ -122,7 +129,7 @@ function amzDate(now = new Date()): string {
 }
 
 type CallOptions = {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PATCH";
   /** JSON body for a POST. */
   body?: unknown;
   /** Use this instead of the login token (a restricted-data token). */
@@ -578,6 +585,113 @@ export async function catalogItem(
     { marketplaceIds: marketplaceId, includedData: "summaries,attributes,images,salesRanks" },
     { forbidden: CATALOG_ROLE },
   );
+}
+
+const LISTINGS_PATH = (sellerId: string, sku: string) =>
+  `/listings/2021-08-01/items/${encodeURIComponent(sellerId)}/${encodeURIComponent(sku)}`;
+
+/** One of the seller's listings in a marketplace: its price, offer and status. Null if unknown. */
+export async function listingItem(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  input: { sellerId: string; sku: string; marketplaceId: string },
+): Promise<AmazonListing | null> {
+  const response = await send(
+    creds,
+    region,
+    LISTINGS_PATH(input.sellerId, input.sku),
+    {
+      marketplaceIds: input.marketplaceId,
+      includedData: "summaries,attributes,offers,issues",
+    },
+    { forbidden: CATALOG_ROLE, allow: [404] },
+  );
+  if (response.status === 404) return null;
+  return parseListingItem(await response.json(), input.marketplaceId);
+}
+
+/**
+ * Sends a listing change (a JSON patch) to Amazon. "ACCEPTED" means Amazon applies it within
+ * minutes; "INVALID" comes with Amazon's reasons. A 400 is a refusal too, in Amazon's words.
+ */
+export async function patchListing(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  input: { sellerId: string; sku: string; marketplaceId: string; body: unknown },
+): Promise<ListingPatchResult> {
+  const response = await send(
+    creds,
+    region,
+    LISTINGS_PATH(input.sellerId, input.sku),
+    { marketplaceIds: input.marketplaceId },
+    { method: "PATCH", body: input.body, forbidden: CATALOG_ROLE, allow: [400] },
+  );
+  const json = await response.json().catch(() => null);
+  if (response.status === 400) {
+    const detail = amazonErrorDetail(json);
+    return {
+      status: "INVALID",
+      submissionId: null,
+      problems: [detail || "Amazon refused the change."],
+    };
+  }
+  return parseListingPatchResult(json);
+}
+
+/** Amazon's fees for one sale of a listing at a price (referral, FBA…). */
+export async function feesEstimate(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  input: {
+    sku: string;
+    marketplaceId: string;
+    price: string;
+    currency: string;
+    fulfilledByAmazon: boolean;
+  },
+): Promise<FeesEstimate | { error: string }> {
+  const json = await call(
+    creds,
+    region,
+    `/products/fees/v0/listings/${encodeURIComponent(input.sku)}/feesEstimate`,
+    undefined,
+    {
+      method: "POST",
+      forbidden: PRICING_ROLE,
+      body: {
+        FeesEstimateRequest: {
+          MarketplaceId: input.marketplaceId,
+          IsAmazonFulfilled: input.fulfilledByAmazon,
+          // Amazon reads amounts as JSON numbers; the price is already rounded to cents.
+          PriceToEstimateFees: {
+            ListingPrice: { CurrencyCode: input.currency, Amount: Number(input.price) },
+          },
+          Identifier: `bookalyze-${input.sku}-${input.price}`,
+        },
+      },
+    },
+  );
+  return parseFeesEstimate(json);
+}
+
+/**
+ * The seller's own ID, from the offers on one of their listings (the one marked as theirs).
+ * Null when Amazon doesn't show an offer of theirs for that SKU right now.
+ */
+export async function sellerIdFromListing(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  input: { sku: string; marketplaceId: string },
+): Promise<string | null> {
+  const response = await send(
+    creds,
+    region,
+    `/products/pricing/v0/listings/${encodeURIComponent(input.sku)}/offers`,
+    { MarketplaceId: input.marketplaceId, ItemCondition: "New" },
+    { forbidden: PRICING_ROLE, allow: [400, 404] },
+  );
+  if (!response.ok) return null;
+  return parseMyOfferSellerId(await response.json().catch(() => null));
 }
 
 /** New offers for a product, including the featured offer (the Buy Box). */
