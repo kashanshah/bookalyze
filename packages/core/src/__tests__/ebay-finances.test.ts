@@ -98,6 +98,8 @@ describe("parseEbayTransactionsPage", () => {
     expect(parseEbayTransactionsPage({ total: 1500, offset: 0, transactions }).next).toBe(1000);
     expect(parseEbayTransactionsPage({ total: 0, transactions: [] }).transactions).toEqual([]);
     expect(() => parseEbayTransactionsPage({ errors: [] })).toThrow();
+    // Nothing in the window: eBay answers 204 with no body.
+    expect(parseEbayTransactionsPage(null)).toEqual({ transactions: [], next: null });
   });
 });
 
@@ -198,5 +200,6 @@ describe("eBay payouts", () => {
     ]);
     expect(page.payouts.map((p) => ebayPayoutSent(p.status))).toEqual([true, false]);
     expect(() => parseEbayPayoutsPage({ errors: [] })).toThrow();
+    expect(parseEbayPayoutsPage(null)).toEqual({ payouts: [], next: null });
   });
 });
