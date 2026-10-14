@@ -17,6 +17,7 @@ export * from "./noon-posting";
 export * from "./noon-stock";
 export * from "./noon-transactions";
 export * from "./orders";
+export * from "./pricing";
 export * from "./refunds";
 export * from "./reviews";
 export * from "./settlements";

@@ -133,6 +133,48 @@ const items = {
 /** Orders asked for a review. */
 const asked = new Set();
 
+// Listings and their prices (synthetic), for Inventory → Prices. A change applies at once here.
+const SELLER_ID = "A1E2ESELLER0001";
+const listingPrices = new Map([
+  ["MAPLE-MUG", 24.99],
+  ["PINE-CANDLE", 19.99],
+  ["BIRCH-COASTER", 14.99],
+  ["MAPLE-MUG-XL", 29.99],
+]);
+const listingOf = (sku) => {
+  const price = listingPrices.get(sku);
+  const offer = {
+    marketplace_id: "A2EUQ1WTGCTBG2",
+    currency: "CAD",
+    our_price: [{ schedule: [{ value_with_tax: price }] }],
+    minimum_seller_allowed_price: [{ schedule: [{ value_with_tax: 5 }] }],
+  };
+  return {
+    sku,
+    summaries: [
+      {
+        marketplaceId: "A2EUQ1WTGCTBG2",
+        asin: "B0E2E00001",
+        productType: "HOME",
+        itemName: sku,
+        status: ["BUYABLE", "DISCOVERABLE"],
+      },
+    ],
+    attributes: {
+      purchasable_offer: [offer],
+      fulfillment_availability: [{ fulfillment_channel_code: "AMAZON_NA" }],
+    },
+    offers: [
+      {
+        marketplaceId: "A2EUQ1WTGCTBG2",
+        offerType: "B2C",
+        price: { currency: "CAD", amount: price.toFixed(2) },
+      },
+    ],
+    issues: [],
+  };
+};
+
 // One mug of the first order refunded (price and tax), less a promotion clawed back: partly.
 const refundEvents = [
   {
@@ -439,6 +481,84 @@ createServer((req, res) => {
     const order = orders.find((o) => o.AmazonOrderId === decodeURIComponent(orderPath[1]));
     if (!order) return json(res, 404, { errors: [{ code: "NotFound" }] });
     return json(res, 200, { payload: order });
+  }
+  // The seller's own offer on a listing names the seller ID.
+  const myOffers = /^\/products\/pricing\/v0\/listings\/([^/]+)\/offers$/.exec(url.pathname);
+  if (myOffers) {
+    if (!listingPrices.has(decodeURIComponent(myOffers[1]))) {
+      return json(res, 404, { errors: [{ code: "NotFound" }] });
+    }
+    return json(res, 200, { payload: { Offers: [{ SellerId: SELLER_ID, MyOffer: true }] } });
+  }
+  // Amazon's fees in this stand-in: 15% referral plus $3.00 to ship by FBA.
+  const fees = /^\/products\/fees\/v0\/listings\/([^/]+)\/feesEstimate$/.exec(url.pathname);
+  if (fees && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      const request = JSON.parse(body || "{}").FeesEstimateRequest ?? {};
+      const price = Number(request.PriceToEstimateFees?.ListingPrice?.Amount ?? 0);
+      const referral = Math.round(price * 15) / 100;
+      const fba = request.IsAmazonFulfilled ? 3 : 0;
+      json(res, 200, {
+        payload: {
+          FeesEstimateResult: {
+            Status: "Success",
+            FeesEstimate: {
+              TotalFeesEstimate: { CurrencyCode: "CAD", Amount: referral + fba },
+              FeeDetailList: [
+                { FeeType: "ReferralFee", FinalFee: { CurrencyCode: "CAD", Amount: referral } },
+                { FeeType: "FBAFees", FinalFee: { CurrencyCode: "CAD", Amount: fba } },
+              ],
+            },
+          },
+        },
+      });
+    });
+    return;
+  }
+  // A listing: read it, or change its price (refused under the listing's minimum price).
+  const listing = /^\/listings\/2021-08-01\/items\/([^/]+)\/([^/]+)$/.exec(url.pathname);
+  if (listing) {
+    const sku = decodeURIComponent(listing[2]);
+    if (decodeURIComponent(listing[1]) !== SELLER_ID || !listingPrices.has(sku)) {
+      return json(res, 404, { errors: [{ code: "NOT_FOUND", message: "Not found" }] });
+    }
+    if (req.method === "PATCH") {
+      let body = "";
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        const patch = JSON.parse(body || "{}");
+        const offer = patch.patches?.[0]?.value?.[0] ?? {};
+        const price = offer.our_price?.[0]?.schedule?.[0]?.value_with_tax;
+        const minimum = offer.minimum_seller_allowed_price?.[0]?.schedule?.[0]?.value_with_tax;
+        if (!patch.productType || typeof price !== "number") {
+          return json(res, 400, { errors: [{ code: "InvalidInput", message: "Bad patch" }] });
+        }
+        if (minimum !== undefined && price < minimum) {
+          return json(res, 200, {
+            sku,
+            status: "INVALID",
+            submissionId: "e2e-refused",
+            issues: [
+              {
+                code: "90220",
+                severity: "ERROR",
+                message: "The price is below your minimum price for this listing.",
+              },
+            ],
+          });
+        }
+        listingPrices.set(sku, price);
+        json(res, 200, { sku, status: "ACCEPTED", submissionId: "e2e-accepted", issues: [] });
+      });
+      return;
+    }
+    return json(res, 200, listingOf(sku));
   }
   const itemsPath = /^\/orders\/v0\/orders\/([^/]+)\/orderItems$/.exec(url.pathname);
   if (itemsPath) {

@@ -28,7 +28,7 @@ back into stock, losses written off, like Amazon's FBA ledger)._
 | 2. Banking, plus Entity & compliance | **Done in code.** Wise connection (API sync), bank statement upload (CSV) for any bank, duplicates, rules and rule suggestions, transfer matching, reconciliation, and Entity & compliance (profile, people, document vault, compliance calendar with email reminders). Next: a month of real use for Teknoffice (then it can leave Wave). Wise strong customer authentication for the UAE company moves to phase 4b; OFX import only if a bank lacks CSV |
 | 3. Commerce connections, orders & review requests | **Done in code.** Slice 1 (connect Amazon Seller Central, channels), slice 2 (order sync, Orders screen, customer invoice PDFs), slice 3 (review requests: manual, bulk, automatic), refunds on orders (red badge, Refunded tab) and listing watch (selected ASINs, daily/weekly/hourly, email) done. Next: running them for Kazomo (the Amazon app needs the Buyer Solicitation, Finance and Accounting, Product Listing, Pricing, and Tax Invoicing roles) |
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
-| 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) and slice 10 (a freight payment is its delivery's cost) done. Next: Noon (phase 4c), with bundles from day one |
+| 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) slice 10 (a freight payment is its delivery's cost) and slice 11 (Amazon prices: each listing's price next to its cost, a change with Amazon's fees and the profit first) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: "your stock against Noon's" from the ledger summary view. Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold), 4 (eBay money: the Finances API's rows by month, in Channel profit) and 5 (payouts and posting: each site's month as one entry to an eBay balance account, payouts matched to bank deposits, in the daily job) done. Next: the Seller Hub transaction report upload, and eBay's digital signatures for EU and UK sellers. See §3 "Phase 4d" |
 
@@ -1822,6 +1822,44 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `purchasing.test.ts` (exact costs from totals, including 9,999,991 units;
   spreading a total) and `alibaba-receipt.test.ts`; e2e "purchase orders: type the cost of
   one, the line total or the order total".
+
+### Phase 5, slice 11: Amazon prices
+
+- **Inventory → Prices** (`/inventory/prices`, feature `inventory.prices`): every linked SKU on an
+  Amazon marketplace that's switched on and connected (`pricedSkus`), with what the listing holds,
+  its price as Amazon last reported it, its cost, and the last change (Updating / Applied / Not
+  changed with Amazon's reason). **Check Amazon for prices** reads them (`refreshChannelPrices`,
+  least recently read first, about five a second, asked again while there's more).
+- **Cost** (core `listingCost`, db `nextUnitCosts`): each product's next unit to sell (its oldest
+  lot with units left, landed cost included; else its latest lot) × units in the listing, bundles
+  summed; converted at today's rate (`suggestRate`) when the marketplace sells in another
+  currency.
+- **Change price** (owners and admins): the dialog reads the listing again, then shows Amazon's
+  own fee estimate (Product Fees API, FBA or not from the listing's fulfilment channel), the cost,
+  profit and margin now and at the typed price (core `priceProfit`). A change of 30% or more
+  (`LARGE_PRICE_CHANGE_PERCENT`) needs a tick. **Update on Amazon** patches the listing's
+  `purchasable_offer` with only "our price" changed: core `buildPricePatch` keeps the rest of the
+  offer (sale price, minimum and maximum), because a replace replaces all of it. Audited
+  (`listing.price_sent` / `listing.price_refused`).
+- **After sending:** Amazon applies an accepted change within minutes. The Prices page (and each
+  check) reads back changes older than 90 seconds (`checkPriceChanges`): the listing showing the
+  new price marks it **applied**; after a day it's reported as not applied
+  (`expireStalePriceChanges`).
+- **Seller ID:** the Listings API needs the seller's merchant token, which a self-authorized app
+  isn't given. It's found from the seller's own offer on a listing (Product Pricing listing
+  offers, `MyOffer`), saved in `connections.settings.sellerId`; when Amazon doesn't say, the page
+  asks for it (Seller Central → Settings → Account Info → Merchant Token).
+- Roles: **Product Listing** (listings) and **Pricing** (fees, offers), both already needed.
+- Schema (migration `0064_listing_prices`): `listing_prices` (per channel and SKU: price, currency,
+  product type, status, the whole offer, error issues, found) and `price_changes`.
+- Code: core `commerce/pricing.ts`; db `prices.ts`; web `server/amazon.ts` (`listingItem`,
+  `patchListing`, `feesEstimate`, `sellerIdFromListing`), `server/amazon-prices.ts`,
+  `app/o/[slug]/inventory/prices/`.
+- Tests: core `amazon-pricing.test.ts`, db `prices.test.ts`, e2e "prices: Amazon prices next to
+  cost, a change with its profit, and a refusal" (the mock's fees are 15% + $3.00 FBA; a price
+  under the listing's minimum is refused).
+- **Not yet:** sale prices with dates, changing several at once, FBM shipping templates, Noon and
+  eBay prices.
 
 ### Phase 5, slice 10: a freight payment is its delivery's cost
 

@@ -1055,3 +1055,84 @@ export const ebayDepositDismissals = pgTable(
     tenantIsolationPolicy("ebay_deposit_dismissals", t.organizationId),
   ],
 );
+
+/**
+ * A marketplace SKU's price as Amazon last reported it (Inventory → Prices), with what a price
+ * change needs: the listing's product type and its whole current offer.
+ */
+export const listingPrices = pgTable(
+  "listing_prices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    sku: text("sku").notNull(),
+    /** Null when the listing has no price (e.g. not set up for sale yet). */
+    price: numeric("price", { precision: 20, scale: 4 }),
+    currency: char("currency", { length: 3 }),
+    productType: text("product_type"),
+    /** Amazon's words for it, e.g. BUYABLE, DISCOVERABLE. */
+    status: text("status").array().notNull().default(sql`'{}'::text[]`),
+    /** The listing's offer for the marketplace, as Amazon holds it. */
+    offer: jsonb("offer").$type<Record<string, unknown>>(),
+    /** Amazon's error-level issues on the listing, in its words. */
+    problems: text("problems").array().notNull().default(sql`'{}'::text[]`),
+    /** False when Amazon didn't know the SKU when last asked. */
+    found: boolean("found").notNull().default(true),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("listing_prices_org_id_key").on(t.organizationId, t.id),
+    unique("listing_prices_channel_sku_key").on(t.organizationId, t.channelId, t.sku),
+    foreignKey({
+      name: "listing_prices_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("listing_prices", t.organizationId),
+  ],
+);
+
+export const PRICE_CHANGE_STATUSES = ["sent", "applied", "refused"] as const;
+export type PriceChangeStatus = (typeof PRICE_CHANGE_STATUSES)[number];
+
+/**
+ * A price change sent to Amazon from Bookalyze: "sent" (Amazon accepted it and applies it within
+ * minutes), "applied" (the listing shows the new price) or "refused" (with Amazon's reason).
+ */
+export const priceChanges = pgTable(
+  "price_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    sku: text("sku").notNull(),
+    currency: char("currency", { length: 3 }).notNull(),
+    oldPrice: numeric("old_price", { precision: 20, scale: 4 }),
+    newPrice: numeric("new_price", { precision: 20, scale: 4 }).notNull(),
+    status: text("status", { enum: PRICE_CHANGE_STATUSES }).notNull(),
+    submissionId: text("submission_id"),
+    /** Amazon's reason, when it refused. */
+    message: text("message"),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When the listing was last read to see whether the change is live. */
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("price_changes_org_id_key").on(t.organizationId, t.id),
+    index("price_changes_channel_sku_idx").on(t.organizationId, t.channelId, t.sku),
+    foreignKey({
+      name: "price_changes_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    check("price_changes_status_valid", sql`${t.status} in ('sent', 'applied', 'refused')`),
+    check("price_changes_price_positive", sql`${t.newPrice} > 0`),
+    tenantIsolationPolicy("price_changes", t.organizationId),
+  ],
+);

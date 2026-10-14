@@ -449,6 +449,13 @@
       "when": 1791913915236,
       "tag": "0063_ebay_posting",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1791958146483,
+      "tag": "0064_listing_prices",
+      "breakpoints": true
     }
   ]
 }
