@@ -51,7 +51,7 @@ export default async function SettlementPage({
     const settlement = await getSettlement(tx, id);
     if (!settlement) return null;
     const lookForDeposit =
-      Boolean(settlement.entryId) && !settlement.deposit && parseDecimal(settlement.total) > 0n;
+      Boolean(settlement.entryId) && !settlement.deposit && parseDecimal(settlement.total) !== 0n;
     return {
       settlement,
       candidates: lookForDeposit ? await settlementDepositCandidates(tx, id) : [],
@@ -173,11 +173,13 @@ export default async function SettlementPage({
               <div>
                 <dt className="text-muted-foreground text-xs">Paid into your bank</dt>
                 <dd className="mt-0.5">
-                  {negative
-                    ? "Nothing: Amazon carries the balance to the next period or charges your card"
-                    : s.depositDate
-                      ? formatDate(s.depositDate, locale)
-                      : "Not paid yet"}
+                  {negative && s.deposit
+                    ? `Nothing: Amazon charged it on ${formatDate(s.deposit.date, locale)}`
+                    : negative
+                      ? "Nothing: Amazon carries the balance to the next period or charges your bank or card"
+                      : s.depositDate
+                        ? formatDate(s.depositDate, locale)
+                        : "Not paid yet"}
                 </dd>
               </div>
               <div>
@@ -209,9 +211,13 @@ export default async function SettlementPage({
                     JE-{String(s.entryNumber).padStart(4, "0")}
                   </Link>
                   .{" "}
-                  {s.deposit
-                    ? "Its deposit is matched below."
-                    : "The payout waits in the clearing account until its deposit is matched."}
+                  {negative
+                    ? s.deposit
+                      ? "Amazon's charge is matched below."
+                      : "What Amazon was owed waits in the clearing account until Amazon's charge is matched, or the next settlement carries it."
+                    : s.deposit
+                      ? "Its deposit is matched below."
+                      : "The payout waits in the clearing account until its deposit is matched."}
                 </p>
                 {foreign && s.postedFxRate && s.payoutBaseAmount ? (
                   <p className="text-muted-foreground text-xs">
@@ -304,33 +310,38 @@ export default async function SettlementPage({
               </div>
             )}
           </div>
-          {posted && parseDecimal(s.total) > 0n ? (
+          {posted && parseDecimal(s.total) !== 0n ? (
             <div className="rounded-2xl border bg-card p-5 shadow-xs">
               <h2 className="flex items-center gap-2 font-medium text-sm">
                 <Landmark className="size-4 text-primary" />
-                Bank deposit
+                {negative ? "Amazon's charge" : "Bank deposit"}
               </h2>
               {s.deposit ? (
                 <div className="mt-2 grid gap-3 text-sm">
                   <p>
-                    Matched to the deposit into {s.deposit.accountName} on{" "}
-                    {formatDate(s.deposit.date, locale)} (
+                    Matched to the {negative ? "charge to" : "deposit into"} {s.deposit.accountName}{" "}
+                    on {formatDate(s.deposit.date, locale)} (
                     <Link
                       href={`/o/${slug}/accounting/journal/${s.deposit.entryId}`}
                       className="font-medium text-primary underline-offset-4 hover:underline"
                     >
                       JE-{String(s.deposit.entryNumber).padStart(4, "0")}
                     </Link>
-                    ). It clears the payout from {clearingName ?? "the clearing account"}.
+                    ). It clears {negative ? "what Amazon was owed" : "the payout"} from{" "}
+                    {clearingName ?? "the clearing account"}.
                   </p>
                   {canPost ? <UnmatchDepositButton slug={slug} settlementId={s.id} /> : null}
                 </div>
               ) : candidates.length ? (
                 <div className="mt-2 grid gap-3 text-sm">
                   <p className="text-muted-foreground text-xs">
-                    {candidates.length === 1
-                      ? "This deposit matches the payout:"
-                      : "These deposits match the payout. Choose the right one:"}
+                    {negative
+                      ? candidates.length === 1
+                        ? "This withdrawal matches what Amazon was owed:"
+                        : "These withdrawals match what Amazon was owed. Choose the right one:"
+                      : candidates.length === 1
+                        ? "This deposit matches the payout:"
+                        : "These deposits match the payout. Choose the right one:"}
                   </p>
                   <ul className="grid min-w-0 gap-3">
                     {candidates.map((c) => (
@@ -380,7 +391,9 @@ export default async function SettlementPage({
                         <p className="text-muted-foreground text-xs">
                           {c.uncategorized
                             ? `Not categorized yet. Matching puts it in ${clearingName ?? "the clearing account"}.`
-                            : `Now in ${c.categories.join(", ")}. Matching moves it to ${clearingName ?? "the clearing account"}, so these sales aren't counted twice.`}
+                            : negative
+                              ? `Now in ${c.categories.join(", ")}. Matching moves it to ${clearingName ?? "the clearing account"}, so Amazon's fees aren't counted twice.`
+                              : `Now in ${c.categories.join(", ")}. Matching moves it to ${clearingName ?? "the clearing account"}, so these sales aren't counted twice.`}
                         </p>
                         {canPost ? (
                           <DepositChoice
@@ -394,6 +407,19 @@ export default async function SettlementPage({
                     ))}
                   </ul>
                 </div>
+              ) : negative ? (
+                <p className="mt-2 text-muted-foreground text-sm">
+                  No withdrawal of{" "}
+                  <Amount
+                    value={formatDecimal(-parseDecimal(s.total))}
+                    currency={s.currency}
+                    locale={locale}
+                  />{" "}
+                  found in your bank or card accounts between{" "}
+                  {formatDate(depositWindow.from, locale)} and{" "}
+                  {formatDate(depositWindow.to, locale)}. If Amazon charges it, it shows here once
+                  your bank brings it in; if the next settlement carries it, nothing is needed.
+                </p>
               ) : (
                 <p className="mt-2 text-muted-foreground text-sm">
                   No deposit of <Amount value={s.total} currency={s.currency} locale={locale} />{" "}

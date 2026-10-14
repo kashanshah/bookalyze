@@ -446,6 +446,115 @@ describe("settlements", () => {
     expect(await scoped((tx) => settlementDepositCandidates(tx, id))).toEqual([]);
   });
 
+  it("matches a negative settlement to the bank withdrawal Amazon charged, not a deposit", async () => {
+    const accounts = await scoped((tx) => tx.select().from(schema.accounts));
+    const bank = accounts.find((a) => a.code === "1010" && a.name === "Chequing");
+    const clearing = (await scoped((tx) => getSettlementAccounts(tx))).clearing ?? "";
+    const fees = accounts.find((a) => a.type === "expense" && a.systemKey === null)?.id ?? "";
+    if (!bank) throw new Error("bank account missing");
+    const channelId = await scoped((tx) =>
+      settlementChannel(tx, { connectionId, marketplace: "Amazon.ca", currency: "CAD" }),
+    );
+    // Fees and a refund came to more than the sales: Amazon was owed 12.40.
+    const saved = await scoped((tx) =>
+      saveSettlement(tx, {
+        orgId,
+        connectionId,
+        channelId,
+        reportId: "r-owed",
+        source: "amazon",
+        settlement: settlement({
+          settlementId: "99887766554",
+          startAt: "2026-10-01T07:00:00.000Z",
+          endAt: "2026-10-15T07:00:00.000Z",
+          depositDate: null,
+          total: "-12.4000",
+          orderCount: 0,
+          lines: [
+            {
+              transactionType: "other-transaction",
+              amountType: "other-transaction",
+              amountDescription: "Subscription Fee",
+              amount: "-12.4000",
+              count: 1,
+            },
+          ],
+        }),
+      }),
+    );
+    const id = saved.id;
+    await scoped((tx) =>
+      postSettlement(tx, {
+        orgId,
+        userId: null,
+        settlementId: id,
+        baseCurrency: "CAD",
+        date: "2026-10-15",
+        memo: "Amazon.ca settlement 99887766554",
+      }),
+    );
+    const money = (date: string, amount: string, other: string) =>
+      scoped((tx) =>
+        postJournalEntry(tx, {
+          orgId,
+          date,
+          memo: "AMAZON.CA",
+          entry: {
+            currency: "CAD",
+            fxRate: "1",
+            total: amount,
+            lines: [
+              {
+                index: 0,
+                accountId: bank.id,
+                description: null,
+                currency: "CAD",
+                amount,
+                baseAmount: amount,
+              },
+              {
+                index: 1,
+                accountId: other,
+                description: null,
+                currency: "CAD",
+                amount: amount.startsWith("-") ? amount.slice(1) : `-${amount}`,
+                baseAmount: amount.startsWith("-") ? amount.slice(1) : `-${amount}`,
+              },
+            ],
+          },
+        }),
+      );
+    const sales = accounts.find((a) => a.code === "4000")?.id ?? "";
+    await money("2026-10-16", "12.4000", sales); // money in: not Amazon's charge
+    const charge = await money("2026-10-17", "-12.4000", fees);
+    const candidates = await scoped((tx) => settlementDepositCandidates(tx, id));
+    expect(candidates.map((c) => [c.entryId, c.amount])).toEqual([[charge.id, "-12.4000"]]);
+    expect(
+      (await scoped((tx) => settlementsWithOneDeposit(tx))).map((f) => f.settlementId),
+    ).toContain(id);
+
+    const matched = await scoped((tx) =>
+      matchSettlementDeposit(tx, {
+        orgId,
+        userId: null,
+        settlementId: id,
+        entryId: charge.id,
+        baseCurrency: "CAD",
+      }),
+    );
+    const lines = await scoped((tx) =>
+      tx
+        .select()
+        .from(schema.journalLines)
+        .where(sql`${schema.journalLines.journalEntryId} = ${matched.id}`),
+    );
+    // The withdrawal now settles what Amazon was owed, out of the clearing account.
+    expect(Object.fromEntries(lines.map((l) => [l.accountId, String(l.amount)]))).toEqual({
+      [bank.id]: "-12.4000",
+      [clearing]: "12.4000",
+    });
+  });
+
   it("posts a settlement in another currency at the day's rate, and matches a converted deposit", async () => {
     await upsertFxRates(
       app.db,

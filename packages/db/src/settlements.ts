@@ -582,7 +582,8 @@ export type DepositCandidate = {
 
 /**
  * Bank deposits that could be a payout of `total` in `currency`: money into one bank, card or
- * cash account (not the clearing account), between `from` and `to`, not already moved to the
+ * cash account (not the clearing account), or, when `total` is negative (Amazon was owed and
+ * charged the bank or card), money out of one, between `from` and `to`, not already moved to the
  * clearing account and not turned down (`notDismissed`, a condition on the entry `e`), that fit
  * the payout (core `depositFit`): exactly its amount in its currency, or, paid in another
  * currency, close to it at that day's rate. Exact ones first, then by date (closest to `anchor`).
@@ -601,7 +602,8 @@ export async function depositCandidates(
     onlyEntryId?: string;
   },
 ): Promise<DepositCandidate[]> {
-  if (parseDecimal(input.total) <= 0n) return [];
+  const sign = parseDecimal(input.total);
+  if (sign === 0n) return [];
   const { clearing, from, to, anchor } = input;
   const rows = await tx.execute<{
     entry_id: string;
@@ -629,7 +631,8 @@ export async function depositCandidates(
         where l.journal_entry_id = e.id and a.subtype not in (${moneyList})
           and a.subtype not in ('uncategorized_income', 'uncategorized_expense')) as uncategorized
     from journal_entries e
-    join journal_lines m on m.journal_entry_id = e.id and m.amount > 0
+    join journal_lines m on m.journal_entry_id = e.id
+      and ${sign > 0n ? sql`m.amount > 0` : sql`m.amount < 0`}
     join accounts ma on ma.id = m.account_id and ma.subtype in (${moneyList})
     where e.reversed_by_entry_id is null and e.reverses_entry_id is null
       and e.source not in ('settlement', 'reversal', 'noon', 'ebay')
@@ -700,7 +703,7 @@ export async function settlementDepositCandidates(
   onlyEntryId?: string,
 ): Promise<DepositCandidate[]> {
   const [s] = await tx.select().from(settlements).where(eq(settlements.id, settlementId));
-  if (!s || parseDecimal(String(s.total)) <= 0n) return [];
+  if (!s || parseDecimal(String(s.total)) === 0n) return [];
   const endDate = s.endAt.toISOString().slice(0, 10);
   const { from, to } = settlementDepositWindow({ depositDate: s.depositDate, endDate });
   return depositCandidates(tx, {
@@ -975,7 +978,7 @@ export async function settlementsWithOneDeposit(tx: Transaction, limit = 50) {
     .select({ id: settlements.id })
     .from(settlements)
     .innerJoin(journalEntries, postedEntry)
-    .where(sql`not ${depositMatched} and ${settlements.total} > 0`)
+    .where(sql`not ${depositMatched} and ${settlements.total} <> 0`)
     .orderBy(asc(settlements.endAt))
     .limit(200);
   const found: { settlementId: string; deposit: DepositCandidate }[] = [];

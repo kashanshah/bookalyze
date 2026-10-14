@@ -945,6 +945,13 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   $X found between …". The list shows "In books · match deposit" / "In books · deposit
   matched", and "Match N deposits" (`settlementsWithOneDeposit`: posted settlements with exactly
   one possible deposit; a dialog says how many already have a category; 50 per click).
+- **Negative settlements** (Amazon was owed: fees and refunds over sales): matched to the money
+  *out* Amazon charged, the same way (`depositFit` and `depositCandidates` follow the total's
+  sign: money in for a payout, money out for a negative one, never the other). Matching moves
+  the withdrawal to clearing, so the fees aren't counted twice. When no charge comes (the next
+  settlement carries the balance), nothing is needed. The settlement page calls it "Amazon's
+  charge"; the list shows "In books · Amazon was owed" / "charge matched". "Match N deposits" and
+  the daily job include them.
 - Migration `0034_settlement_deposits`. Tests: core `amazon-settlements.test.ts`
   (`settlementDepositWindow`), db `settlements.test.ts` (found, matched, unpost refused,
   unmatched back to Sales, turned down), e2e settlements test (deposit added as Sales, matched,

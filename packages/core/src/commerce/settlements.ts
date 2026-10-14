@@ -496,7 +496,8 @@ export type DepositFit =
     };
 
 /**
- * Whether a deposit can be a payout: the same amount in the same currency (exact), or, in
+ * Whether a deposit can be a payout (or, for a negative payout, a withdrawal the charge): the
+ * same amount in the same currency (exact), or, in
  * another currency, close to the payout at the market rate (`rate`: deposit units per payout
  * unit), within `SETTLEMENT_FX_TOLERANCE_BP`. Null when it can't.
  */
@@ -509,10 +510,12 @@ export function depositFit(input: {
 }): DepositFit | null {
   const total = parseDecimal(input.total);
   const amount = parseDecimal(input.depositAmount);
-  if (total <= 0n || amount <= 0n) return null;
+  // Money in for a payout, money out (a withdrawal or charge) for a settlement Amazon was owed.
+  if (total === 0n || amount === 0n || total > 0n !== amount > 0n) return null;
   if (input.depositCurrency === input.currency) return amount === total ? { kind: "exact" } : null;
   if (!input.rate || parseDecimal(input.rate, 10) <= 0n) return null;
-  const impliedRate = divideDecimals(input.depositAmount, input.total);
+  const abs = (v: bigint) => formatDecimal(v < 0n ? -v : v);
+  const impliedRate = divideDecimals(abs(amount), abs(total));
   const implied = parseDecimal(impliedRate, 10);
   const market = parseDecimal(input.rate, 10);
   const differenceBp = Number(((implied - market) * 10_000n) / market);

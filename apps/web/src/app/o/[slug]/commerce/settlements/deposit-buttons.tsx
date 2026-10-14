@@ -49,8 +49,9 @@ export function DepositChoice({
           : await dismissDepositAction(slug, { settlementId, entryId });
       if (!result.ok) return void toast.error(result.message);
       if (kind === "match") {
-        toast.success("Deposit matched", {
-          description: "It now clears the payout, so the sales are counted once.",
+        toast.success("Matched", {
+          description:
+            "It now clears the settlement from the clearing account, so nothing is counted twice.",
         });
       }
       router.refresh();

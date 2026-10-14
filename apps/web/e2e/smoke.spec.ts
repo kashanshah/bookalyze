@@ -1881,7 +1881,7 @@ test("settlements: bring in Amazon's settlement report, see the payout, and uplo
     page.getByText(/Now in Sales\. Matching moves it to 1000 · Cash on hand/),
   ).toBeVisible();
   await page.getByRole("button", { name: "Match", exact: true }).click();
-  await expect(page.getByText("Deposit matched")).toBeVisible();
+  await expect(page.getByText("Matched", { exact: true })).toBeVisible();
   await expect(page.getByText(/Matched to the deposit into Main chequing/)).toBeVisible();
   // Taking it out of the books waits until the deposit is unmatched.
   await page.getByRole("button", { name: "Take out of books" }).click();
@@ -2920,6 +2920,8 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   // Everything arrives at 1.36: USD 493.00 is CAD 670.48 into stock, more than paid so far.
   await page.getByRole("button", { name: "Record a delivery" }).click();
   const delivery = page.getByRole("dialog");
+  // The day's rate is filled in when it arrives: wait for it, then change it.
+  await expect(delivery.getByLabel("Exchange rate")).not.toHaveValue("");
   await delivery.getByLabel("Exchange rate").fill("1.36");
   await delivery.getByRole("button", { name: "Record delivery" }).click();
   await expect(page.getByText("Everything on this order has arrived.").first()).toBeVisible();
