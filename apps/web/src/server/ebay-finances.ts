@@ -137,6 +137,7 @@ export async function syncEbayTransactions(
       try {
         page = parseEbayTransactionsPage(json);
       } catch (cause) {
+        logWarn("ebay.transactions_unexpected", { orgId: ctx.orgId, shape: shapeOf(json) });
         throw new EbayError("eBay's list of payments didn't make sense. Try again.", "unexpected", {
           cause,
         });
@@ -212,6 +213,7 @@ async function readPayouts(
     try {
       page = parseEbayPayoutsPage(json);
     } catch (cause) {
+      logWarn("ebay.payouts_unexpected", { shape: shapeOf(json) });
       throw new EbayError("eBay's list of payouts didn't make sense. Try again.", "unexpected", {
         cause,
       });
@@ -221,6 +223,10 @@ async function readPayouts(
   }
   return payouts;
 }
+
+/** What came back, without its values (they can hold buyer details): its type and keys. */
+const shapeOf = (json: unknown) =>
+  json && typeof json === "object" ? Object.keys(json).slice(0, 20).join(",") : typeof json;
 
 const dayBefore = (day: string) => {
   const d = new Date(`${day}T00:00:00Z`);

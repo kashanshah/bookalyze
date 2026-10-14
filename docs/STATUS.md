@@ -2536,6 +2536,12 @@ screenshots work well).
   whole page scroll sideways at 390px. The org template (`app/o/[slug]/template.tsx`) gives the
   page grid's sections `min-w-0`, so wide content wraps, truncates or scrolls inside its own
   `overflow-x-auto` instead. Checked by measuring `scrollWidth` on every org page at 390px.
+- **eBay's Finances API answers 204 with no body when nothing matches** (a month with no
+  transactions, a window with no payouts), not a page with `total: 0`. The parsers read that as an
+  empty page; before they did, "Bring in from eBay" stopped at the first empty month a year back
+  with "eBay's list of payments didn't make sense". A body that still doesn't parse is logged as
+  `ebay.transactions_unexpected` / `ebay.payouts_unexpected` with its keys only. The mock answers
+  204 the same way.
 - **e2e reuses a running app on port 3000.** A `next start` left over (say, for screenshots, without
   the mock servers' URLs) makes provider tests fail against the real services. Stop it first (the
   process shows as `next-server`).

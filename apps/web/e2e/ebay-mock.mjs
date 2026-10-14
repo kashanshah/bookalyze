@@ -353,6 +353,11 @@ createServer((req, res) => {
       );
       const limit = Number(url.searchParams.get("limit") ?? 20);
       const offset = Number(url.searchParams.get("offset") ?? 0);
+      // Nothing in the window: eBay answers 204 with no body.
+      if (!inWindow.length) {
+        res.writeHead(204);
+        return res.end();
+      }
       return send(res, 200, {
         href: url.toString(),
         total: inWindow.length,
@@ -374,6 +379,11 @@ createServer((req, res) => {
       const inWindow = PAYOUTS.filter((p) => p.payoutDate >= after && p.payoutDate <= before);
       const limit = Number(url.searchParams.get("limit") ?? 20);
       const offset = Number(url.searchParams.get("offset") ?? 0);
+      // Nothing in the window: eBay answers 204 with no body.
+      if (!inWindow.length) {
+        res.writeHead(204);
+        return res.end();
+      }
       return send(res, 200, {
         href: url.toString(),
         total: inWindow.length,

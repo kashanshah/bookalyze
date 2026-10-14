@@ -62,11 +62,15 @@ function units(v: unknown): bigint {
   }
 }
 
-/** Parses one page; `next` is the offset of the next page, or null on the last one. */
+/**
+ * Parses one page; `next` is the offset of the next page, or null on the last one. eBay answers
+ * 204 No Content (no body, so `null` here) when nothing matches: an empty page.
+ */
 export function parseEbayTransactionsPage(json: unknown): {
   transactions: EbayTransaction[];
   next: number | null;
 } {
+  if (json === null || json === undefined) return { transactions: [], next: null };
   const page = record(json);
   if (!("total" in page) && !Array.isArray(page.transactions)) {
     throw new Error("Unexpected response from eBay.");
@@ -221,11 +225,15 @@ export type EbayPayout = {
 /** Payouts that left eBay (or are on their way): the ones a bank deposit can match. */
 export const ebayPayoutSent = (status: string) => status === "SUCCEEDED" || status === "INITIATED";
 
-/** Parses one page of payouts; `next` is the next page's offset, or null on the last one. */
+/**
+ * Parses one page of payouts; `next` is the next page's offset, or null on the last one. No
+ * payouts in the window comes back as 204 No Content (`null`): an empty page.
+ */
 export function parseEbayPayoutsPage(json: unknown): {
   payouts: EbayPayout[];
   next: number | null;
 } {
+  if (json === null || json === undefined) return { payouts: [], next: null };
   const page = record(json);
   if (!("total" in page) && !Array.isArray(page.payouts)) {
     throw new Error("Unexpected response from eBay.");
