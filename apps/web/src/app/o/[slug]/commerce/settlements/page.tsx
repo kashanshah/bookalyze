@@ -9,8 +9,9 @@ import {
 import { ArrowLeft, ArrowRight, ChevronRight, Landmark, Settings2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Amount } from "@/components/accounting/amount";
+import { PayoutTabs, payoutPath, payoutPlatforms } from "@/components/commerce/payout-tabs";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,9 +42,10 @@ export default async function SettlementsPage({
   if (!can(ctx.plan, ctx.enabledModules, "commerce.settlements")) notFound();
   const { locale, timezone } = ctx.profile;
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
-  const { connections, list, settings, ready, found } = await inOrg(ctx, async (tx) => {
+  const { connections, list, settings, ready, found, platforms } = await inOrg(ctx, async (tx) => {
     const settings = await getSettlementSettings(tx);
     return {
+      platforms: await payoutPlatforms(tx),
       connections: (await listAmazonConnections(tx)).filter((c) => c.status !== "disconnected"),
       list: await listSettlements(tx, { limit: PER_PAGE, offset: (page - 1) * PER_PAGE }),
       settings,
@@ -53,6 +55,11 @@ export default async function SettlementsPage({
       found: settings.postFrom ? await settlementsWithOneDeposit(tx, 50) : [],
     };
   });
+  // No Amazon, but Noon or eBay: their money is what this page is for.
+  const elsewhere = platforms.find((p) => p !== "amazon");
+  if (!platforms.includes("amazon") && !list.rows.length && elsewhere) {
+    redirect(payoutPath(slug, elsewhere));
+  }
   const canManage = isOrgAdmin(ctx);
   const base = `/o/${slug}/commerce/settlements`;
   const day = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: timezone });
@@ -72,31 +79,34 @@ export default async function SettlementsPage({
   ) : null;
 
   const header = (
-    <PageHeader
-      eyebrow="Commerce"
-      title="Settlements"
-      description="Every Amazon payout: what sold, what was refunded, and the fees Amazon kept. Each one posts to your books as one entry, and is paid into your bank as one deposit."
-      actions={
-        <div className="flex flex-wrap items-center gap-2">
-          {canManage ? <UploadSettlements slug={slug} /> : null}
-          <Button asChild variant="ghost">
-            <Link href={`${base}/accounts`}>
-              <Settings2 />
-              How settlements post
-            </Link>
-          </Button>
-          {connections.length ? <SyncSettlementsButton slug={slug} /> : null}
-          {canManage && found.length ? (
-            <MatchFoundDepositsButton
-              slug={slug}
-              count={found.length}
-              categorized={found.filter((f) => !f.deposit.uncategorized).length}
-            />
-          ) : null}
-          {canManage && ready ? <PostAllSettlementsButton slug={slug} count={ready} /> : null}
-        </div>
-      }
-    />
+    <>
+      <PayoutTabs slug={slug} current="amazon" platforms={platforms} />
+      <PageHeader
+        eyebrow="Commerce"
+        title="Settlements"
+        description="Every Amazon payout: what sold, what was refunded, and the fees Amazon kept. Each one posts to your books as one entry, and is paid into your bank as one deposit."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {canManage ? <UploadSettlements slug={slug} /> : null}
+            <Button asChild variant="ghost">
+              <Link href={`${base}/accounts`}>
+                <Settings2 />
+                How settlements post
+              </Link>
+            </Button>
+            {connections.length ? <SyncSettlementsButton slug={slug} /> : null}
+            {canManage && found.length ? (
+              <MatchFoundDepositsButton
+                slug={slug}
+                count={found.length}
+                categorized={found.filter((f) => !f.deposit.uncategorized).length}
+              />
+            ) : null}
+            {canManage && ready ? <PostAllSettlementsButton slug={slug} count={ready} /> : null}
+          </div>
+        }
+      />
+    </>
   );
 
   if (!list.count) {

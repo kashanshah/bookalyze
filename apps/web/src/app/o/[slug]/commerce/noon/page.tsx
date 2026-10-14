@@ -31,6 +31,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Amount } from "@/components/accounting/amount";
+import { PayoutTabs, payoutPlatforms } from "@/components/commerce/payout-tabs";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -98,6 +99,7 @@ export default async function NoonTransactionsPage({
       candidates,
       oneDeposit: (await noonPayoutsWithOneDeposit(tx)).length,
       balance: await noonBalanceCheck(tx, today),
+      platforms: await payoutPlatforms(tx),
     };
   });
   const { channels, connection, settings, months, types, payouts, candidates, balance } = data;
@@ -116,31 +118,34 @@ export default async function NoonTransactionsPage({
   const toPost = months.filter((m) => m.state === "ready" || m.state === "changed").length;
 
   const header = (
-    <PageHeader
-      eyebrow="Commerce"
-      title="Noon transactions"
-      description="Every sale, fee, refund and subsidy on Noon, month by month. Each month goes into your books as one entry, the net to your Noon balance; each payout comes out of it when matched to its bank deposit."
-      actions={
-        canManage ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <UploadNoonTransactions slug={slug} variant="ghost" />
-            <Button asChild variant="ghost">
-              <Link href={`${base}/commerce/noon/accounts`}>
-                <Settings2 />
-                How Noon posts
-              </Link>
-            </Button>
-            {canBringIn ? <SyncNoonButton slug={slug} locale={locale} /> : null}
-            {settings.postFrom && data.oneDeposit ? (
-              <MatchAllPayoutsButton slug={slug} count={data.oneDeposit} />
-            ) : null}
-            {settings.postFrom && toPost ? (
-              <PostAllMonthsButton slug={slug} count={toPost} />
-            ) : null}
-          </div>
-        ) : null
-      }
-    />
+    <>
+      <PayoutTabs slug={slug} current="noon" platforms={data.platforms} />
+      <PageHeader
+        eyebrow="Commerce"
+        title="Noon transactions"
+        description="Every sale, fee, refund and subsidy on Noon, month by month. Each month goes into your books as one entry, the net to your Noon balance; each payout comes out of it when matched to its bank deposit."
+        actions={
+          canManage ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <UploadNoonTransactions slug={slug} variant="ghost" />
+              <Button asChild variant="ghost">
+                <Link href={`${base}/commerce/noon/accounts`}>
+                  <Settings2 />
+                  How Noon posts
+                </Link>
+              </Button>
+              {canBringIn ? <SyncNoonButton slug={slug} locale={locale} /> : null}
+              {settings.postFrom && data.oneDeposit ? (
+                <MatchAllPayoutsButton slug={slug} count={data.oneDeposit} />
+              ) : null}
+              {settings.postFrom && toPost ? (
+                <PostAllMonthsButton slug={slug} count={toPost} />
+              ) : null}
+            </div>
+          ) : null
+        }
+      />
+    </>
   );
   const status = canBringIn ? (
     <p className="-mt-2 flex items-start gap-2 text-muted-foreground text-sm">

@@ -1005,6 +1005,16 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `amazon-settlements.test.ts` (`channelProfit`), db `settlements.test.ts`
   (`settlementsForProfit`), e2e settlements test (the page shows Amazon.ca's column); e2e "noon: choose how Noon posts…" switches Noon UAE off and sees its tag.
 
+### Phase 4, slice 7: one place for every marketplace's money
+
+- **Tabs** (`components/commerce/payout-tabs.tsx`: `PayoutTabs`, `payoutPlatforms`,
+  `payoutPath`): **Amazon · Noon · eBay** on top of Settlements, Noon transactions and eBay money,
+  one tab per platform the company has a channel on (switched-off ones too). So Commerce →
+  Settlements reaches every "bring in" button in one more click, where Noon's and eBay's used to be
+  three or four pages in, through a channel's page. A company with no Amazon (and no Amazon
+  settlements) lands on its first other platform's page.
+- e2e "settlements: Amazon, Noon and eBay money are one click apart".
+
 ### Phase 4, slice 6: Channel profit with cost of goods sold and your own costs
 
 - **Rows now go on to a profit:** … other → **Net from the marketplace** (subtotal, what was

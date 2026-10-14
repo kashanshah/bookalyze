@@ -21,6 +21,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Amount } from "@/components/accounting/amount";
+import { PayoutTabs, payoutPlatforms } from "@/components/commerce/payout-tabs";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,7 +88,7 @@ export default async function EbayMoneyPage({ params }: { params: Promise<{ slug
   if (!can(ctx.plan, ctx.enabledModules, "commerce.settlements")) notFound();
   const { locale } = ctx.profile;
   const today = nowIn(ctx.profile.timezone).date;
-  const { months, connection, settings, payouts, candidates, oneDeposit } = await inOrg(
+  const { months, connection, settings, payouts, candidates, oneDeposit, platforms } = await inOrg(
     ctx,
     async (tx) => {
       const settings = await getEbaySettings(tx);
@@ -106,6 +107,7 @@ export default async function EbayMoneyPage({ params }: { params: Promise<{ slug
         payouts,
         candidates,
         oneDeposit: settings.postFrom ? (await ebayPayoutsWithOneDeposit(tx)).length : 0,
+        platforms: await payoutPlatforms(tx),
       };
     },
   );
@@ -125,6 +127,7 @@ export default async function EbayMoneyPage({ params }: { params: Promise<{ slug
 
   return (
     <div className="grid gap-6">
+      <PayoutTabs slug={slug} current="ebay" platforms={platforms} />
       <PageHeader
         eyebrow="Commerce"
         title="eBay money"
