@@ -2920,6 +2920,8 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   // Everything arrives at 1.36: USD 493.00 is CAD 670.48 into stock, more than paid so far.
   await page.getByRole("button", { name: "Record a delivery" }).click();
   const delivery = page.getByRole("dialog");
+  // The day's rate is filled in when it arrives: wait for it, then change it.
+  await expect(delivery.getByLabel("Exchange rate")).not.toHaveValue("");
   await delivery.getByLabel("Exchange rate").fill("1.36");
   await delivery.getByRole("button", { name: "Record delivery" }).click();
   await expect(page.getByText("Everything on this order has arrived.").first()).toBeVisible();
