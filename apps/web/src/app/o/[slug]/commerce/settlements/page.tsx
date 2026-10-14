@@ -174,10 +174,19 @@ export default async function SettlementsPage({
                         </Badge>
                       )}
                       {s.entryId && s.depositMatched ? (
-                        <Badge variant="success">In books · deposit matched</Badge>
+                        <Badge variant="success">
+                          {negative ? "In books · charge matched" : "In books · deposit matched"}
+                        </Badge>
                       ) : s.entryId && parseDecimal(s.total) > 0n ? (
                         <Badge variant="secondary" title="Match its bank deposit on the settlement">
                           In books · match deposit
+                        </Badge>
+                      ) : s.entryId && negative ? (
+                        <Badge
+                          variant="secondary"
+                          title="If Amazon charged your bank or card, match the charge on the settlement"
+                        >
+                          In books · Amazon was owed
                         </Badge>
                       ) : s.entryId ? (
                         <Badge variant="success">In books</Badge>

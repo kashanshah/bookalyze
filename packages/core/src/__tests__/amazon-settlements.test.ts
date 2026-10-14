@@ -338,6 +338,31 @@ describe("depositFit", () => {
       differenceBp: -179,
     });
   });
+
+  it("matches a negative payout to money out of the same amount, never to money in", () => {
+    const base = { total: "-84.20", currency: "CAD", depositCurrency: "CAD", rate: null };
+    expect(depositFit({ ...base, depositAmount: "-84.20" })).toEqual({ kind: "exact" });
+    expect(depositFit({ ...base, depositAmount: "84.20" })).toBeNull();
+    expect(
+      depositFit({
+        total: "84.20",
+        currency: "CAD",
+        depositCurrency: "CAD",
+        rate: null,
+        depositAmount: "-84.20",
+      }),
+    ).toBeNull();
+    // Charged to a card in another currency: the rate is read on the amounts' sizes.
+    expect(
+      depositFit({
+        total: "-1000",
+        currency: "AED",
+        depositCurrency: "CAD",
+        rate: "0.3720",
+        depositAmount: "-365.00",
+      }),
+    ).toMatchObject({ kind: "converted", impliedRate: "0.3650000000", differenceBp: -188 });
+  });
 });
 
 describe("depositMatchLines", () => {

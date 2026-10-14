@@ -1881,7 +1881,7 @@ test("settlements: bring in Amazon's settlement report, see the payout, and uplo
     page.getByText(/Now in Sales\. Matching moves it to 1000 · Cash on hand/),
   ).toBeVisible();
   await page.getByRole("button", { name: "Match", exact: true }).click();
-  await expect(page.getByText("Deposit matched")).toBeVisible();
+  await expect(page.getByText("Matched", { exact: true })).toBeVisible();
   await expect(page.getByText(/Matched to the deposit into Main chequing/)).toBeVisible();
   // Taking it out of the books waits until the deposit is unmatched.
   await page.getByRole("button", { name: "Take out of books" }).click();
