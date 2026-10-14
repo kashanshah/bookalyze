@@ -302,7 +302,10 @@ const newSupplierSchema = z.object({
 
 export type AddSupplierResult = { ok: true; id: string; name: string } | Fail;
 
-/** Adds a receipt's seller as a vendor (or finds the one with that name) for the order form. */
+/**
+ * Adds a vendor (or finds the one with that name): a receipt's seller on the order form, or a
+ * shipping company or broker typed into a "Paid to" list.
+ */
 export async function addSupplierAction(slug: string, input: unknown): Promise<AddSupplierResult> {
   const ctx = await getInventoryContext(slug, FEATURE);
   const parsed = newSupplierSchema.safeParse(input);
@@ -321,7 +324,7 @@ export async function addSupplierAction(slug: string, input: unknown): Promise<A
       action: supplier.created ? "contact.created" : "contact.updated",
       entityType: "contact",
       entityId: supplier.id,
-      after: { name: supplier.name, type: "vendor", source: "alibaba_receipt" },
+      after: { name: supplier.name, type: "vendor", source: "purchase_orders" },
     });
     return supplier;
   });

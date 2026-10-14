@@ -69,7 +69,8 @@ available yet; eBay sites still work for linking SKUs.
    application. Use the **Production** keyset (Sandbox to try things out).
 2. **User Tokens → Get a Token from eBay via Your Application → Add eBay Redirect URL**: set
    "Your auth accepted URL" and "Your auth declined URL" to
-   `https://app.bookalyze.com/api/ebay/callback`, and "Privacy policy URL" to the site's. Note the
+   `https://app.bookalyze.com/api/ebay/callback`, and "Privacy policy URL" to
+   `https://app.bookalyze.com/privacy-policy`. Note the
    **RuName** it shows (e.g. `Bookalyze-Bookalyz-Bookal-abcdef`).
 3. **Alerts & Notifications → Marketplace account deletion**: endpoint
    `https://app.bookalyze.com/api/ebay/account-deletion` and a verification token you make up

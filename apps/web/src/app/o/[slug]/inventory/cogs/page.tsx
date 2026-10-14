@@ -2,6 +2,8 @@ import { sumDecimals } from "@bookalyze/core";
 import {
   type CogsPreview,
   channelsNotCosted,
+  cogsStartMonth,
+  earliestOpeningStock,
   listCogsPeriods,
   type MonthSales,
   previewCogs,
@@ -34,14 +36,24 @@ export default async function CogsPage({ params }: { params: Promise<{ slug: str
   const { locale, timezone, baseCurrency } = ctx.profile;
   const current = nowIn(timezone).date.slice(0, 7);
 
-  const { sales, periods, previews, notCosted } = await inOrg(ctx, async (tx) => {
+  const { sales, periods, previews, start, next, notCosted } = await inOrg(ctx, async (tx) => {
     const [sales, periods] = [await salesByMonth(tx, { timezone }), await listCogsPeriods(tx)];
     const done = new Set(periods.map((p) => `${p.channelId}:${p.month}`));
     const latestPosted = periods.reduce((m, p) => (p.month > m ? p.month : m), "");
+    // Months before the start (the opening stock's month, or the first posted) don't count.
+    const start = cogsStartMonth({
+      openingDay: await earliestOpeningStock(tx),
+      postedMonths: periods.map((p) => p.month),
+    });
     // The next month to post: the oldest finished month with sales not yet posted, as long as
     // no later month is posted already.
     const next = sales
-      .filter((m) => m.month < current && !done.has(`${m.channelId}:${m.month}`))
+      .filter(
+        (m) =>
+          m.month < current &&
+          (!start || m.month >= start) &&
+          !done.has(`${m.channelId}:${m.month}`),
+      )
       .reduce((m, s) => (!m || s.month < m ? s.month : m), "");
     const previews = new Map<string, CogsPreview>();
     if (next && next >= latestPosted) {
@@ -54,7 +66,14 @@ export default async function CogsPage({ params }: { params: Promise<{ slug: str
         );
       }
     }
-    return { sales, periods, previews, notCosted: await channelsNotCosted(tx, { timezone }) };
+    return {
+      sales,
+      periods,
+      previews,
+      start,
+      next,
+      notCosted: await channelsNotCosted(tx, { timezone }),
+    };
   });
 
   const posted = new Map(periods.map((p) => [`${p.channelId}:${p.month}`, p]));
@@ -126,6 +145,12 @@ export default async function CogsPage({ params }: { params: Promise<{ slug: str
                       preview={previews.get(`${s.channelId}:${month}`) ?? null}
                       inProgress={month >= current}
                       units={n.format(s.units)}
+                      before={start ? month < start : false}
+                      startName={start ? monthName(start, locale) : ""}
+                      blockedBy={
+                        month === next && next < latestPosted ? monthName(latestPosted, locale) : ""
+                      }
+                      waitsFor={next ? monthName(next, locale) : ""}
                     />
                   ))}
               </ul>
@@ -148,6 +173,10 @@ function MonthRow({
   preview,
   inProgress,
   units,
+  before,
+  startName,
+  blockedBy,
+  waitsFor,
 }: {
   slug: string;
   sale: MonthSales;
@@ -159,6 +188,13 @@ function MonthRow({
   preview: CogsPreview | null;
   inProgress: boolean;
   units: string;
+  /** Before cost of goods sold starts (the opening stock covers it). */
+  before: boolean;
+  startName: string;
+  /** A later month that's posted already, which this one should have come before. */
+  blockedBy: string;
+  /** The month that posts next. */
+  waitsFor: string;
 }) {
   let status: React.ReactNode;
   let detail: React.ReactNode = null;
@@ -198,6 +234,17 @@ function MonthRow({
       </span>
     );
     if (canUndo) action = <UndoMonthButton slug={slug} periodId={period.id} label={label} />;
+  } else if (before) {
+    status = <Badge variant="outline">Before your start</Badge>;
+    detail = `Cost of goods sold starts in ${startName}: your opening stock covers sales before it.`;
+  } else if (blockedBy) {
+    status = (
+      <Badge variant="warning">
+        <AlertTriangle />
+        Needs attention
+      </Badge>
+    );
+    detail = `${blockedBy} is already posted, and this month comes before it. Undo the posted months from the latest back (each has Undo), then post them again in order, so these units come from the right stock.`;
   } else if (inProgress) {
     status = (
       <Badge variant="secondary">
@@ -268,7 +315,7 @@ function MonthRow({
         Waiting
       </Badge>
     );
-    detail = "Posts after the months before it.";
+    detail = waitsFor ? `Posts after ${waitsFor}.` : "Posts after the months before it.";
   }
 
   return (

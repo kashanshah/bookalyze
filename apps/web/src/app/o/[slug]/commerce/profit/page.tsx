@@ -3,6 +3,7 @@ import {
   can,
   channelProfit,
   convertUnits,
+  ebayProfitTotals,
   emptyGroupTotals,
   type GroupTotals,
   localDate,
@@ -12,6 +13,8 @@ import {
   SETTLEMENT_GROUPS,
 } from "@bookalyze/core";
 import {
+  ebayMonths,
+  ebayPostedRates,
   getSettlementAccounts,
   noonMonthsForProfit,
   schema,
@@ -24,6 +27,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
+import { Badge } from "@/components/ui/badge";
 import { formatDate, nowIn } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
@@ -37,12 +41,18 @@ export const metadata: Metadata = { title: "Channel profit" };
 
 type Column = {
   key: string;
+  /** The sales channel, when the column is one (not "All channels"). */
+  channelId?: string | null;
   label: string;
   currency: string;
   totals: GroupTotals;
   settlements: number;
   /** Noon's rows (Noon has no settlements). */
   transactions: number;
+  /** eBay's money rows. */
+  ebayRows?: number;
+  /** eBay's payouts aren't in yet: what was paid out isn't known. */
+  noPayouts?: boolean;
 };
 
 const plural = (n: number, one: string, many = `${one}s`) =>
@@ -53,6 +63,7 @@ const countOf = (c: Column) =>
   [
     c.settlements ? plural(c.settlements, "settlement") : null,
     c.transactions ? plural(c.transactions, "Noon transaction") : null,
+    c.ebayRows ? plural(c.ebayRows, "eBay transaction") : null,
   ]
     .filter(Boolean)
     .join(" · ") || "Nothing yet";
@@ -92,21 +103,38 @@ export default async function ChannelProfitPage({
     today,
     fiscalConfigOf(ctx.profile),
   );
-  const { rows, noon, feeTaxRecoverable } = await inOrg(ctx, async (tx) => {
-    // Tax on fees recoverable: its account is an asset or liability (input tax), not the fees.
-    const feeTax = (await getSettlementAccounts(tx)).feeTax;
-    const [account] = feeTax
-      ? await tx
-          .select({ type: schema.accounts.type })
-          .from(schema.accounts)
-          .where(eq(schema.accounts.id, feeTax))
-      : [];
-    return {
-      rows: await settlementsForProfit(tx, { from, to, timezone }),
-      noon: await noonMonthsForProfit(tx, { from, to }),
-      feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
-    };
-  });
+  const { rows, noon, ebay, ebayRates, feeTaxRecoverable, channelStates } = await inOrg(
+    ctx,
+    async (tx) => {
+      // Tax on fees recoverable: its account is an asset or liability (input tax), not the fees.
+      const feeTax = (await getSettlementAccounts(tx)).feeTax;
+      const [account] = feeTax
+        ? await tx
+            .select({ type: schema.accounts.type })
+            .from(schema.accounts)
+            .where(eq(schema.accounts.id, feeTax))
+        : [];
+      return {
+        rows: await settlementsForProfit(tx, { from, to, timezone }),
+        noon: await noonMonthsForProfit(tx, { from, to }),
+        ebay: await ebayMonths(tx, { from, to }),
+        ebayRates: await ebayPostedRates(tx),
+        feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
+        // A channel switched off, or whose account was disconnected, still shows what it earned.
+        channelStates: await tx
+          .select({
+            id: schema.salesChannels.id,
+            isActive: schema.salesChannels.isActive,
+            connection: schema.connections.status,
+          })
+          .from(schema.salesChannels)
+          .leftJoin(
+            schema.connections,
+            eq(schema.connections.id, schema.salesChannels.connectionId),
+          ),
+      };
+    },
+  );
 
   // One column per channel, in its own currency; plus all of them in the main currency.
   const columns = new Map<string, Column>();
@@ -126,6 +154,7 @@ export default async function ChannelProfitPage({
     const key = `${s.channelId ?? s.marketplace ?? "amazon"}:${s.currency}`;
     const column = columns.get(key) ?? {
       key,
+      channelId: s.channelId,
       label: s.channelName ?? s.marketplace ?? "Amazon",
       currency: s.currency,
       totals: emptyGroupTotals(),
@@ -163,6 +192,7 @@ export default async function ChannelProfitPage({
     const key = `noon:${m.channelId}:${m.currency}`;
     const column = columns.get(key) ?? {
       key,
+      channelId: m.channelId,
       label: m.channelName,
       currency: m.currency,
       totals: emptyGroupTotals(),
@@ -193,16 +223,84 @@ export default async function ChannelProfitPage({
     );
     all.transactions += m.rows;
   }
+  // eBay: its money rows in the period, a month at a time (each at the rate it posted at, else its
+  // last day's rate). Payouts are for the whole eBay account, not a site, so they aren't shown.
+  for (const m of ebay) {
+    const key = `ebay:${m.channelId}:${m.currency}`;
+    const column = columns.get(key) ?? {
+      key,
+      channelId: m.channelId,
+      label: m.channelName,
+      currency: m.currency,
+      totals: emptyGroupTotals(),
+      settlements: 0,
+      transactions: 0,
+      ebayRows: 0,
+      noPayouts: true,
+    };
+    ebayProfitTotals(m.sums, undefined, column.totals);
+    column.ebayRows = (column.ebayRows ?? 0) + m.rows;
+    columns.set(key, column);
+    let rate: string | null =
+      m.currency === baseCurrency ? "1" : (ebayRates.get(`${m.channelId}|${m.month}`) ?? null);
+    if (!rate) {
+      const date = monthEnd(m.month) < to ? monthEnd(m.month) : to;
+      const cacheKey = `${m.currency}:${date}`;
+      if (!rates.has(cacheKey)) {
+        rates.set(cacheKey, (await suggestRate(baseCurrency, m.currency, date))?.rate ?? null);
+      }
+      rate = rates.get(cacheKey) ?? null;
+    }
+    if (!rate) {
+      unconverted++;
+      continue;
+    }
+    const r = rate;
+    ebayProfitTotals(
+      m.sums,
+      (units) => (m.currency === baseCurrency ? units : convertUnits(units, r, decimals)),
+      all.totals,
+    );
+    all.ebayRows = (all.ebayRows ?? 0) + m.rows;
+    all.noPayouts = true;
+  }
   const channels = [...columns.values()].sort((a, b) => a.label.localeCompare(b.label));
   const showAll =
     channels.length > 1 || channels.some((c) => c.currency !== baseCurrency) || unconverted > 0;
   const shown = showAll ? [...channels, all] : channels;
+  /** Why a channel's column is past earnings only: switched off, or its account disconnected. */
+  const stateOf = (c: Column) => {
+    const state = c.channelId ? channelStates.find((s) => s.id === c.channelId) : undefined;
+    if (!state) return null;
+    if (state.connection === "disconnected") {
+      return {
+        label: "Disconnected",
+        hint: "Its account was disconnected: what it earned before stays here.",
+      };
+    }
+    if (!state.isActive) {
+      return {
+        label: "Switched off",
+        hint: "Switched off on Channels: what it earned before stays here.",
+      };
+    }
+    return null;
+  };
+
   const results = shown.map((c) => ({
     column: c,
     profit: channelProfit(c.totals, { feeTaxRecoverable }),
   }));
 
-  const cell = (key: string, profit: ReturnType<typeof channelProfit>, currency: string) => {
+  const cell = (
+    key: string,
+    profit: ReturnType<typeof channelProfit>,
+    currency: string,
+    noPayouts?: boolean,
+  ) => {
+    if (noPayouts && (key === "payout" || key === "reserve")) {
+      return <span title="eBay's payouts aren't brought in yet">—</span>;
+    }
     if (key === "margin") {
       return profit.margin === null
         ? "—"
@@ -220,11 +318,11 @@ export default async function ChannelProfitPage({
       <PageHeader
         eyebrow="Commerce"
         title="Channel profit"
-        description="What each marketplace earned you: sales less refunds, promotions, the marketplace's fees and advertising, from Amazon's settlements and Noon's transactions. Before the cost of the products sold."
+        description="What each marketplace earned you: sales less refunds, promotions, the marketplace's fees and advertising, from Amazon's settlements and Noon's and eBay's transactions. Before the cost of the products sold."
       />
       <RangeControls from={from} to={to} presets={presets} />
 
-      {rows.length || noon.length ? (
+      {rows.length || noon.length || ebay.length ? (
         <div className="overflow-x-auto rounded-2xl border bg-card shadow-xs">
           <table className="w-full min-w-[32rem] text-sm">
             <thead>
@@ -232,12 +330,20 @@ export default async function ChannelProfitPage({
                 <th className="px-5 py-3 text-start font-medium">
                   {formatDate(from, locale)} – {formatDate(to, locale)}
                 </th>
-                {results.map(({ column }) => (
-                  <th key={column.key} className="px-5 py-3 text-end font-medium">
-                    <span className="block text-foreground">{column.label}</span>
-                    <span className="block font-normal">{countOf(column)}</span>
-                  </th>
-                ))}
+                {results.map(({ column }) => {
+                  const state = stateOf(column);
+                  return (
+                    <th key={column.key} className="px-5 py-3 text-end align-top font-medium">
+                      <span className="block text-foreground">{column.label}</span>
+                      {state ? (
+                        <Badge variant="outline" className="my-1 font-normal" title={state.hint}>
+                          {state.label}
+                        </Badge>
+                      ) : null}
+                      <span className="block font-normal">{countOf(column)}</span>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -256,7 +362,7 @@ export default async function ChannelProfitPage({
                   </th>
                   {results.map(({ column, profit }) => (
                     <td key={column.key} className="tabular px-5 py-2.5 text-end">
-                      {cell(row.key, profit, column.currency)}
+                      {cell(row.key, profit, column.currency, column.noPayouts)}
                     </td>
                   ))}
                 </tr>
@@ -296,7 +402,9 @@ export default async function ChannelProfitPage({
           own day, and Noon's "held back and released" is what stayed in your Noon balance, so "paid
           out" is what Noon paid. Amounts in another currency are in {baseCurrency} at the rate they
           posted at, or that day's rate if they aren't in your books yet. Product costs come with
-          inventory.
+          inventory. Channels switched off or disconnected still show what they earned before.
+          eBay's rows count on their own day; its payouts aren't in yet, so what eBay paid out shows
+          as —.
           {feeTaxRecoverable
             ? " Tax on Amazon's fees posts to a recoverable tax account, so it isn't counted as a cost."
             : ""}

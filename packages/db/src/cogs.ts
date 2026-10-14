@@ -456,6 +456,31 @@ export type CogsPreview = {
 const roundTo = (units: bigint, currency: string) =>
   roundUnits(units, Math.min(minorUnits(currency), AMOUNT_SCALE));
 
+/** The day of the earliest opening stock (stock on hand before Bookalyze), or null. */
+export async function earliestOpeningStock(tx: Transaction): Promise<string | null> {
+  const [row] = await tx
+    .select({ day: sql<string | null>`min(${inventoryLots.receivedOn})::text` })
+    .from(inventoryLots)
+    .where(eq(inventoryLots.source, "opening"));
+  return row?.day ?? null;
+}
+
+/**
+ * The first month cost of goods sold counts: the month of the opening stock, or the first month
+ * posted if that's earlier. Sales before it are covered by the opening stock (a marketplace whose
+ * history reaches further back, say eBay's two years, doesn't hold the months up). Null: no start
+ * yet, every month counts.
+ */
+export function cogsStartMonth(input: {
+  openingDay: string | null;
+  postedMonths: readonly string[];
+}): string | null {
+  const candidates = [input.openingDay?.slice(0, 7), ...input.postedMonths].filter(
+    (m): m is string => Boolean(m),
+  );
+  return candidates.length ? (candidates.sort()[0] ?? null) : null;
+}
+
 /** What posting a marketplace's month would take from the lots, and what's in the way. */
 export async function previewCogs(
   tx: Transaction,

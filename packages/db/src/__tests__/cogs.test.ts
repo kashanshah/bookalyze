@@ -6,6 +6,8 @@ import { createDb, type Transaction, withOrg } from "../client";
 import {
   addOpeningStock,
   channelsNotCosted,
+  cogsStartMonth,
+  earliestOpeningStock,
   ensureSystemAccount,
   listCogsPeriods,
   postCogs,
@@ -205,6 +207,16 @@ describe("cost of goods sold", () => {
     );
     expect(await balance("inventory")).toBe("38.0000");
     expect(await balance("opening_balance_equity")).toBe("-38.0000");
+  });
+
+  it("starts at the opening stock's month (or the first posted, if earlier)", async () => {
+    const openingDay = await scoped((tx) => earliestOpeningStock(tx));
+    expect(openingDay).toBe("2026-07-31");
+    // Sales from before it (a marketplace's longer history) don't hold the months up.
+    expect(cogsStartMonth({ openingDay, postedMonths: [] })).toBe("2026-07");
+    expect(cogsStartMonth({ openingDay, postedMonths: ["2026-06", "2026-08"] })).toBe("2026-06");
+    expect(cogsStartMonth({ openingDay: null, postedMonths: ["2026-09"] })).toBe("2026-09");
+    expect(cogsStartMonth({ openingDay: null, postedMonths: [] })).toBeNull();
   });
 
   it("posts months in order, oldest stock first, and undoes newest first", async () => {

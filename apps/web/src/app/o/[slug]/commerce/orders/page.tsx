@@ -11,7 +11,7 @@ import {
 import {
   countOrdersNeedingItems,
   hasOrders,
-  listAmazonConnections,
+  listOrderConnections,
   listOrders,
   orderSyncChannels,
 } from "@bookalyze/db";
@@ -86,10 +86,7 @@ export default async function OrdersPage({
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
 
   const data = await inOrg(ctx, async (tx) => {
-    const connections = (await listAmazonConnections(tx)).filter(
-      (c) => c.status !== "disconnected",
-    );
-    const channels = connections.flatMap((c) => c.channels.filter((ch) => ch.isActive));
+    const { connections, channels } = await listOrderConnections(tx);
     const syncing = await orderSyncChannels(tx);
     const channel = sp.channel && UUID.test(sp.channel) ? sp.channel : "";
     const list = await listOrders(tx, {
@@ -140,12 +137,12 @@ export default async function OrdersPage({
     <PageHeader
       eyebrow="Commerce"
       title="Orders"
-      description="Every order from your marketplaces, kept up to date every few minutes. Orders don't change your books: Amazon's settlements do."
+      description="Every order from your marketplaces, kept up to date every few minutes. Orders don't change your books: the marketplaces' payouts do."
       actions={syncing.length ? <SyncOrdersButton slug={slug} /> : null}
     />
   );
 
-  if (!connections.length || !channels.length) {
+  if (!connections || !channels.length) {
     return (
       <div className="grid gap-8">
         {header}
@@ -154,12 +151,12 @@ export default async function OrdersPage({
             <Store className="size-6" />
           </span>
           <p className="font-medium">
-            {connections.length ? "No marketplace is switched on" : "Connect a marketplace first"}
+            {connections ? "No marketplace is switched on" : "Connect a marketplace first"}
           </p>
           <p className="max-w-sm text-muted-foreground text-sm">
-            {connections.length
+            {connections
               ? "Switch on the marketplaces you sell in, and their orders can come in."
-              : "Connect Amazon Seller Central, and your orders can come in here."}
+              : "Connect Amazon Seller Central or eBay, and your orders can come in here."}
           </p>
           <Button asChild variant="outline">
             <Link href={`/o/${slug}/commerce/channels`}>Go to Channels</Link>
@@ -211,17 +208,7 @@ export default async function OrdersPage({
             switched on later and {notStarted.length === 1 ? "isn't" : "aren't"} bringing orders in
             yet.
           </span>
-          {canManage ? (
-            <IncludeChannels
-              slug={slug}
-              from={
-                syncing
-                  .map((s) => s.ordersFrom)
-                  .filter((d): d is string => Boolean(d))
-                  .sort()[0] ?? today
-              }
-            />
-          ) : null}
+          {canManage ? <IncludeChannels slug={slug} /> : null}
         </div>
       ) : null}
 

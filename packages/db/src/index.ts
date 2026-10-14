@@ -6,6 +6,8 @@ export * from "./cogs";
 export * from "./commerce";
 export * from "./contacts";
 export * from "./duplicates";
+export * from "./ebay-posting";
+export * from "./ebay-transactions";
 export * from "./entity";
 export * from "./fx";
 export * from "./imports";

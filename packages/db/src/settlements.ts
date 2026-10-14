@@ -384,7 +384,7 @@ export async function postClearingEntry(
     date: string;
     reference: string | null;
     memo: string;
-    source: "settlement" | "noon";
+    source: "settlement" | "noon" | "ebay";
     sourceId: string;
     currency: string;
     baseCurrency: string;
@@ -632,7 +632,7 @@ export async function depositCandidates(
     join journal_lines m on m.journal_entry_id = e.id and m.amount > 0
     join accounts ma on ma.id = m.account_id and ma.subtype in (${moneyList})
     where e.reversed_by_entry_id is null and e.reverses_entry_id is null
-      and e.source not in ('settlement', 'reversal', 'noon')
+      and e.source not in ('settlement', 'reversal', 'noon', 'ebay')
       and e.date between ${from}::date and ${to}::date
       and (select count(*) from journal_lines l join accounts a on a.id = l.account_id
         where l.journal_entry_id = e.id and a.subtype in (${moneyList})) = 1

@@ -30,6 +30,7 @@ import {
   getEbayConnection,
   getNoonConnection,
   listAmazonConnections,
+  listOrderConnections,
   recordConnectionSync,
   saveAmazonChannels,
   schema,
@@ -528,7 +529,7 @@ export async function disconnectAmazonAction(
 
 /** How long one "bring in orders" request may run; the screen calls again while there's more. */
 const ORDER_SYNC_BUDGET_MS = 20_000;
-/** Amazon keeps orders about two years back. */
+/** Amazon and eBay keep orders about two years back. */
 const ORDERS_MAX_YEARS = 2;
 
 /**
@@ -548,13 +549,11 @@ export async function startOrdersAction(
   if (from < earliest) {
     return {
       ok: false,
-      message: "Amazon only keeps orders for about two years. Pick a later date.",
+      message: "Marketplaces only keep orders for about two years. Pick a later date.",
     };
   }
   const channels = await inOrg(ctx, async (tx) => {
-    const ids = (await listAmazonConnections(tx))
-      .filter((c) => c.status !== "disconnected")
-      .flatMap((c) => c.channels.filter((ch) => ch.isActive).map((ch) => ch.id));
+    const ids = (await listOrderConnections(tx)).channels.map((ch) => ch.id);
     await startOrderSync(tx, ids, from);
     if (ids.length) {
       await audit(tx, {
@@ -573,6 +572,46 @@ export async function startOrdersAction(
   }
   revalidate(slug);
   return { ok: true, channels };
+}
+
+/**
+ * "Bring theirs in too": starts only the switched-on marketplaces that aren't bringing orders in
+ * yet, from the date the others started (no further back than marketplaces keep orders). The
+ * marketplaces already bringing orders in keep their own start date.
+ */
+export async function includeOrderChannelsAction(
+  slug: string,
+): Promise<CommerceResult<{ channels: number; from: string }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const today = nowIn(ctx.profile.timezone).date;
+  const earliest = `${Number(today.slice(0, 4)) - ORDERS_MAX_YEARS}${today.slice(4)}`;
+  const started = await inOrg(ctx, async (tx) => {
+    const channels = (await listOrderConnections(tx)).channels;
+    const fresh = channels.filter((ch) => !ch.ordersFrom).map((ch) => ch.id);
+    const first = channels
+      .map((ch) => ch.ordersFrom)
+      .filter((d): d is string => Boolean(d))
+      .sort()[0];
+    const from = !first ? today : first < earliest ? earliest : first;
+    await startOrderSync(tx, fresh, from);
+    if (fresh.length) {
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "orders.sync_started",
+        entityType: "organization",
+        entityId: ctx.org.id,
+        after: { from, channels: fresh.length },
+      });
+    }
+    return { channels: fresh.length, from };
+  });
+  if (!started.channels) {
+    return { ok: false, message: "Every switched-on marketplace is already bringing orders in." };
+  }
+  revalidate(slug);
+  return { ok: true, ...started };
 }
 
 /**

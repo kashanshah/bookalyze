@@ -9,7 +9,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDate } from "@/lib/dates";
-import { startOrdersAction, syncOrdersAction } from "../actions";
+import { includeOrderChannelsAction, startOrdersAction, syncOrdersAction } from "../actions";
 
 /** At most this many calls per click: a huge first sync carries on with the background job. */
 const MAX_ROUNDS = 30;
@@ -17,7 +17,7 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * Runs "bring in orders" until Amazon has nothing more (or MAX_ROUNDS), refreshing the list after
+ * Runs "bring in orders" until the marketplaces have nothing more (or MAX_ROUNDS), refreshing the list after
  * each round so orders appear as they come in.
  */
 function useOrderSync(slug: string) {
@@ -139,7 +139,7 @@ export function StartOrders({
             <h2 className="font-semibold text-lg tracking-tight">Bring in your orders</h2>
             <p className="mt-1.5 text-muted-foreground text-sm leading-relaxed">
               From {channels.join(", ")}. After this, new orders come in every few minutes on their
-              own. Orders don't change your books: Amazon's settlements will.
+              own. Orders don't change your books: the marketplaces' payouts will.
             </p>
           </div>
         </div>
@@ -148,7 +148,7 @@ export function StartOrders({
             <Field
               label="Bring in orders placed from"
               htmlFor="orders-from"
-              hint={`Amazon keeps about two years of orders. A long history takes a few minutes the first time.`}
+              hint="Amazon and eBay keep about two years of orders. A long history takes a few minutes the first time."
               error={error ?? undefined}
             >
               <div className="relative">
@@ -181,13 +181,16 @@ export function StartOrders({
   );
 }
 
-/** Marketplaces switched on after orders started: bring theirs in from the same date. */
-export function IncludeChannels({ slug, from }: { slug: string; from: string }) {
+/**
+ * Marketplaces switched on (or connected) after orders started: bring theirs in from the same
+ * date, or as far back as marketplaces keep orders.
+ */
+export function IncludeChannels({ slug }: { slug: string }) {
   const [starting, startStarting] = useTransition();
   const { run, pending } = useOrderSync(slug);
   const include = () =>
     startStarting(async () => {
-      const result = await startOrdersAction(slug, from);
+      const result = await includeOrderChannelsAction(slug);
       if (!result.ok) return void toast.error(result.message);
       run();
     });

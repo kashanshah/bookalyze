@@ -2158,6 +2158,207 @@ test("ebay: connect the eBay account on eBay's page, test it, and handle eBay's 
   await expect(page.getByRole("heading", { name: "eBay Canada" })).toBeVisible();
 });
 
+test("ebay: bring in eBay orders, each on its own site, and open one", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^eBay Canada/ }).click();
+  const account = page.getByRole("region", { name: "eBay account" });
+  await account.getByRole("button", { name: "Connect eBay" }).click();
+  await expect(page.getByText("eBay connected")).toBeVisible();
+
+  // The site's page leads to its orders; the eBay sites join the orders already coming in.
+  await page.getByRole("link", { name: "Its orders" }).click();
+  await expect(page).toHaveURL(/\/commerce\/orders\?channel=/);
+  // Amazon's orders started more than two years back (marketplaces keep about two): the eBay
+  // sites still join, from as far back as allowed, and Amazon keeps its own date.
+  const longAgo = `${new Date().getFullYear() - 3}-01-01`;
+  await withOwnerDb((db) =>
+    db.query(
+      `update sales_channels set orders_from = $1 where kind = 'amazon' and orders_from is not null`,
+      [longAgo],
+    ),
+  );
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  await page.getByRole("button", { name: "Bring theirs in too" }).click();
+  const rows = page.getByRole("main");
+  await expect(rows.getByText("11-00001-00001")).toBeVisible({ timeout: 30_000 });
+  await expect(rows.getByText("11-00002-00002")).toBeVisible();
+  const starts = await withOwnerDb((db) =>
+    db.query<{ kind: string; from: string }>(
+      `select distinct kind, orders_from::text as from from sales_channels where orders_from is not null order by kind`,
+    ),
+  );
+  expect(starts.rows.find((r) => r.kind === "amazon")?.from).toBe(longAgo);
+  expect(starts.rows.find((r) => r.kind === "ebay")?.from).not.toBe(longAgo);
+
+  // Each order is on the site it was listed on, and eBay's states read like the others.
+  await page.goto(page.url().split("?")[0] ?? page.url());
+  await page.getByLabel("Search orders").fill("11-00003-00003");
+  await page.keyboard.press("Enter");
+  await expect(rows.getByText("Cancelled").first()).toBeVisible();
+  await expect(rows.getByText(/eBay Canada/).first()).toBeVisible();
+
+  await page.getByLabel("Search orders").fill("11-00001-00001");
+  await page.keyboard.press("Enter");
+  await rows
+    .getByRole("link", { name: /11-00001-00001/ })
+    .first()
+    .click();
+  await expect(page.getByRole("heading", { name: /11-00001-00001/ })).toBeVisible();
+  await expect(page.getByText("eBay US", { exact: true })).toBeVisible();
+  await expect(page.getByText("You (merchant fulfilled)")).toBeVisible();
+  await expect(page.getByText("Maple leaf ceramic mug")).toBeVisible();
+  await expect(page.getByText(/SKU EBAY-MAPLE-MUG · Item 110500001/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open in Seller Hub" })).toHaveAttribute(
+    "href",
+    "https://www.ebay.com/sh/ord/details?orderid=11-00001-00001",
+  );
+  await expect(page.getByText("Synthetic Buyer")).toHaveCount(0);
+
+  // eBay's history reaches back past the opening stock: those months are before the start, not
+  // holding the rest of cost of goods sold up.
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Stock lots", exact: true }).click();
+  await page.getByRole("button", { name: "Add opening stock" }).click();
+  const dialog = page.getByRole("dialog");
+  await choose(dialog.getByLabel("Product", { exact: true }), "Maple leaf ceramic mug");
+  await dialog.getByLabel("How many", { exact: true }).fill("10");
+  await dialog.getByLabel("Cost of one (CAD)", { exact: true }).fill("2");
+  await dialog.getByLabel("Counted on", { exact: true }).fill(`${new Date().getFullYear()}-01-01`);
+  await dialog.getByRole("button", { name: "Add stock" }).click();
+  await expect(page.getByText("Opening stock added")).toBeVisible();
+  await page.getByRole("link", { name: "Cost of goods sold", exact: true }).click();
+  const before = page
+    .getByRole("listitem", { name: /on eBay US$/ })
+    .filter({ hasText: "Before your start" });
+  await expect(before).toHaveCount(1);
+  await expect(before).toContainText("your opening stock covers sales before it");
+  await page.getByRole("link", { name: "Stock lots", exact: true }).click();
+  await page.getByRole("button", { name: /^Remove opening stock from/ }).click();
+  await expect(page.getByText("Opening stock removed")).toBeVisible();
+});
+
+test("ebay: bring in eBay's money, see each site's month and Channel profit", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^eBay Canada/ }).click();
+  await page.getByRole("link", { name: /eBay money/ }).click();
+  await expect(page.getByRole("heading", { name: "eBay money" })).toBeVisible();
+  await page.getByRole("button", { name: "Bring in from eBay" }).click();
+  await expect(page.getByText("6 transactions brought in")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("2 payouts brought in.")).toBeVisible();
+
+  // The sale and its refund are on the US order's site: sales before fees, fees given back.
+  const us = page.getByRole("region", { name: "eBay US money" });
+  const usMonth = us.getByRole("row").nth(1);
+  await expect(usMonth).toContainText("2 rows");
+  await expect(usMonth).toContainText("$43.00");
+  await expect(usMonth).toContainText("($11.00)");
+  await expect(usMonth).toContainText("($4.50)");
+  await expect(usMonth).toContainText("$27.50");
+  // The label is on its order's site; the ad fee and the transfer on the site in their currency.
+  const ca = page.getByRole("region", { name: "eBay Canada money" });
+  const caMonth = ca.getByRole("row").nth(1);
+  await expect(caMonth).toContainText("($2.25)");
+  await expect(caMonth).toContainText("($8.40)");
+  await expect(caMonth).toContainText("($10.65)");
+  await expect(caMonth).toContainText("($5.00) moved");
+  await expect(page.getByText("synthetic_buyer")).toHaveCount(0);
+
+  // Brought in again: nothing new.
+  await page.getByRole("button", { name: "Bring in from eBay" }).click();
+  await expect(page.getByText("eBay's money is up to date")).toBeVisible({ timeout: 30_000 });
+
+  // Channel profit has a column per eBay site; what eBay paid out isn't known yet.
+  const from = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const to = new Date().toISOString().slice(0, 10);
+  const slug = new URL(page.url()).pathname.split("/")[2];
+  await page.goto(`/o/${slug}/commerce/profit?from=${from}&to=${to}`);
+  await expect(
+    page.getByRole("columnheader", { name: /eBay US.*2 eBay transactions/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: /eBay Canada.*3 eBay transactions/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("row", { name: /^Paid out/ })).toContainText("—");
+});
+
+test("ebay: choose how eBay posts, post a month and match a payout to its deposit", async ({
+  page,
+}) => {
+  // The month before last (brought in above): a sale on eBay Canada, in the company's CAD.
+  const d = new Date();
+  const label = `${new Intl.DateTimeFormat("en-CA", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 2, 10)))} on eBay Canada`;
+  await signIn(page, owner.email, owner.password);
+
+  // eBay's payout arrived in the bank, recorded as a sale by mistake.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("button", { name: "Add income" }).click();
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+  await page.locator("#tx-memo").fill("EBAY CA PAYOUT");
+  await choose(page.getByLabel("Category 1", { exact: true }), "4000 · Sales");
+  await page.getByLabel("Amount 1").fill("22.10");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added")).toBeVisible();
+
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^eBay Canada/ }).click();
+  await page.getByRole("link", { name: /eBay money/ }).click();
+
+  // The accounts, suggested from their names; the eBay balance is added on the spot.
+  await page.getByRole("link", { name: /Put eBay in your books/ }).click();
+  await expect(page.getByRole("heading", { name: "How eBay posts" })).toBeVisible();
+  await expect(page.getByText(/Suggested from your accounts' names/)).toBeVisible();
+  await page.getByRole("combobox", { name: "eBay balance (what eBay holds for you)" }).click();
+  await page.locator('input[role="combobox"][aria-autocomplete="list"]').fill("eBay balance");
+  await page.getByRole("button", { name: "Add “eBay balance” as a new account" }).click();
+  await page
+    .getByRole("dialog", { name: "Add an account" })
+    .getByRole("button", { name: "Add account" })
+    .click();
+  await expect(
+    page.getByRole("combobox", { name: "eBay balance (what eBay holds for you)" }),
+  ).toContainText("eBay balance");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("eBay posts with these accounts from now on.")).toBeVisible();
+
+  // The finished month posts as one entry.
+  const month = page.getByRole("row", { name: label, exact: true });
+  await expect(month.getByText("Ready to post")).toBeVisible();
+  await month.getByRole("button", { name: `Post ${label}` }).click();
+  await expect(page.getByText(`${label} is in your books`)).toBeVisible();
+  await expect(month.getByText("In books", { exact: true })).toBeVisible();
+  await expect(month.getByRole("link", { name: /^JE-/ })).toBeVisible();
+
+  // The payout eBay sent finds its deposit; the failed one is only listed.
+  const payouts = page.getByRole("region", { name: "Payouts to your bank" });
+  await expect(payouts.getByRole("listitem").filter({ hasText: "PO-2" })).toContainText("Failed");
+  const payout = payouts.getByRole("listitem").filter({ hasText: "PO-1" });
+  await expect(payout).toContainText("to the account ending 4321");
+  await expect(payout).toContainText(/Deposit of \$22\.10 into RBC Chequing .*now in .*Sales/);
+  await payout.getByRole("button", { name: "Match", exact: true }).click();
+  await expect(page.getByText("Deposit matched").first()).toBeVisible();
+  await expect(payout.getByRole("link", { name: /Deposit of .* · JE-/ })).toBeVisible();
+
+  // And back: the deposit returns to Sales and isn't suggested for this payout again.
+  await payout.getByRole("button", { name: "Unmatch" }).click();
+  await expect(page.getByText("Deposit unmatched")).toBeVisible();
+  await expect(payout).toContainText("No bank deposit of this amount found");
+
+  // The month comes back out too.
+  await month.getByRole("button", { name: `Take ${label} out of the books` }).click();
+  await month.getByRole("button", { name: `Click again to take ${label} out` }).click();
+  await expect(page.getByText(`${label} is out of your books`)).toBeVisible();
+  await expect(month.getByText("Ready to post")).toBeVisible();
+});
+
 test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Commerce", exact: true }).click();
@@ -2490,6 +2691,20 @@ test("noon: choose how Noon posts, post a month and check the Noon balance", asy
     page.getByRole("columnheader", { name: /Noon UAE.*Noon transactions/ }),
   ).toBeVisible();
   await expect(page.getByRole("rowheader", { name: "Promotions and subsidies" })).toBeVisible();
+  const profitUrl = page.url();
+
+  // Switched off, it keeps what it earned, tagged so it reads as past earnings.
+  await expect(page.getByRole("columnheader", { name: /Switched off/ })).toHaveCount(0);
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Noon UAE/ }).click();
+  await page.getByRole("switch", { name: "Use Noon UAE" }).click();
+  await expect(page.getByText("Switched off", { exact: true })).toBeVisible();
+  await page.goto(profitUrl);
+  await expect(page.getByRole("columnheader", { name: /Noon UAE.*Switched off/ })).toBeVisible();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Noon UAE/ }).click();
+  await page.getByRole("switch", { name: "Use Noon UAE" }).click();
+  await expect(page.getByRole("switch", { name: "Use Noon UAE" })).toBeChecked();
 });
 
 test("purchase orders: fill one in from an Alibaba receipt, check it, then save it", async ({
@@ -2710,10 +2925,18 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   await expect(payCost.getByLabel("On the delivery's landed cost")).toContainText("Duty");
   // Who was paid isn't known yet: it's asked for.
   await payCost.getByRole("button", { name: "Record payment" }).click();
-  await expect(payCost.getByText(/Choose who you paid/)).toBeVisible();
-  await choose(payCost.getByLabel("Paid to", { exact: true }), "Office Depot");
+  await expect(payCost.getByText(/Choose who you paid: the shipping company/)).toBeVisible();
+  // A customs broker that isn't a vendor yet is added from the list itself.
+  await payCost.getByLabel("Paid to", { exact: true }).click();
+  await page.getByPlaceholder("Search or add a vendor").fill("Harbour Customs Brokers");
+  await page.getByRole("button", { name: "Add “Harbour Customs Brokers” as a new vendor" }).click();
+  await expect(page.getByText("Harbour Customs Brokers added as a vendor")).toBeVisible();
+  await expect(payCost.getByLabel("Paid to", { exact: true })).toContainText(
+    "Harbour Customs Brokers",
+  );
   await payCost.getByRole("button", { name: "Record payment" }).click();
   await expect(page.getByText("The delivery's landed cost now uses what you paid.")).toBeVisible();
+  await expect(payments.getByText(/to Harbour Customs Brokers/)).toBeVisible();
   await expect(deposits).toContainText("Into stock$735.48");
   await expect(deposits).toContainText("Owed$434.48");
 });
@@ -2761,6 +2984,17 @@ test("purchase orders: type the cost of one, the line total or the order total",
   await expect(
     page.getByRole("listitem", { name: "Maple leaf ceramic mug" }).first(),
   ).toContainText("$1,499.99");
+});
+
+test("the privacy policy is public and linked from sign-in", async ({ browser }) => {
+  const page = await browser.newPage();
+  await page.goto("/sign-in");
+  await page.getByRole("link", { name: "Privacy policy" }).click();
+  await expect(page).toHaveURL(/\/privacy-policy$/);
+  await expect(page.getByRole("heading", { name: "Privacy policy", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connected services" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "privacy@bookalyze.com" }).first()).toBeVisible();
+  await page.close();
 });
 
 test("invite-only sign-up blocks strangers", async ({ page }) => {
