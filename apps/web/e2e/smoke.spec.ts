@@ -2797,6 +2797,21 @@ test("noon: choose how Noon posts, post a month and check the Noon balance", asy
   await expect(page.getByRole("switch", { name: "Use Noon UAE" })).toBeChecked();
 });
 
+test("settlements: Amazon, Noon and eBay money are one click apart", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Settlements", exact: true }).click();
+  const tabs = page.getByRole("navigation", { name: "Marketplace money" });
+  await expect(tabs.getByRole("link", { name: "Amazon" })).toHaveAttribute("aria-current", "page");
+  await tabs.getByRole("link", { name: "Noon" }).click();
+  await expect(page.getByRole("heading", { name: "Noon transactions" })).toBeVisible();
+  await expect(tabs.getByRole("link", { name: "Noon" })).toHaveAttribute("aria-current", "page");
+  await tabs.getByRole("link", { name: "eBay" }).click();
+  await expect(page.getByRole("heading", { name: "eBay money" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Bring in from eBay" })).toBeVisible();
+  await tabs.getByRole("link", { name: "Amazon" }).click();
+  await expect(page.getByRole("heading", { name: "Settlements" })).toBeVisible();
+});
+
 test("purchase orders: fill one in from an Alibaba receipt, check it, then save it", async ({
   page,
 }) => {
