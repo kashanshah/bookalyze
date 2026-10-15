@@ -1005,6 +1005,30 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `amazon-settlements.test.ts` (`channelProfit`), db `settlements.test.ts`
   (`settlementsForProfit`), e2e settlements test (the page shows Amazon.ca's column); e2e "noon: choose how Noon posts…" switches Noon UAE off and sees its tag.
 
+### Inventory → Reorder (the inventory forecast)
+
+- **What it shows** (`app/o/[slug]/inventory/reorder`, feature `inventory.reorder` in Inventory):
+  each product that's selling, in stock or on order, with how many it sells a day, stock, what's
+  on order, the day it runs out, the last day to order, and how many to order. Status: **Order
+  now** (stock and orders are at or below the reorder point), **Order soon** (order-by within two
+  weeks), **Enough stock**, **Not selling**. "Order N" opens a new purchase order with the product
+  and quantity filled in (`?add=productId:quantity`); the cost is typed there.
+- **The maths** (core `inventory/reorder.ts`, `planReorder`), as PLAN.md §3.7: velocity
+  0.5·7-day + 0.3·30-day + 0.2·90-day average; safety stock 1.65·σ(daily)·√lead time; reorder
+  point velocity·lead time + safety stock; order = velocity·(lead time + cover) + safety stock −
+  (in stock + on order), raised to the minimum order and rounded up to whole cartons.
+- **The data** (db `reorder.ts`, `reorderProducts`): units ordered per day for 90 days (linked
+  SKUs × units per listing, cancelled orders left out, company time zone); **in stock** = units
+  left in stock lots less those shipped in months cost of goods sold hasn't posted (from its
+  start month), so it's current without posting; on order from sent purchase orders.
+- **Settings:** company lead time and days each order lasts (`reorder_settings`, defaults 45 and
+  60, owners and admins), and per product an own lead time, minimum order and units in a carton
+  (`products.lead_time_days`, `minimum_order`, `case_pack`). Migration `0066_reorder`.
+- **Home:** "N products to reorder now" in Needs your attention.
+- Not yet: days out of stock left out of the averages, seasonality, stock per location (FBA vs
+  your warehouse), and returns and losses not yet posted.
+- Tests: core `reorder.test.ts`; db `reorder.test.ts`; e2e "reorder: …".
+
 ### Home: "Needs your attention"
 
 - **One list on Home** (`app/o/[slug]/attention.tsx`, streamed in with `Suspense` so Home doesn't

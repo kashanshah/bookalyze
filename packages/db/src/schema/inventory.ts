@@ -11,6 +11,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  smallint,
   text,
   timestamp,
   unique,
@@ -41,6 +42,11 @@ export const products = pgTable(
     notes: text("notes"),
     /** Weight of one, in whatever unit the company uses for all products (to split freight). */
     unitWeight: numeric("unit_weight", { precision: 12, scale: 4 }),
+    /** Reorder planner: days from ordering to stock that can be sold (else the company's). */
+    leadTimeDays: smallint("lead_time_days"),
+    /** Reorder planner: the supplier's smallest order, and the units in a carton. */
+    minimumOrder: integer("minimum_order"),
+    casePack: integer("case_pack"),
     isArchived: boolean("is_archived").notNull().default(false),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -57,6 +63,12 @@ export const products = pgTable(
     check("products_name_present", sql`length(trim(${t.name})) > 0`),
     check("products_sku_present", sql`${t.sku} is null or length(trim(${t.sku})) > 0`),
     check("products_weight_positive", sql`${t.unitWeight} is null or ${t.unitWeight} > 0`),
+    check(
+      "products_reorder_valid",
+      sql`(${t.leadTimeDays} is null or ${t.leadTimeDays} between 0 and 730)
+        and (${t.minimumOrder} is null or ${t.minimumOrder} > 0)
+        and (${t.casePack} is null or ${t.casePack} > 0)`,
+    ),
     tenantIsolationPolicy("products", t.organizationId),
   ],
 );
@@ -356,6 +368,30 @@ export const purchaseSettings = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [tenantIsolationPolicy("purchase_settings", t.organizationId)],
+);
+
+/**
+ * The reorder planner's company defaults: days from ordering to stock that can be sold, and how
+ * many days of sales each order should cover.
+ */
+export const reorderSettings = pgTable(
+  "reorder_settings",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    leadTimeDays: smallint("lead_time_days").notNull(),
+    coverDays: smallint("cover_days").notNull(),
+    updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      "reorder_settings_valid",
+      sql`${t.leadTimeDays} between 0 and 730 and ${t.coverDays} between 1 and 730`,
+    ),
+    tenantIsolationPolicy("reorder_settings", t.organizationId),
+  ],
 );
 
 /**

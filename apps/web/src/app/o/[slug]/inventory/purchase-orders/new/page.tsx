@@ -8,12 +8,25 @@ import { NewPurchaseOrder } from "./new-order";
 
 export const metadata: Metadata = { title: "New purchase order" };
 
+/** "Order" on the Reorder page: `?add=productId:quantity`, once per product. */
+function linesToAdd(add: string | string[] | undefined, productIds: Set<string>) {
+  return [add ?? []]
+    .flat()
+    .map((part) => /^([0-9a-f-]{36}):(\d{1,7})$/i.exec(part))
+    .filter((m): m is RegExpExecArray => Boolean(m?.[1] && productIds.has(m[1])))
+    .map((m) => ({ productId: m[1] ?? "", quantity: Number(m[2]), unitCost: "" }))
+    .filter((line) => line.quantity > 0);
+}
+
 export default async function NewPurchaseOrderPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ add?: string | string[] }>;
 }) {
   const { slug } = await params;
+  const { add } = await searchParams;
   const ctx = await getInventoryContext(slug, "inventory.purchasing");
   const { baseCurrency, locale, timezone } = ctx.profile;
   const options = await inOrg(ctx, (tx) => formOptions(tx, baseCurrency));
@@ -35,7 +48,7 @@ export default async function NewPurchaseOrderPage({
           expectedDate: null,
           reference: null,
           notes: null,
-          lines: [],
+          lines: linesToAdd(add, new Set(options.products.map((p) => p.id))),
         }}
       />
     </div>
