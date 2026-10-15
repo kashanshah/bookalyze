@@ -8,6 +8,7 @@ import {
   ebayPostingMonths,
   getSettlementSettings,
   listTransactions,
+  noonLedgerCheck,
   noonMonths,
   noonPayoutsWithOneDeposit,
   schema,
@@ -32,6 +33,7 @@ import {
   Package,
   Settings2,
   Tag,
+  TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
 import { payoutPlatforms } from "@/components/commerce/payout-tabs";
@@ -253,6 +255,18 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
           hint: "What you shipped each month, costed from your oldest stock first. They post in order.",
           href: `${base}/inventory/cogs`,
           tone: "primary",
+        });
+      }
+      // Noon's ledger summary against its detailed ledger, on the days both cover.
+      const off = (await noonLedgerCheck(tx)).mismatches.length;
+      if (off) {
+        items.push({
+          key: "noon-stock-check",
+          icon: TriangleAlert,
+          title: `Noon's stock reports disagree on ${off} ${plural(off, "day", "days")}`,
+          hint: "A movement is missing from one of Noon's reports. See which SKUs, then ask Noon's seller support.",
+          href: `${base}/inventory/movements#noon-check-title`,
+          tone: "warning",
         });
       }
     }

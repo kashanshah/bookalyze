@@ -1020,7 +1020,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   - **Stock** (Inventory on): marketplace SKUs not linked to a product (`unlinkedSkus` total) →
     Products' "not linked" list, and months of cost of goods sold still to post
     (`cogsMonthsToPost` in `packages/db/src/cogs.ts`: over, with sales, from the start month,
-    not posted) → Cost of goods sold.
+    not posted) → Cost of goods sold, and the days Noon's two stock reports disagree
+    (`noonLedgerCheck`) → Stock movements' "Noon's numbers checked".
   - Nothing waiting: "You're all caught up."
 - e2e "home: what needs your attention, each line opening where it's done"; db `cogs.test.ts`
   (`cogsMonthsToPost`).

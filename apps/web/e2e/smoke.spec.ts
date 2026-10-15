@@ -2900,6 +2900,10 @@ test("home: what needs your attention, each line opening where it's done", async
   await page.goBack();
   await list.getByRole("link", { name: /months? of cost of goods sold to post/ }).click();
   await expect(page.getByRole("heading", { name: "Cost of goods sold" })).toBeVisible();
+  await page.goBack();
+  // Noon's two stock reports disagreed on a day (the Noon test above).
+  await list.getByRole("link", { name: /Noon's stock reports disagree on \d+ days?/ }).click();
+  await expect(page.getByRole("region", { name: "Noon's numbers checked" })).toBeVisible();
 });
 
 test("purchase orders: fill one in from an Alibaba receipt, check it, then save it", async ({
