@@ -26,6 +26,7 @@ export * from "./purchase-books";
 export * from "./purchase-payments";
 export * from "./purchasing";
 export * from "./reconciliation";
+export * from "./reorder";
 export * from "./reports";
 export * from "./reviews";
 export * from "./rules";
