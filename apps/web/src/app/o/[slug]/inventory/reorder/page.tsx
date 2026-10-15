@@ -146,12 +146,21 @@ export default async function ReorderPage({ params }: { params: Promise<{ slug: 
                       {row.casePack ? ` · cartons of ${n.format(row.casePack)}` : ""}
                     </p>
                     <dl className="mt-3 grid grid-cols-3 gap-x-4 gap-y-2 text-sm sm:grid-cols-6">
-                      <Stat label="Sells a day" value={rate.format(plan.velocity)} />
+                      <Stat
+                        label="Sells"
+                        value={
+                          plan.velocity === 0
+                            ? "—"
+                            : plan.velocity < 0.1
+                              ? `${rate.format(plan.velocity * 30)} a month`
+                              : `${rate.format(plan.velocity)} a day`
+                        }
+                      />
                       <Stat label="In stock" value={n.format(row.inStock)} />
                       <Stat label="On order" value={n.format(row.onOrder)} />
                       <Stat
                         label="Runs out"
-                        value={day(plan.runsOutOn)}
+                        value={row.inStock === 0 ? "Out of stock" : day(plan.runsOutOn)}
                         tone={plan.daysLeft !== null && plan.daysLeft < leadTimeDays}
                       />
                       <Stat label="Order by" value={day(plan.orderBy)} />

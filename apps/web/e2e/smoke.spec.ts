@@ -2900,6 +2900,51 @@ test("home: what needs your attention, each line opening where it's done", async
   await expect(page.getByRole("region", { name: "Noon's numbers checked" })).toBeVisible();
 });
 
+test("reorder: when each product runs out, how many to order, and the order filled in", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  await page.getByRole("link", { name: "Reorder", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Reorder" })).toBeVisible();
+  // The coaster sells slowly and has no stock left: order now. The mug has plenty.
+  const coaster = page.getByRole("listitem", { name: "Birch coaster" });
+  await expect(coaster.getByText("Order now", { exact: true })).toBeVisible();
+  await expect(coaster).toContainText("Out of stock");
+  await expect(coaster).toContainText(/a month/);
+  const mug = page.getByRole("listitem", { name: "Maple leaf ceramic mug" });
+  await expect(mug.getByText("Enough stock")).toBeVisible();
+
+  // The company's lead time and cover.
+  await page.getByRole("button", { name: "Lead time and cover" }).click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Lead time (days)").fill("30");
+  await dialog.getByLabel("Each order should last (days)").fill("0");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog.getByText("How long an order should last is at least 1 day.")).toBeVisible();
+  await dialog.getByLabel("Each order should last (days)").fill("90");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Reorder settings saved")).toBeVisible();
+  await expect(page.getByText(/Lead time 30 days, each order lasting 90 days/)).toBeVisible();
+
+  // The coaster comes in cartons of 12: the order rounds up to whole cartons.
+  await coaster.getByRole("button", { name: "Reorder settings for Birch coaster" }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Units in a carton").fill("12");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Saved for Birch coaster")).toBeVisible();
+  await expect(coaster).toContainText("cartons of 12");
+  const order = coaster.getByRole("link", { name: /^Order \d+$/ });
+  const quantity = Number((await order.innerText()).replace(/\D/g, ""));
+  expect(quantity % 12).toBe(0);
+
+  // "Order" opens a new purchase order with the coaster and the quantity in it.
+  await order.click();
+  await expect(page.getByRole("heading", { name: "New purchase order" })).toBeVisible();
+  await expect(page.getByLabel("Product 1")).toContainText("Birch coaster");
+  await expect(page.getByLabel("Quantity 1")).toHaveValue(String(quantity));
+});
+
 test("purchase orders: fill one in from an Alibaba receipt, check it, then save it", async ({
   page,
 }) => {
