@@ -2941,8 +2941,8 @@ test("reorder: when each product runs out, how many to order, and the order fill
   // "Order" opens a new purchase order with the coaster and the quantity in it.
   await order.click();
   await expect(page.getByRole("heading", { name: "New purchase order" })).toBeVisible();
-  await expect(page.getByLabel("Product 1")).toContainText("Birch coaster");
-  await expect(page.getByLabel("Quantity 1")).toHaveValue(String(quantity));
+  await expect(page.getByLabel("Product 1", { exact: true })).toContainText("Birch coaster");
+  await expect(page.getByLabel("Quantity 1", { exact: true })).toHaveValue(String(quantity));
 });
 
 test("purchase orders: fill one in from an Alibaba receipt, check it, then save it", async ({
