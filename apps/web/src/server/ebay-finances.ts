@@ -13,6 +13,7 @@ import {
   parseEbayTransactionsPage,
 } from "@bookalyze/core";
 import {
+  dropEbayReportRows,
   type EbaySyncState,
   ebayMonthsToPost,
   ebayPayoutsWithOneDeposit,
@@ -158,6 +159,8 @@ export async function syncEbayTransactions(
       const payouts =
         page.next === null ? await readPayouts(refreshToken, window, marketplaceId) : [];
       const saved = await withOrg(getDb(), ctx, async (tx) => {
+        // The API's rows replace any from an uploaded report on the window's days.
+        if (window.offset === 0) await dropEbayReportRows(tx, window);
         const r = await importEbayTransactions(tx, { orgId: ctx.orgId, rows: page.transactions });
         await placeEbayTransactionsByOrder(tx);
         const newPayouts = await importEbayPayouts(tx, { orgId: ctx.orgId, payouts });

@@ -1,6 +1,7 @@
-import type { EbaySum, EbayTransaction } from "@bookalyze/core";
-import { and, eq, sql } from "drizzle-orm";
+import type { EbayPayout, EbaySum, EbayTransaction } from "@bookalyze/core";
+import { and, between, eq, inArray, like, notLike, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
+import { importEbayPayouts } from "./ebay-posting";
 import { connections } from "./schema/banking";
 import { ebayTransactions, salesChannels } from "./schema/commerce";
 
@@ -105,6 +106,65 @@ export async function importEbayTransactions(
     }
   }
   return result;
+}
+
+/** The keys of rows from eBay's transaction report (the report has no API transaction id). */
+export const EBAY_REPORT_KEY = "report:%";
+
+export type EbayReportImport = EbayImportResult & {
+  /** Rows on days eBay's API already brought in: left out, so nothing counts twice. */
+  fromApi: number;
+  payouts: number;
+};
+
+/**
+ * Saves rows from eBay's transaction report (Seller Hub → Payments → Reports). A day the API
+ * already brought in keeps the API's rows (they're the same money), so the report's rows for it
+ * are left out; when the API later reads days the report filled, it replaces them
+ * (`dropEbayReportRows`). Payouts are eBay's own ids, so they never double up.
+ */
+export async function importEbayReport(
+  tx: Transaction,
+  input: { orgId: string; rows: readonly EbayTransaction[]; payouts: readonly EbayPayout[] },
+): Promise<EbayReportImport> {
+  const days = [...new Set(input.rows.map((r) => r.transactionDate.slice(0, 10)))];
+  const apiDays = new Set(
+    days.length
+      ? (
+          await tx
+            .selectDistinct({ day: ebayTransactions.transactionDate })
+            .from(ebayTransactions)
+            .where(
+              and(
+                inArray(ebayTransactions.transactionDate, days),
+                notLike(ebayTransactions.transactionId, EBAY_REPORT_KEY),
+              ),
+            )
+        ).map((r) => r.day)
+      : [],
+  );
+  const rows = input.rows.filter((r) => !apiDays.has(r.transactionDate.slice(0, 10)));
+  const saved = await importEbayTransactions(tx, { orgId: input.orgId, rows });
+  await placeEbayTransactionsByOrder(tx);
+  const payouts = await importEbayPayouts(tx, { orgId: input.orgId, payouts: input.payouts });
+  return { ...saved, fromApi: input.rows.length - rows.length, payouts };
+}
+
+/** Removes the report's rows on days the API has just read (its rows replace them). */
+export async function dropEbayReportRows(
+  tx: Transaction,
+  range: { from: string; to: string },
+): Promise<number> {
+  const dropped = await tx
+    .delete(ebayTransactions)
+    .where(
+      and(
+        like(ebayTransactions.transactionId, EBAY_REPORT_KEY),
+        between(ebayTransactions.transactionDate, range.from, range.to),
+      ),
+    )
+    .returning({ id: ebayTransactions.id });
+  return dropped.length;
 }
 
 /** Puts rows on their order's eBay site, for orders that came in after their rows. */

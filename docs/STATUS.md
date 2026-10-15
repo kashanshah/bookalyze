@@ -30,7 +30,7 @@ back into stock, losses written off, like Amazon's FBA ledger)._
 | 4+. Settlements, UAE, inventory, analytics | **Phase 4 in progress.** Slices 1 (bring in Amazon settlements, Settlements screen), 2 (accounts for each kind of line, posting each settlement as one entry), 3 (matching each payout to its bank deposit) 4 (any currency, automatic posting) and 5 (profit by channel) done. Phase 4b (UAE) in progress: tax on Amazon's fees as its own line (recoverable or a cost, by the account chosen). Next: Amazon.ae under the Dubai company, then phase 5 (inventory and cost of goods sold); Noon is phase 4c, after 5 |
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) slice 10 (a freight payment is its delivery's cost) and slice 11 (Amazon prices: each listing's price next to its cost, a change with Amazon's fees and the profit first) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: "your stock against Noon's" from the ledger summary view. Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
-| 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold), 4 (eBay money: the Finances API's rows by month, in Channel profit) and 5 (payouts and posting: each site's month as one entry to an eBay balance account, payouts matched to bank deposits, in the daily job) done. Next: the Seller Hub transaction report upload, and eBay's digital signatures for EU and UK sellers. See §3 "Phase 4d" |
+| 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold), 4 (eBay money: the Finances API's rows by month, in Channel profit) 5 (payouts and posting: each site's month as one entry to an eBay balance account, payouts matched to bank deposits, in the daily job) and 6 (Seller Hub's transaction report upload, with the API's rows winning on days it has) done. Next: eBay's digital signatures for EU and UK sellers. See §3 "Phase 4d" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
@@ -1408,6 +1408,30 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   from the mock (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema; the
   summary disagrees on one day last month), then uploads a summary file.
 
+### Phase 4d, slice 6: Seller Hub's transaction report upload
+
+- **Upload eBay's report** on **eBay money** (`UploadEbayReport` in `commerce/ebay/ebay-sync.tsx`,
+  `uploadEbayReportAction`): Seller Hub → Payments → Reports → Transaction report, CSV. For sellers
+  whose Finances API calls need eBay's digital signatures (EU, UK), or to fill in history. Read in
+  the browser (core `ebay-report.ts`: `parseEbayTransactionReport`), sent 1,000 rows a call.
+  - **Columns by name**, since sellers add and remove them; eBay's lines above the table are
+    skipped; comma, semicolon or tab. Dates as "Aug 3, 2026", "06-Jul-2026", ISO or
+    "06.07.2026"; "--" is empty. Types map to the API's (Order → SALE, Refund, Claim and Payment
+    dispute → DISPUTE, Other fee → NON_SALE_CHARGE with the description as its fee type, so
+    Promoted Listings counts as advertising, Shipping label, Credit, Transfer…); Hold rows are
+    left out. An order's fee columns (every column named "… fee") become its `fees`, so the groups
+    work as with the API. No buyer details are read.
+  - **No API id in the report:** rows are keyed `report:` + their fields (and a count for rows
+    that repeat), so the same file again changes nothing. **Payout** rows become payouts (eBay's
+    ids, so they never double up with the API's) and can be matched to bank deposits.
+  - **Nothing counts twice** (db `ebay-transactions.ts`): `importEbayReport` leaves out report rows
+    on days eBay's API already brought in, and the API sync drops the report's rows on each window
+    it reads (`dropEbayReportRows`), so its rows replace them.
+- Tests: core `ebay-report.test.ts` (header search, dates, amounts, types, fees, keys, payouts,
+  groups, semicolons); db `ebay-transactions.test.ts` (days the API has, the same file again,
+  the API replacing rows); e2e "ebay: upload Seller Hub's transaction report…".
+- Not yet: eBay's digital signatures for EU and UK sellers' Finances calls.
+
 ### Phase 4d, slice 5: eBay payouts and posting
 - **Payouts** (core `ebayPayoutsQuery`, `parseEbayPayoutsPage`, `ebayPayoutSent`): `GET
   /sell/finances/v1/payout` on the apiz host, 200 a page, filtered by `payoutDate`. Read with each
@@ -2478,8 +2502,8 @@ Built like Amazon and Noon: channels first, then the account, orders, money and 
    slice 5.
 6. [x] **Daily job and Channel profit.** Done in slices 4 and 5 (Channel profit converts a posted
    month at its posted rate; payouts are the whole account's, so its "Paid out" stays —).
-7. [ ] **Seller Hub transaction report upload**, and eBay's digital signatures (EU and UK
-   sellers' Finances calls).
+7. [x] **Seller Hub transaction report upload.** Done in slice 6.
+8. [ ] **eBay's digital signatures** (EU and UK sellers' Finances calls).
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.

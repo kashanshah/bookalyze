@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { isOrgAdmin } from "@/server/org";
-import { SyncEbayMoneyButton } from "./ebay-sync";
+import { SyncEbayMoneyButton, UploadEbayReport } from "./ebay-sync";
 import {
   MatchAllPayoutsButton,
   PayoutChoice,
@@ -123,6 +123,7 @@ export default async function EbayMoneyPage({ params }: { params: Promise<{ slug
   const nameOf = (month: string) => monthName.format(new Date(`${month}-01T00:00:00Z`));
   const sites = [...new Map(months.map((m) => [`${m.channelId}:${m.currency}`, m])).values()];
   const base = `/o/${slug}`;
+  const hasSite = platforms.includes("ebay");
   const toPost = months.filter((m) => m.state === "ready" || m.state === "changed").length;
 
   return (
@@ -143,6 +144,7 @@ export default async function EbayMoneyPage({ params }: { params: Promise<{ slug
                   </Link>
                 </Button>
               ) : null}
+              {hasSite ? <UploadEbayReport slug={slug} /> : null}
               {live ? <SyncEbayMoneyButton slug={slug} locale={locale} /> : null}
               {oneDeposit ? <MatchAllPayoutsButton slug={slug} count={oneDeposit} /> : null}
               {settings.postFrom && toPost ? (
@@ -181,6 +183,9 @@ export default async function EbayMoneyPage({ params }: { params: Promise<{ slug
           <p className="max-w-sm text-muted-foreground text-sm">
             Connect your eBay seller account on one of your eBay sites, and its money can come in
             here.
+            {hasSite && canManage
+              ? " Or upload the transaction report from Seller Hub (Payments → Reports)."
+              : ""}
           </p>
           <Button asChild variant="outline">
             <Link href={`/o/${slug}/commerce/channels`}>Go to Channels</Link>
