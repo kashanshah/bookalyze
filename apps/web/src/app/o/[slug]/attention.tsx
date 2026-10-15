@@ -31,9 +31,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { payoutPlatforms } from "@/components/commerce/payout-tabs";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { nowIn } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
 import type { OrgContext } from "@/server/org";
 
@@ -43,8 +43,6 @@ type Item = {
   title: string;
   hint: string;
   href: string;
-  /** Shown as a badge; null for one-off nudges such as "finish setting up". */
-  count: number | null;
   tone: "warning" | "primary" | "destructive";
 };
 
@@ -80,7 +78,6 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
       title: `${c.name} didn't sync`,
       hint: c.lastError ?? "The last sync didn't finish. Try it again, or reconnect.",
       href: bank ? `${base}/banking/accounts` : `${base}/commerce/channels`,
-      count: null,
       tone: "destructive",
     });
   }
@@ -98,7 +95,6 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
         title: `${noAccount} ${plural(noAccount, "transaction needs", "transactions need")} a category`,
         hint: "They sit in Uncategorized until you say what they were for.",
         href: `${tx_}?status=no_account`,
-        count: noAccount,
         tone: "warning",
       });
     }
@@ -109,7 +105,6 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
         title: `${duplicates} possible ${plural(duplicates, "duplicate", "duplicates")}`,
         hint: "The same money may have come in twice. Keep one or both.",
         href: `${tx_}?status=duplicates`,
-        count: duplicates,
         tone: "warning",
       });
     }
@@ -120,7 +115,6 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
         title: `${transfers} ${plural(transfers, "transfer", "transfers")} between your accounts`,
         hint: "Money that left one account and arrived in another. Link them so it isn't counted twice.",
         href: `${tx_}?status=transfers`,
-        count: transfers,
         tone: "primary",
       });
     }
@@ -131,7 +125,6 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
         title: `${unreviewed} ${plural(unreviewed, "transaction", "transactions")} to review`,
         hint: "Check each one is right, then mark it reviewed.",
         href: `${tx_}?status=unreviewed`,
-        count: unreviewed,
         tone: "primary",
       });
     }
@@ -153,7 +146,6 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
             title: `${ready} Amazon ${plural(ready, "settlement", "settlements")} ready to post`,
             hint: "Each one becomes one entry in your books.",
             href,
-            count: ready,
             tone: "primary",
           });
         }
@@ -164,7 +156,6 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
             title: `${found} Amazon ${plural(found, "payout's", "payouts'")} bank deposit found`,
             hint: "We found the deposit for each one. Match them in one click.",
             href,
-            count: found,
             tone: "primary",
           });
         }
@@ -177,7 +168,6 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
             title: "Choose how Amazon settlements post",
             hint: "Pick the accounts once, and every payout can go into your books.",
             href: `${href}/accounts`,
-            count: null,
             tone: "warning",
           });
         }
@@ -197,7 +187,6 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
           title: `Choose how ${label} posts`,
           hint: "Pick the accounts once, and each month's sales and fees can go into your books.",
           href: `${href}/accounts`,
-          count: null,
           tone: "warning",
         });
         continue;
@@ -215,7 +204,6 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
           title: `${ready} ${label} ${plural(ready, "month", "months")} ready to post`,
           hint: "One entry per month: what sold, what was refunded and the fees.",
           href,
-          count: ready,
           tone: "primary",
         });
       }
@@ -226,7 +214,6 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
           title: `${found} ${label} ${plural(found, "payout's", "payouts'")} bank deposit found`,
           hint: "We found the deposit for each one. Match them in one click.",
           href,
-          count: found,
           tone: "primary",
         });
       }
@@ -270,21 +257,16 @@ export async function Attention({ ctx }: { ctx: OrgContext }) {
                 className="group flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-muted/40 sm:px-6"
               >
                 <item.icon
-                  className={
-                    item.tone === "destructive"
-                      ? "size-4 shrink-0 text-destructive"
-                      : "size-4 shrink-0 text-muted-foreground"
-                  }
+                  className={cn(
+                    "size-4 shrink-0 text-muted-foreground",
+                    item.tone === "warning" && "text-warning",
+                    item.tone === "destructive" && "text-destructive",
+                  )}
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium text-sm">{item.title}</span>
-                  <span className="block truncate text-muted-foreground text-xs">{item.hint}</span>
+                  <span className="block text-muted-foreground text-xs">{item.hint}</span>
                 </span>
-                {item.count !== null ? (
-                  <Badge variant={item.tone} className="tabular hidden sm:inline-flex">
-                    {item.count}
-                  </Badge>
-                ) : null}
                 <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
               </Link>
             </li>
