@@ -1,16 +1,18 @@
 import "server-only";
-import { can } from "@bookalyze/core";
+import { can, planReorder } from "@bookalyze/core";
 import {
   cogsMonthsToPost,
   countNeedsAccount,
   countOpenDuplicates,
   ebayPayoutsWithOneDeposit,
   ebayPostingMonths,
+  getReorderSettings,
   getSettlementSettings,
   listTransactions,
   noonLedgerCheck,
   noonMonths,
   noonPayoutsWithOneDeposit,
+  reorderProducts,
   schema,
   settlementsToPost,
   settlementsWithOneDeposit,
@@ -32,6 +34,7 @@ import {
   ListChecks,
   Package,
   Settings2,
+  ShoppingCart,
   Tag,
   TriangleAlert,
 } from "lucide-react";
@@ -236,6 +239,33 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
           title: `${unlinked} marketplace ${plural(unlinked, "SKU isn't", "SKUs aren't")} linked to a product`,
           hint: "Link each one to what it sells, so its sales come out of your stock and are costed.",
           href: `${base}/inventory/products#unlinked-title`,
+          tone: "warning",
+        });
+      }
+    }
+    if (can(ctx.plan, ctx.enabledModules, "inventory.reorder")) {
+      const [settings, products] = [
+        await getReorderSettings(tx),
+        await reorderProducts(tx, { timezone: ctx.profile?.timezone ?? "UTC", today }),
+      ];
+      const due = products.filter(
+        (p) =>
+          planReorder({
+            today,
+            dailyUnits: p.dailyUnits,
+            inStock: p.inStock,
+            onOrder: p.onOrder,
+            leadTimeDays: p.leadTimeDays ?? settings.leadTimeDays,
+            coverDays: settings.coverDays,
+          }).status === "order_now",
+      ).length;
+      if (due) {
+        items.push({
+          key: "reorder",
+          icon: ShoppingCart,
+          title: `${due} ${plural(due, "product", "products")} to reorder now`,
+          hint: "At the pace they're selling, they'll run low before a new order could arrive.",
+          href: `${base}/inventory/reorder`,
           tone: "warning",
         });
       }
