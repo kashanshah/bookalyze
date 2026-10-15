@@ -180,7 +180,7 @@ export async function postDelivery(
   const total = parseDecimal(cost?.total ?? "0");
   if (receipt.journalEntryId) {
     const [existing] = await tx
-      .select({ amount: journalLines.baseAmount })
+      .select({ amount: journalLines.baseAmount, date: journalEntries.date })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalEntries.id, journalLines.journalEntryId))
       .where(
@@ -190,13 +190,20 @@ export async function postDelivery(
           sql`${journalLines.amount} > 0`,
         ),
       );
-    if (existing && parseDecimal(existing.amount) === total) return;
+    if (
+      existing &&
+      parseDecimal(existing.amount) === total &&
+      existing.date === receipt.receivedOn
+    ) {
+      return;
+    }
     if (existing) {
+      // Reversed on its own day, so a delivery moved to another day leaves nothing behind.
       await reverseJournalEntry(tx, {
         orgId: input.orgId,
         userId: input.userId,
         entryId: receipt.journalEntryId,
-        date: receipt.receivedOn,
+        date: existing.date,
       });
     }
   }

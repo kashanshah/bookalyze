@@ -5,6 +5,7 @@ import {
   addPurchasePayment,
   addSupplier,
   cancelPurchaseOrder,
+  changeDeliveryDate,
   createPurchaseOrder,
   deletePurchaseOrder,
   ensureSystemAccount,
@@ -31,6 +32,7 @@ import { z } from "zod";
 import { isIsoDate, nowIn, openDate } from "@/lib/dates";
 import {
   deliveryCostsSchema,
+  deliveryDateSchema,
   paymentCostSchema,
   paymentPlanSchema,
   purchaseOrderSchema,
@@ -222,6 +224,57 @@ export async function receiveAction(
           ? "Everything on this order has arrived."
           : "The rest is still to come.",
     };
+  } catch (error) {
+    return friendly(error);
+  }
+}
+
+/** Moves a delivery to the day it really arrived (its stock lots and its entry into stock). */
+export async function changeDeliveryDateAction(
+  slug: string,
+  receiptId: string,
+  input: unknown,
+): Promise<PurchaseOrderActionResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  if (!validId(receiptId)) return { ok: false, message: "This delivery no longer exists." };
+  const parsed = deliveryDateSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "Check the date.",
+      errors: { receivedOn: parsed.error.issues[0]?.message ?? "Choose the day it arrived." },
+    };
+  }
+  if (parsed.data.receivedOn > nowIn(ctx.profile.timezone).date) {
+    return {
+      ok: false,
+      message: "Check the date.",
+      errors: { receivedOn: "A delivery can't arrive in the future." },
+    };
+  }
+  try {
+    await inOrg(ctx, async (tx) => {
+      const moved = await changeDeliveryDate(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        receiptId,
+        receivedOn: parsed.data.receivedOn,
+        baseCurrency: ctx.profile.baseCurrency,
+      });
+      if (moved.before === moved.after) return;
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "purchase_order.delivery_date_changed",
+        entityType: "purchase_order",
+        entityId: moved.purchaseOrderId,
+        before: { receiptId, receivedOn: moved.before },
+        after: { receiptId, receivedOn: moved.after },
+      });
+    });
+    revalidatePath(base(slug), "layout");
+    revalidatePath(`/o/${slug}/inventory`, "layout");
+    return { ok: true, message: "Its stock lots count from the new day." };
   } catch (error) {
     return friendly(error);
   }

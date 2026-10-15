@@ -7,10 +7,13 @@ import {
 } from "@bookalyze/core";
 import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
+import { lotsConsumed } from "./cogs";
 import { buildLots } from "./landed-costs";
 import { postDelivery } from "./purchase-books";
 import { contacts } from "./schema/accounting";
 import {
+  cogsPeriods,
+  inventoryLots,
   products,
   purchaseOrderLines,
   purchaseOrders,
@@ -498,6 +501,92 @@ export async function receivePurchaseOrder(
     receiptId: receipt.id,
   });
   return { receiptId: receipt.id, status };
+}
+
+/**
+ * Moves a delivery to the day it really arrived: its stock lots count from then (cost of goods
+ * sold uses them from that day), and for an order in the books its entry into Inventory moves
+ * too (the old one reversed on its own day, a new one posted on the new day). Refused once its
+ * stock is in a posted month, or when the new day falls in a month already posted.
+ */
+export async function changeDeliveryDate(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    userId?: string | null;
+    receiptId: string;
+    receivedOn: string;
+    baseCurrency: string;
+  },
+): Promise<{ purchaseOrderId: string; before: string; after: string }> {
+  const [receipt] = await tx
+    .select({
+      id: purchaseReceipts.id,
+      purchaseOrderId: purchaseReceipts.purchaseOrderId,
+      receivedOn: purchaseReceipts.receivedOn,
+    })
+    .from(purchaseReceipts)
+    .where(eq(purchaseReceipts.id, input.receiptId));
+  if (!receipt) throw new PurchasingError("This delivery no longer exists.", "not_found");
+  // One writer at a time per PO, like receiving and saving costs.
+  const po = await lockedOrder(tx, receipt.purchaseOrderId);
+  const result = {
+    purchaseOrderId: po.id,
+    before: receipt.receivedOn,
+    after: input.receivedOn,
+  };
+  if (input.receivedOn === receipt.receivedOn) return result;
+  if (input.receivedOn < po.orderDate) {
+    throw new PurchasingError("A delivery can't arrive before the order date.");
+  }
+  const lots = await tx
+    .select({ id: inventoryLots.id })
+    .from(inventoryLots)
+    .innerJoin(purchaseReceiptLines, eq(purchaseReceiptLines.id, inventoryLots.receiptLineId))
+    .where(eq(purchaseReceiptLines.receiptId, receipt.id));
+  const usedIn = await lotsConsumed(
+    tx,
+    lots.map((lot) => lot.id),
+  );
+  if (usedIn) {
+    throw new PurchasingError(
+      `Some of this delivery's stock is already in cost of goods sold (${usedIn}). Undo that month first to change its date.`,
+      "state",
+    );
+  }
+  const [posted] = await tx
+    .select({ month: cogsPeriods.month })
+    .from(cogsPeriods)
+    .where(sql`${cogsPeriods.month} >= ${input.receivedOn.slice(0, 7)}`)
+    .limit(1);
+  if (posted) {
+    throw new PurchasingError(
+      "Cost of goods sold is already posted for that month or later. Use a later day, or undo those months first.",
+      "state",
+    );
+  }
+  await tx
+    .update(purchaseReceipts)
+    .set({ receivedOn: input.receivedOn })
+    .where(eq(purchaseReceipts.id, receipt.id));
+  if (lots.length) {
+    await tx
+      .update(inventoryLots)
+      .set({ receivedOn: input.receivedOn })
+      .where(
+        inArray(
+          inventoryLots.id,
+          lots.map((lot) => lot.id),
+        ),
+      );
+  }
+  await postDelivery(tx, {
+    orgId: input.orgId,
+    userId: input.userId ?? null,
+    baseCurrency: input.baseCurrency,
+    receiptId: receipt.id,
+  });
+  return result;
 }
 
 /** Vendors that can be picked as a supplier. */

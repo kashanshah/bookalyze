@@ -1574,6 +1574,15 @@ test("landed cost: freight on a delivery, then the stock lots", async ({ page })
   ).toBeVisible();
   await expect(page.getByText("No extra costs yet.")).toBeVisible();
 
+  // The arrival date can be fixed later, but never to before the order was placed.
+  await page.getByRole("button", { name: "Change arrival date" }).click();
+  const when = page.getByRole("dialog");
+  await when.getByLabel("Arrived on", { exact: true }).fill("2020-01-01");
+  await when.getByRole("button", { name: "Change date" }).click();
+  await expect(when.getByText("A delivery can't arrive before the order date.")).toBeVisible();
+  await when.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
   // $35 of freight on the 70 mugs: split by units (the mug has no weight yet).
   await page.getByRole("button", { name: "Add a cost" }).click();
   await page.getByLabel("Amount 1", { exact: true }).fill("35");

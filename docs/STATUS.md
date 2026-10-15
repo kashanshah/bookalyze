@@ -1865,6 +1865,21 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   spreading a total) and `alibaba-receipt.test.ts`; e2e "purchase orders: type the cost of
   one, the line total or the order total".
 
+### Changing a delivery's arrival date
+
+- **Change arrival date** on a delivery's page (Landed cost of the … delivery), for a delivery
+  recorded on the wrong day (db `changeDeliveryDate`, action `changeDeliveryDateAction`, audit
+  `purchase_order.delivery_date_changed`). The delivery and its stock lots move to the new day,
+  so cost of goods sold uses them from then. For an order in the books, `postDelivery` now
+  re-posts when the entry's date differs as well as its amount: the old entry is reversed on its
+  own day and a new one posted on the new day.
+- Refused: before the order date, in the future, once any of the delivery's stock is in a posted
+  month (undo it first, as for changing costs), or on a day in a month already posted (the same
+  rule as opening stock). A closed period refuses through the ledger, in its words.
+- The exchange rate and costs stay as they are (they can be changed on the same page).
+- Tests: db `purchase-books.test.ts` (lots and entries moved, same day changes nothing, before
+  the order date refused), e2e landed cost test (a day before the order date is refused).
+
 ### Phase 5, slice 11: Amazon prices
 
 - **Inventory → Prices** (`/inventory/prices`, feature `inventory.prices`): every linked SKU on an
