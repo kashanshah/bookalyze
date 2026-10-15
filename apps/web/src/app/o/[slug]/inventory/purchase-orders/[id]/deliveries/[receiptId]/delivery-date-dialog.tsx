@@ -60,6 +60,15 @@ export function DeliveryDateDialog({
           className="grid gap-5"
           onSubmit={(event) => {
             event.preventDefault();
+            // Said here in our words; the browser's own date limits only show a tooltip.
+            if (date < orderDate) {
+              setError("A delivery can't arrive before the order date.");
+              return;
+            }
+            if (date > today) {
+              setError("A delivery can't arrive in the future.");
+              return;
+            }
             start(async () => {
               const result = await changeDeliveryDateAction(slug, receiptId, { receivedOn: date });
               if (!result.ok) {
@@ -90,8 +99,6 @@ export function DeliveryDateDialog({
               id="delivery-received-on"
               type="date"
               value={date}
-              min={orderDate}
-              max={today}
               onChange={(e) => {
                 setDate(e.target.value);
                 setError(undefined);
