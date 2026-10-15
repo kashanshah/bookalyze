@@ -481,6 +481,31 @@ export function cogsStartMonth(input: {
   return candidates.length ? (candidates.sort()[0] ?? null) : null;
 }
 
+/**
+ * Each marketplace's months still to post: over, with sales, from the start month on, not in
+ * the books yet. Oldest first (the order they post in).
+ */
+export async function cogsMonthsToPost(
+  tx: Transaction,
+  options: { timezone: string; currentMonth: string },
+): Promise<MonthSales[]> {
+  const sales = await salesByMonth(tx, { timezone: options.timezone });
+  const periods = await listCogsPeriods(tx);
+  const done = new Set(periods.map((p) => `${p.channelId}:${p.month}`));
+  const start = cogsStartMonth({
+    openingDay: await earliestOpeningStock(tx),
+    postedMonths: periods.map((p) => p.month),
+  });
+  return sales
+    .filter(
+      (m) =>
+        m.month < options.currentMonth &&
+        (!start || m.month >= start) &&
+        !done.has(`${m.channelId}:${m.month}`),
+    )
+    .sort((a, b) => a.month.localeCompare(b.month) || a.channelName.localeCompare(b.channelName));
+}
+
 /** What posting a marketplace's month would take from the lots, and what's in the way. */
 export async function previewCogs(
   tx: Transaction,

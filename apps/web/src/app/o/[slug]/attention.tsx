@@ -1,6 +1,7 @@
 import "server-only";
 import { can } from "@bookalyze/core";
 import {
+  cogsMonthsToPost,
   countNeedsAccount,
   countOpenDuplicates,
   ebayPayoutsWithOneDeposit,
@@ -14,6 +15,7 @@ import {
   settlementsWithOneDeposit,
   suggestTransfers,
   type Transaction,
+  unlinkedSkus,
 } from "@bookalyze/db";
 import { count, ne } from "drizzle-orm";
 import {
@@ -25,7 +27,9 @@ import {
   Copy,
   Inbox,
   Landmark,
+  Link2,
   ListChecks,
+  Package,
   Settings2,
   Tag,
 } from "lucide-react";
@@ -51,7 +55,7 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 const BANK_PROVIDERS = new Set(["wise", "csv"]);
 const PLATFORM_LABEL = { amazon_sp: "Amazon", noon: "Noon", ebay: "eBay" } as const;
 
-/** Everything waiting on someone, across the books and the marketplaces. */
+/** Everything waiting on someone, across the books, the marketplaces and the stock. */
 async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): Promise<Item[]> {
   const base = `/o/${ctx.org.slug}`;
   const on = (m: string) => ctx.activeModules.includes(m as never);
@@ -220,6 +224,40 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
     }
   }
 
+  if (on("inventory")) {
+    if (can(ctx.plan, ctx.enabledModules, "inventory.products")) {
+      const unlinked = (await unlinkedSkus(tx, { limit: 1 })).total;
+      if (unlinked) {
+        items.push({
+          key: "unlinked-skus",
+          icon: Link2,
+          title: `${unlinked} marketplace ${plural(unlinked, "SKU isn't", "SKUs aren't")} linked to a product`,
+          hint: "Link each one to what it sells, so its sales come out of your stock and are costed.",
+          href: `${base}/inventory/products#unlinked-title`,
+          tone: "warning",
+        });
+      }
+    }
+    if (can(ctx.plan, ctx.enabledModules, "inventory.cogs")) {
+      const months = await cogsMonthsToPost(tx, {
+        timezone: ctx.profile?.timezone ?? "UTC",
+        currentMonth: today.slice(0, 7),
+      });
+      // A month on two marketplaces is still one month to the reader.
+      const n = new Set(months.map((m) => m.month)).size;
+      if (n) {
+        items.push({
+          key: "cogs",
+          icon: Package,
+          title: `${n} ${plural(n, "month", "months")} of cost of goods sold to post`,
+          hint: "What you shipped each month, costed from your oldest stock first. They post in order.",
+          href: `${base}/inventory/cogs`,
+          tone: "primary",
+        });
+      }
+    }
+  }
+
   return items;
 }
 
@@ -243,7 +281,7 @@ export async function Attention({ ctx }: { ctx: OrgContext }) {
           </h2>
           <p className="text-muted-foreground text-sm">
             {items.length
-              ? "What's waiting in your books and marketplaces. Each one opens where it's done."
+              ? "What's waiting in your books, marketplaces and stock. Each one opens where it's done."
               : "Nothing is waiting on you."}
           </p>
         </div>

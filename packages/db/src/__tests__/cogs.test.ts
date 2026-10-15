@@ -6,6 +6,7 @@ import { createDb, type Transaction, withOrg } from "../client";
 import {
   addOpeningStock,
   channelsNotCosted,
+  cogsMonthsToPost,
   cogsStartMonth,
   earliestOpeningStock,
   ensureSystemAccount,
@@ -217,6 +218,11 @@ describe("cost of goods sold", () => {
     expect(cogsStartMonth({ openingDay, postedMonths: ["2026-06", "2026-08"] })).toBe("2026-06");
     expect(cogsStartMonth({ openingDay: null, postedMonths: ["2026-09"] })).toBe("2026-09");
     expect(cogsStartMonth({ openingDay: null, postedMonths: [] })).toBeNull();
+    // What's left to post: the finished months from the start on, oldest first.
+    const toPost = await scoped((tx) =>
+      cogsMonthsToPost(tx, { timezone: where.timezone, currentMonth: "2026-10" }),
+    );
+    expect(toPost.map((m) => m.month)).toEqual(["2026-08", "2026-09"]);
   });
 
   it("posts months in order, oldest stock first, and undoes newest first", async () => {

@@ -1017,8 +1017,13 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     settlements ready to post, Noon and eBay months ready to post (or changed since posting), and
     payouts whose one bank deposit was found → Settlements / Noon transactions / eBay money. A
     platform with money but no posting setup shows "Choose how … posts" → its accounts page.
+  - **Stock** (Inventory on): marketplace SKUs not linked to a product (`unlinkedSkus` total) →
+    Products' "not linked" list, and months of cost of goods sold still to post
+    (`cogsMonthsToPost` in `packages/db/src/cogs.ts`: over, with sales, from the start month,
+    not posted) → Cost of goods sold.
   - Nothing waiting: "You're all caught up."
-- e2e "home: what needs your attention, each line opening where it's done".
+- e2e "home: what needs your attention, each line opening where it's done"; db `cogs.test.ts`
+  (`cogsMonthsToPost`).
 
 ### Phase 4, slice 7: one place for every marketplace's money
 
