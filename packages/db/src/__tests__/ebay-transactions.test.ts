@@ -5,8 +5,10 @@ import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import { addEbayChannel, saveOrdersWithItems } from "../commerce";
 import {
+  dropEbayReportRows,
   ebayMonths,
   ebaySyncState,
+  importEbayReport,
   importEbayTransactions,
   placeEbayTransactionsByOrder,
   saveEbaySyncState,
@@ -196,6 +198,52 @@ describe("eBay transactions", () => {
     await scoped((tx) => saveEbaySyncState(tx, id, state));
     const [saved] = await scoped((tx) => tx.select().from(schema.connections).where(eqId(id)));
     expect(ebaySyncState(saved?.settings ?? {})).toEqual(state);
+  });
+
+  it("adds the transaction report's rows on days the API hasn't read, and the API replaces them", async () => {
+    const report = [
+      // A day the API already read: the API's rows stay, this one is left out.
+      row({ transactionId: "report:a", transactionDate: "2026-09-02T00:00:00.000Z" }),
+      row({ transactionId: "report:b", transactionDate: "2026-08-15T00:00:00.000Z" }),
+    ];
+    const payouts = [
+      {
+        payoutId: "PO-REPORT",
+        status: "SUCCEEDED",
+        payoutDate: "2026-08-17T00:00:00.000Z",
+        currency: "CAD",
+        amount: "22.2000",
+        accountLast4: null,
+      },
+    ];
+    expect(await scoped((tx) => importEbayReport(tx, { orgId, rows: report, payouts }))).toEqual({
+      added: 1,
+      updated: 0,
+      fromApi: 1,
+      payouts: 1,
+    });
+    // The same file again: nothing new.
+    expect(await scoped((tx) => importEbayReport(tx, { orgId, rows: report, payouts }))).toEqual({
+      added: 0,
+      updated: 1,
+      fromApi: 1,
+      payouts: 0,
+    });
+    const months = await scoped((tx) => ebayMonths(tx));
+    expect(months.map((m) => [m.channelName, m.month, m.rows])).toContainEqual([
+      "eBay Canada",
+      "2026-08",
+      1,
+    ]);
+    // The API reads August: the report's row makes way for the API's.
+    expect(
+      await scoped((tx) => dropEbayReportRows(tx, { from: "2026-08-01", to: "2026-08-31" })),
+    ).toBe(1);
+    expect(
+      await scoped((tx) => dropEbayReportRows(tx, { from: "2026-09-01", to: "2026-09-30" })),
+    ).toBe(0);
+    const left = await scoped((tx) => tx.select().from(schema.ebayTransactions));
+    expect(left.map((r) => r.transactionId).sort()).toEqual(["T1", "T2", "T3"]);
   });
 
   it("keeps each company's eBay money to itself", async () => {

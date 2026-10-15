@@ -3,8 +3,10 @@
 import { can, EBAY_ACCOUNT_KEYS, type EbayAccounts, monthEnd } from "@bookalyze/core";
 import {
   dismissEbayPayoutDeposit,
+  type EbayReportImport,
   ebayMonthsToPost,
   ebayPayoutsWithOneDeposit,
+  importEbayReport,
   LedgerError,
   matchEbayPayout,
   postEbayMonth,
@@ -61,6 +63,84 @@ export async function syncEbayMoneyAction(slug: string): Promise<EbayResult<Ebay
     logError("ebay.transactions_sync_failed", error, { orgId: ctx.org.id });
     return { ok: false, message: "eBay's payments couldn't be brought in. Try again in a minute." };
   }
+}
+
+// --- Seller Hub's transaction report ------------------------------------------------------
+
+const amount = z.string().regex(/^-?\d+(\.\d+)?$/);
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/);
+const currency = z.string().regex(/^[A-Z]{3}$/);
+const text = (max: number) => z.string().max(max).nullable();
+/** Rows per call: a year's report is sent in parts. */
+const REPORT_ROWS = 1_000;
+const reportSchema = z.object({
+  fileName: z.string().max(200),
+  rows: z
+    .array(
+      z.object({
+        transactionId: z.string().startsWith("report:").max(1_500),
+        transactionType: z.string().regex(/^[A-Z_]{2,40}$/),
+        status: text(50),
+        transactionDate: day,
+        orderId: text(100),
+        payoutId: text(100),
+        feeType: text(200),
+        currency,
+        amount,
+        fees: amount,
+        ebayTax: amount,
+      }),
+    )
+    .max(REPORT_ROWS),
+  payouts: z
+    .array(
+      z.object({
+        payoutId: z.string().min(1).max(100),
+        status: z.string().regex(/^[A-Z_]{2,30}$/),
+        payoutDate: day,
+        currency,
+        amount,
+        accountLast4: z.string().max(4).nullable(),
+      }),
+    )
+    .max(REPORT_ROWS),
+});
+
+/**
+ * Adds eBay's transaction report (Seller Hub → Payments → Reports → Transaction report), read in
+ * the browser and sent in parts. Days eBay's API already brought in keep the API's rows.
+ */
+export async function uploadEbayReportAction(
+  slug: string,
+  input: z.input<typeof reportSchema>,
+): Promise<EbayResult<EbayReportImport>> {
+  const { ctx, denied } = await ebayContext(slug);
+  if (denied) return denied;
+  const parsed = reportSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Those rows couldn't be read." };
+  const { fileName, rows, payouts } = parsed.data;
+  const result = await inOrg(ctx, async (tx) => {
+    const [site] = await tx
+      .select({ id: schema.salesChannels.id })
+      .from(schema.salesChannels)
+      .where(eq(schema.salesChannels.kind, "ebay"))
+      .limit(1);
+    if (!site) return null;
+    const saved = await importEbayReport(tx, { orgId: ctx.org.id, rows, payouts });
+    const days = rows.map((r) => r.transactionDate.slice(0, 10)).sort();
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "ebay.report_uploaded",
+      entityType: "organization",
+      entityId: ctx.org.id,
+      after: { fileName, from: days[0] ?? null, to: days.at(-1) ?? null, ...saved },
+    });
+    return saved;
+  });
+  if (!result) return { ok: false, message: "Add an eBay site on Channels first." };
+  revalidatePath(`/o/${slug}/commerce/ebay`, "layout");
+  return { ok: true, ...result };
 }
 
 // --- Posting to the books -----------------------------------------------------------------

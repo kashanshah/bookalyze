@@ -2404,6 +2404,64 @@ test("ebay: choose how eBay posts, post a month and match a payout to its deposi
   await expect(month.getByText("Ready to post")).toBeVisible();
 });
 
+test("ebay: upload Seller Hub's transaction report; days eBay's API brought in keep its rows", async ({
+  page,
+}) => {
+  const day = (n: number) =>
+    new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(Date.now() - n * 86_400_000));
+  const old = new Date(Date.now() - 200 * 86_400_000);
+  const oldMonth = new Intl.DateTimeFormat("en-CA", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(old);
+  // Synthetic, in Seller Hub's shape: eBay's lines, then the table.
+  const csv = [
+    '"Transaction report"',
+    '"Seller ID: synthetic_seller"',
+    "",
+    '"Transaction creation date","Type","Order number","Buyer username","Net amount","Payout currency","Payout date","Payout ID","Payout status","Final Value Fee - fixed","Final Value Fee - variable","Transaction currency","Description"',
+    `"${day(200)}","Order","09-00000-00001","synthetic_buyer","18.00","CAD","--","--","--","-0.40","-1.60","CAD","--"`,
+    `"${day(4)}","Other fee","--","--","-3.00","CAD","--","--","--","--","--","CAD","Promoted Listings - General fee"`,
+    `"${day(199)}","Payout","--","--","-18.00","CAD","${day(199)}","PO-REPORT-1","Succeeded","--","--","CAD","--"`,
+  ].join("\n");
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Settlements", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Marketplace money" })
+    .getByRole("link", { name: "eBay" })
+    .click();
+  await page.getByLabel("eBay transaction reports").setInputFiles({
+    name: "transaction-report.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(csv),
+  });
+  await expect(page.getByText("transaction-report.csv: 1 transaction added")).toBeVisible();
+  await expect(page.getByText(/1 payout added\./)).toBeVisible();
+  await expect(
+    page.getByText(/1 row on days eBay's API already brought in were left out/),
+  ).toBeVisible();
+  // The older month is in: the sale before eBay's fees, then the fees.
+  const ca = page.getByRole("region", { name: "eBay Canada money" });
+  const month = ca.getByRole("row", { name: `${oldMonth} on eBay Canada`, exact: true });
+  await expect(month).toContainText("$20.00");
+  await expect(month).toContainText("($2.00)");
+  await expect(page.getByText("synthetic_buyer")).toHaveCount(0);
+
+  // The same file again: nothing new.
+  await page.getByLabel("eBay transaction reports").setInputFiles({
+    name: "transaction-report.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(csv),
+  });
+  await expect(page.getByText("transaction-report.csv is already in")).toBeVisible();
+});
+
 test("channel profit: an expense category counted against eBay Canada, and cost of goods sold", async ({
   page,
 }) => {
