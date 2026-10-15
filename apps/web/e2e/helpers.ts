@@ -115,3 +115,16 @@ export async function choose(trigger: Locator, option: string | RegExp) {
   await list.getByRole("option", { name: option, exact: typeof option === "string" }).click();
   await expect(list).toHaveCount(0);
 }
+
+/**
+ * The day `offset` calendar days from today in Toronto (the e2e company's time zone), as
+ * YYYY-MM-DD. Counts days, not 24-hour steps, so it stays right across a clock change.
+ */
+export function torontoDay(offset = 0): string {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    new Date(),
+  );
+  const day = new Date(`${today}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + offset);
+  return day.toISOString().slice(0, 10);
+}

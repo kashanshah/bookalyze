@@ -9,6 +9,7 @@ import {
   signIn,
   signOut,
   signUp,
+  torontoDay,
   verifyEmail,
   withOwnerDb,
 } from "./helpers";
@@ -411,9 +412,7 @@ test("transactions: add a category on the spot, change values on the list, remov
   await page.keyboard.press("Escape");
   await expect(courier).toContainText("−$21.50");
 
-  const yesterday = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
-    new Date(Date.now() - 86_400_000),
-  );
+  const yesterday = torontoDay(-1);
   await courier.getByTitle("Click to change the date").click();
   await page.getByLabel("Date", { exact: true }).fill(yesterday);
   await page.keyboard.press("Enter");
@@ -1258,10 +1257,7 @@ test("rule suggestions: a payee categorized three times by hand becomes a rule",
 test("company: profile, registration numbers, people, documents and the compliance calendar", async ({
   page,
 }) => {
-  const inDays = (n: number) =>
-    new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
-      new Date(Date.now() + n * 86_400_000),
-    );
+  const inDays = (n: number) => torontoDay(n);
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Profile", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
@@ -1989,9 +1985,7 @@ test("amounts recorded in CAD on a USD account are flagged and corrected from Wi
   await page.getByRole("button", { name: "Continue" }).click();
   await choose(page.getByLabel("Account for the CAD balance"), "Don't bring this one in");
   await choose(page.getByLabel("Account for the USD balance"), /^1030 · Old USD/);
-  const tomorrow = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
-    new Date(Date.now() + 86_400_000),
-  );
+  const tomorrow = torontoDay(1);
   await page.locator("#sync-from").fill(tomorrow);
   await page.getByRole("button", { name: "Connect 1 balance" }).click();
   await expect(page.getByText("Wise connected")).toBeVisible();
