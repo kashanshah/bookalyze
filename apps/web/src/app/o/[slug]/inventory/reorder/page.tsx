@@ -204,9 +204,9 @@ export default async function ReorderPage({ params }: { params: Promise<{ slug: 
           </section>
 
           <p className="text-muted-foreground text-xs leading-relaxed">
-            <strong className="font-medium text-foreground">How it's worked out.</strong> Sells a
-            day weighs the last week most, then the last month and the last three months. In stock
-            is what's left in your stock lots, less what's shipped since cost of goods sold was last
+            <strong className="font-medium text-foreground">How it's worked out.</strong> The pace
+            weighs the last week most, then the last month and the last three months. In stock is
+            what's left in your stock lots, less what's shipped since cost of goods sold was last
             posted. Each plan keeps a little extra for uneven weeks (safety stock), and orders
             enough to last the lead time plus {settings.coverDays} days, less what's in stock and on
             order.
