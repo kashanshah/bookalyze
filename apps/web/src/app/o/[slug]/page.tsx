@@ -11,6 +11,7 @@ import { getDb, orderGlance, schema, withOrg } from "@bookalyze/db";
 import { and, count, eq, gt, like } from "drizzle-orm";
 import { ArrowRight, CalendarClock, CalendarRange, Check, Coins, Lock, MapPin } from "lucide-react";
 import Link from "next/link";
+import { Suspense } from "react";
 import { MODULE_ICONS } from "@/components/shell/module-icons";
 import { Badge } from "@/components/ui/badge";
 import { ProgressRing } from "@/components/ui/progress-ring";
@@ -19,6 +20,7 @@ import { timezoneLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { dueIn, loadCalendar } from "@/server/compliance";
 import { fiscalConfigOf, getOrgContext, isOrgAdmin } from "@/server/org";
+import { Attention, AttentionSkeleton } from "./attention";
 import { HideGettingStarted } from "./hide-getting-started";
 import { SalesGlance } from "./sales-glance";
 
@@ -165,6 +167,12 @@ export default async function OrgHomePage({
           <p className="mt-1 text-muted-foreground text-sm">{p.legalName}</p>
         ) : null}
       </div>
+
+      {p ? (
+        <Suspense fallback={<AttentionSkeleton />}>
+          <Attention ctx={ctx} />
+        </Suspense>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
         <StatCard icon={CalendarRange} label="Financial year" className="col-span-2 md:col-span-1">
