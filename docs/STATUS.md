@@ -1005,6 +1005,21 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `amazon-settlements.test.ts` (`channelProfit`), db `settlements.test.ts`
   (`settlementsForProfit`), e2e settlements test (the page shows Amazon.ca's column); e2e "noon: choose how Noon posts…" switches Noon UAE off and sees its tag.
 
+### Home: "Needs your attention"
+
+- **One list on Home** (`app/o/[slug]/attention.tsx`, streamed in with `Suspense` so Home doesn't
+  wait on it): everything waiting on someone, each line opening the page where it's done.
+  - **Syncs that stopped:** any connection (Wise, statements, Amazon, Noon, eBay) in `error` or with
+    a `lastError`, with its message → Bank accounts or Channels.
+  - **Books** (Accounting on): transactions needing a category, possible duplicates, suggested
+    transfers, transactions to review → Transactions with the matching `?status=` filter.
+  - **Marketplaces** (`commerce.settlements`, per platform the company sells on): Amazon
+    settlements ready to post, Noon and eBay months ready to post (or changed since posting), and
+    payouts whose one bank deposit was found → Settlements / Noon transactions / eBay money. A
+    platform with money but no posting setup shows "Choose how … posts" → its accounts page.
+  - Nothing waiting: "You're all caught up."
+- e2e "home: what needs your attention, each line opening where it's done".
+
 ### Phase 4, slice 7: one place for every marketplace's money
 
 - **Tabs** (`components/commerce/payout-tabs.tsx`: `PayoutTabs`, `payoutPlatforms`,

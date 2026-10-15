@@ -2812,6 +2812,18 @@ test("settlements: Amazon, Noon and eBay money are one click apart", async ({ pa
   await expect(page.getByRole("heading", { name: "Settlements" })).toBeVisible();
 });
 
+test("home: what needs your attention, each line opening where it's done", async ({ page }) => {
+  await signIn(page, owner.email, owner.password);
+  const list = page.getByRole("region", { name: "Needs your attention" });
+  await expect(list).toBeVisible();
+  // The eBay month taken back out of the books above is ready to post again.
+  await list.getByRole("link", { name: /eBay months? ready to post/ }).click();
+  await expect(page.getByRole("heading", { name: "eBay money" })).toBeVisible();
+  await page.goBack();
+  await list.getByRole("link", { name: /transactions? to review/ }).click();
+  await expect(page).toHaveURL(/accounting\/transactions\?status=unreviewed/);
+});
+
 test("purchase orders: fill one in from an Alibaba receipt, check it, then save it", async ({
   page,
 }) => {
