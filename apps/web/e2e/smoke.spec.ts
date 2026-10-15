@@ -2822,6 +2822,17 @@ test("home: what needs your attention, each line opening where it's done", async
   await page.goBack();
   await list.getByRole("link", { name: /transactions? to review/ }).click();
   await expect(page).toHaveURL(/accounting\/transactions\?status=unreviewed/);
+  await page.goBack();
+  // Stock: SKUs to link, and cost of goods sold months to post.
+  await list
+    .getByRole("link", { name: /marketplace SKUs? (isn't|aren't) linked to a product/ })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "SKUs that aren't linked to a product yet" }),
+  ).toBeVisible();
+  await page.goBack();
+  await list.getByRole("link", { name: /months? of cost of goods sold to post/ }).click();
+  await expect(page.getByRole("heading", { name: "Cost of goods sold" })).toBeVisible();
 });
 
 test("purchase orders: fill one in from an Alibaba receipt, check it, then save it", async ({

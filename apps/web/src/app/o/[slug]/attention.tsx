@@ -243,11 +243,13 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
         timezone: ctx.profile?.timezone ?? "UTC",
         currentMonth: today.slice(0, 7),
       });
-      if (months.length) {
+      // A month on two marketplaces is still one month to the reader.
+      const n = new Set(months.map((m) => m.month)).size;
+      if (n) {
         items.push({
           key: "cogs",
           icon: Package,
-          title: `${months.length} ${plural(months.length, "month", "months")} of cost of goods sold to post`,
+          title: `${n} ${plural(n, "month", "months")} of cost of goods sold to post`,
           hint: "What you shipped each month, costed from your oldest stock first. They post in order.",
           href: `${base}/inventory/cogs`,
           tone: "primary",
