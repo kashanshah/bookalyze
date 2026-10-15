@@ -72,6 +72,10 @@ const currencySchema = z
   .toUpperCase()
   .refine((c) => Boolean(getCurrency(c)), "Choose a currency.");
 
+export const deliveryDateSchema = z.object({
+  receivedOn: isoDate("Choose the day it arrived."),
+});
+
 export const receiveSchema = z.object({
   receivedOn: isoDate("Choose the day it arrived."),
   exchangeRate: rateSchema,

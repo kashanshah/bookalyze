@@ -1,5 +1,5 @@
 import { parseDecimal, prepareJournalEntry, transactionLines } from "@bookalyze/core";
-import { eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
 import { createProduct } from "../inventory";
@@ -13,6 +13,7 @@ import {
 } from "../purchase-books";
 import { addPurchasePayment, removePurchasePayment } from "../purchase-payments";
 import {
+  changeDeliveryDate,
   createPurchaseOrder,
   getPurchaseOrder,
   markPurchaseOrderOrdered,
@@ -420,5 +421,88 @@ describe("purchase orders in the books", () => {
     expect((await costs())[0]).toMatchObject({ amount: "100.0000", paymentId: null, paidBy: null });
     // The bank transaction goes back on Inventory, as for any payment taken off.
     expect(await stock()).toBe(cad("3095"));
+  });
+
+  it("moves a delivery to the day it arrived: its lots, and its entry into stock", async () => {
+    const inventoryBefore = await balance("inventory");
+    const po = await sentOrder("2026-09-10");
+    const { receiptId } = await scoped(async (tx) => {
+      const detail = await getPurchaseOrder(tx, po.id);
+      return receivePurchaseOrder(tx, {
+        id: po.id,
+        orgId,
+        userId: null,
+        baseCurrency: "CAD",
+        receivedOn: "2026-10-05",
+        exchangeRate: "1.38",
+        notes: null,
+        quantities: Object.fromEntries((detail?.lines ?? []).map((l) => [l.id, l.quantity])),
+      });
+    });
+    const move = (receivedOn: string) =>
+      scoped((tx) => changeDeliveryDate(tx, { ...ctx(), receiptId, receivedOn }));
+    const entries = () =>
+      scoped((tx) =>
+        tx
+          .select({
+            date: schema.journalEntries.date,
+            reversed: schema.journalEntries.reversedByEntryId,
+            reverses: schema.journalEntries.reversesEntryId,
+          })
+          .from(schema.journalEntries)
+          .where(
+            and(
+              eq(schema.journalEntries.source, "purchase"),
+              eq(schema.journalEntries.sourceId, receiptId),
+            ),
+          )
+          .orderBy(asc(schema.journalEntries.createdAt)),
+      );
+    const lotDates = () =>
+      scoped(async (tx) =>
+        (
+          await tx
+            .select({ on: schema.inventoryLots.receivedOn })
+            .from(schema.inventoryLots)
+            .innerJoin(
+              schema.purchaseReceiptLines,
+              eq(schema.purchaseReceiptLines.id, schema.inventoryLots.receiptLineId),
+            )
+            .where(eq(schema.purchaseReceiptLines.receiptId, receiptId))
+        ).map((l) => l.on),
+      );
+
+    await expect(move("2026-09-01")).rejects.toThrow(/before the order date/);
+    expect(await move("2026-09-20")).toEqual({
+      purchaseOrderId: po.id,
+      before: "2026-10-05",
+      after: "2026-09-20",
+    });
+    expect(await lotDates()).toEqual(["2026-09-20"]);
+    // The first entry reversed on its own day, a new one on the new day; stock is the same.
+    const all = await entries();
+    const first = all.find((e) => e.reversed);
+    expect(first).toMatchObject({ date: "2026-10-05" });
+    const [reversal] = await scoped((tx) =>
+      tx
+        .select({ date: schema.journalEntries.date })
+        .from(schema.journalEntries)
+        .where(eq(schema.journalEntries.id, first?.reversed ?? "")),
+    );
+    expect(reversal?.date).toBe("2026-10-05");
+    expect(all.filter((e) => !e.reversed)).toEqual([
+      { date: "2026-09-20", reversed: null, reverses: null },
+    ]);
+    expect((await balance("inventory")) - inventoryBefore).toBe(cad("2760"));
+    // The same day again changes nothing.
+    await move("2026-09-20");
+    expect(await entries()).toHaveLength(all.length);
+    const [receipt] = await scoped((tx) =>
+      tx
+        .select({ on: schema.purchaseReceipts.receivedOn })
+        .from(schema.purchaseReceipts)
+        .where(eq(schema.purchaseReceipts.id, receiptId)),
+    );
+    expect(receipt?.on).toBe("2026-09-20");
   });
 });
