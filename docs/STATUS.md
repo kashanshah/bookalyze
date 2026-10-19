@@ -1037,7 +1037,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     a `lastError`, with its message → Bank accounts or Channels.
   - **Books** (Accounting on): transactions needing a category, possible duplicates, suggested
     transfers, transactions to review → Transactions with the matching `?status=` filter.
-  - **Marketplaces** (`commerce.settlements`, per platform the company sells on): Amazon
+  - **Marketplaces** (`commerce.settlements`, per platform with a live channel: switched on, and
+    added by hand or on a connection that isn't disconnected; db `liveChannels`): Amazon
     settlements ready to post, Noon and eBay months ready to post (or changed since posting), and
     payouts whose one bank deposit was found → Settlements / Noon transactions / eBay money. A
     platform with money but no posting setup shows "Choose how … posts" → its accounts page.
