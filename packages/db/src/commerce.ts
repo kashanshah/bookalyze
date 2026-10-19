@@ -346,6 +346,23 @@ export async function setChannelActive(tx: Transaction, channelId: string, isAct
   return row ?? null;
 }
 
+/**
+ * Channels still in use: switched on, and either added by hand or on a connection that isn't
+ * disconnected. What needs doing (Home) only looks at these.
+ */
+export async function liveChannels(tx: Transaction) {
+  return tx
+    .select({ id: salesChannels.id, kind: salesChannels.kind })
+    .from(salesChannels)
+    .leftJoin(connections, eq(connections.id, salesChannels.connectionId))
+    .where(
+      and(
+        eq(salesChannels.isActive, true),
+        or(isNull(salesChannels.connectionId), ne(connections.status, "disconnected")),
+      ),
+    );
+}
+
 /** Active channels, for syncing orders. */
 export async function activeChannels(tx: Transaction, connectionId: string) {
   return tx

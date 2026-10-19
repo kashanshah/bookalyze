@@ -9,6 +9,7 @@ import {
   getReorderSettings,
   getSettlementSettings,
   listTransactions,
+  liveChannels,
   noonLedgerCheck,
   noonMonths,
   noonPayoutsWithOneDeposit,
@@ -39,7 +40,6 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
-import { payoutPlatforms } from "@/components/commerce/payout-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { nowIn } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -140,9 +140,12 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
   }
 
   if (on("commerce") && can(ctx.plan, ctx.enabledModules, "commerce.settlements")) {
-    const platforms = await payoutPlatforms(tx);
+    // Only channels still in use: a switched-off or disconnected marketplace waits on nothing.
+    const live = await liveChannels(tx);
+    const liveIds = new Set(live.map((c) => c.id));
+    const platforms = new Set(live.map((c) => c.kind));
 
-    if (platforms.includes("amazon")) {
+    if (platforms.has("amazon")) {
       const href = `${base}/commerce/settlements`;
       const { postFrom } = await getSettlementSettings(tx);
       if (postFrom) {
@@ -184,11 +187,12 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
     }
 
     for (const platform of ["noon", "ebay"] as const) {
-      if (!platforms.includes(platform)) continue;
+      if (!platforms.has(platform)) continue;
       const label = platform === "noon" ? PLATFORM_LABEL.noon : PLATFORM_LABEL.ebay;
       const href = `${base}/commerce/${platform}`;
-      const months =
-        platform === "noon" ? await noonMonths(tx, today) : await ebayPostingMonths(tx, today);
+      const months = (
+        platform === "noon" ? await noonMonths(tx, today) : await ebayPostingMonths(tx, today)
+      ).filter((m) => liveIds.has(m.channelId));
       if (months.some((m) => m.state === "notSetUp")) {
         items.push({
           key: `${platform}-setup`,

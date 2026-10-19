@@ -9,6 +9,7 @@ import {
   disconnectAmazon,
   getOrder,
   listOrders,
+  liveChannels,
   orderGlance,
   ordersNeedingItems,
   saveAmazonChannels,
@@ -16,6 +17,7 @@ import {
   saveOrderFinance,
   saveOrderItems,
   saveRefunds,
+  setChannelActive,
   startOrderSync,
   upsertOrders,
 } from "../commerce";
@@ -438,7 +440,16 @@ describe("orders", () => {
       )
     ).rows;
 
+    const live = async () => (await scoped((tx) => liveChannels(tx))).map((c) => c.id);
+    expect(await live()).toEqual(expect.arrayContaining([channelId, euChannelId]));
+    // Switched off: not live until it's switched back on.
+    await scoped((tx) => setChannelActive(tx, channelId, false));
+    expect(await live()).not.toContain(channelId);
+    await scoped((tx) => setChannelActive(tx, channelId, true));
+
     await scoped((tx) => disconnectAmazon(tx, connectionId));
+    expect(await live()).not.toContain(euChannelId);
+    expect(await live()).toContain(channelId);
     const after = await listed();
     expect(after.some((id) => id.startsWith("406-"))).toBe(false);
     expect(after).toContain("702-0000001-0000001");
