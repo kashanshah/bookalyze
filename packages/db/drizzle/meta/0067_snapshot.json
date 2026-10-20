@@ -1,5 +1,5 @@
 {
-  "id": "d8241981-387b-4aed-83da-6ef63b29dc29",
+  "id": "c72fb6e0-bf6d-4069-8705-106db9830a5d",
   "prevId": "8a8eeb97-f025-4e22-8d17-cc94341b717a",
   "version": "7",
   "dialect": "postgresql",
@@ -963,7 +963,7 @@
         },
         "journal_entries_source_valid": {
           "name": "journal_entries_source_valid",
-          "value": "\"journal_entries\".\"source\" in ('manual', 'reversal', 'bank_import', 'wave_import', 'import', 'settlement', 'cogs', 'opening_stock', 'noon', 'purchase', 'ebay', 'stock_removal')"
+          "value": "\"journal_entries\".\"source\" in ('manual', 'reversal', 'bank_import', 'wave_import', 'import', 'settlement', 'cogs', 'opening_stock', 'noon', 'purchase', 'ebay')"
         }
       },
       "isRLSEnabled": false
@@ -6015,6 +6015,12 @@
           "type": "numeric(20, 4)",
           "primaryKey": false,
           "notNull": false
+        },
+        "shipping_discount": {
+          "name": "shipping_discount",
+          "type": "numeric(20, 4)",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -8769,6 +8775,162 @@
       },
       "isRLSEnabled": false
     },
+    "public.organization_branding": {
+      "name": "organization_branding",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "accent_color": {
+          "name": "accent_color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "footer": {
+          "name": "footer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name_arabic": {
+          "name": "name_arabic",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logo_attachment_id": {
+          "name": "logo_attachment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "letterhead_attachment_id": {
+          "name": "letterhead_attachment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "letterhead_top": {
+          "name": "letterhead_top",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 120
+        },
+        "letterhead_bottom": {
+          "name": "letterhead_bottom",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 72
+        },
+        "letterhead_pages": {
+          "name": "letterhead_pages",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'first'"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "organization_branding_organization_id_organization_id_fk": {
+          "name": "organization_branding_organization_id_organization_id_fk",
+          "tableFrom": "organization_branding",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_branding_updated_by_user_id_fk": {
+          "name": "organization_branding_updated_by_user_id_fk",
+          "tableFrom": "organization_branding",
+          "tableTo": "user",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "organization_branding_logo_fk": {
+          "name": "organization_branding_logo_fk",
+          "tableFrom": "organization_branding",
+          "tableTo": "attachments",
+          "columnsFrom": [
+            "organization_id",
+            "logo_attachment_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "organization_branding_letterhead_fk": {
+          "name": "organization_branding_letterhead_fk",
+          "tableFrom": "organization_branding",
+          "tableTo": "attachments",
+          "columnsFrom": [
+            "organization_id",
+            "letterhead_attachment_id"
+          ],
+          "columnsTo": [
+            "organization_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "organization_branding_tenant_isolation": {
+          "name": "organization_branding_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "\"organization_branding\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid",
+          "withCheck": "\"organization_branding\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "organization_branding_valid": {
+          "name": "organization_branding_valid",
+          "value": "(\"organization_branding\".\"accent_color\" is null or \"organization_branding\".\"accent_color\" ~ '^#[0-9A-F]{6}$')\n        and \"organization_branding\".\"letterhead_top\" between 0 and 300 and \"organization_branding\".\"letterhead_bottom\" between 0 and 300\n        and \"organization_branding\".\"letterhead_pages\" in ('first', 'all')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.attachment_links": {
       "name": "attachment_links",
       "schema": "",
@@ -8909,7 +9071,7 @@
       "checkConstraints": {
         "attachment_links_entity_type_valid": {
           "name": "attachment_links_entity_type_valid",
-          "value": "\"attachment_links\".\"entity_type\" in ('journal_entry', 'entity_document')"
+          "value": "\"attachment_links\".\"entity_type\" in ('journal_entry', 'entity_document', 'brand_asset')"
         }
       },
       "isRLSEnabled": false
@@ -9922,13 +10084,7 @@
           "name": "cogs_period_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "removal_id": {
-          "name": "removal_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "lot_id": {
           "name": "lot_id",
@@ -9957,21 +10113,6 @@
         }
       },
       "indexes": {
-        "lot_consumptions_removal_key": {
-          "name": "lot_consumptions_removal_key",
-          "columns": [
-            {
-              "expression": "removal_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "lot_consumptions_lot_idx": {
           "name": "lot_consumptions_lot_idx",
           "columns": [
@@ -10009,21 +10150,6 @@
           "columnsFrom": [
             "organization_id",
             "cogs_period_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "lot_consumptions_removal_fk": {
-          "name": "lot_consumptions_removal_fk",
-          "tableFrom": "lot_consumptions",
-          "tableTo": "stock_removals",
-          "columnsFrom": [
-            "organization_id",
-            "removal_id"
           ],
           "columnsTo": [
             "organization_id",
@@ -10075,11 +10201,7 @@
       "checkConstraints": {
         "lot_consumptions_kind_valid": {
           "name": "lot_consumptions_kind_valid",
-          "value": "\"lot_consumptions\".\"kind\" in ('sale', 'write_off', 'removal')"
-        },
-        "lot_consumptions_source_valid": {
-          "name": "lot_consumptions_source_valid",
-          "value": "(\"lot_consumptions\".\"kind\" = 'removal' and \"lot_consumptions\".\"removal_id\" is not null and \"lot_consumptions\".\"cogs_period_id\" is null) or (\"lot_consumptions\".\"kind\" <> 'removal' and \"lot_consumptions\".\"cogs_period_id\" is not null and \"lot_consumptions\".\"removal_id\" is null)"
+          "value": "\"lot_consumptions\".\"kind\" in ('sale', 'write_off')"
         },
         "lot_consumptions_quantity_positive": {
           "name": "lot_consumptions_quantity_positive",
@@ -11899,206 +12021,6 @@
         "reorder_settings_valid": {
           "name": "reorder_settings_valid",
           "value": "\"reorder_settings\".\"lead_time_days\" between 0 and 730 and \"reorder_settings\".\"cover_days\" between 1 and 730"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.stock_removals": {
-      "name": "stock_removals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "lot_id": {
-          "name": "lot_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "removed_on": {
-          "name": "removed_on",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "quantity": {
-          "name": "quantity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cost": {
-          "name": "cost",
-          "type": "numeric(20, 4)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "journal_entry_id": {
-          "name": "journal_entry_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "stock_removals_lot_idx": {
-          "name": "stock_removals_lot_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "lot_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "stock_removals_organization_id_organization_id_fk": {
-          "name": "stock_removals_organization_id_organization_id_fk",
-          "tableFrom": "stock_removals",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "stock_removals_created_by_user_id_fk": {
-          "name": "stock_removals_created_by_user_id_fk",
-          "tableFrom": "stock_removals",
-          "tableTo": "user",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "stock_removals_lot_fk": {
-          "name": "stock_removals_lot_fk",
-          "tableFrom": "stock_removals",
-          "tableTo": "inventory_lots",
-          "columnsFrom": [
-            "organization_id",
-            "lot_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "stock_removals_account_fk": {
-          "name": "stock_removals_account_fk",
-          "tableFrom": "stock_removals",
-          "tableTo": "accounts",
-          "columnsFrom": [
-            "organization_id",
-            "account_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "stock_removals_entry_fk": {
-          "name": "stock_removals_entry_fk",
-          "tableFrom": "stock_removals",
-          "tableTo": "journal_entries",
-          "columnsFrom": [
-            "organization_id",
-            "journal_entry_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "stock_removals_org_id_key": {
-          "name": "stock_removals_org_id_key",
-          "nullsNotDistinct": false,
-          "columns": [
-            "organization_id",
-            "id"
-          ]
-        }
-      },
-      "policies": {
-        "stock_removals_tenant_isolation": {
-          "name": "stock_removals_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "public"
-          ],
-          "using": "\"stock_removals\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "\"stock_removals\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "stock_removals_quantity_positive": {
-          "name": "stock_removals_quantity_positive",
-          "value": "\"stock_removals\".\"quantity\" > 0 and \"stock_removals\".\"cost\" >= 0"
         }
       },
       "isRLSEnabled": false

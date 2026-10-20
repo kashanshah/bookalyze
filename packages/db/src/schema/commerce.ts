@@ -225,6 +225,8 @@ export const orderItems = pgTable(
     shippingPrice: numeric("shipping_price", { precision: 20, scale: 4 }),
     shippingTax: numeric("shipping_tax", { precision: 20, scale: 4 }),
     promotionDiscount: numeric("promotion_discount", { precision: 20, scale: 4 }),
+    /** Free or reduced shipping (positive). Null on items synced before it was kept. */
+    shippingDiscount: numeric("shipping_discount", { precision: 20, scale: 4 }),
   },
   (t) => [
     unique("order_items_order_external_key").on(t.orderId, t.externalId),

@@ -474,8 +474,15 @@
     {
       "idx": 67,
       "version": "7",
-      "when": 1792528239386,
-      "tag": "0067_stock_removals",
+      "when": 1792527078583,
+      "tag": "0067_brand",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1792528457007,
+      "tag": "0068_stock_removals",
       "breakpoints": true
     }
   ]

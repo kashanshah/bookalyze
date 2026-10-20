@@ -2,7 +2,9 @@ import "server-only";
 import {
   formatInvoiceNumber,
   type InvoiceBuyer,
+  type InvoiceItem,
   type InvoiceSeller,
+  invoiceRegistration,
   isAmazonRegion,
   prepareOrderInvoice,
   salesTaxName,
@@ -24,6 +26,7 @@ import { nowIn } from "@/lib/dates";
 import type { InvoiceBuyerFields, InvoiceDraft } from "@/lib/invoice-draft";
 import { inOrg } from "@/server/accounting";
 import { AmazonError, orderBuyerIdentity } from "@/server/amazon";
+import { loadDocumentBrand } from "@/server/brand";
 import { type CommerceContext, openAmazonCredentials } from "@/server/commerce";
 import { renderOrderInvoicePdf } from "@/server/invoice-pdf";
 import { logError } from "@/server/log";
@@ -72,12 +75,14 @@ async function sellerOf(
   const details = await getEntityDetails(tx);
   const identifiers = await listIdentifiers(tx);
   const registrations = await listTaxRegistrations(tx);
-  const active = registrations.filter((row) => row.isActive);
-  const registered = active.length > 0;
-  const fromRegistration =
-    active.map((row) => row.registrationNumber?.trim()).find((value) => value) ?? null;
   const fromIdentifier =
     identifiers.find((row) => row.kind === "ae_trn" || row.kind === "ca_gst")?.value ?? null;
+  // A tax invoice needs a registration in the company's own country, with its number.
+  const { registered, taxNumber } = invoiceRegistration({
+    country: profile.countryCode,
+    registrations,
+    identifierNumber: fromIdentifier,
+  });
   const address = details.registeredAddress?.trim() || null;
   return {
     missingAddress: !address,
@@ -86,12 +91,38 @@ async function sellerOf(
       tradeName: profile.tradeName,
       address,
       tradeLicense: identifiers.find((row) => row.kind === "ae_trade_license")?.value ?? null,
-      taxNumber: registered ? (fromRegistration ?? fromIdentifier) : null,
+      taxNumber,
       taxName: salesTaxName(profile.countryCode),
       registered,
     },
   };
 }
+
+type StoredItem = {
+  title: string | null;
+  sku: string | null;
+  quantityOrdered: number;
+  itemPrice: string | null;
+  itemTax: string | null;
+  shippingPrice: string | null;
+  shippingTax: string | null;
+  promotionDiscount: string | null;
+  shippingDiscount: string | null;
+};
+
+/** An order's saved items as invoice items. A null shipping discount is "not known" (older sync). */
+const invoiceItems = (items: readonly StoredItem[]): InvoiceItem[] =>
+  items.map((item) => ({
+    title: item.title,
+    sku: item.sku,
+    quantity: item.quantityOrdered,
+    itemPrice: item.itemPrice,
+    itemTax: item.itemTax,
+    shippingPrice: item.shippingPrice,
+    shippingTax: item.shippingTax,
+    promotionDiscount: item.promotionDiscount,
+    ...(item.shippingDiscount === null ? {} : { shippingDiscount: item.shippingDiscount }),
+  }));
 
 function sellerLines(seller: InvoiceSeller): { label: string; value: string }[] {
   const lines = [
@@ -181,16 +212,7 @@ export async function loadOrderInvoiceDraft(
     invoiceDate: invoice?.snapshot.invoiceDate ?? nowIn(ctx.profile.timezone).date,
     total: row.order.total,
     refunded: row.order.refunded,
-    items: row.items.map((item) => ({
-      title: item.title,
-      sku: item.sku,
-      quantity: item.quantityOrdered,
-      itemPrice: item.itemPrice,
-      itemTax: item.itemTax,
-      shippingPrice: item.shippingPrice,
-      shippingTax: item.shippingTax,
-      promotionDiscount: item.promotionDiscount,
-    })),
+    items: invoiceItems(row.items),
   });
 
   return {
@@ -204,6 +226,7 @@ export async function loadOrderInvoiceDraft(
       lines: preview.lines,
       shipping: preview.shipping,
       discounts: preview.discounts,
+      shippingDiscount: preview.shippingDiscount ?? null,
       tax: preview.tax ? { label: preview.tax.label, amount: preview.tax.amount } : null,
       total: preview.total,
       refunded: preview.refunded,
@@ -279,18 +302,9 @@ export async function issueOrderInvoice(
         invoiceDate: existing?.snapshot.invoiceDate ?? nowIn(ctx.profile.timezone).date,
         total: order.order.total,
         refunded: order.order.refunded,
-        items: order.items.map((item) => ({
-          title: item.title,
-          sku: item.sku,
-          quantity: item.quantityOrdered,
-          itemPrice: item.itemPrice,
-          itemTax: item.itemTax,
-          shippingPrice: item.shippingPrice,
-          shippingTax: item.shippingTax,
-          promotionDiscount: item.promotionDiscount,
-        })),
+        items: invoiceItems(order.items),
       });
-      const bytes = await renderOrderInvoicePdf(snapshot);
+      const bytes = await renderOrderInvoicePdf(snapshot, await loadDocumentBrand(tx));
       const fileName = `${snapshot.number}.pdf`;
       const invoiceId = existing?.id ?? id;
       const key = invoiceKey(ctx.org.id, invoiceId, fileName);
@@ -380,4 +394,57 @@ export async function issueOrderInvoice(
     created: issued.created,
     before: issued.before,
   };
+}
+
+/**
+ * A sample invoice with the company's real seller details and made-up lines, for the brand
+ * preview. Never saved or numbered.
+ */
+export async function sampleInvoice(
+  tx: Transaction,
+  profile: CommerceContext["profile"],
+): Promise<ReturnType<typeof prepareOrderInvoice>> {
+  const { seller } = await sellerOf(tx, profile);
+  const today = nowIn(profile.timezone).date;
+  return prepareOrderInvoice({
+    number: "INV-0001",
+    seller: { ...seller, address: seller.address ?? "Your registered address" },
+    buyer: {
+      name: "Sample customer",
+      company: null,
+      taxNumber: null,
+      address: "12 Example Street\nSample City",
+    },
+    orderNumber: "000-0000000-0000000",
+    marketplace: "Sample marketplace",
+    currency: profile.baseCurrency,
+    purchasedOn: today,
+    invoiceDate: today,
+    total: "130.0000",
+    refunded: null,
+    items: [
+      {
+        title: "Sample product, set of 4",
+        sku: "SAMPLE-01",
+        quantity: 2,
+        itemPrice: "100.0000",
+        itemTax: null,
+        shippingPrice: "10.0000",
+        shippingTax: null,
+        promotionDiscount: null,
+        shippingDiscount: "10.0000",
+      },
+      {
+        title: "Sample accessory",
+        sku: "SAMPLE-02",
+        quantity: 1,
+        itemPrice: "30.0000",
+        itemTax: null,
+        shippingPrice: null,
+        shippingTax: null,
+        promotionDiscount: null,
+        shippingDiscount: null,
+      },
+    ],
+  });
 }

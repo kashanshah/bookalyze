@@ -10,7 +10,20 @@ import {
   type NoonMarketplace,
   parseDecimal,
 } from "@bookalyze/core";
-import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { disconnectConnection } from "./banking";
 import type { Transaction } from "./client";
 import { connections } from "./schema/banking";
@@ -663,6 +676,7 @@ export async function saveOrderItems(
         shippingPrice: i.shippingPrice,
         shippingTax: i.shippingTax,
         promotionDiscount: i.promotionDiscount,
+        shippingDiscount: i.shippingDiscount ?? null,
       })),
     );
   }
@@ -717,6 +731,7 @@ export async function saveOrdersWithItems(
       shippingPrice: i.shippingPrice,
       shippingTax: i.shippingTax,
       promotionDiscount: i.promotionDiscount,
+      shippingDiscount: i.shippingDiscount ?? null,
     })),
   );
   if (rows.length) await tx.insert(orderItems).values(rows);
@@ -775,6 +790,7 @@ export async function addReportOrders(
       shippingPrice: i.shippingPrice,
       shippingTax: i.shippingTax,
       promotionDiscount: i.promotionDiscount,
+      shippingDiscount: i.shippingDiscount ?? null,
     })),
   );
   if (rows.length) await tx.insert(orderItems).values(rows);
@@ -991,4 +1007,28 @@ export async function orderSyncChannels(tx: Transaction) {
       ),
     )
     .orderBy(asc(salesChannels.name));
+}
+
+/**
+ * Sales since `since` by currency, after refunds, across every channel. Cancelled orders don't
+ * count. For the sales-tax threshold check on Home.
+ */
+export async function salesByCurrencySince(
+  tx: Transaction,
+  since: Date,
+): Promise<{ currency: string; sales: string }[]> {
+  return tx
+    .select({
+      currency: sql<string>`coalesce(${orders.currency}, ${salesChannels.currency})`,
+      sales: sql<string>`(coalesce(sum(${orders.total}), 0) - coalesce(sum(${orders.refunded}), 0))::numeric(20,4)::text`,
+    })
+    .from(orders)
+    .innerJoin(salesChannels, eq(salesChannels.id, orders.channelId))
+    .where(
+      and(
+        gte(orders.purchasedAt, since),
+        sql`${orders.status} not in ('Canceled', 'Unfulfillable')`,
+      ),
+    )
+    .groupBy(sql`1`);
 }
