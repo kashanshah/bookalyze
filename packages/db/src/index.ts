@@ -34,6 +34,7 @@ export * from "./reviews";
 export * from "./rules";
 export * as schema from "./schema";
 export * from "./settlements";
+export * from "./stock-removals";
 export * from "./tax";
 export * from "./transactions";
 export * from "./transfers";

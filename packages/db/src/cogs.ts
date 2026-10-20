@@ -19,7 +19,13 @@ import type { Transaction } from "./client";
 import { postJournalEntry, reverseJournalEntry } from "./ledger";
 import { accounts } from "./schema/accounting";
 import { salesChannels } from "./schema/commerce";
-import { cogsPeriods, inventoryLots, lotConsumptions, products } from "./schema/inventory";
+import {
+  cogsPeriods,
+  inventoryLots,
+  lotConsumptions,
+  products,
+  stockRemovals,
+} from "./schema/inventory";
 
 /**
  * Cost of goods sold and opening stock (phase 5, slice 4). Run inside `withOrg()`.
@@ -118,7 +124,7 @@ export async function postLines(
     baseCurrency: string;
     date: string;
     memo: string;
-    source: "cogs" | "opening_stock" | "purchase";
+    source: "cogs" | "opening_stock" | "purchase" | "stock_removal";
     sourceId: string;
     contactId?: string | null;
     lines: { accountId: string; amount: bigint }[];
@@ -982,5 +988,11 @@ export async function lotsConsumed(tx: Transaction, lotIds: string[]): Promise<s
     .where(inArray(lotConsumptions.lotId, lotIds))
     .orderBy(asc(cogsPeriods.month))
     .limit(1);
-  return row ? MONTH_NAME(row.month) : null;
+  if (row) return MONTH_NAME(row.month);
+  // Units taken out by hand fix the cost too.
+  const [removed] = await tx
+    .select({ month: sql<string>`to_char(min(${stockRemovals.removedOn}), 'YYYY-MM')` })
+    .from(stockRemovals)
+    .where(inArray(stockRemovals.lotId, lotIds));
+  return removed?.month ? MONTH_NAME(removed.month) : null;
 }

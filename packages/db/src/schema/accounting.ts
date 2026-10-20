@@ -54,6 +54,8 @@ export const JOURNAL_SOURCES = [
   "purchase",
   /** A month of eBay's money on one eBay site (commerce ebay_periods). */
   "ebay",
+  /** Units taken out of a stock lot by hand (inventory stock_removals). */
+  "stock_removal",
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 

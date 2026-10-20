@@ -6,7 +6,9 @@ import {
   CogsError,
   LedgerError,
   postCogs,
+  putBackInStock,
   removeOpeningStock,
+  takeOutOfStock,
   undoCogs,
 } from "@bookalyze/db";
 import { revalidatePath } from "next/cache";
@@ -170,6 +172,87 @@ export async function removeOpeningStockAction(
         action: "inventory_lot.opening_removed",
         entityType: "inventory_lot",
         entityId: lotId,
+      });
+    });
+    revalidatePath(`/o/${slug}`, "layout");
+    return { ok: true };
+  } catch (error) {
+    return friendly(error);
+  }
+}
+
+const takeOutSchema = z.object({
+  lotId: z.uuid("This stock lot no longer exists."),
+  quantity: z.coerce
+    .number("Enter how many.")
+    .int("Use a whole number.")
+    .min(1, "Take out at least 1.")
+    .max(1_000_000, "That's more than a lot holds."),
+  date: z.string().refine(isIsoDate, "Choose the day they left."),
+  accountId: z.uuid("Choose where the cost goes."),
+  notes: z
+    .string()
+    .trim()
+    .max(200, "Keep the note under 200 characters.")
+    .optional()
+    .transform((v) => v || null),
+});
+
+/** Takes units out of a stock lot by hand (sold outside the marketplaces, taken, lost…). */
+export async function takeOutOfStockAction(
+  slug: string,
+  input: unknown,
+): Promise<CogsActionResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  const parsed = takeOutSchema.safeParse(input);
+  if (!parsed.success) {
+    const errors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) errors[String(issue.path[0])] ??= issue.message;
+    return { ok: false, message: "Check the highlighted fields.", errors };
+  }
+  try {
+    const removed = await inOrg(ctx, async (tx) => {
+      const r = await takeOutOfStock(tx, {
+        ...parsed.data,
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        baseCurrency: ctx.profile.baseCurrency,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "inventory_lot.taken_out",
+        entityType: "stock_removal",
+        entityId: r.id,
+        after: { ...parsed.data, cost: r.cost },
+      });
+      return r;
+    });
+    revalidatePath(`/o/${slug}`, "layout");
+    return { ok: true, message: removed.cost };
+  } catch (error) {
+    return friendly(error);
+  }
+}
+
+/** Puts units taken out by hand back into their lot. */
+export async function putBackInStockAction(
+  slug: string,
+  removalId: string,
+): Promise<CogsActionResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  if (!z.uuid().safeParse(removalId).success) {
+    return { ok: false, message: "This was already put back." };
+  }
+  try {
+    await inOrg(ctx, async (tx) => {
+      await putBackInStock(tx, { orgId: ctx.org.id, userId: ctx.session.user.id, removalId });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "inventory_lot.put_back",
+        entityType: "stock_removal",
+        entityId: removalId,
       });
     });
     revalidatePath(`/o/${slug}`, "layout");
