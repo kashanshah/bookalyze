@@ -498,6 +498,13 @@
       "when": 1792532194184,
       "tag": "0070_letterhead_sides",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792533503570,
+      "tag": "0071_stock_overview",
+      "breakpoints": true
     }
   ]
 }

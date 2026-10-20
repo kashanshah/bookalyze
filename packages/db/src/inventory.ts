@@ -478,6 +478,10 @@ export type ListedSku = {
   asin: string | null;
   title: string | null;
   fulfillable: number | null;
+  reserved?: number | null;
+  inbound?: number | null;
+  unfulfillable?: number | null;
+  researching?: number | null;
 };
 
 /** Saves the SKUs a marketplace lists (from its FBA inventory) and when they were brought in. */
@@ -497,6 +501,10 @@ export async function saveChannelSkus(
           asin: sku.asin,
           title: sku.title,
           fulfillable: sku.fulfillable,
+          reserved: sku.reserved ?? null,
+          inbound: sku.inbound ?? null,
+          unfulfillable: sku.unfulfillable ?? null,
+          researching: sku.researching ?? null,
           seenAt: at,
         },
       });

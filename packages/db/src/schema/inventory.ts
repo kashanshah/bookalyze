@@ -580,6 +580,37 @@ export const cogsPeriods = pgTable(
 );
 
 /**
+ * Stock you counted yourself, outside the marketplaces' warehouses (with you, at a 3PL): a
+ * product, how many, the day. The latest count per product is "at hand" on the Stock page; it
+ * doesn't change the books (take units out or add opening stock for that).
+ */
+export const stockCounts = pgTable(
+  "stock_counts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").notNull(),
+    countedOn: date("counted_on").notNull(),
+    quantity: integer("quantity").notNull(),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("stock_counts_product_idx").on(t.organizationId, t.productId, t.countedOn),
+    foreignKey({
+      name: "stock_counts_product_fk",
+      columns: [t.organizationId, t.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }).onDelete("cascade"),
+    check("stock_counts_quantity_valid", sql`${t.quantity} >= 0`),
+    tenantIsolationPolicy("stock_counts", t.organizationId),
+  ],
+);
+
+/**
  * Units taken out of a lot by hand, not through a marketplace: sold or used outside it, taken by
  * the owner, lost or thrown away. Posted on its day: Dr `account_id` (Owner drawings, Inventory
  * losses and write-offs…) / Cr Inventory at the lot's cost. Its `lot_consumptions` row (kind

@@ -98,7 +98,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     key: "inventory",
     label: "Inventory",
     description:
-      "The products you sell, linked to your marketplace SKUs, their Amazon prices with what each sale earns, purchase orders to your suppliers, when to reorder each product and how many, stock lots at their landed cost, and cost of goods sold posted each month at FIFO cost.",
+      "The products you sell, linked to your marketplace SKUs, their Amazon prices with what each sale earns, purchase orders to your suppliers, when to reorder each product and how many, stock in one place against Amazon, Noon and your own count, stock lots at their landed cost, and cost of goods sold posted each month at FIFO cost.",
     basePath: "/inventory",
     phase: "5",
     requires: ["accounting", "commerce"],
@@ -114,6 +114,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
       { label: "Prices", href: "/inventory/prices" },
       { label: "Purchase orders", href: "/inventory/purchase-orders" },
       { label: "Reorder", href: "/inventory/reorder" },
+      { label: "Stock", href: "/inventory/stock" },
       { label: "Stock lots", href: "/inventory/lots" },
       { label: "Stock movements", href: "/inventory/movements" },
       { label: "Cost of goods sold", href: "/inventory/cogs" },
