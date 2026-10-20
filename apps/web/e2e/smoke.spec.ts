@@ -1505,7 +1505,7 @@ test("purchase orders: draft, send, a partial delivery, then the rest", async ({
   await expect(page).toHaveURL(/\/inventory\/products/);
   await page.getByRole("link", { name: "Purchase orders", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Purchase orders", exact: true })).toBeVisible();
-  await expect(page.getByText("Nothing on order")).toBeVisible();
+  await expect(page.getByText("No purchase orders yet")).toBeVisible();
 
   // A draft: 120 mugs at 2.45 from the vendor added earlier, with a supplier reference.
   await page.getByRole("link", { name: "New purchase order" }).click();
