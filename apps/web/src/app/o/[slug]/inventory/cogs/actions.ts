@@ -5,6 +5,7 @@ import {
   addOpeningStock,
   CogsError,
   LedgerError,
+  moveStock,
   postCogs,
   putBackInStock,
   removeOpeningStock,
@@ -253,6 +254,56 @@ export async function putBackInStockAction(
         action: "inventory_lot.put_back",
         entityType: "stock_removal",
         entityId: removalId,
+      });
+    });
+    revalidatePath(`/o/${slug}`, "layout");
+    return { ok: true };
+  } catch (error) {
+    return friendly(error);
+  }
+}
+
+const moveSchema = z.object({
+  lotId: z.uuid("This stock lot no longer exists."),
+  productId: z.uuid("Choose the product they really are."),
+  quantity: z.coerce
+    .number("Enter how many.")
+    .int("Use a whole number.")
+    .min(1, "Move at least 1.")
+    .max(1_000_000, "That's more than a lot holds."),
+  date: z.string().refine(isIsoDate, "Choose the day."),
+  notes: z
+    .string()
+    .trim()
+    .max(200, "Keep the note under 200 characters.")
+    .optional()
+    .transform((v) => v || null),
+});
+
+/** Moves units from a lot to the product they really are (a label or listing mix-up). */
+export async function moveStockAction(slug: string, input: unknown): Promise<CogsActionResult> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  const parsed = moveSchema.safeParse(input);
+  if (!parsed.success) {
+    const errors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) errors[String(issue.path[0])] ??= issue.message;
+    return { ok: false, message: "Check the highlighted fields.", errors };
+  }
+  try {
+    await inOrg(ctx, async (tx) => {
+      const moved = await moveStock(tx, {
+        ...parsed.data,
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        baseCurrency: ctx.profile.baseCurrency,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "inventory_lot.moved",
+        entityType: "stock_removal",
+        entityId: moved.id,
+        after: { ...parsed.data, toLotId: moved.lotId, cost: moved.cost },
       });
     });
     revalidatePath(`/o/${slug}`, "layout");

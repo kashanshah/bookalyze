@@ -19,7 +19,8 @@ import { inventoryLots, lotConsumptions, products, stockRemovals } from "./schem
  * by the owner, lost or thrown away. Run inside `withOrg()`. The units leave the lot through a
  * `lot_consumptions` row (kind "removal"), so everything that counts what's left counts them;
  * the cost (the lot's own, in cents, the last units taking what's left) posts on the day:
- * Dr the chosen account / Cr Inventory.
+ * Dr the chosen account / Cr Inventory. Or moved to another product: a new lot there at the same
+ * cost, nothing posted.
  */
 
 export type StockRemovalRow = {
@@ -28,26 +29,20 @@ export type StockRemovalRow = {
   removedOn: string;
   quantity: number;
   cost: string;
-  accountId: string;
-  accountName: string;
+  /** Where the cost went; null for a move. */
+  accountId: string | null;
+  accountName: string | null;
+  /** A move: the product the units went to. */
+  movedToProductName: string | null;
   notes: string | null;
   journalEntryId: string | null;
 };
 
-/** Takes units out of a lot, at its cost, against an account. */
-export async function takeOutOfStock(
+/** Locks a lot and works out what taking `quantity` units from it costs (the lot's own cost). */
+async function takeFromLot(
   tx: Transaction,
-  input: {
-    orgId: string;
-    userId: string | null;
-    lotId: string;
-    quantity: number;
-    date: string;
-    accountId: string;
-    notes: string | null;
-    baseCurrency: string;
-  },
-): Promise<{ id: string; cost: string }> {
+  input: { lotId: string; quantity: number; date: string; baseCurrency: string },
+) {
   const [lot] = await tx
     .select()
     .from(inventoryLots)
@@ -75,6 +70,32 @@ export async function takeOutOfStock(
         : "Nothing is left in this lot.",
     );
   }
+  // The lot's cost of one; the last units take what's left, so the lot adds up exactly.
+  const total = parseDecimal(lot.productCost) + parseDecimal(lot.landedCost);
+  const cost = roundUnits(
+    input.quantity === left
+      ? total - parseDecimal(used?.cost ?? "0")
+      : divRound(total * BigInt(input.quantity), BigInt(lot.quantity)),
+    Math.min(minorUnits(input.baseCurrency), AMOUNT_SCALE),
+  );
+  return { lot, cost };
+}
+
+/** Takes units out of a lot, at its cost, against an account. */
+export async function takeOutOfStock(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    userId: string | null;
+    lotId: string;
+    quantity: number;
+    date: string;
+    accountId: string;
+    notes: string | null;
+    baseCurrency: string;
+  },
+): Promise<{ id: string; cost: string }> {
+  const { lot, cost } = await takeFromLot(tx, input);
   const [account] = await tx
     .select({ id: accounts.id, subtype: accounts.subtype, isArchived: accounts.isArchived })
     .from(accounts)
@@ -90,14 +111,6 @@ export async function takeOutOfStock(
       "Choose where its cost goes: Owner drawings, a write-off, or another category.",
     );
   }
-  // The lot's cost of one; the last units take what's left, so the lot adds up exactly.
-  const total = parseDecimal(lot.productCost) + parseDecimal(lot.landedCost);
-  const cost = roundUnits(
-    input.quantity === left
-      ? total - parseDecimal(used?.cost ?? "0")
-      : divRound(total * BigInt(input.quantity), BigInt(lot.quantity)),
-    Math.min(minorUnits(input.baseCurrency), AMOUNT_SCALE),
-  );
   const [product] = await tx
     .select({ name: products.name })
     .from(products)
@@ -146,7 +159,80 @@ export async function takeOutOfStock(
   return { id: removal.id, cost: formatDecimal(cost) };
 }
 
-/** Puts the units back into their lot and reverses the entry. */
+/**
+ * Moves units from a lot to another product (they were that product all along: a label or a
+ * listing mixed up): they leave this lot and make a new one there, on the day, at the same cost.
+ * Inventory stays Inventory, so nothing posts.
+ */
+export async function moveStock(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    userId: string | null;
+    lotId: string;
+    quantity: number;
+    date: string;
+    productId: string;
+    notes: string | null;
+    baseCurrency: string;
+  },
+): Promise<{ id: string; lotId: string; cost: string }> {
+  const { lot, cost } = await takeFromLot(tx, input);
+  if (input.productId === lot.productId) {
+    throw new CogsError("Choose another product: these units are this one already.");
+  }
+  const named = await tx
+    .select({ id: products.id, name: products.name, isArchived: products.isArchived })
+    .from(products)
+    .where(inArray(products.id, [lot.productId, input.productId]));
+  const from = named.find((p) => p.id === lot.productId);
+  const to = named.find((p) => p.id === input.productId);
+  if (!to || to.isArchived) throw new CogsError("Choose the product they really are.");
+  const [moved] = await tx
+    .insert(inventoryLots)
+    .values({
+      organizationId: input.orgId,
+      productId: to.id,
+      source: "moved",
+      receivedOn: input.date,
+      quantity: input.quantity,
+      currency: lot.currency,
+      productCost: formatDecimal(cost),
+      landedCost: "0",
+      notes:
+        `From ${from?.name ?? "another product"}${input.notes ? ` · ${input.notes}` : ""}`.slice(
+          0,
+          500,
+        ),
+    })
+    .returning({ id: inventoryLots.id });
+  if (!moved) throw new CogsError("This couldn't be saved.");
+  const [removal] = await tx
+    .insert(stockRemovals)
+    .values({
+      organizationId: input.orgId,
+      lotId: lot.id,
+      removedOn: input.date,
+      quantity: input.quantity,
+      cost: formatDecimal(cost),
+      movedToLotId: moved.id,
+      notes: input.notes,
+      createdBy: input.userId,
+    })
+    .returning({ id: stockRemovals.id });
+  if (!removal) throw new CogsError("This couldn't be saved.");
+  await tx.insert(lotConsumptions).values({
+    organizationId: input.orgId,
+    lotId: lot.id,
+    removalId: removal.id,
+    kind: "removal",
+    quantity: input.quantity,
+    cost: formatDecimal(cost),
+  });
+  return { id: removal.id, lotId: moved.id, cost: formatDecimal(cost) };
+}
+
+/** Puts the units back into their lot: reverses the entry, or removes a move's new lot. */
 export async function putBackInStock(
   tx: Transaction,
   input: { orgId: string; userId: string | null; removalId: string },
@@ -157,6 +243,19 @@ export async function putBackInStock(
     .where(eq(stockRemovals.id, input.removalId))
     .for("update");
   if (!removal) throw new CogsError("This was already put back.", "not_found");
+  if (removal.movedToLotId) {
+    const [used] = await tx
+      .select({ id: lotConsumptions.id })
+      .from(lotConsumptions)
+      .where(eq(lotConsumptions.lotId, removal.movedToLotId))
+      .limit(1);
+    if (used) {
+      throw new CogsError(
+        "Some of the units moved are already sold or taken out. Undo those first.",
+        "state",
+      );
+    }
+  }
   if (removal.journalEntryId) {
     await reverseJournalEntry(tx, {
       orgId: input.orgId,
@@ -165,11 +264,14 @@ export async function putBackInStock(
       date: removal.removedOn,
     });
   }
-  // Its lot_consumptions row goes with it (cascade).
+  // Its lot_consumptions row goes with it (cascade); a move's new lot goes after it.
   await tx.delete(stockRemovals).where(eq(stockRemovals.id, removal.id));
+  if (removal.movedToLotId) {
+    await tx.delete(inventoryLots).where(eq(inventoryLots.id, removal.movedToLotId));
+  }
 }
 
-/** What was taken out of these lots by hand, oldest first. */
+/** What was taken out of these lots by hand, or moved to another product, oldest first. */
 export async function stockRemovalsFor(
   tx: Transaction,
   lotIds: string[],
@@ -184,11 +286,14 @@ export async function stockRemovalsFor(
       cost: stockRemovals.cost,
       accountId: stockRemovals.accountId,
       accountName: accounts.name,
+      movedToProductName: products.name,
       notes: stockRemovals.notes,
       journalEntryId: stockRemovals.journalEntryId,
     })
     .from(stockRemovals)
-    .innerJoin(accounts, eq(accounts.id, stockRemovals.accountId))
+    .leftJoin(accounts, eq(accounts.id, stockRemovals.accountId))
+    .leftJoin(inventoryLots, eq(inventoryLots.id, stockRemovals.movedToLotId))
+    .leftJoin(products, eq(products.id, inventoryLots.productId))
     .where(and(inArray(stockRemovals.lotId, lotIds)))
     .orderBy(asc(stockRemovals.removedOn), asc(stockRemovals.createdAt));
 }

@@ -2445,6 +2445,14 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   with **Put back** (reverses the entry, the units return).
 - **Books:** Dr the chosen account / Cr Inventory on the day, at the lot's cost in cents (the last
   units take what's left of the lot), source `stock_removal`.
+- **Move to another product** (arrows button next to it): for units that are really another
+  product (a label or listing mixed up). How many, the product, the day, a note: they leave the
+  lot like a take-out and make a new lot of that product (source `moved`, "Moved here · From …"),
+  on the day, at the same cost. Nothing posts (Inventory stays Inventory). The lot it left shows
+  "4 moved to … on …" with **Put back**, which removes the new lot, unless some of it is already
+  sold or taken out (undo those first). `stock_removals.account_id` is now null for a move and
+  `moved_to_lot_id` set (exactly one of the two; migration `0073_stock_moves`). db `moveStock`,
+  action `moveStockAction` (audited `inventory_lot.moved`), web `MoveStockDialog`.
 - **Stock:** a `lot_consumptions` row of kind `removal` (now `cogs_period_id` or `removal_id`,
   never both) takes the units, so FIFO, prices, reorder and "Your stock against Amazon's" count
   them as gone. They come from the lot chosen, whenever they left; months posted later take from

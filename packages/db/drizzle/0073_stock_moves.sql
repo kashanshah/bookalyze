@@ -1,0 +1,4 @@
+ALTER TABLE "stock_removals" ALTER COLUMN "account_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "stock_removals" ADD COLUMN "moved_to_lot_id" uuid;--> statement-breakpoint
+ALTER TABLE "stock_removals" ADD CONSTRAINT "stock_removals_moved_lot_fk" FOREIGN KEY ("organization_id","moved_to_lot_id") REFERENCES "public"."inventory_lots"("organization_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_removals" ADD CONSTRAINT "stock_removals_target_valid" CHECK (("stock_removals"."account_id" is null) <> ("stock_removals"."moved_to_lot_id" is null));

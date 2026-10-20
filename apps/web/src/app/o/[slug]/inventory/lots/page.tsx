@@ -22,7 +22,7 @@ import { formatDate, nowIn } from "@/lib/dates";
 import { inOrg, listAccounts } from "@/server/accounting";
 import { getInventoryContext } from "@/server/inventory";
 import { OpeningStockDialog, RemoveOpeningStock } from "./opening-stock";
-import { PutBackInStock, TakeOutDialog } from "./take-out";
+import { MoveStockDialog, PutBackInStock, TakeOutDialog } from "./take-out";
 
 export const metadata: Metadata = { title: "Stock lots" };
 
@@ -191,7 +191,19 @@ export default async function LotsPage({
                         perUnit={perUnit(lot.currency, unitCost(lot))}
                         n={n}
                         removals={removalsByLot.get(lot.id) ?? []}
-                        takeOut={{ accounts: takeOutAccounts, defaultAccountId: writeOffs, today }}
+                        takeOut={{
+                          accounts: takeOutAccounts,
+                          defaultAccountId: writeOffs,
+                          today,
+                          products: products
+                            .filter((p) => p.id !== lot.productId)
+                            .map((p) => ({
+                              value: p.id,
+                              label: p.name,
+                              keywords: p.sku ?? undefined,
+                              description: p.sku ? `Your SKU ${p.sku}` : undefined,
+                            })),
+                        }}
                       />
                     </li>
                   ))}
@@ -222,7 +234,12 @@ function LotRowView({
   perUnit: string;
   n: Intl.NumberFormat;
   removals: StockRemovalRow[];
-  takeOut: { accounts: ComboboxOption[]; defaultAccountId: string; today: string };
+  takeOut: {
+    accounts: ComboboxOption[];
+    defaultAccountId: string;
+    today: string;
+    products: ComboboxOption[];
+  };
 }) {
   const left = lot.quantity - lot.consumed;
   const cells = (
@@ -238,7 +255,9 @@ function LotRowView({
             ? "Returned by customers"
             : lot.source === "found"
               ? "Found by Amazon"
-              : `${purchaseOrderNumber(lot.purchaseOrderNumber ?? 0)} · ${lot.supplierName ?? ""}`}
+              : lot.source === "moved"
+                ? `Moved here${lot.notes ? ` · ${lot.notes}` : ""}`
+                : `${purchaseOrderNumber(lot.purchaseOrderNumber ?? 0)} · ${lot.supplierName ?? ""}`}
       </span>
       <span className="hidden text-end tabular-nums sm:block">
         {lot.consumed ? (
@@ -279,16 +298,30 @@ function LotRowView({
         label={`opening stock from ${formatDate(lot.receivedOn, locale)}`}
       />
     ) : left > 0 ? (
-      <TakeOutDialog
-        slug={slug}
-        lotId={lot.id}
-        left={left}
-        label={label}
-        receivedOn={lot.receivedOn}
-        today={takeOut.today}
-        accounts={takeOut.accounts}
-        defaultAccountId={takeOut.defaultAccountId}
-      />
+      <>
+        {takeOut.products.length ? (
+          <MoveStockDialog
+            slug={slug}
+            lotId={lot.id}
+            left={left}
+            label={label}
+            productName={lot.productName}
+            receivedOn={lot.receivedOn}
+            today={takeOut.today}
+            products={takeOut.products}
+          />
+        ) : null}
+        <TakeOutDialog
+          slug={slug}
+          lotId={lot.id}
+          left={left}
+          label={label}
+          receivedOn={lot.receivedOn}
+          today={takeOut.today}
+          accounts={takeOut.accounts}
+          defaultAccountId={takeOut.defaultAccountId}
+        />
+      </>
     ) : null;
   return (
     <>
@@ -303,7 +336,7 @@ function LotRowView({
         ) : (
           <div className={`${grid} min-w-0 flex-1 pe-1`}>{cells}</div>
         )}
-        <div className="w-11 shrink-0 pe-2">{action}</div>
+        <div className="flex w-20 shrink-0 justify-end pe-2">{action}</div>
       </div>
       {removals.length ? (
         <ul className="grid gap-1 px-5 pb-3 sm:ps-[3.5rem]">
@@ -313,14 +346,25 @@ function LotRowView({
               className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg bg-muted/40 px-3 py-1.5 text-muted-foreground text-xs"
             >
               <span>
-                {n.format(r.quantity)} taken out on {formatDate(r.removedOn, locale)} ·{" "}
-                <Amount value={r.cost} currency={lot.currency} locale={locale} /> to {r.accountName}
+                {r.movedToProductName ? (
+                  <>
+                    {n.format(r.quantity)} moved to {r.movedToProductName} on{" "}
+                    {formatDate(r.removedOn, locale)} ·{" "}
+                    <Amount value={r.cost} currency={lot.currency} locale={locale} />
+                  </>
+                ) : (
+                  <>
+                    {n.format(r.quantity)} taken out on {formatDate(r.removedOn, locale)} ·{" "}
+                    <Amount value={r.cost} currency={lot.currency} locale={locale} /> to{" "}
+                    {r.accountName}
+                  </>
+                )}
                 {r.notes ? ` · ${r.notes}` : ""}
               </span>
               <PutBackInStock
                 slug={slug}
                 removalId={r.id}
-                label={`${n.format(r.quantity)} taken out on ${formatDate(r.removedOn, locale)}`}
+                label={`${n.format(r.quantity)} ${r.movedToProductName ? "moved" : "taken out"} on ${formatDate(r.removedOn, locale)}`}
               />
             </li>
           ))}
