@@ -87,7 +87,12 @@ import {
   noonExportStatus,
 } from "@/server/noon";
 import { isOrgAdmin } from "@/server/org";
-import { checkWalmartKey, WalmartError } from "@/server/walmart";
+import {
+  checkWalmartKey,
+  downloadWalmartSettlement,
+  WalmartError,
+  walmartSettlementDates,
+} from "@/server/walmart";
 
 export type CommerceResult<T = object> =
   | ({ ok: true } & T)
@@ -1159,4 +1164,75 @@ export async function disconnectWalmartAction(
   if (!done) return { ok: false, message: `${marketplace.name} isn't connected.` };
   revalidate(slug);
   return { ok: true };
+}
+
+/** The saved key for a Walmart country's channel, opened, or a message saying why not. */
+async function walmartKey(ctx: Awaited<ReturnType<typeof getCommerceContext>>, channelId: string) {
+  const found = await walmartChannel(ctx, channelId);
+  if (!found) return { message: "Unknown channel." } as const;
+  const connection = await inOrg(ctx, async (tx) => {
+    const live = await getWalmartConnection(tx, found.marketplace.id);
+    return live ? getConnection(tx, live.id) : null;
+  });
+  if (!connection?.secret || connection.status === "disconnected") {
+    return {
+      message: `${found.marketplace.name} isn't connected. Enter its API key first.`,
+    } as const;
+  }
+  return {
+    marketplace: found.marketplace,
+    creds: openWalmartCredentials(ctx.org.id, connection.id, connection.secret),
+  } as const;
+}
+
+/** The dates Walmart has a settlement report for, newest first (admins; nothing is saved). */
+export async function walmartSettlementDatesAction(
+  slug: string,
+  channelId: string,
+): Promise<CommerceResult<{ dates: string[] }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  try {
+    const key = await walmartKey(ctx, channelId);
+    if ("message" in key) return { ok: false, message: key.message ?? "Unknown channel." };
+    return { ok: true, dates: await walmartSettlementDates(key.creds, key.marketplace.market) };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * Downloads one settlement report and returns only its kind, column names and row count, so
+ * the next step can read it. Nothing is kept.
+ */
+export async function checkWalmartSettlementAction(
+  slug: string,
+  input: unknown,
+): Promise<CommerceResult<{ date: string; preview: ReportPreview }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const parsed = z
+    .object({ channelId: z.string(), date: z.string().refine(isIsoDate) })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Choose a settlement date." };
+  try {
+    const key = await walmartKey(ctx, parsed.data.channelId);
+    if ("message" in key) return { ok: false, message: key.message ?? "Unknown channel." };
+    const bytes = await downloadWalmartSettlement(
+      key.creds,
+      key.marketplace.market,
+      parsed.data.date,
+    );
+    const preview = previewReport(bytes);
+    logInfo("walmart.settlement_checked", {
+      marketplace: key.marketplace.id,
+      date: parsed.data.date,
+      kind: preview.kind,
+      columns: preview.columns.length,
+      rows: preview.rows,
+    });
+    return { ok: true, date: parsed.data.date, preview };
+  } catch (error) {
+    return failure(error);
+  }
 }

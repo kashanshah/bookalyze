@@ -4,6 +4,7 @@
 // token in WM_SEC.ACCESS_TOKEN after that.
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
+import { crc32, deflateRawSync } from "node:zlib";
 
 const port = Number(process.env.WALMART_MOCK_PORT ?? 4014);
 
@@ -109,6 +110,55 @@ const ORDERS = [
   }),
 ];
 
+// Settlement reports: two dates, each file a zipped CSV like Walmart's (synthetic rows).
+const pad = (n) => String(n).padStart(2, "0");
+const reportDay = (days) => {
+  const d = new Date(Date.now() - days * 86_400_000);
+  return `${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}${d.getUTCFullYear()}`;
+};
+const SETTLEMENT_DATES = [reportDay(2), reportDay(16)];
+const SETTLEMENT_CSV = [
+  "Period Start Date,Period End Date,Total Payout,Currency,Transaction Key,Transaction Posted Timestamp,Transaction Type,Purchase Order #,Purchase Order line #,Amount,Amount Type,Ship Qty,Partner Item Id,Fulfillment Type",
+  "10/01/2026,10/14/2026,52.07,CAD,T-1,10/05/2026,Sale,108800000001,1,39.98,Product Price,2,WMT-MAPLE-MUG,Seller Fulfilled",
+  "10/01/2026,10/14/2026,52.07,CAD,T-1,10/05/2026,Sale,108800000001,1,-6.00,Commission on Product,2,WMT-MAPLE-MUG,Seller Fulfilled",
+  "10/01/2026,10/14/2026,52.07,CAD,T-2,10/09/2026,Sale,108800000003,1,19.99,Product Price,1,WMT-MAPLE-MUG,WFS",
+  "10/01/2026,10/14/2026,52.07,CAD,T-2,10/09/2026,Sale,108800000003,1,-1.90,Walmart Fulfillment Services Fee,1,WMT-MAPLE-MUG,WFS",
+].join("\n");
+
+/** A one-file zip, deflated, as Walmart sends its report files. */
+function zipOf(name, text) {
+  const file = Buffer.from(name);
+  const raw = Buffer.from(text);
+  const data = deflateRawSync(raw);
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(8, 8);
+  local.writeUInt32LE(crc32(raw), 14);
+  local.writeUInt32LE(data.length, 18);
+  local.writeUInt32LE(raw.length, 22);
+  local.writeUInt16LE(file.length, 26);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt16LE(8, 10);
+  central.writeUInt32LE(crc32(raw), 16);
+  central.writeUInt32LE(data.length, 20);
+  central.writeUInt32LE(raw.length, 24);
+  central.writeUInt16LE(file.length, 28);
+  central.writeUInt32LE(0, 42);
+  const head = Buffer.concat([local, file, data]);
+  const dir = Buffer.concat([central, file]);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(dir.length, 12);
+  end.writeUInt32LE(head.length, 16);
+  return Buffer.concat([head, dir, end]);
+}
+
 /** One order a page, so Walmart's cursor is followed. */
 function ordersPage(url) {
   const node = url.searchParams.get("shipNodeType") ?? "SellerFulfilled";
@@ -212,6 +262,23 @@ createServer((req, res) => {
         return walmartError(res, 403, "FORBIDDEN.GMP_GATEWAY_API", "No access to orders");
       }
       return send(res, 200, ordersPage(url));
+    }
+
+    if (url.pathname === "/v3/report/reconreport/availableReconFiles" && req.method === "GET") {
+      return send(res, 200, { availableApReportDates: SETTLEMENT_DATES });
+    }
+    if (url.pathname === "/v3/report/reconreport/reconFile" && req.method === "GET") {
+      const date = url.searchParams.get("reportDate") ?? "";
+      if (!SETTLEMENT_DATES.includes(date)) {
+        return walmartError(
+          res,
+          404,
+          "CONTENT_NOT_FOUND.GMP_GATEWAY_API",
+          "No report for this date",
+        );
+      }
+      res.writeHead(200, { "Content-Type": "application/octet-stream" });
+      return res.end(zipOf(`${date}.csv`, SETTLEMENT_CSV));
     }
 
     return walmartError(res, 404, "CONTENT_NOT_FOUND.GMP_GATEWAY_API", "Not found");

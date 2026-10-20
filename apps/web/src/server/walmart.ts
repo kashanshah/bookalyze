@@ -1,6 +1,8 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
+import { gunzipSync, inflateRawSync } from "node:zlib";
 import {
+  parseWalmartReconDates,
   parseWalmartToken,
   parseWalmartTokenDetail,
   WALMART_API_URL,
@@ -12,6 +14,9 @@ import {
   walmartBasicAuth,
   walmartErrorDetail,
   walmartHeaders,
+  walmartReconDatesQuery,
+  walmartReconFileQuery,
+  zipFirstFile,
 } from "@bookalyze/core";
 import { env } from "./env";
 import { logError, logWarn } from "./log";
@@ -119,19 +124,20 @@ async function accessToken(creds: WalmartCredentials, market: string): Promise<s
 }
 
 /** One GET with a token. A token Walmart no longer takes is renewed once. */
-export async function walmartGet(
+async function walmartFetch(
   creds: WalmartCredentials,
   market: string,
   path: string,
-): Promise<unknown> {
+  accept = "application/json",
+): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     const token = await accessToken(creds, market);
     const correlationId = randomUUID();
     const response = await request(path, {
       method: "GET",
-      headers: walmartHeaders({ market, correlationId, accessToken: token }),
+      headers: { ...walmartHeaders({ market, correlationId, accessToken: token }), Accept: accept },
     });
-    if (response.ok) return response.json().catch(() => ({}));
+    if (response.ok) return response;
     if (response.status === 401 && attempt === 0) {
       tokens.delete(cacheKey(creds, market));
       continue;
@@ -147,6 +153,12 @@ export async function walmartGet(
       throw new WalmartError(
         `Walmart refused the request${why ? ` (${why})` : ""}. In Walmart's Developer Portal, check the key's permissions.`,
         "forbidden",
+      );
+    }
+    if (response.status === 404) {
+      throw new WalmartError(
+        `Walmart has nothing at this address${why ? ` (${why})` : ""}.`,
+        "unexpected",
       );
     }
     if (response.status === 429) {
@@ -165,6 +177,16 @@ export async function walmartGet(
   }
 }
 
+/** One GET of JSON. */
+export async function walmartGet(
+  creds: WalmartCredentials,
+  market: string,
+  path: string,
+): Promise<unknown> {
+  const response = await walmartFetch(creds, market, path);
+  return response.json().catch(() => ({}));
+}
+
 /**
  * Checks a key for one market: a fresh token (so a replaced or deleted key shows up at once),
  * then what the key may do in each area Bookalyze reads.
@@ -175,4 +197,42 @@ export async function checkWalmartKey(
 ): Promise<Record<WalmartScopeArea, WalmartAccess>> {
   tokens.delete(cacheKey(creds, market));
   return parseWalmartTokenDetail(await walmartGet(creds, market, WALMART_TOKEN_DETAIL_PATH));
+}
+
+/** The dates Walmart has a settlement (reconciliation) report for, newest first. */
+export async function walmartSettlementDates(
+  creds: WalmartCredentials,
+  market: string,
+): Promise<string[]> {
+  return parseWalmartReconDates(await walmartGet(creds, market, walmartReconDatesQuery()));
+}
+
+/**
+ * One settlement's report file, as plain bytes: unzipped (its first file) or gunzipped when
+ * Walmart sends it packed.
+ */
+export async function downloadWalmartSettlement(
+  creds: WalmartCredentials,
+  market: string,
+  date: string,
+): Promise<Uint8Array> {
+  const response = await walmartFetch(
+    creds,
+    market,
+    walmartReconFileQuery(date),
+    "application/octet-stream, text/csv, application/json",
+  );
+  const raw = new Uint8Array(await response.arrayBuffer());
+  try {
+    if (raw[0] === 0x1f && raw[1] === 0x8b) return new Uint8Array(gunzipSync(raw));
+    const first = zipFirstFile(raw);
+    if (first) {
+      return first.method === 8 ? new Uint8Array(inflateRawSync(first.data)) : first.data;
+    }
+  } catch (cause) {
+    throw new WalmartError("Walmart's report file couldn't be opened. Try again.", "unexpected", {
+      cause,
+    });
+  }
+  return raw;
 }
