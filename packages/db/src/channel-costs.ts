@@ -79,8 +79,8 @@ export type ChannelCost = {
 
 /**
  * What each counted category cost in `from`…`to` (entry dates), in the main currency. Entries
- * the report counts already (settlements, Noon, eBay, cost of goods sold) are left out, so an
- * advertising account used by a settlement isn't counted twice.
+ * the report counts already (settlements, Noon, eBay, cost of goods sold), and their reversals,
+ * are left out, so an advertising account used by a settlement isn't counted twice.
  */
 export async function channelCostsForProfit(
   tx: Transaction,
@@ -102,6 +102,10 @@ export async function channelCostsForProfit(
       and(
         sql`${journalEntries.date} between ${range.from}::date and ${range.to}::date`,
         sql`${journalEntries.source} not in ${MARKETPLACE_SOURCES}`,
+        // Nor their reversals (a settlement posted again, a month undone): those cancel entries
+        // that aren't counted, so counting them would show a refund of costs that never was.
+        sql`not exists (select 1 from journal_entries o where o.id = ${journalEntries.reversesEntryId}
+          and o.source in ${MARKETPLACE_SOURCES})`,
       ),
     )
     .groupBy(channelCostAccounts.channelId, accounts.id, accounts.code, accounts.name)

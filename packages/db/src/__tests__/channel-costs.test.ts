@@ -7,7 +7,12 @@ import {
 } from "../channel-costs";
 import { createDb, type Transaction, withOrg } from "../client";
 import { addEbayChannel } from "../commerce";
-import { createDefaultChart, ensureSystemAccount, postJournalEntry } from "../index";
+import {
+  createDefaultChart,
+  ensureSystemAccount,
+  postJournalEntry,
+  reverseJournalEntry,
+} from "../index";
 import * as schema from "../schema";
 
 const ownerUrl =
@@ -156,6 +161,11 @@ describe("channel costs", () => {
     await spend("2026-09-12", ids.travel, "50.0000"); // not counted
     await spend("2026-10-02", ids.subscription, "39.9900"); // after the period
     await spend("2026-09-30", ids.subscription, "7.0000", "ebay"); // in eBay's month already
+    // An eBay month posted, then undone: neither it nor its reversal counts.
+    const undone = await spend("2026-09-15", ids.subscription, "12.0000", "ebay");
+    await scoped((tx) =>
+      reverseJournalEntry(tx, { orgId, userId: null, entryId: undone.id, date: "2026-09-16" }),
+    );
     const costs = await scoped((tx) =>
       channelCostsForProfit(tx, { from: "2026-09-01", to: "2026-09-30" }),
     );
