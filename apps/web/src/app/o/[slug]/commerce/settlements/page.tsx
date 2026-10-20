@@ -1,4 +1,4 @@
-import { can, parseDecimal } from "@bookalyze/core";
+import { can, parseDecimal, readPaging } from "@bookalyze/core";
 import {
   getSettlementSettings,
   listAmazonConnections,
@@ -6,7 +6,7 @@ import {
   settlementsToPost,
   settlementsWithOneDeposit,
 } from "@bookalyze/db";
-import { ArrowLeft, ArrowRight, ChevronRight, Landmark, Settings2 } from "lucide-react";
+import { ArrowRight, ChevronRight, Landmark, Settings2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -15,6 +15,7 @@ import { PayoutTabs, payoutPath, payoutPlatforms } from "@/components/commerce/p
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/pagination";
 import { formatDate } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
@@ -27,27 +28,25 @@ export const metadata: Metadata = { title: "Settlements" };
 /** "Bring in settlements" runs inside this page's server actions. */
 export const maxDuration = 60;
 
-const PER_PAGE = 50;
-
 export default async function SettlementsPage({
   params,
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; per?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
   const ctx = await getCommerceContext(slug);
   if (!can(ctx.plan, ctx.enabledModules, "commerce.settlements")) notFound();
   const { locale, timezone } = ctx.profile;
-  const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
+  const { page, perPage, offset } = readPaging(sp);
   const { connections, list, settings, ready, found, platforms } = await inOrg(ctx, async (tx) => {
     const settings = await getSettlementSettings(tx);
     return {
       platforms: await payoutPlatforms(tx),
       connections: (await listAmazonConnections(tx)).filter((c) => c.status !== "disconnected"),
-      list: await listSettlements(tx, { limit: PER_PAGE, offset: (page - 1) * PER_PAGE }),
+      list: await listSettlements(tx, { limit: perPage, offset }),
       settings,
       ready: settings.postFrom
         ? (await settlementsToPost(tx, { from: settings.postFrom, limit: 50 })).length
@@ -230,31 +229,13 @@ export default async function SettlementsPage({
 
       {hiddenNote}
 
-      {list.count > PER_PAGE ? (
-        <div className="flex items-center justify-between gap-3 text-muted-foreground text-sm">
-          <span>
-            {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, list.count)} of {list.count}
-          </span>
-          <div className="flex gap-2">
-            {page > 1 ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={`${base}?page=${page - 1}`}>
-                  <ArrowLeft className="rtl:rotate-180" />
-                  Newer
-                </Link>
-              </Button>
-            ) : null}
-            {page * PER_PAGE < list.count ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={`${base}?page=${page + 1}`}>
-                  Older
-                  <ArrowRight className="rtl:rotate-180" />
-                </Link>
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      <Pagination
+        page={page}
+        perPage={perPage}
+        total={list.count}
+        noun={["settlement", "settlements"]}
+        locale={locale}
+      />
     </div>
   );
 }

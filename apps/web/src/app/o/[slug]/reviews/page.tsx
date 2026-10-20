@@ -1,4 +1,4 @@
-import { REVIEW_STATUS_LABELS } from "@bookalyze/core";
+import { DEFAULT_PAGE_SIZE, REVIEW_STATUS_LABELS, readPaging } from "@bookalyze/core";
 import {
   getReviewSettings,
   hasOrders,
@@ -7,11 +7,12 @@ import {
   REVIEW_TABS,
   type ReviewTab,
 } from "@bookalyze/db";
-import { ArrowLeft, ArrowRight, MessageSquareHeart, Settings2, Star } from "lucide-react";
+import { ArrowRight, MessageSquareHeart, Settings2, Star } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/pagination";
 import { nowIn } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
@@ -24,7 +25,6 @@ export const metadata: Metadata = { title: "Review requests" };
 /** Sending requests runs inside this page's server actions (Amazon allows about one a second). */
 export const maxDuration = 60;
 
-const PER_PAGE = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TAB_LABELS: Record<ReviewTab, string> = {
   ask: "To ask",
@@ -64,7 +64,7 @@ export default async function ReviewsPage({
     ? (sp.tab as ReviewTab)
     : "ask";
   const channel = sp.channel && UUID.test(sp.channel) ? sp.channel : "";
-  const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
+  const { page, perPage, offset } = readPaging(sp);
 
   const data = await inOrg(ctx, async (tx) => {
     const channels = (await listAmazonConnections(tx))
@@ -78,8 +78,8 @@ export default async function ReviewsPage({
         tab,
         today,
         channelId: channel || null,
-        limit: PER_PAGE,
-        offset: (page - 1) * PER_PAGE,
+        limit: perPage,
+        offset,
       }),
     };
   });
@@ -88,7 +88,8 @@ export default async function ReviewsPage({
   const base = `/o/${slug}/reviews`;
   const href = (over: Record<string, string | number>) => {
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries({ tab, channel, page: 1, ...over })) {
+    const per = perPage === DEFAULT_PAGE_SIZE ? "" : perPage;
+    for (const [k, v] of Object.entries({ tab, channel, per, page: 1, ...over })) {
       if (v && !(k === "page" && v === 1) && !(k === "tab" && v === "ask")) p.set(k, String(v));
     }
     return `${base}${p.size ? `?${p}` : ""}`;
@@ -303,32 +304,14 @@ export default async function ReviewsPage({
         />
       )}
 
-      {list.counts[tab] > PER_PAGE ? (
-        <div className="flex items-center justify-between gap-3 text-muted-foreground text-sm">
-          <span>
-            {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, list.counts[tab])} of{" "}
-            {list.counts[tab]}
-          </span>
-          <div className="flex gap-2">
-            {page > 1 ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={href({ page: page - 1 })}>
-                  <ArrowLeft className="rtl:rotate-180" />
-                  Previous
-                </Link>
-              </Button>
-            ) : null}
-            {page * PER_PAGE < list.counts[tab] ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={href({ page: page + 1 })}>
-                  Next
-                  <ArrowRight className="rtl:rotate-180" />
-                </Link>
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      <Pagination
+        page={page}
+        perPage={perPage}
+        total={list.counts[tab]}
+        noun={["order", "orders"]}
+        locale={locale}
+        query={{ tab: tab === "ask" ? undefined : tab, channel }}
+      />
     </div>
   );
 }

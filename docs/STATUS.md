@@ -1053,6 +1053,17 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `amazon-settlements.test.ts` (`channelProfit`), db `settlements.test.ts`
   (`settlementsForProfit`), e2e settlements test (the page shows Amazon.ca's column); e2e "noon: choose how Noon posts…" switches Noon UAE off and sees its tag.
 
+### Pagination on every paged list
+
+- One component (`components/ui/pagination.tsx`) on Transactions, Orders, Settlements and Review
+  requests: "51–100 of 1,234 orders", **Show 25 / 50 / 100 / 200 per page**, and Previous, page
+  numbers (the first two, the last two, and the current page with one either side, `…` between)
+  and Next. On phones the numbers fold to "3 / 25" between Previous and Next.
+- In the address as `?page=` and `?per=` (core `pagination.ts`: `readPaging`, `pageNumbers`),
+  beside each list's filters; changing the page size goes back to page 1; 50 is left out of links.
+- Tests: core `pagination.test.ts`; e2e "home: …" pages through unreviewed transactions 25 at a
+  time.
+
 ### Inventory → Reorder (the inventory forecast)
 
 - **What it shows** (`app/o/[slug]/inventory/reorder`, feature `inventory.reorder` in Inventory):

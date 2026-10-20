@@ -2,11 +2,13 @@ import {
   BUYER_CLAIMS,
   type BuyerClaim,
   can,
+  DEFAULT_PAGE_SIZE,
   fiscalYearFor,
   ORDER_STATUS_GROUPS,
   type OrderStatusGroup,
   orderStatusLabel,
   parseDecimal,
+  readPaging,
 } from "@bookalyze/core";
 import {
   countOrdersNeedingItems,
@@ -15,16 +17,7 @@ import {
   listOrders,
   orderSyncChannels,
 } from "@bookalyze/db";
-import {
-  ArrowLeft,
-  ArrowRight,
-  ChevronRight,
-  PackageSearch,
-  Search,
-  Star,
-  Store,
-  X,
-} from "lucide-react";
+import { ChevronRight, PackageSearch, Search, Star, Store, X } from "lucide-react";
 import type { Metadata } from "next";
 import Form from "next/form";
 import Link from "next/link";
@@ -33,6 +26,7 @@ import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Pagination } from "@/components/ui/pagination";
 import { isIsoDate, nowIn } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
@@ -47,7 +41,6 @@ export const metadata: Metadata = { title: "Orders" };
 /** "Bring in new orders" runs inside this page's server actions. */
 export const maxDuration = 60;
 
-const PER_PAGE = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TABS: { key: "" | OrderStatusGroup | "refunded"; label: string }[] = [
   { key: "", label: "All orders" },
@@ -69,6 +62,7 @@ export default async function OrdersPage({
     from?: string;
     to?: string;
     page?: string;
+    per?: string;
   }>;
 }) {
   const { slug } = await params;
@@ -83,7 +77,7 @@ export default async function OrdersPage({
   const q = (sp.q ?? "").trim().slice(0, 100);
   const from = isIsoDate(sp.from) ? sp.from : "";
   const to = isIsoDate(sp.to) ? sp.to : "";
-  const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
+  const { page, perPage, offset } = readPaging(sp);
 
   const data = await inOrg(ctx, async (tx) => {
     const { connections, channels } = await listOrderConnections(tx);
@@ -97,8 +91,8 @@ export default async function OrdersPage({
       from: from || null,
       to: to || null,
       timezone,
-      limit: PER_PAGE,
-      offset: (page - 1) * PER_PAGE,
+      limit: perPage,
+      offset,
     });
     return {
       connections,
@@ -117,7 +111,16 @@ export default async function OrdersPage({
   const base = `/o/${slug}/commerce/orders`;
   const href = (over: Record<string, string | number>) => {
     const p = new URLSearchParams();
-    const values = { status, channel, q, from, to, page: 1, ...over };
+    const values = {
+      status,
+      channel,
+      q,
+      from,
+      to,
+      per: perPage === DEFAULT_PAGE_SIZE ? "" : perPage,
+      page: 1,
+      ...over,
+    };
     for (const [k, v] of Object.entries(values)) {
       if (v && !(k === "page" && v === 1)) p.set(k, String(v));
     }
@@ -485,31 +488,14 @@ export default async function OrdersPage({
         </div>
       )}
 
-      {list.count > PER_PAGE ? (
-        <div className="flex items-center justify-between gap-3 text-muted-foreground text-sm">
-          <span>
-            {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, list.count)} of {list.count}
-          </span>
-          <div className="flex gap-2">
-            {page > 1 ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={href({ page: page - 1 })}>
-                  <ArrowLeft className="rtl:rotate-180" />
-                  Newer
-                </Link>
-              </Button>
-            ) : null}
-            {page * PER_PAGE < list.count ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={href({ page: page + 1 })}>
-                  Older
-                  <ArrowRight className="rtl:rotate-180" />
-                </Link>
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      <Pagination
+        page={page}
+        perPage={perPage}
+        total={list.count}
+        noun={["order", "orders"]}
+        locale={locale}
+        query={{ status, channel, q, from, to }}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import {
   formatDecimal,
   isMoneyAccountSubtype,
   parseDecimal,
+  readPaging,
   TRANSACTION_KINDS,
   type TransactionKind,
 } from "@bookalyze/core";
@@ -21,12 +22,13 @@ import {
   suggestTransfers,
 } from "@bookalyze/db";
 import { eq, sql } from "drizzle-orm";
-import { ArrowLeft, ArrowRight, Download, Landmark } from "lucide-react";
+import { Download, Landmark } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/pagination";
 import { nowIn, openDate } from "@/lib/dates";
 import { accountOptions, getAccountingContext, inOrg, listAccounts } from "@/server/accounting";
 import { TransactionList } from "./transaction-list";
@@ -34,7 +36,6 @@ import type { TxFormContext, TxRow } from "./types";
 
 export const metadata: Metadata = { title: "Transactions" };
 
-const PER_PAGE = [25, 50, 100];
 const STATUSES = ["reviewed", "unreviewed", "duplicates", "no_account", "transfers"] as const;
 const ORIGINS: Record<string, string> = {
   manual: "Entered by hand",
@@ -64,8 +65,7 @@ export default async function TransactionsPage({
   const sp = await searchParams;
   const ctx = await getAccountingContext(slug);
   const profile = ctx.profile;
-  const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
-  const perPage = PER_PAGE.includes(Number(sp.per)) ? Number(sp.per) : 50;
+  const { page, perPage } = readPaging(sp);
 
   const accounts = await listAccounts(ctx);
   const moneyAccounts = accounts.filter((a) => isMoneyAccountSubtype(a.subtype) && !a.isArchived);
@@ -268,13 +268,6 @@ export default async function TransactionsPage({
   }
 
   const selected = moneyAccounts.find((a) => a.id === account);
-  const pages = Math.max(1, Math.ceil(result.total / perPage));
-  const pageHref = (n: number) => {
-    const next = new URLSearchParams(Object.entries(sp).filter(([, v]) => v) as [string, string][]);
-    next.set("page", String(n));
-    return `?${next}`;
-  };
-
   return (
     <div className="grid gap-6">
       <PageHeader
@@ -340,39 +333,14 @@ export default async function TransactionsPage({
           transferCount={transferPairs.length}
           ruleSuggestionCount={ruleSuggestionCount}
           footer={
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-muted-foreground">
-                {pages > 1 ? `Page ${page} of ${pages} · ` : ""}
-                {result.total.toLocaleString(profile.locale)}{" "}
-                {result.total === 1 ? "transaction" : "transactions"}
-              </span>
-              {pages > 1 ? (
-                <div className="flex gap-2">
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className={page <= 1 ? "pointer-events-none opacity-50" : ""}
-                  >
-                    <Link href={pageHref(page - 1)}>
-                      <ArrowLeft className="rtl:rotate-180" />
-                      Newer
-                    </Link>
-                  </Button>
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className={page >= pages ? "pointer-events-none opacity-50" : ""}
-                  >
-                    <Link href={pageHref(page + 1)}>
-                      Older
-                      <ArrowRight className="rtl:rotate-180" />
-                    </Link>
-                  </Button>
-                </div>
-              ) : null}
-            </div>
+            <Pagination
+              page={page}
+              perPage={perPage}
+              total={result.total}
+              noun={["transaction", "transactions"]}
+              locale={profile.locale}
+              query={{ account, category, contact, kind: kind ?? undefined, status, q }}
+            />
           }
         />
       )}

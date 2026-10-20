@@ -10,3 +10,4 @@ export * from "./log-format";
 export * from "./modules/entitlements";
 export * from "./modules/registry";
 export * from "./money";
+export * from "./pagination";
