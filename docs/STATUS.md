@@ -1196,8 +1196,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   only, not split) or counted against one channel. The report sums each counted category's lines
   dated in the period, in the main currency (into a channel's currency at the period's last
   day's rate), leaving out entries the marketplaces' own rows already count (sources
-  `settlement`, `noon`, `ebay`, `cogs`), so an advertising account a settlement posts to isn't
-  counted twice. Cost of goods sold and write-off system accounts aren't offered (they have their
+  `settlement`, `noon`, `ebay`, `cogs`) and their reversals (a settlement posted again, a month
+  undone: counted, they showed as a refund of fees and ads), so an advertising account a
+  settlement posts to isn't counted twice. Cost of goods sold and write-off system accounts aren't offered (they have their
   rows). A channel with costs but no sales in the period gets its column. The cell's hint lists
   each category's part.
 - Tests: db `channel-costs.test.ts` (categories and their channel, sums in the period without
