@@ -1,13 +1,21 @@
 "use client";
 
-import { parseSettlementReport } from "@bookalyze/core";
+import {
+  isTransactionReport,
+  parseSettlementReport,
+  parseTransactionReport,
+} from "@bookalyze/core";
 import { FileUp, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { syncSettlementsAction, uploadSettlementAction } from "./actions";
+import {
+  syncSettlementsAction,
+  uploadReportSettlementsAction,
+  uploadSettlementAction,
+} from "./actions";
 
 /** At most this many calls per click: the rest comes in with the daily job. */
 const MAX_ROUNDS = 6;
@@ -67,8 +75,54 @@ export function SyncSettlementsButton({ slug }: { slug: string }) {
 }
 
 /**
- * Adds settlements from Amazon's flat files (older periods than the Reports API lists). Each
- * file is read here in the browser; only the settlement's totals are sent.
+ * Amazon's date range transaction report: every settlement in it, sent a part at a time. The
+ * newest one is left out while it has no payout yet (it may still be open); ones already here
+ * are kept as they are.
+ */
+async function addTransactionReport(
+  slug: string,
+  name: string,
+  text: string,
+): Promise<{ added: number }> {
+  let settlements: ReturnType<typeof parseTransactionReport>;
+  try {
+    settlements = parseTransactionReport(text);
+  } catch (error) {
+    toast.error(`${name}: ${(error as Error).message}`);
+    return { added: 0 };
+  }
+  const newest = settlements.at(-1);
+  const open = newest && !newest.depositDate ? newest : null;
+  const ready = settlements.filter((s) => s !== open && s.currency);
+  let added = 0;
+  let skipped = 0;
+  for (let i = 0; i < ready.length; i += 20) {
+    const result = await uploadReportSettlementsAction(slug, ready.slice(i, i + 20));
+    if (!result.ok) {
+      toast.error(`${name}: ${result.message}`);
+      return { added };
+    }
+    added += result.added;
+    skipped += result.skipped;
+  }
+  const notes = [
+    skipped ? `${plural(skipped, "settlement")} already here, kept as they were.` : null,
+    open ? "The newest one is still open: it comes in once Amazon closes it." : null,
+  ].filter(Boolean);
+  if (!added) {
+    toast.info(`${name}: nothing new`, notes.length ? { description: notes.join(" ") } : {});
+  } else if (notes.length) {
+    toast.info(`${name}: ${plural(added, "settlement")} from the transaction report`, {
+      description: notes.join(" "),
+    });
+  }
+  return { added };
+}
+
+/**
+ * Adds settlements from Amazon's flat files (older periods than the Reports API lists), or all
+ * at once from its date range transaction report. Each file is read here in the browser; only
+ * the settlements' totals are sent.
  */
 export function UploadSettlements({ slug }: { slug: string }) {
   const router = useRouter();
@@ -80,9 +134,15 @@ export function UploadSettlements({ slug }: { slug: string }) {
       let added = 0;
       let updated = 0;
       for (const file of Array.from(files ?? [])) {
+        const text = await file.text();
+        if (isTransactionReport(text)) {
+          const report = await addTransactionReport(slug, file.name, text);
+          added += report.added;
+          continue;
+        }
         let settlement: ReturnType<typeof parseSettlementReport>;
         try {
-          settlement = parseSettlementReport(await file.text());
+          settlement = parseSettlementReport(text);
         } catch (error) {
           toast.error(`${file.name}: ${(error as Error).message}`);
           continue;

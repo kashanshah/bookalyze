@@ -125,6 +125,66 @@ export async function uploadSettlementAction(
   return { ok: true, ...saved };
 }
 
+/**
+ * Adds the settlements of Amazon's date range transaction report (read in the browser, a part
+ * at a time). Settlements already here are left as they are: Amazon's own report for them (from
+ * the API or a flat file) is more detailed than this one.
+ */
+export async function uploadReportSettlementsAction(
+  slug: string,
+  input: z.input<typeof settlementSchema>[],
+): Promise<SettlementResult<{ added: number; skipped: number }>> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx))
+    return { ok: false, message: "Only owners and admins can add settlements." };
+  const parsed = z.array(settlementSchema).max(50).safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Those settlements couldn't be read." };
+  const counts = await inOrg(ctx, async (tx) => {
+    let added = 0;
+    let skipped = 0;
+    for (const settlement of parsed.data) {
+      const [existing] = await tx
+        .select({ id: schema.settlements.id })
+        .from(schema.settlements)
+        .where(eq(schema.settlements.externalId, settlement.settlementId));
+      if (existing) {
+        skipped++;
+        continue;
+      }
+      const channelId = await settlementChannel(tx, {
+        connectionId: null,
+        marketplace: settlement.marketplace,
+        currency: settlement.currency,
+      });
+      const row = await saveSettlement(tx, {
+        orgId: ctx.org.id,
+        connectionId: null,
+        channelId,
+        reportId: null,
+        source: "upload",
+        settlement,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "settlements.uploaded",
+        entityType: "settlement",
+        entityId: row.id,
+        after: {
+          settlementId: settlement.settlementId,
+          total: settlement.total,
+          from: "transaction report",
+        },
+      });
+      added++;
+    }
+    return { added, skipped };
+  });
+  revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
+  return { ok: true, ...counts };
+}
+
 // --- Posting ------------------------------------------------------------------------------
 
 const setupSchema = z.object({
