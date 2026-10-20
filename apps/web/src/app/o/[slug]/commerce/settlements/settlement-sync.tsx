@@ -5,6 +5,7 @@ import {
   parseSettlementReport,
   parseTransactionReport,
   parseTransactionReportOrders,
+  parseTransactionReportReturns,
 } from "@bookalyze/core";
 import { FileUp, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -15,6 +16,7 @@ import { Spinner } from "@/components/ui/spinner";
 import {
   syncSettlementsAction,
   uploadReportOrdersAction,
+  uploadReportReturnsAction,
   uploadReportSettlementsAction,
   uploadSettlementAction,
 } from "./actions";
@@ -128,15 +130,34 @@ async function addTransactionReport(
       orders += result.added;
     }
   }
+  // And its refunds, as units sent back, for the days before Amazon's inventory ledger starts.
+  let returned = 0;
+  for (const group of parseTransactionReportReturns(text)) {
+    for (let i = 0; i < group.returns.length; i += 1000) {
+      const result = await uploadReportReturnsAction(slug, {
+        marketplace: group.marketplace,
+        currency: group.currency,
+        returns: group.returns.slice(i, i + 1000),
+      });
+      if (!result.ok) {
+        toast.error(`${name}: ${result.message}`);
+        break;
+      }
+      returned += result.added;
+    }
+  }
   const notes = [
     orders ? `${plural(orders, "older order")} added for cost of goods sold.` : null,
+    returned
+      ? `${plural(returned, "refund")} from before Amazon's inventory ledger counted as returns.`
+      : null,
     skipped ? `${plural(skipped, "settlement")} already here, kept as they were.` : null,
     posted
       ? `${plural(posted, "settlement")} in the books read differently now (what Amazon held back). Take them out of the books, then upload the report again.`
       : null,
     open ? "The newest one is still open: it comes in once Amazon closes it." : null,
   ].filter(Boolean);
-  if (!added && !updated && !orders) {
+  if (!added && !updated && !orders && !returned) {
     toast.info(`${name}: nothing new`, notes.length ? { description: notes.join(" ") } : {});
   } else if (notes.length) {
     toast.info(`${name}: ${plural(added, "settlement")} from the transaction report`, {

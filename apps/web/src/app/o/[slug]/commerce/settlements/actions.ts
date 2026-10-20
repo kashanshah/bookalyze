@@ -8,6 +8,7 @@ import {
 } from "@bookalyze/core";
 import {
   addReportOrders,
+  addReportReturns,
   dismissSettlementDeposit,
   getSettlementSettings,
   LedgerError,
@@ -293,6 +294,58 @@ export async function uploadReportOrdersAction(
     return { ok: false, message: `There's no ${marketplace} channel to add its orders to.` };
   revalidatePath(`/o/${slug}/commerce`, "layout");
   return { ok: true, added };
+}
+
+const reportReturnsSchema = z.object({
+  marketplace: z.string().min(1).max(100),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  returns: z
+    .array(
+      z.object({
+        date: z.iso.date(),
+        orderId: z.string().min(1).max(100),
+        sku: z.string().min(1).max(200),
+        quantity: z.number().int().min(1).max(100000),
+      }),
+    )
+    .max(1000),
+});
+
+/**
+ * Counts the transaction report's refunds as customer returns for the days before the
+ * marketplace's inventory ledger starts (read in the browser, a part at a time), so cost of goods
+ * sold puts those units back into stock. Refunds the ledger covers are left to it.
+ */
+export async function uploadReportReturnsAction(
+  slug: string,
+  input: z.input<typeof reportReturnsSchema>,
+): Promise<SettlementResult<{ added: number; covered: number }>> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only owners and admins can add returns." };
+  const parsed = reportReturnsSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Those refunds couldn't be read." };
+  const { marketplace, currency, returns } = parsed.data;
+  const result = await inOrg(ctx, async (tx) => {
+    const channelId = await settlementChannel(tx, { connectionId: null, marketplace, currency });
+    if (!channelId) return null;
+    const r = await addReportReturns(tx, { orgId: ctx.org.id, channelId, returns });
+    if (r.added) {
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "inventory_ledger.returns_from_refunds",
+        entityType: "sales_channel",
+        entityId: channelId,
+        after: { added: r.added, from: "transaction report" },
+      });
+    }
+    return r;
+  });
+  if (result === null)
+    return { ok: false, message: `There's no ${marketplace} channel to add its returns to.` };
+  revalidatePath(`/o/${slug}/inventory`, "layout");
+  return { ok: true, ...result };
 }
 
 // --- Posting ------------------------------------------------------------------------------

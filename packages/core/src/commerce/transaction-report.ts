@@ -414,3 +414,67 @@ export function parseTransactionReportOrders(text: string): ReportOrders[] {
     g.orders.sort((a, b) => a.order.purchasedAt.localeCompare(b.order.purchasedAt));
   return [...result.values()];
 }
+
+export type ReportReturn = {
+  /** YYYY-MM-DD (UTC), the day Amazon refunded it. */
+  date: string;
+  orderId: string;
+  sku: string;
+  /** Units refunded, positive. */
+  quantity: number;
+};
+
+export type ReportReturns = { marketplace: string; currency: string; returns: ReportReturn[] };
+
+/**
+ * The units Amazon refunded in the report, by marketplace: each refund's day, order, SKU and
+ * quantity. Before Amazon's inventory ledger reaches (about 18 months back), they're the only
+ * record of what customers sent back, so cost of goods sold counts them as returns. Refunds of
+ * the same order and SKU on the same day add up. Throws on a file that isn't the report.
+ */
+export function parseTransactionReportReturns(text: string): ReportReturns[] {
+  const rows = parseCsv(text.replace(/^﻿/, ""), ",");
+  const headerAt = rows.findIndex((r) => (r[0] ?? "").trim().toLowerCase() === "date/time");
+  const header = (rows[headerAt] ?? []).map((h) => h.trim().toLowerCase());
+  const col = (name: string) => header.indexOf(name);
+  const at = {
+    date: col("date/time"),
+    type: col("type"),
+    order: col("order id"),
+    sku: col("sku"),
+    quantity: col("quantity"),
+    marketplace: col("marketplace"),
+  };
+  if (headerAt < 0 || at.type < 0 || at.order < 0 || at.sku < 0 || at.quantity < 0) {
+    throw new Error(
+      "This isn't Amazon's transaction report. In Seller Central → Payments → Reports Repository, request a Transaction report for a custom date range.",
+    );
+  }
+  const cell = (row: string[], i: number) => (i >= 0 ? (row[i] ?? "").trim() : "");
+  const result = new Map<string, { group: ReportReturns; byKey: Map<string, ReportReturn> }>();
+  for (const row of rows.slice(headerAt + 1)) {
+    if (!/^refund$/i.test(cell(row, at.type))) continue;
+    const orderId = cell(row, at.order).slice(0, 100);
+    const sku = cell(row, at.sku);
+    const when = readReportDate(cell(row, at.date));
+    const quantity = Math.abs(Math.trunc(Number(cell(row, at.quantity)) || 0));
+    const market = marketplaceOf(cell(row, at.marketplace));
+    if (!orderId || !sku || !when || !quantity || !market) continue;
+    const entry = result.get(market.name) ?? {
+      group: { marketplace: market.name, currency: market.currency, returns: [] },
+      byKey: new Map<string, ReportReturn>(),
+    };
+    result.set(market.name, entry);
+    const date = when.slice(0, 10);
+    const key = `${orderId}|${sku}|${date}`;
+    const found = entry.byKey.get(key);
+    if (found) found.quantity += quantity;
+    else entry.byKey.set(key, { date, orderId, sku, quantity });
+  }
+  return [...result.values()].map(({ group, byKey }) => ({
+    ...group,
+    returns: [...byKey.values()].sort(
+      (a, b) => a.date.localeCompare(b.date) || a.orderId.localeCompare(b.orderId),
+    ),
+  }));
+}

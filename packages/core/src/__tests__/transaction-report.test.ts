@@ -3,6 +3,7 @@ import {
   isTransactionReport,
   parseTransactionReport,
   parseTransactionReportOrders,
+  parseTransactionReportReturns,
   readReportDate,
   settlementGroup,
 } from "../commerce";
@@ -340,6 +341,17 @@ describe("Amazon's date range transaction report", () => {
       ],
     });
     expect(ae?.orders[2]?.items[0]).toMatchObject({ sku: "MUG", quantityShipped: 2 });
+  });
+
+  it("reads its refunds as units sent back: day, order, SKU and quantity", () => {
+    const [ae] = parseTransactionReportReturns(REPORT);
+    expect(ae).toMatchObject({ marketplace: "Amazon.ae", currency: "AED" });
+    expect(ae?.returns).toEqual([
+      { date: "2026-02-05", orderId: "406-1", sku: "MUG", quantity: 1 },
+    ]);
+    // Two refunds of the same order and SKU on one day add up.
+    const twice = [REPORT, REPORT.split("\n")[5]].join("\n");
+    expect(parseTransactionReportReturns(twice)[0]?.returns[0]?.quantity).toBe(2);
   });
 
   it("refuses a file that isn't the report", () => {
