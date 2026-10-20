@@ -12,7 +12,12 @@ import { CostsForm } from "./costs-form";
 
 export const metadata: Metadata = { title: "Your own costs" };
 
-const PLATFORMS: Record<string, string> = { amazon: "Amazon", noon: "Noon", ebay: "eBay" };
+const PLATFORMS: Record<string, string> = {
+  amazon: "Amazon",
+  noon: "Noon",
+  ebay: "eBay",
+  walmart: "Walmart",
+};
 
 export default async function ChannelCostsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

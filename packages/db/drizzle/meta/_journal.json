@@ -519,6 +519,13 @@
       "when": 1792534827313,
       "tag": "0073_stock_moves",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1792535273909,
+      "tag": "0074_walmart_channels",
+      "breakpoints": true
     }
   ]
 }

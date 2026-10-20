@@ -15,10 +15,13 @@ import {
   parseNoonKeyFile,
   previewReport,
   type ReportPreview,
+  WALMART_FULFILMENT,
+  walmartMarketplace,
 } from "@bookalyze/core";
 import {
   addEbayChannel,
   addNoonChannel,
+  addWalmartChannel,
   amazonConnectionsForRegion,
   attachNoonChannels,
   ChannelRemovalError,
@@ -415,6 +418,53 @@ export async function addEbayChannelAction(
   };
 }
 
+const walmartChannelSchema = z.object({
+  marketplace: z
+    .string()
+    .refine((v) => walmartMarketplace(v) !== null, "Choose a Walmart country."),
+  fulfilment: z.enum(FULFILMENT_MODES, { message: "Choose who ships the orders." }),
+});
+
+/** Adds a Walmart country as a channel (or switches one added before back on). */
+export async function addWalmartChannelAction(
+  slug: string,
+  input: unknown,
+): Promise<CommerceResult<{ name: string; created: boolean; channelId: string }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const parsed = walmartChannelSchema.safeParse(input);
+  if (!parsed.success) {
+    const errors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) errors[String(issue.path[0])] ??= issue.message;
+    return { ok: false, message: "Check the highlighted fields.", errors };
+  }
+  const marketplace = walmartMarketplace(parsed.data.marketplace);
+  if (!marketplace) return { ok: false, message: "Choose a Walmart country." };
+  const result = await inOrg(ctx, async (tx) => {
+    const added = await addWalmartChannel(tx, {
+      orgId: ctx.org.id,
+      marketplace,
+      fulfilment: parsed.data.fulfilment,
+    });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: added.created ? "channel.added" : "channel.switched_on",
+      entityType: "sales_channel",
+      entityId: added.channel.id,
+      after: { name: marketplace.name, fulfilment: parsed.data.fulfilment },
+    });
+    return added;
+  });
+  revalidate(slug);
+  return {
+    ok: true,
+    name: marketplace.name,
+    created: result.created,
+    channelId: result.channel.id,
+  };
+}
+
 // --- eBay ------------------------------------------------------------------------------------
 
 /**
@@ -507,7 +557,7 @@ export async function disconnectEbayAction(slug: string): Promise<CommerceResult
   return { ok: true };
 }
 
-/** Who ships a channel's orders (Noon: FBN, FBP or both). */
+/** Who ships a channel's orders (Noon: FBN, FBP or both; Walmart: WFS, the seller or both). */
 export async function setChannelFulfilmentAction(
   slug: string,
   channelId: string,
@@ -535,7 +585,8 @@ export async function setChannelFulfilmentAction(
   });
   if (!row) return { ok: false, message: "This channel no longer exists." };
   revalidate(slug);
-  return { ok: true, label: NOON_FULFILMENT[parsed.data.fulfilment].label };
+  const labels = row.kind === "walmart" ? WALMART_FULFILMENT : NOON_FULFILMENT;
+  return { ok: true, label: labels[parsed.data.fulfilment].label };
 }
 
 /** Forgets the credentials; channels are switched off and keep their history. */

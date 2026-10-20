@@ -23,7 +23,7 @@ import { organization, user } from "./auth";
 import { connections } from "./banking";
 import { tenantIsolationPolicy } from "./tenancy";
 
-export const CHANNEL_KINDS = ["amazon", "noon", "ebay"] as const;
+export const CHANNEL_KINDS = ["amazon", "noon", "ebay", "walmart"] as const;
 export type ChannelKind = (typeof CHANNEL_KINDS)[number];
 
 /** Who ships a channel's orders: the marketplace (FBA, FBN), the seller (FBM, FBP), or both. */
@@ -31,7 +31,7 @@ export const CHANNEL_FULFILMENT = ["marketplace", "seller", "both"] as const;
 
 /**
  * Where the company sells: one row per Amazon marketplace of a connected seller account, and
- * one per Noon country or eBay site the company adds (with no connection until that account's
+ * one per Noon country, eBay site or Walmart country the company adds (with no connection until that account's
  * API is connected). Orders, review requests and settlements hang off it.
  */
 export const salesChannels = pgTable(
@@ -45,12 +45,12 @@ export const salesChannels = pgTable(
     kind: text("kind", { enum: CHANNEL_KINDS }).notNull(),
     /** e.g. "Amazon.ca". */
     name: text("name").notNull(),
-    /** Amazon's marketplace ID (e.g. A2EUQ1WTGCTBG2), core's Noon key (e.g. noon-ae), or eBay's
-     * marketplace id (e.g. EBAY_US). */
+    /** Amazon's marketplace ID (e.g. A2EUQ1WTGCTBG2), core's Noon key (e.g. noon-ae), eBay's
+     * marketplace id (e.g. EBAY_US), or core's Walmart key (e.g. walmart-us). */
     marketplaceId: text("marketplace_id"),
     country: char("country", { length: 2 }),
     currency: char("currency", { length: 3 }).notNull(),
-    /** Who ships its orders (Noon channels; null: not said). */
+    /** Who ships its orders (Noon and Walmart channels; null: not said). */
     fulfilment: text("fulfilment", { enum: CHANNEL_FULFILMENT }),
     /** Switched off channels keep their history but aren't synced. */
     isActive: boolean("is_active").notNull().default(true),
@@ -92,7 +92,11 @@ export const salesChannels = pgTable(
     uniqueIndex("sales_channels_ebay_marketplace_key")
       .on(t.organizationId, t.marketplaceId)
       .where(sql`${t.kind} = 'ebay'`),
-    check("sales_channels_kind_valid", sql`${t.kind} in ('amazon', 'noon', 'ebay')`),
+    // One channel per Walmart country per company.
+    uniqueIndex("sales_channels_walmart_marketplace_key")
+      .on(t.organizationId, t.marketplaceId)
+      .where(sql`${t.kind} = 'walmart'`),
+    check("sales_channels_kind_valid", sql`${t.kind} in ('amazon', 'noon', 'ebay', 'walmart')`),
     check(
       "sales_channels_fulfilment_valid",
       sql`${t.fulfilment} is null or ${t.fulfilment} in ('marketplace', 'seller', 'both')`,

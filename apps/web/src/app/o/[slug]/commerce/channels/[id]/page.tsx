@@ -21,6 +21,7 @@ import { AmazonAccount } from "../amazon";
 import { EbayAccount, EbayConnectNotice } from "../ebay";
 import { NoonAccount, type NoonConnectionView, NoonFulfilment } from "../noon";
 import { PLATFORMS } from "../platforms";
+import { WalmartAccount, WalmartFulfilment } from "../walmart";
 import { ChannelSwitch, RemoveChannel } from "./channel-settings";
 
 export const metadata: Metadata = { title: "Channel" };
@@ -109,7 +110,9 @@ export default async function ChannelPage({
               ? "You ship eBay orders yourself."
               : ch.kind === "noon"
                 ? "Noon country settings."
-                : "Amazon marketplace settings."}
+                : ch.kind === "walmart"
+                  ? "Walmart country settings."
+                  : "Amazon marketplace settings."}
           </p>
         </div>
         <ChannelSwitch
@@ -136,7 +139,20 @@ export default async function ChannelPage({
             />
           </div>
         ) : null}
-        {canManage && (ch.kind === "noon" || ch.kind === "ebay") ? (
+        {ch.kind === "walmart" ? (
+          <div className="max-w-sm">
+            <WalmartFulfilment
+              slug={slug}
+              canManage={canManage}
+              channel={{
+                id: ch.id,
+                name: ch.name,
+                fulfilment: ch.fulfilment && isFulfilmentMode(ch.fulfilment) ? ch.fulfilment : null,
+              }}
+            />
+          </div>
+        ) : null}
+        {canManage && ch.kind !== "amazon" ? (
           <RemoveChannel
             slug={slug}
             channel={{ id: ch.id, name: ch.name, kind: ch.kind }}
@@ -203,6 +219,8 @@ export default async function ChannelPage({
           ) : null}
         </>
       ) : null}
+
+      {ch.kind === "walmart" ? <WalmartAccount /> : null}
 
       {ch.kind === "ebay" ? (
         <>

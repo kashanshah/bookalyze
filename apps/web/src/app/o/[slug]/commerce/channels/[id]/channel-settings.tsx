@@ -63,7 +63,7 @@ export function ChannelSwitch({
 }
 
 /**
- * Removing a Noon country or eBay site added by mistake, with what was brought in for it. While
+ * Removing a Noon or Walmart country or an eBay site added by mistake, with what was brought in for it. While
  * something of it is in the books (`blocked`), the button stays off and says what to take out.
  */
 export function RemoveChannel({
@@ -72,14 +72,19 @@ export function RemoveChannel({
   blocked,
 }: {
   slug: string;
-  channel: { id: string; name: string; kind: "noon" | "ebay" };
+  channel: { id: string; name: string; kind: "noon" | "ebay" | "walmart" };
   /** Why it can't go yet ("2 posted Noon months"), or null when it can. */
   blocked: string | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
-  const brought = channel.kind === "noon" ? "Noon transactions" : "eBay transactions and payouts";
+  const brought =
+    channel.kind === "noon"
+      ? "Noon transactions"
+      : channel.kind === "ebay"
+        ? "eBay transactions and payouts"
+        : "SKU links";
   const remove = () =>
     start(async () => {
       const result = await removeChannelAction(slug, channel.id);

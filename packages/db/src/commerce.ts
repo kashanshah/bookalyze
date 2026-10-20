@@ -9,6 +9,7 @@ import {
   type MarketplaceParticipation,
   type NoonMarketplace,
   parseDecimal,
+  type WalmartMarketplace,
 } from "@bookalyze/core";
 import {
   and,
@@ -230,6 +231,62 @@ export async function addEbayChannel(
     })
     .returning();
   if (!row) throw new Error("The eBay channel couldn't be added.");
+  return { channel: row, created: true };
+}
+
+// --- Walmart ----------------------------------------------------------------------------------
+
+/** The company's Walmart channels (one per country), by name. */
+export async function listWalmartChannels(tx: Transaction) {
+  return tx
+    .select()
+    .from(salesChannels)
+    .where(eq(salesChannels.kind, "walmart"))
+    .orderBy(asc(salesChannels.name));
+}
+
+/**
+ * Adds a Walmart country as a channel, switched on, with who ships its orders. Adding one the
+ * company already has switches it back on and keeps its history. Returns the channel and whether
+ * it was new. (No Walmart connection yet: channels are added by hand.)
+ */
+export async function addWalmartChannel(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    marketplace: Pick<WalmartMarketplace, "id" | "name" | "country" | "currency">;
+    fulfilment: FulfilmentMode;
+  },
+) {
+  const [existing] = await tx
+    .select({ id: salesChannels.id })
+    .from(salesChannels)
+    .where(
+      and(eq(salesChannels.kind, "walmart"), eq(salesChannels.marketplaceId, input.marketplace.id)),
+    );
+  if (existing) {
+    const [row] = await tx
+      .update(salesChannels)
+      .set({ isActive: true, fulfilment: input.fulfilment })
+      .where(eq(salesChannels.id, existing.id))
+      .returning();
+    if (!row) throw new Error("The Walmart channel couldn't be updated.");
+    return { channel: row, created: false };
+  }
+  const [row] = await tx
+    .insert(salesChannels)
+    .values({
+      organizationId: input.orgId,
+      kind: "walmart",
+      name: input.marketplace.name,
+      marketplaceId: input.marketplace.id,
+      country: input.marketplace.country,
+      currency: input.marketplace.currency,
+      fulfilment: input.fulfilment,
+      isActive: true,
+    })
+    .returning();
+  if (!row) throw new Error("The Walmart channel couldn't be added.");
   return { channel: row, created: true };
 }
 
