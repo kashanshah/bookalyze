@@ -913,6 +913,12 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   it's refreshed. One in the books that differs is counted and the toast says to take it out
   first. The newest is left out while it has no payout (it may still be open).
 - Test: core `transaction-report.test.ts` (incl. held back and released).
+- **Lines no group claimed.** The report's "other" money column (order and refund rows) is the
+  buyer's money: a sale or refund, named "other" (it used to take the product's name, so "Coffee
+  Mugs" read as a fee). `settlementGroup` also reads "FBA Inventory Reimbursement" in the amount
+  type (flat file: FREE_REPLACEMENT_REFUND_ITEMS) and Seller Rewards as reimbursements, so
+  nothing earned sits in the clearing account. Grouping happens when a settlement posts:
+  taking one out of the books and posting it again applies it.
 
 ### Phase 4, slice 2: settlements post to the books
 

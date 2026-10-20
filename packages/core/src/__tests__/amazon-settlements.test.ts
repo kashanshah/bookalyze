@@ -145,6 +145,17 @@ describe("parseSettlementReport", () => {
     expect(g("other-transaction", "FBA Inventory Reimbursement", "REVERSAL_REIMBURSEMENT")).toBe(
       "reimbursements",
     );
+    expect(
+      g("other-transaction", "FBA Inventory Reimbursement", "FREE_REPLACEMENT_REFUND_ITEMS"),
+    ).toBe("reimbursements");
+    expect(g("Others", "Others", "Seller Rewards")).toBe("reimbursements");
+    // The transaction report's "other" column: a sale or refund, whatever the product is called
+    // (once filed under the product's name, "Coffee Mugs" read as a fee).
+    expect(g("Order", "Other", "other")).toBe("sales");
+    expect(g("Order", "Other", "KAZOMO Glass Coffee Mugs Set of 4")).toBe("sales");
+    expect(g("Refund", "Other", "other")).toBe("refunds");
+    // Its own reserve lines stay reserves.
+    expect(g("Other", "Other", "Current Reserve Amount")).toBe("reserve");
   });
 
   it("reads amounts and dates the way Amazon prints them", () => {

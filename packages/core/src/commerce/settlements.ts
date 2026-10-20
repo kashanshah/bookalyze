@@ -193,11 +193,17 @@ export function settlementGroup(
   const at = line.amountType.toLowerCase();
   const ad = line.amountDescription.toLowerCase();
   if (/reserve/.test(`${at} ${ad}`)) return "reserve";
+  // An order or refund amount of a kind with no name of its own ("other" in the transaction
+  // report): the buyer's money, so a sale or a refund, whatever the product is called.
+  if (at === "other" && /^(order|refund)/.test(tt))
+    return tt.startsWith("refund") ? "refunds" : "sales";
   if (/advertis/.test(`${tt} ${at} ${ad}`)) return "advertising";
   if (/withheld|marketplacefacilitator|tcs|tds/.test(`${at} ${ad}`)) return "tax";
   // Tax the buyer paid (on items, shipping, gift wrap) isn't income: it goes with the tax lines.
   if (/itemprice/.test(at) && /tax/.test(ad)) return "tax";
-  if (/reimburse/.test(`${tt} ${ad}`)) return "reimbursements";
+  // Stock Amazon paid for ("FBA Inventory Reimbursement", in the type or the description), and
+  // what it credits as rewards.
+  if (/reimburse|seller rewards/.test(`${tt} ${at} ${ad}`)) return "reimbursements";
   if (/promotion/.test(at)) return "promotions";
   const fee = /fee|commission/.test(`${at} ${ad}`) || /servicefee|storage/.test(tt);
   // VAT, GST or HST Amazon charges on its fees: a cost, or recoverable when registered.
@@ -305,7 +311,7 @@ export const SETTLEMENT_ACCOUNT_HINTS: Record<SettlementAccountKey, string> = {
     "VAT, GST or HST Amazon charges on its fees. Not registered: your fees account (it's a cost). Registered: your recoverable tax (input tax) account. Left empty, it goes with the fees.",
   advertising: "Sponsored ads paid out of the payout. An expense account.",
   tax: "Tax buyers paid, and what Amazon paid for you (marketplace facilitator). When Amazon pays it, the two cancel out. Your sales tax account.",
-  reimbursements: "What Amazon pays you back for lost or damaged stock.",
+  reimbursements: "What Amazon pays you back for lost or damaged stock, and its seller rewards.",
   reserve: "Amounts held back and released later. The clearing account.",
   other: "Anything else (card charges, bank checks). The clearing account is fine.",
   clearing:

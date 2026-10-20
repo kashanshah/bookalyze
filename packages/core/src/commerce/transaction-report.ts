@@ -213,7 +213,8 @@ export function parseTransactionReport(text: string): Settlement[] {
       for (const c of money) {
         const value = readSettlementAmount(cell(row, c.i));
         if (value === null) continue;
-        const [amountType, name] = ORDER_COLUMNS[c.name] ?? ["Other", description];
+        // A column with no flat-file name keeps its own ("other"), not the product's.
+        const [amountType, name] = ORDER_COLUMNS[c.name] ?? ["Other", c.name];
         add(amountType, name, parseDecimal(value));
       }
     } else {
