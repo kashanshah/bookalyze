@@ -35,7 +35,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       assetOf(tx, settings.letterheadAttachmentId, LETTERHEAD_TYPES),
     ]);
     return {
-      invoice: await sampleInvoice(tx, ctx.profile),
+      invoice: await sampleInvoice(tx, ctx.profile, {
+        prefix: settings.invoicePrefix,
+        suffix: settings.invoiceSuffix,
+      }),
       brand: await documentBrandFrom({ ...settings, logo, letterhead, saved: false }),
     };
   });

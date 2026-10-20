@@ -48,6 +48,9 @@ export type BrandSettings = {
   letterheadLeft: number;
   letterheadRight: number;
   letterheadPages: LetterheadPages;
+  /** Written around the running number, e.g. "KZ-" and "-{YYYY}". */
+  invoicePrefix: string;
+  invoiceSuffix: string;
 };
 
 export const EMPTY_BRAND: BrandSettings = {
@@ -62,6 +65,8 @@ export const EMPTY_BRAND: BrandSettings = {
   letterheadLeft: DEFAULT_LETTERHEAD_MARGINS.left,
   letterheadRight: DEFAULT_LETTERHEAD_MARGINS.right,
   letterheadPages: "first",
+  invoicePrefix: "INV-",
+  invoiceSuffix: "",
 };
 
 const HEX = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i;

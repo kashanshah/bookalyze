@@ -1,0 +1,3 @@
+ALTER TABLE "organization_branding" ADD COLUMN "invoice_prefix" text DEFAULT 'INV-' NOT NULL;--> statement-breakpoint
+ALTER TABLE "organization_branding" ADD COLUMN "invoice_suffix" text DEFAULT '' NOT NULL;--> statement-breakpoint
+ALTER TABLE "organization_branding" ADD CONSTRAINT "organization_branding_invoice_affix" CHECK (length("organization_branding"."invoice_prefix") <= 20 and length("organization_branding"."invoice_suffix") <= 20);

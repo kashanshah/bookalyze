@@ -39,6 +39,8 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
           nameArabic: brand.nameArabic,
           logo: file(brand.logo),
           logoHeight: brand.logoHeight,
+          invoicePrefix: brand.invoicePrefix,
+          invoiceSuffix: brand.invoiceSuffix,
           letterhead: file(brand.letterhead),
           letterheadTop: brand.letterheadTop,
           letterheadBottom: brand.letterheadBottom,
