@@ -2633,6 +2633,62 @@ test("walmart: add Walmart countries, say who ships, link a SKU, and remove one 
   await expect(dialog.getByText(/Walmart Canada · 1 unit per listing/)).toBeVisible();
 });
 
+test("walmart: connect Walmart Canada with its API key, test it, replace it and disconnect", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Walmart Canada/ }).click();
+  const account = page.getByRole("region", { name: "Walmart account" });
+  await account.getByRole("button", { name: "Connect Walmart" }).click();
+  const dialog = page.getByRole("dialog");
+
+  // A key Walmart doesn't know is refused, in Walmart's words, and nothing is saved.
+  await dialog.getByLabel("Client ID").fill("wmt-e2e-unknown");
+  await dialog.getByLabel("Client secret").fill("not-the-secret");
+  await dialog.getByRole("button", { name: "Check and connect" }).click();
+  await expect(page.getByText(/Walmart didn't accept this client ID and secret/)).toBeVisible();
+  await expect(page.getByText(/Invalid client credentials/).first()).toBeVisible();
+
+  // The real key connects; it can't see Inventory, which is said.
+  await dialog.getByLabel("Client ID").fill("wmt-e2e-ca-client");
+  await dialog.getByLabel("Client secret").fill("wmt-e2e-ca-secret");
+  await dialog.getByRole("button", { name: "Check and connect" }).click();
+  await expect(page.getByText("Walmart Canada connected")).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await expect(account.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(account).toContainText("Key ending ient");
+  const scopes = account.getByRole("definition").filter({ hasText: /access|View only/ });
+  await expect(scopes).toHaveText(["View only", "Full access", "No access"]);
+  await expect(account.getByText(/This key can't see Inventory yet/)).toBeVisible();
+
+  // Testing it checks with Walmart again.
+  await account.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByText("Walmart answered")).toBeVisible();
+
+  // A key with Inventory replaces it; the warning goes.
+  await account.getByRole("button", { name: "Replace key" }).click();
+  await dialog.getByLabel("Client ID").fill("wmt-e2e-ca-full");
+  await dialog.getByLabel("Client secret").fill("wmt-e2e-ca-full-secret");
+  await dialog.getByRole("button", { name: "Check and replace" }).click();
+  await expect(page.getByText("Key replaced")).toBeVisible();
+  await expect(account).toContainText("Key ending full");
+  await expect(account.getByText(/This key can't see/)).toHaveCount(0);
+
+  // The channel list says it's connected.
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await expect(page.getByRole("link", { name: /^Walmart Canada/ })).toContainText("Connected");
+  await page.getByRole("link", { name: /^Walmart Canada/ }).click();
+
+  // Disconnecting deletes the key; the channel stays.
+  await account.getByRole("button", { name: "Disconnect" }).click();
+  await account.getByRole("button", { name: "Click again to disconnect" }).click();
+  await expect(page.getByText("Walmart disconnected")).toBeVisible();
+  await expect(account.getByRole("button", { name: "Connect Walmart" })).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Use Walmart Canada" })).toBeChecked();
+});
+
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
   const keyFile = async (path: string) => ({
     name: "noon_credentials.json",

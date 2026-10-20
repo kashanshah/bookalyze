@@ -6,6 +6,7 @@ import {
   ebayMarketplace,
   FULFILMENT_MODES,
   isAmazonRegion,
+  missingWalmartAccess,
   NOON_FULFILMENT,
   NOON_INPUT_NAME,
   NOON_TRANSACTIONS_EXPORT,
@@ -13,6 +14,7 @@ import {
   noonMarketplace,
   noonReportParams,
   parseNoonKeyFile,
+  parseWalmartCredentials,
   previewReport,
   type ReportPreview,
   WALMART_FULFILMENT,
@@ -24,15 +26,18 @@ import {
   addWalmartChannel,
   amazonConnectionsForRegion,
   attachNoonChannels,
+  attachWalmartChannel,
   ChannelRemovalError,
   createConnection,
   disconnectAmazon,
   disconnectEbay,
   disconnectNoon,
+  disconnectWalmart,
   getChannel,
   getConnection,
   getEbayConnection,
   getNoonConnection,
+  getWalmartConnection,
   listAmazonConnections,
   listOrderConnections,
   recordConnectionSync,
@@ -58,8 +63,10 @@ import {
   getCommerceContext,
   openAmazonCredentials,
   openNoonCredentials,
+  openWalmartCredentials,
   sealAmazonCredentials,
   sealNoonCredentials,
+  sealWalmartCredentials,
 } from "@/server/commerce";
 import {
   EBAY_STATE_COOKIE,
@@ -80,6 +87,7 @@ import {
   noonExportStatus,
 } from "@/server/noon";
 import { isOrgAdmin } from "@/server/org";
+import { checkWalmartKey, WalmartError } from "@/server/walmart";
 
 export type CommerceResult<T = object> =
   | ({ ok: true } & T)
@@ -90,7 +98,12 @@ function revalidate(slug: string) {
 }
 
 function failure(error: unknown): { ok: false; message: string } {
-  if (error instanceof AmazonError || error instanceof NoonError || error instanceof EbayError) {
+  if (
+    error instanceof AmazonError ||
+    error instanceof NoonError ||
+    error instanceof EbayError ||
+    error instanceof WalmartError
+  ) {
     return { ok: false, message: error.message };
   }
   if (error instanceof VaultError) {
@@ -980,4 +993,170 @@ export async function checkNoonReportAction(
   } catch (error) {
     return failure(error);
   }
+}
+
+// --- Walmart ---------------------------------------------------------------------------------
+
+/** The Walmart channel an action is about, with its country. */
+async function walmartChannel(ctx: Awaited<ReturnType<typeof getCommerceContext>>, id: string) {
+  if (!z.string().uuid().safeParse(id).success) return null;
+  const channel = await inOrg(ctx, (tx) => getChannel(tx, id));
+  const marketplace =
+    channel?.kind === "walmart" ? walmartMarketplace(channel.marketplaceId ?? "") : null;
+  return channel && marketplace ? { channel, marketplace } : null;
+}
+
+/** What a Walmart connection keeps besides the key: its country and what the key may do. */
+function walmartSettings(
+  marketplace: { id: string; market: string },
+  clientId: string,
+  scopes: Awaited<ReturnType<typeof checkWalmartKey>>,
+) {
+  return {
+    marketplace: marketplace.id,
+    market: marketplace.market,
+    // The client ID's last characters, so people can tell which key is saved.
+    clientIdEnding: clientId.slice(-4),
+    scopes,
+  };
+}
+
+/**
+ * Connects a Walmart country's seller account with its API key (client ID and secret): checked
+ * with Walmart, then sealed. Saving a key again for the country replaces it.
+ */
+export async function connectWalmartAction(
+  slug: string,
+  input: unknown,
+): Promise<CommerceResult<{ replaced: boolean; missing: string[] }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const parsed = z
+    .object({
+      channelId: z.string(),
+      clientId: z.string().max(1000),
+      clientSecret: z.string().max(1000),
+    })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Enter the client ID and secret." };
+  const found = await walmartChannel(ctx, parsed.data.channelId);
+  if (!found) return { ok: false, message: "Unknown channel." };
+  const { marketplace } = found;
+  let creds: ReturnType<typeof parseWalmartCredentials>;
+  try {
+    creds = parseWalmartCredentials(parsed.data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Check the client ID and secret.";
+    return {
+      ok: false,
+      message,
+      errors: parsed.data.clientId.trim() ? { clientSecret: message } : { clientId: message },
+    };
+  }
+  try {
+    const scopes = await checkWalmartKey(creds, marketplace.market);
+    const settings = walmartSettings(marketplace, creds.clientId, scopes);
+    const replaced = await inOrg(ctx, async (tx) => {
+      const existing = await getWalmartConnection(tx, marketplace.id);
+      const id =
+        existing?.id ??
+        (
+          await createConnection(tx, {
+            orgId: ctx.org.id,
+            userId: ctx.session.user.id,
+            provider: "walmart",
+            name: marketplace.name,
+            settings,
+          })
+        ).id;
+      if (existing) {
+        await tx
+          .update(schema.connections)
+          .set({ settings, status: "active" })
+          .where(eq(schema.connections.id, id));
+      }
+      await setConnectionSecret(tx, id, sealWalmartCredentials(ctx.org.id, id, creds));
+      await attachWalmartChannel(tx, id, marketplace.id);
+      await recordConnectionSync(tx, id, { at: new Date(), error: null });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: existing ? "connection.credentials_replaced" : "connection.created",
+        entityType: "connection",
+        entityId: id,
+        after: { provider: "walmart", marketplace: marketplace.id, scopes },
+      });
+      return Boolean(existing && existing.status !== "disconnected");
+    });
+    revalidate(slug);
+    return { ok: true, replaced, missing: missingWalmartAccess(scopes).map((a) => a.label) };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Checks the saved Walmart key for a country again, and what it may do. */
+export async function testWalmartAction(
+  slug: string,
+  channelId: string,
+): Promise<CommerceResult<{ missing: string[] }>> {
+  const ctx = await getCommerceContext(slug);
+  const found = await walmartChannel(ctx, channelId);
+  if (!found) return { ok: false, message: "Unknown channel." };
+  const { marketplace } = found;
+  const connection = await inOrg(ctx, async (tx) => {
+    const live = await getWalmartConnection(tx, marketplace.id);
+    return live ? getConnection(tx, live.id) : null;
+  });
+  if (!connection?.secret || connection.status === "disconnected") {
+    return { ok: false, message: `${marketplace.name} isn't connected. Enter its API key first.` };
+  }
+  let error: string | null = null;
+  let missing: string[] = [];
+  try {
+    const creds = openWalmartCredentials(ctx.org.id, connection.id, connection.secret);
+    const scopes = await checkWalmartKey(creds, marketplace.market);
+    missing = missingWalmartAccess(scopes).map((a) => a.label);
+    const settings = walmartSettings(marketplace, creds.clientId, scopes);
+    await inOrg(ctx, (tx) =>
+      tx
+        .update(schema.connections)
+        .set({ settings })
+        .where(eq(schema.connections.id, connection.id)),
+    );
+  } catch (e) {
+    error = failure(e).message;
+  }
+  await inOrg(ctx, (tx) => recordConnectionSync(tx, connection.id, { at: new Date(), error }));
+  revalidate(slug);
+  return error ? { ok: false, message: error } : { ok: true, missing };
+}
+
+/** Forgets a Walmart country's key; the channel and everything brought in stay. */
+export async function disconnectWalmartAction(
+  slug: string,
+  channelId: string,
+): Promise<CommerceResult> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const found = await walmartChannel(ctx, channelId);
+  if (!found) return { ok: false, message: "Unknown channel." };
+  const { marketplace } = found;
+  const done = await inOrg(ctx, async (tx) => {
+    const connection = await getWalmartConnection(tx, marketplace.id);
+    if (!connection || connection.status === "disconnected") return false;
+    await disconnectWalmart(tx, connection.id);
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "connection.disconnected",
+      entityType: "connection",
+      entityId: connection.id,
+      after: { provider: "walmart", marketplace: marketplace.id },
+    });
+    return true;
+  });
+  if (!done) return { ok: false, message: `${marketplace.name} isn't connected.` };
+  revalidate(slug);
+  return { ok: true };
 }

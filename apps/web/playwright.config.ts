@@ -46,6 +46,12 @@ export default defineConfig({
       reuseExistingServer: true,
     },
     {
+      // A stand-in for Walmart's Marketplace API (e2e/walmart-mock.mjs).
+      command: "node e2e/walmart-mock.mjs",
+      url: "http://localhost:4014/health",
+      reuseExistingServer: true,
+    },
+    {
       command: "pnpm start",
       url: `http://localhost:${port}/sign-in`,
       reuseExistingServer: true,
@@ -55,6 +61,7 @@ export default defineConfig({
         AMAZON_LWA_URL: process.env.AMAZON_LWA_URL ?? "http://localhost:4011/auth/o2/token",
         AMAZON_SPAPI_URL: process.env.AMAZON_SPAPI_URL ?? "http://localhost:4011",
         NOON_API_URL: process.env.NOON_API_URL ?? "http://localhost:4012",
+        WALMART_API_URL: process.env.WALMART_API_URL ?? "http://localhost:4014",
         // Test-only eBay app keys, accepted by the stand-in only.
         EBAY_CLIENT_ID: "Bookalyz-e2e-SBX-0000",
         EBAY_CLIENT_SECRET: "SBX-e2e-client-secret-0000",
