@@ -898,12 +898,21 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   Commission, FBA fees → FBAPerUnitFulfillmentFee, promotional rebates → Promotion…), so
   `settlementGroup` sorts them unchanged; fee, adjustment and service rows keep Amazon's type
   and description ("Service Fee · Cost of Advertising"). Transfer rows aren't earnings: left out,
-  each gives the settlement it pays (same amount, after it) its deposit date. Dates are day-first
-  or month-first with the zone (`readReportDate`); the currency comes from the marketplace.
+  each pays the settlement that closed last before it and gives it its deposit date. Dates are
+  day-first or month-first with the zone (`readReportDate`); the currency comes from the
+  marketplace.
+- **What Amazon held back.** The report has no reserve rows, but a payout can differ from the
+  period's total (new sellers: Amazon holds part back and releases it later; a period can pay
+  nothing). For each closed settlement (a transfer follows it), the parser carries the balance
+  held: "Previous Reserve Amount Balance" (released) and "Current Reserve Amount" (held), the
+  flat file's own lines, so the total is the payout and the deposit matches. They post to "Held
+  back and released"; the newest, still open, gets none.
 - The page sends them 20 at a time (`uploadReportSettlementsAction`); settlements already here are
-  kept as they are (Amazon's own report for them is more detailed), and the newest is left out
-  while it has no payout (it may still be open).
-- Test: core `transaction-report.test.ts`.
+  kept as they are (Amazon's own report for them is more detailed), except an upload not in the
+  books whose total now reads differently (an earlier upload of the report, before reserves):
+  it's refreshed. One in the books that differs is counted and the toast says to take it out
+  first. The newest is left out while it has no payout (it may still be open).
+- Test: core `transaction-report.test.ts` (incl. held back and released).
 
 ### Phase 4, slice 2: settlements post to the books
 

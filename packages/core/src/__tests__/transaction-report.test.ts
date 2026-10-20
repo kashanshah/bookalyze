@@ -245,6 +245,77 @@ describe("Amazon's date range transaction report", () => {
     expect(second).toMatchObject({ settlementId: "1002", total: "188.0000", depositDate: null });
   });
 
+  it("carries what Amazon held back into the next payout, like the flat file's reserve lines", () => {
+    const sale = (date: string, id: string, order: string, total: string) =>
+      row([
+        date,
+        id,
+        "Order",
+        order,
+        "MUG",
+        "Mug",
+        1,
+        "amazon.ae",
+        "Amazon",
+        "",
+        "",
+        "",
+        total,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        total,
+      ]);
+    const transfer = (date: string, id: string, total: string) =>
+      row([
+        date,
+        id,
+        "Transfer",
+        "",
+        "",
+        "To account ending with: 501",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        total,
+        total,
+      ]);
+    const report = [
+      HEADER,
+      sale("2 Mar 2026 9:00:00 AM UTC", "2001", "406-1", "100.00"),
+      // 2001 earned 100 but paid 80: 20 held back.
+      transfer("5 Mar 2026 6:00:00 AM UTC", "2002", "-80.00"),
+      sale("9 Mar 2026 9:00:00 AM UTC", "2002", "406-2", "50.00"),
+      // 2002 earned 50 and paid 70: the 20 released.
+      transfer("19 Mar 2026 6:00:00 AM UTC", "2003", "-70.00"),
+      sale("23 Mar 2026 9:00:00 AM UTC", "2003", "406-3", "30.00"),
+    ].join("\n");
+    const [first, second, open] = parseTransactionReport(report);
+    const reserves = (s: typeof first) =>
+      s?.lines.filter((l) => settlementGroup(l) === "reserve").map((l) => l.amount);
+    expect(first).toMatchObject({ total: "80.0000", depositDate: "2026-03-05", balanced: true });
+    expect(reserves(first)).toEqual(["-20.0000"]);
+    expect(second).toMatchObject({ total: "70.0000", depositDate: "2026-03-19", balanced: true });
+    expect(reserves(second)).toEqual(["20.0000"]);
+    // Still open: nothing paid after it, so nothing held is known yet.
+    expect(open).toMatchObject({ total: "30.0000", depositDate: null });
+    expect(reserves(open)).toEqual([]);
+  });
+
   it("refuses a file that isn't the report", () => {
     expect(() => parseTransactionReport('"a","b"\n"1","2"')).toThrow(
       /isn't Amazon's transaction report/,
