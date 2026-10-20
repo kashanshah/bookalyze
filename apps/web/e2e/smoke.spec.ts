@@ -2594,7 +2594,10 @@ test("walmart: add Walmart countries, say who ships, link a SKU, and remove one 
   await expect(page.getByRole("heading", { name: "Walmart account" })).toBeVisible();
 
   // Who ships is changed on the country's own page.
-  await choose(page.getByLabel("Who ships Walmart Canada orders"), "Walmart Fulfillment Services");
+  await choose(
+    page.getByLabel("Who ships Walmart Canada orders"),
+    "Walmart Fulfillment Services (WFS)",
+  );
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Channels", exact: true }).click();
   await expect(page.getByRole("link", { name: /^Walmart Canada/ })).toContainText(
