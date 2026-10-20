@@ -2331,6 +2331,15 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   movements: Amazon's inventory ledger, returns and losses".
 - **Not yet:** Amazon's reimbursements stay settlement lines (posted with settlements); removal
   orders don't track where the units went.
+- **Refunds as returns before the ledger** (Amazon keeps about 18 months of it): uploading the date
+  range transaction report (Commerce → Settlements) also reads its Refund rows (core
+  `parseTransactionReportReturns`: day, order, SKU, units) and adds them as `CustomerReturns` rows
+  dated before the marketplace's first ledger row (db `addReportReturns`, key `report-refund:…`,
+  audited `inventory_ledger.returns_from_refunds`). Cost of goods sold puts them back into stock
+  like the ledger's returns, also when no ledger was ever brought in. When the ledger later reaches
+  back over them, `importLedgerEvents` drops the refund rows from its first day on, so a return
+  counts once. "In through" doesn't move. Tests: core `transaction-report.test.ts`, db
+  `report-returns.test.ts`.
 
 ### Phase 5, slice 4: opening stock and cost of goods sold
 

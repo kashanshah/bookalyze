@@ -1,5 +1,5 @@
-import type { LedgerEvent } from "@bookalyze/core";
-import { eq, inArray, sql } from "drizzle-orm";
+import type { LedgerEvent, ReportReturn } from "@bookalyze/core";
+import { and, eq, gte, inArray, like, notLike, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { salesChannels } from "./schema/commerce";
 import { inventoryLedgerEvents } from "./schema/inventory";
@@ -46,6 +46,7 @@ export async function importLedgerEvents(
       .returning({ id: inventoryLedgerEvents.id });
     added += rows.length;
   }
+  await dropOverlappingReportReturns(tx, input.channelId);
   if (input.through) {
     await tx
       .update(salesChannels)
@@ -55,6 +56,74 @@ export async function importLedgerEvents(
       .where(eq(salesChannels.id, input.channelId));
   }
   return { added };
+}
+
+/** Returns counted from a transaction report's refunds carry this key, so they're told apart. */
+const REPORT_RETURN_KEY = "report-refund:";
+
+/** The first day of a marketplace's own ledger (rows from Amazon, not from refunds), if any. */
+async function ledgerStart(tx: Transaction, channelId: string): Promise<string | null> {
+  const [row] = await tx
+    .select({ day: sql<string | null>`min(${inventoryLedgerEvents.eventDate})::text` })
+    .from(inventoryLedgerEvents)
+    .where(
+      and(
+        eq(inventoryLedgerEvents.channelId, channelId),
+        notLike(inventoryLedgerEvents.key, `${REPORT_RETURN_KEY}%`),
+      ),
+    );
+  return row?.day ?? null;
+}
+
+/** Once the ledger itself reaches a day, returns counted from refunds from then on go. */
+async function dropOverlappingReportReturns(tx: Transaction, channelId: string) {
+  const start = await ledgerStart(tx, channelId);
+  if (!start) return;
+  await tx
+    .delete(inventoryLedgerEvents)
+    .where(
+      and(
+        eq(inventoryLedgerEvents.channelId, channelId),
+        like(inventoryLedgerEvents.key, `${REPORT_RETURN_KEY}%`),
+        gte(inventoryLedgerEvents.eventDate, start),
+      ),
+    );
+}
+
+/**
+ * Counts refunded units from Amazon's transaction report as customer returns, for the days before
+ * the marketplace's inventory ledger starts (Amazon keeps about 18 months of it). They come back
+ * into stock like the ledger's returns when cost of goods sold is posted. Refunds on or after the
+ * ledger's first day are left to the ledger; one already in is skipped. "In through" doesn't move.
+ */
+export async function addReportReturns(
+  tx: Transaction,
+  input: { orgId: string; channelId: string; returns: readonly ReportReturn[] },
+): Promise<{ added: number; covered: number }> {
+  const start = await ledgerStart(tx, input.channelId);
+  const before = input.returns.filter((r) => !start || r.date < start);
+  let added = 0;
+  for (let i = 0; i < before.length; i += 500) {
+    const rows = await tx
+      .insert(inventoryLedgerEvents)
+      .values(
+        before.slice(i, i + 500).map((r) => ({
+          organizationId: input.orgId,
+          channelId: input.channelId,
+          eventDate: r.date,
+          sku: r.sku,
+          eventType: "CustomerReturns",
+          referenceId: r.orderId,
+          quantity: r.quantity,
+          reason: "Refunded (transaction report, before the inventory ledger)",
+          key: `${REPORT_RETURN_KEY}${r.orderId}|${r.sku}|${r.date}`,
+        })),
+      )
+      .onConflictDoNothing()
+      .returning({ id: inventoryLedgerEvents.id });
+    added += rows.length;
+  }
+  return { added, covered: input.returns.length - before.length };
 }
 
 export type LedgerMonthRow = {
