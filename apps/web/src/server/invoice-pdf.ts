@@ -48,6 +48,8 @@ const NO_BRAND: DocumentBrand = {
   logoHeight: DEFAULT_LOGO_HEIGHT,
   letterheadTop: 0,
   letterheadBottom: 0,
+  letterheadLeft: MARGIN,
+  letterheadRight: MARGIN,
   letterheadPages: "first",
   logo: null,
   letterhead: null,
@@ -108,8 +110,11 @@ export async function renderOrderInvoicePdf(
   const logo =
     brand.logo && !letterhead ? await embedImage(doc, brand.logo).catch(() => null) : null;
 
-  const right = WIDTH - MARGIN;
-  const contentWidth = right - MARGIN;
+  // A letterhead may have a side band; its side margins then hold on every page, so the
+  // columns line up from page to page.
+  const left = letterhead ? brand.letterheadLeft : MARGIN;
+  const right = WIDTH - (letterhead ? brand.letterheadRight : MARGIN);
+  const contentWidth = right - left;
   const footerLines = (brand.footer ?? "")
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -159,7 +164,7 @@ export async function renderOrderInvoicePdf(
       ensure(size + 3);
       if (line)
         drawLine(page, line, {
-          x: options.x ?? MARGIN,
+          x: options.x ?? left,
           y,
           size,
           face,
@@ -192,7 +197,7 @@ export async function renderOrderInvoicePdf(
     // The height is the company's choice; a very wide logo is capped at the left column.
     const box = fitWithin(logo.width, logo.height, leftWidth, brand.logoHeight);
     page.drawImage(logo, {
-      x: MARGIN,
+      x: left,
       y: headerTop - box.height,
       width: box.width,
       height: box.height,
@@ -222,14 +227,14 @@ export async function renderOrderInvoicePdf(
   y = Math.min(y, rightY) - 10;
 
   ensure(4);
-  page.drawRectangle({ x: MARGIN, y, width: contentWidth, height: 2, color: ACCENT });
+  page.drawRectangle({ x: left, y, width: contentWidth, height: 2, color: ACCENT });
   y -= 26;
 
   // --- bill to and details --------------------------------------------------------------------
   const blockTop = y;
-  const detailsX = MARGIN + contentWidth * 0.55;
+  const detailsX = left + contentWidth * 0.55;
   const detailsWidth = right - detailsX;
-  text("BILL TO", { size: 8, face: bold, color: MUTED, width: detailsX - MARGIN - 16 });
+  text("BILL TO", { size: 8, face: bold, color: MUTED, width: detailsX - left - 16 });
   y -= 2;
   const buyerLines = [
     invoice.buyer.name,
@@ -243,7 +248,7 @@ export async function renderOrderInvoicePdf(
         size: index === 0 ? 11 : 9.5,
         face: index === 0 ? bold : font,
         color: index === 0 ? INK : MUTED,
-        width: detailsX - MARGIN - 16,
+        width: detailsX - left - 16,
       });
     });
   } else {
@@ -280,14 +285,14 @@ export async function renderOrderInvoicePdf(
   y = Math.min(leftBottom, blockTop - panelHeight) - 18;
 
   // --- items ----------------------------------------------------------------------------------
-  const qtyRight = MARGIN + contentWidth * 0.66;
-  const unitRight = MARGIN + contentWidth * 0.83;
+  const qtyRight = left + contentWidth * 0.66;
+  const unitRight = left + contentWidth * 0.83;
   const descWidth = contentWidth * 0.66 - 50;
   const headerRow = () => {
     ensure(22);
-    page.drawRectangle({ x: MARGIN, y: y - 7, width: contentWidth, height: 21, color: ACCENT });
+    page.drawRectangle({ x: left, y: y - 7, width: contentWidth, height: 21, color: ACCENT });
     const size = 8.5;
-    drawLine(page, "DESCRIPTION", { x: MARGIN + 8, y, size, face: bold, color: onAccent });
+    drawLine(page, "DESCRIPTION", { x: left + 8, y, size, face: bold, color: onAccent });
     const qty = "QTY";
     drawLine(page, qty, {
       x: qtyRight - widthOf(qty, bold, size),
@@ -325,11 +330,11 @@ export async function renderOrderInvoicePdf(
     if (ensure(height)) headerRow();
     const top = y;
     for (const part of titleLines) {
-      if (part) drawLine(page, part, { x: MARGIN + 8, y, size, face: font, color: INK });
+      if (part) drawLine(page, part, { x: left + 8, y, size, face: font, color: INK });
       y -= size + 3;
     }
     if (line.sku) {
-      drawLine(page, `SKU ${line.sku}`, { x: MARGIN + 8, y, size: 8, face: font, color: MUTED });
+      drawLine(page, `SKU ${line.sku}`, { x: left + 8, y, size: 8, face: font, color: MUTED });
       y -= 11;
     }
     const qty = String(line.quantity);
@@ -360,7 +365,7 @@ export async function renderOrderInvoicePdf(
     });
     y -= 4;
     page.drawLine({
-      start: { x: MARGIN, y: y + 2 },
+      start: { x: left, y: y + 2 },
       end: { x: right, y: y + 2 },
       thickness: 0.5,
       color: RULE,
@@ -369,7 +374,7 @@ export async function renderOrderInvoicePdf(
   }
 
   // --- totals ---------------------------------------------------------------------------------
-  const labelX = MARGIN + contentWidth * 0.55;
+  const labelX = left + contentWidth * 0.55;
   const totalRow = (label: string, amount: string, emphasis = false) => {
     const size = emphasis ? 11 : 9.5;
     if (emphasis) {
@@ -436,7 +441,7 @@ export async function renderOrderInvoicePdf(
     let lineY = base + 10 * footerLines.length;
     if (footerLines.length) {
       p.drawLine({
-        start: { x: MARGIN, y: lineY + 8 },
+        start: { x: left, y: lineY + 8 },
         end: { x: right, y: lineY + 8 },
         thickness: 0.5,
         color: RULE,
@@ -445,7 +450,7 @@ export async function renderOrderInvoicePdf(
     for (const line of footerLines) {
       const lines = wrap(line, font, 8, contentWidth - 80);
       const first = lines[0] ?? "";
-      drawLine(p, first, { x: MARGIN, y: lineY, size: 8, face: font, color: MUTED });
+      drawLine(p, first, { x: left, y: lineY, size: 8, face: font, color: MUTED });
       lineY -= 10;
     }
     if (pageLabel) {

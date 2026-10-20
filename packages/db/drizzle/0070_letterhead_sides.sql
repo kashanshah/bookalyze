@@ -1,0 +1,3 @@
+ALTER TABLE "organization_branding" ADD COLUMN "letterhead_left" smallint DEFAULT 48 NOT NULL;--> statement-breakpoint
+ALTER TABLE "organization_branding" ADD COLUMN "letterhead_right" smallint DEFAULT 48 NOT NULL;--> statement-breakpoint
+ALTER TABLE "organization_branding" ADD CONSTRAINT "organization_branding_side_margins" CHECK ("organization_branding"."letterhead_left" between 0 and 200 and "organization_branding"."letterhead_right" between 0 and 200);

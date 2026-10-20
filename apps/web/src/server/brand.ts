@@ -16,6 +16,8 @@ export type DocumentBrand = Pick<
   | "logoHeight"
   | "letterheadTop"
   | "letterheadBottom"
+  | "letterheadLeft"
+  | "letterheadRight"
   | "letterheadPages"
 > & {
   logo: BrandFile | null;
@@ -42,6 +44,8 @@ export async function documentBrandFrom(record: BrandRecord): Promise<DocumentBr
     logoHeight: record.logoHeight,
     letterheadTop: record.letterheadTop,
     letterheadBottom: record.letterheadBottom,
+    letterheadLeft: record.letterheadLeft,
+    letterheadRight: record.letterheadRight,
     letterheadPages: record.letterheadPages,
     logo,
     letterhead,
