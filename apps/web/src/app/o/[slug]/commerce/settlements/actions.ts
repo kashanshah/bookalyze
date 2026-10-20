@@ -7,6 +7,7 @@ import {
   type SettlementAccounts,
 } from "@bookalyze/core";
 import {
+  addReportOrders,
   dismissSettlementDeposit,
   getSettlementSettings,
   LedgerError,
@@ -207,6 +208,91 @@ export async function uploadReportSettlementsAction(
   });
   revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
   return { ok: true, ...counts };
+}
+
+const reportItemSchema = z.object({
+  itemId: z.string().min(1).max(200),
+  asin: z.string().max(20),
+  sku: z.string().min(1).max(200).nullable(),
+  title: z.string().max(500).nullable(),
+  quantityOrdered: z.number().int().min(0).max(100_000),
+  quantityShipped: z.number().int().min(0).max(100_000),
+  itemPrice: amount.nullable(),
+  itemTax: amount.nullable(),
+  shippingPrice: amount.nullable(),
+  shippingTax: amount.nullable(),
+  promotionDiscount: amount.nullable(),
+});
+const reportOrdersSchema = z.object({
+  marketplace: z.string().min(1).max(100),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  orders: z
+    .array(
+      z.object({
+        order: z.object({
+          orderId: z.string().min(1).max(100),
+          marketplaceId: z.string().max(40),
+          purchasedAt: z.iso.datetime(),
+          lastUpdatedAt: z.iso.datetime(),
+          status: z.literal("Shipped").or(z.string().max(40)),
+          fulfillment: z.enum(["amazon", "merchant"]),
+          currency: z
+            .string()
+            .regex(/^[A-Z]{3}$/)
+            .nullable(),
+          total: amount.nullable(),
+          itemsShipped: z.number().int().min(0),
+          itemsUnshipped: z.number().int().min(0),
+          shipCountry: z.string().max(2).nullable(),
+          shipRegion: z.string().max(100).nullable(),
+          isBusiness: z.boolean(),
+          isPrime: z.boolean(),
+          isReplacement: z.boolean(),
+          replacedOrderId: z.string().max(100).nullable().optional(),
+          earliestDelivery: z.iso.date().nullable(),
+          latestDelivery: z.iso.date().nullable(),
+        }),
+        items: z.array(reportItemSchema).max(100),
+      }),
+    )
+    .max(300),
+});
+
+/**
+ * Adds the orders of Amazon's transaction report (read in the browser, a part at a time) for the
+ * years the Orders API no longer reaches, so cost of goods sold can count them. Orders already
+ * here (from the API) are left as they are.
+ */
+export async function uploadReportOrdersAction(
+  slug: string,
+  input: z.input<typeof reportOrdersSchema>,
+): Promise<SettlementResult<{ added: number }>> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only owners and admins can add orders." };
+  const parsed = reportOrdersSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Those orders couldn't be read." };
+  const { marketplace, currency, orders } = parsed.data;
+  const added = await inOrg(ctx, async (tx) => {
+    const channelId = await settlementChannel(tx, { connectionId: null, marketplace, currency });
+    if (!channelId) return null;
+    const n = await addReportOrders(tx, { orgId: ctx.org.id, channelId, orders });
+    if (n) {
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "orders.uploaded",
+        entityType: "sales_channel",
+        entityId: channelId,
+        after: { added: n, from: "transaction report" },
+      });
+    }
+    return n;
+  });
+  if (added === null)
+    return { ok: false, message: `There's no ${marketplace} channel to add its orders to.` };
+  revalidatePath(`/o/${slug}/commerce`, "layout");
+  return { ok: true, added };
 }
 
 // --- Posting ------------------------------------------------------------------------------

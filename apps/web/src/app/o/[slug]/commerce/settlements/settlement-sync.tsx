@@ -4,6 +4,7 @@ import {
   isTransactionReport,
   parseSettlementReport,
   parseTransactionReport,
+  parseTransactionReportOrders,
 } from "@bookalyze/core";
 import { FileUp, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
   syncSettlementsAction,
+  uploadReportOrdersAction,
   uploadReportSettlementsAction,
   uploadSettlementAction,
 } from "./actions";
@@ -109,14 +111,32 @@ async function addTransactionReport(
     skipped += result.skipped;
     posted += result.posted;
   }
+  // Its orders too: for the years Amazon's Orders API no longer reaches, so cost of goods sold
+  // counts them. Orders already here (from the API) stay as they are.
+  let orders = 0;
+  for (const group of parseTransactionReportOrders(text)) {
+    for (let i = 0; i < group.orders.length; i += 250) {
+      const result = await uploadReportOrdersAction(slug, {
+        marketplace: group.marketplace,
+        currency: group.currency,
+        orders: group.orders.slice(i, i + 250),
+      });
+      if (!result.ok) {
+        toast.error(`${name}: ${result.message}`);
+        break;
+      }
+      orders += result.added;
+    }
+  }
   const notes = [
+    orders ? `${plural(orders, "older order")} added for cost of goods sold.` : null,
     skipped ? `${plural(skipped, "settlement")} already here, kept as they were.` : null,
     posted
       ? `${plural(posted, "settlement")} in the books read differently now (what Amazon held back). Take them out of the books, then upload the report again.`
       : null,
     open ? "The newest one is still open: it comes in once Amazon closes it." : null,
   ].filter(Boolean);
-  if (!added && !updated) {
+  if (!added && !updated && !orders) {
     toast.info(`${name}: nothing new`, notes.length ? { description: notes.join(" ") } : {});
   } else if (notes.length) {
     toast.info(`${name}: ${plural(added, "settlement")} from the transaction report`, {

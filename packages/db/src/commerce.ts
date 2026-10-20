@@ -724,6 +724,63 @@ export async function saveOrdersWithItems(
   return changed;
 }
 
+/**
+ * Adds orders read from a report that covers years the Orders API no longer reaches (Amazon's
+ * date range transaction report), with their items. Orders already here are left as they are:
+ * the API's copy is the fuller one. Returns how many were added.
+ */
+export async function addReportOrders(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    channelId: string;
+    orders: readonly { order: AmazonOrder; items: readonly AmazonOrderItem[] }[];
+  },
+): Promise<number> {
+  if (!input.orders.length) return 0;
+  const added = await tx
+    .insert(orders)
+    .values(
+      input.orders.map(({ order: o }) => ({
+        organizationId: input.orgId,
+        channelId: input.channelId,
+        externalId: o.orderId,
+        purchasedAt: new Date(o.purchasedAt),
+        lastUpdatedAt: new Date(o.lastUpdatedAt),
+        status: o.status,
+        fulfillment: o.fulfillment,
+        currency: o.currency,
+        total: o.total,
+        itemsShipped: o.itemsShipped,
+        itemsUnshipped: o.itemsUnshipped,
+        itemsSyncedAt: new Date(),
+      })),
+    )
+    .onConflictDoNothing({ target: [orders.channelId, orders.externalId] })
+    .returning({ id: orders.id, externalId: orders.externalId });
+  if (!added.length) return 0;
+  const byExternal = new Map(input.orders.map((o) => [o.order.orderId, o.items]));
+  const rows = added.flatMap((o) =>
+    (byExternal.get(o.externalId) ?? []).map((i) => ({
+      organizationId: input.orgId,
+      orderId: o.id,
+      externalId: i.itemId,
+      asin: i.asin || null,
+      sku: i.sku,
+      title: i.title,
+      quantityOrdered: i.quantityOrdered,
+      quantityShipped: i.quantityShipped,
+      itemPrice: i.itemPrice,
+      itemTax: i.itemTax,
+      shippingPrice: i.shippingPrice,
+      shippingTax: i.shippingTax,
+      promotionDiscount: i.promotionDiscount,
+    })),
+  );
+  if (rows.length) await tx.insert(orderItems).values(rows);
+  return added.length;
+}
+
 export type OrderFilters = {
   channelId?: string | null;
   statuses?: readonly string[] | null;

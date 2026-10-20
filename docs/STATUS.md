@@ -935,6 +935,18 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: db `settlements.test.ts` (post a matched settlement again with new accounts; suggest
   turned-down deposits again).
 
+### Orders from Amazon's transaction report
+
+- The same **Upload settlement files** also brings in the report's **orders** (core
+  `parseTransactionReportOrders`: each Order row's SKU, quantity, product sales, shipping and
+  promotions, grouped by order and marketplace, dated when the order settled). Amazon's Orders API
+  only reaches about two years back; these fill the years before, so cost of goods sold can count
+  them from the first sale. Refunds aren't orders and are left out.
+- Db `addReportOrders`: inserts only orders not already here (the API's copy is fuller and stays
+  as it is), with their items, marked as having items so the order sync doesn't fetch them.
+  `uploadReportOrdersAction` (250 per call, audited `orders.uploaded`).
+- Tests: core `transaction-report.test.ts` (orders), db `commerce.test.ts` (report orders).
+
 ### Phase 4, slice 2: settlements post to the books
 
 - **How settlements post** (`/commerce/settlements/accounts`, admins): an account for each group

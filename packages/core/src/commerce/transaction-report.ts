@@ -1,6 +1,7 @@
 import { parseCsv } from "../import/csv";
 import { formatDecimal, parseDecimal } from "../money";
 import { AMAZON_MARKETPLACES } from "./amazon";
+import type { AmazonOrder, AmazonOrderItem } from "./orders";
 import { readSettlementAmount, type Settlement, type SettlementLine } from "./settlements";
 
 /**
@@ -285,4 +286,131 @@ export function parseTransactionReport(text: string): Settlement[] {
       balanced: lines.reduce((sum, l) => sum + parseDecimal(l.amount), 0n) === total,
     };
   });
+}
+
+/** One marketplace's orders from the report, each with its items (by SKU). */
+export type ReportOrders = {
+  marketplace: string;
+  currency: string;
+  orders: { order: AmazonOrder; items: AmazonOrderItem[] }[];
+};
+
+/**
+ * The orders in the report, by marketplace: each order's SKUs, quantities and what the buyer
+ * paid, for the years before Amazon's Orders API reaches (it goes back about two years). An order
+ * is dated when it settled (its first Order row), which is when it shipped; refunds aren't
+ * orders and are left out. Throws on a file that isn't the report.
+ */
+export function parseTransactionReportOrders(text: string): ReportOrders[] {
+  const rows = parseCsv(text.replace(/^\uFEFF/, ""), ",");
+  const headerAt = rows.findIndex((r) => (r[0] ?? "").trim().toLowerCase() === "date/time");
+  const header = (rows[headerAt] ?? []).map((h) => h.trim().toLowerCase());
+  const col = (name: string) => header.indexOf(name);
+  const at = {
+    date: col("date/time"),
+    type: col("type"),
+    order: col("order id"),
+    sku: col("sku"),
+    description: col("description"),
+    quantity: col("quantity"),
+    marketplace: col("marketplace"),
+    fulfillment: header.indexOf("fulfillment") >= 0 ? col("fulfillment") : col("fulfilment"),
+    sales: col("product sales"),
+    shipping: col("shipping credits"),
+    promotions: col("promotional rebates"),
+  };
+  if (headerAt < 0 || at.type < 0 || at.order < 0 || at.sku < 0) {
+    throw new Error(
+      "This isn't Amazon's transaction report. In Seller Central → Payments → Reports Repository, request a Transaction report for a custom date range.",
+    );
+  }
+  const cell = (row: string[], i: number) => (i >= 0 ? (row[i] ?? "").trim() : "");
+  const units = (row: string[], i: number) =>
+    parseDecimal(readSettlementAmount(cell(row, i)) ?? "0");
+
+  type Item = { title: string; quantity: number; price: bigint; shipping: bigint; promo: bigint };
+  type Building = { at: string; place: string; amazon: boolean; items: Map<string, Item> };
+  const byOrder = new Map<string, Building>();
+  for (const row of rows.slice(headerAt + 1)) {
+    if (!/^order$/i.test(cell(row, at.type))) continue;
+    const id = cell(row, at.order);
+    const sku = cell(row, at.sku);
+    const when = readReportDate(cell(row, at.date));
+    if (!id || !sku || !when) continue;
+    const o = byOrder.get(id) ?? {
+      at: when,
+      place: cell(row, at.marketplace),
+      amazon: /amazon/i.test(cell(row, at.fulfillment)),
+      items: new Map<string, Item>(),
+    };
+    if (when < o.at) o.at = when;
+    const item = o.items.get(sku) ?? {
+      title: cell(row, at.description),
+      quantity: 0,
+      price: 0n,
+      shipping: 0n,
+      promo: 0n,
+    };
+    item.quantity += Math.trunc(Number(cell(row, at.quantity)) || 0);
+    item.price += units(row, at.sales);
+    item.shipping += units(row, at.shipping);
+    item.promo += units(row, at.promotions);
+    o.items.set(sku, item);
+    byOrder.set(id, o);
+  }
+
+  const result = new Map<string, ReportOrders>();
+  for (const [orderId, o] of byOrder) {
+    const market = marketplaceOf(o.place);
+    if (!market) continue;
+    const group = result.get(market.name) ?? {
+      marketplace: market.name,
+      currency: market.currency,
+      orders: [],
+    };
+    result.set(market.name, group);
+    const items = [...o.items.entries()].map(([sku, i]) => ({
+      itemId: `report:${sku}`,
+      asin: "",
+      sku,
+      title: i.title.slice(0, 500) || null,
+      quantityOrdered: i.quantity,
+      quantityShipped: i.quantity,
+      itemPrice: formatDecimal(i.price),
+      itemTax: null,
+      shippingPrice: formatDecimal(i.shipping),
+      shippingTax: null,
+      promotionDiscount: formatDecimal(-i.promo),
+    }));
+    const total = [...o.items.values()].reduce(
+      (sum, i) => sum + i.price + i.shipping + i.promo,
+      0n,
+    );
+    const shipped = items.reduce((n, i) => n + i.quantityShipped, 0);
+    group.orders.push({
+      order: {
+        orderId: orderId.slice(0, 100),
+        marketplaceId: market.id,
+        purchasedAt: o.at,
+        lastUpdatedAt: o.at,
+        status: "Shipped",
+        fulfillment: o.amazon ? "amazon" : "merchant",
+        currency: market.currency,
+        total: formatDecimal(total),
+        itemsShipped: shipped,
+        itemsUnshipped: 0,
+        shipCountry: null,
+        shipRegion: null,
+        isBusiness: false,
+        isPrime: false,
+        isReplacement: false,
+        earliestDelivery: null,
+        latestDelivery: null,
+      },
+      items,
+    });
+  }
+  for (const g of result.values())
+    g.orders.sort((a, b) => a.order.purchasedAt.localeCompare(b.order.purchasedAt));
+  return [...result.values()];
 }
