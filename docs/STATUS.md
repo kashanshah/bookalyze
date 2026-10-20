@@ -2435,6 +2435,16 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   bank over what the payments on it say they were (`paidRate`).
 - **Purchase orders list** by order date, newest first (then the latest number), not by number.
 
+### Channel profit: shared costs on their own row; quieter unlinked SKUs
+
+- **Channel profit** shows costs counted against no one channel on their own row, **Shared costs
+  (not split by channel)**, under All channels only (— in each channel's column), instead of
+  inside "Your own costs". So a single channel's profit and All channels' differ by a row you can
+  see. Hover a cell for each category.
+- **SKUs that aren't linked to a product yet** (Products, and the attention count) leaves out
+  listings never ordered with nothing at the marketplace (no units sellable, reserved, inbound,
+  unsellable or researched): db `unlinkedSkus`. Tests: db `inventory.test.ts`.
+
 ### Your stake (the owner's view) and three financial years
 
 - **Reports → Your stake** (`/accounting/reports/your-stake`, as of a day): what you put in

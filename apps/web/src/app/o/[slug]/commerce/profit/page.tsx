@@ -65,6 +65,9 @@ type Column = {
   own?: bigint;
   /** Each counted category's part of `own`, for the cell's hint. */
   ownDetail?: Map<string, bigint>;
+  /** Costs counted against no channel (All channels only), and each category's part. */
+  shared?: bigint;
+  sharedDetail?: Map<string, bigint>;
 };
 
 const plural = (n: number, one: string, many = `${one}s`) =>
@@ -106,7 +109,12 @@ const ROWS: { key: string; label: string; kind?: "subtotal" | "total" | "muted";
     {
       key: "own",
       label: "Your own costs",
-      hint: "The expense categories you count against each channel (Your own costs, above). Shared ones are under All channels only.",
+      hint: "The expense categories you count against a channel (Your own costs, above)",
+    },
+    {
+      key: "shared",
+      label: "Shared costs (not split by channel)",
+      hint: "The expense categories you count against no one channel: under All channels only",
     },
     { key: "profit", label: "Profit", kind: "total" },
     { key: "margin", label: "Margin (profit over net sales)", kind: "muted" },
@@ -353,8 +361,14 @@ export default async function ChannelProfitPage({
   };
   for (const c of costs) {
     const units = parseDecimal(c.base);
+    if (c.channelId === null) {
+      all.shared = (all.shared ?? 0n) + units;
+      all.sharedDetail ??= new Map();
+      all.sharedDetail.set(c.label, (all.sharedDetail.get(c.label) ?? 0n) + units);
+      continue;
+    }
     addOwn(all, c.label, units);
-    const column = c.channelId ? columnOf(c.channelId) : null;
+    const column = columnOf(c.channelId);
     if (!column) continue;
     const inColumn = await fromBase(units, column.currency, to);
     if (inColumn === null) {
@@ -393,7 +407,7 @@ export default async function ChannelProfitPage({
 
   const results = shown.map((c) => {
     const base = channelProfit(c.totals, { feeTaxRecoverable });
-    const costsOf = (c.cogs ?? 0n) + (c.writeOffs ?? 0n) + (c.own ?? 0n);
+    const costsOf = (c.cogs ?? 0n) + (c.writeOffs ?? 0n) + (c.own ?? 0n) + (c.shared ?? 0n);
     const profitUnits = parseDecimal(base.net) - costsOf;
     const sales = parseDecimal(base.netSales);
     return {
@@ -403,20 +417,31 @@ export default async function ChannelProfitPage({
         cogs: formatDecimal(-(c.cogs ?? 0n)),
         writeOffs: formatDecimal(-(c.writeOffs ?? 0n)),
         own: formatDecimal(-(c.own ?? 0n)),
+        shared: formatDecimal(-(c.shared ?? 0n)),
         profit: formatDecimal(profitUnits),
         margin: sales > 0n ? Number((profitUnits * 10_000n) / sales) / 100 : null,
       },
     };
   });
   const anyWriteOffs = results.some(({ column }) => (column.writeOffs ?? 0n) !== 0n);
-  const shownRows = ROWS.filter((row) => row.key !== "writeOffs" || anyWriteOffs);
+  const shownRows = ROWS.filter(
+    (row) => (row.key !== "writeOffs" || anyWriteOffs) && (row.key !== "shared" || shared),
+  );
+
+  /** What makes up a costs cell, by category (its hint). */
+  const detailOf = (key: string, column: Column) =>
+    key === "own" ? column.ownDetail : key === "shared" ? column.sharedDetail : undefined;
 
   const cell = (
     key: string,
     profit: (typeof results)[number]["profit"],
     currency: string,
     noPayouts?: boolean,
+    isAll?: boolean,
   ) => {
+    if (key === "shared" && !isAll) {
+      return <span title="Shared costs are under All channels only">—</span>;
+    }
     if (noPayouts && (key === "payout" || key === "reserve")) {
       return <span title="eBay's payouts aren't brought in yet">—</span>;
     }
@@ -432,6 +457,7 @@ export default async function ChannelProfitPage({
       key === "cogs" ||
       key === "writeOffs" ||
       key === "own" ||
+      key === "shared" ||
       key === "profit"
         ? profit[key]
         : profit.groups[key as keyof typeof profit.groups];
@@ -502,8 +528,8 @@ export default async function ChannelProfitPage({
                       key={column.key}
                       className="tabular px-5 py-2.5 text-end"
                       title={
-                        row.key === "own" && column.ownDetail?.size
-                          ? [...column.ownDetail]
+                        detailOf(row.key, column)?.size
+                          ? [...(detailOf(row.key, column) ?? [])]
                               .map(
                                 ([label, units]) =>
                                   `${label}: ${formatMoney(formatDecimal(units), column.currency, locale)}`,
@@ -512,7 +538,13 @@ export default async function ChannelProfitPage({
                           : undefined
                       }
                     >
-                      {cell(row.key, profit, column.currency, column.noPayouts)}
+                      {cell(
+                        row.key,
+                        profit,
+                        column.currency,
+                        column.noPayouts,
+                        column.key === "all",
+                      )}
                     </td>
                   ))}
                 </tr>

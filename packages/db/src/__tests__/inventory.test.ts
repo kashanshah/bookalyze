@@ -273,7 +273,8 @@ describe("products", () => {
   });
 
   it("lists SKUs the marketplace has that were never ordered, after the ordered ones", async () => {
-    // FBA inventory: one SKU already on orders (PINE-CANDLE), two variations never sold.
+    // FBA inventory: one SKU already on orders (PINE-CANDLE), two variations never sold (one
+    // still on its way), and a listing with nothing in stock or coming, which is left out.
     const saved = await scoped((tx) =>
       saveChannelSkus(tx, {
         orgId,
@@ -281,11 +282,12 @@ describe("products", () => {
         skus: [
           { sku: "PINE-CANDLE", asin: "B0PINE", title: "Pine candle (listing)", fulfillable: 4 },
           { sku: "MUG-500", asin: "B0MUG5", title: "Maple mug, 500ml", fulfillable: 12 },
-          { sku: "MUG-100", asin: "B0MUG1", title: "Maple mug, 100ml", fulfillable: 0 },
+          { sku: "MUG-100", asin: "B0MUG1", title: "Maple mug, 100ml", fulfillable: 0, inbound: 6 },
+          { sku: "MUG-250", asin: "B0MUG2", title: "Maple mug, 250ml", fulfillable: 0 },
         ],
       }),
     );
-    expect(saved).toBe(3);
+    expect(saved).toBe(4);
     const list = await scoped((tx) => unlinkedSkus(tx, { limit: 10 }));
     expect(list.rows.map((r) => [r.sku, r.orders, r.fulfillable])).toEqual([
       ["PINE-CANDLE", 1, 4],
