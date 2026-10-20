@@ -469,7 +469,9 @@ export default async function OrdersPage({
                         ? "You"
                         : o.channelKind === "noon"
                           ? "Noon (FBN)"
-                          : "Amazon (FBA)"}
+                          : o.channelKind === "walmart"
+                            ? "Walmart (WFS)"
+                            : "Amazon (FBA)"}
                     </span>
                     <span
                       className={cn(

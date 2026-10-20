@@ -91,9 +91,13 @@ export default async function OrderPage({
           ? order.fulfillment === "amazon"
             ? "Noon (Fulfilled by Noon, FBN)"
             : "You (Fulfilled by partner, FBP)"
-          : order.fulfillment === "amazon"
-            ? "Amazon (Fulfilled by Amazon)"
-            : "You (merchant fulfilled)",
+          : channel.kind === "walmart"
+            ? order.fulfillment === "amazon"
+              ? "Walmart (Walmart Fulfillment Services, WFS)"
+              : "You (seller fulfilled)"
+            : order.fulfillment === "amazon"
+              ? "Amazon (Fulfilled by Amazon)"
+              : "You (merchant fulfilled)",
     },
     {
       label: "Ships to",

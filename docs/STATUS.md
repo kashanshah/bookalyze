@@ -13,8 +13,8 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-20, phase 4e slice 2: connect Walmart (each country's seller account
-with its own API key, checked with Walmart, sealed, with what the key may see)._
+_Last updated: 2026-10-20, phase 4e slice 3: Walmart orders (the seller's and WFS's, page by
+page, in Orders and cost of goods sold)._
 
 ---
 
@@ -31,7 +31,7 @@ with its own API key, checked with Walmart, sealed, with what the key may see)._
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) slice 10 (a freight payment is its delivery's cost) and slice 11 (Amazon prices: each listing's price next to its cost, a change with Amazon's fees and the profit first) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off; what Noon holds beside your lots, and Noon's summary checking its ledger day by day) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: Kazomo's FBN transaction types checked against what Stock movements lists as not counted, then FBP stock (the seller's own warehouses). Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold), 4 (eBay money: the Finances API's rows by month, in Channel profit) 5 (payouts and posting: each site's month as one entry to an eBay balance account, payouts matched to bank deposits, in the daily job) and 6 (Seller Hub's transaction report upload, with the API's rows winning on days it has) done. Next: eBay's digital signatures for EU and UK sellers. See §3 "Phase 4d" |
-| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) and 2 (connect Walmart: each country's seller account with its own API key) done. Next: orders from the Orders API. See §3 "Phase 4e" |
+| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) 2 (connect Walmart: each country's seller account with its own API key) and 3 (orders from the Orders API, the seller's and WFS's) done. Next: settlements from the reconciliation report. See §3 "Phase 4e" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
@@ -1559,6 +1559,33 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   from the mock (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema; the
   summary disagrees on one day last month), then uploads a summary file.
 
+### Phase 4e, slice 3: Walmart orders
+
+- **Orders API** (`GET /v3/orders`, core `walmart-orders.ts`): the first sync asks by creation
+  date from the start date, later ones by last change (`createdStartDate`/`EndDate`, then
+  `lastModifiedStartDate`/`EndDate`), 200 a page, following Walmart's `nextCursor`. Walmart
+  lists the orders it ships apart from the seller's (`shipNodeType`: `SellerFulfilled`,
+  `WFSFulfilled`), so the channel's "who ships" decides which lists are read
+  (`walmartShipNodes`; both when it's both or not said).
+- **An order** is Walmart's purchase order (its PO number is the order number), with its lines:
+  SKU, product name, quantity, the product and shipping charges with their tax (exact decimals),
+  WFS-shipped as the marketplace's (`fulfillment = 'amazon'`, shown "Walmart (WFS)"), the
+  seller's as "You". States read like the others from the lines' statuses (all cancelled:
+  Cancelled; all shipped or delivered: Shipped; some: Partly shipped; else To ship); last change
+  is the latest line status date. Ship-to country (USA/CAN/MEX as US/CA/MX) and state only: no
+  buyer name, address, phone or email kept. One order or line sent bare (not in a list) is read
+  too.
+- **Sync** (web `server/walmart-orders.ts`, `syncWalmartChannelOrders`): one channel at a time
+  within the time budget, like eBay's; where a run stops (the list and Walmart's cursor in it,
+  `node|cursor` in `orders_next_token`) and the window's end are kept on the channel, so the
+  next run carries on. `syncChannelOrders` hands Walmart channels to it, so the 5-minute job and
+  the Orders buttons cover Walmart; `listOrderConnections` takes Walmart connections. The orders
+  feed cost of goods sold once their SKUs are linked to products.
+- Tests: core `walmart-orders.test.ts` (query, cursor, nodes by who ships, states, amounts,
+  WFS, no buyer details, bare items, last page); db `walmart.test.ts` (a connected country is
+  among the order channels); e2e "walmart: bring in Walmart Canada's orders…" (both lists, one
+  order a page from the stand-in, cancelled state, WFS order page, linked SKU, no buyer).
+
 ### Phase 4e, slice 2: connect Walmart
 
 - **One key per country:** a seller's Walmart US, Canada and Mexico accounts are separate, so
@@ -2855,8 +2882,7 @@ Built like Noon and eBay: channels first, then the account, orders, money and th
 
 1. [x] **Walmart channels.** Done in slice 1.
 2. [x] **Connect Walmart** with the seller's client id and secret. Done in slice 2.
-3. [ ] **Orders** from the Orders API, a year back and every few minutes; SKUs, so cost of goods
-   sold counts Walmart.
+3. [x] **Orders** from the Orders API, the seller's and WFS's. Done in slice 3.
 4. [ ] **Settlements** from the reconciliation report kept row by row, by settlement period, in
    Channel profit; the report upload.
 5. [ ] **Posting and deposit matching:** each settlement as one entry to a Walmart balance

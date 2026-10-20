@@ -74,11 +74,11 @@ export function parseWalmartToken(json: unknown): { accessToken: string; expires
 /** How much a key may do in one area of the API. */
 export type WalmartAccess = "full_access" | "view_only" | "no_access";
 
-/** The areas Bookalyze reads, in the words shown to people. */
+/** The areas Bookalyze reads, in the words shown to people ("For bringing in orders"). */
 export const WALMART_SCOPE_AREAS = [
-  { key: "orders", label: "Orders", needed: "Bringing in orders" },
-  { key: "reports", label: "Reports", needed: "Bringing in settlements and fees" },
-  { key: "inventory", label: "Inventory", needed: "Seeing your stock at Walmart" },
+  { key: "orders", label: "Orders", needed: "bringing in orders" },
+  { key: "reports", label: "Reports", needed: "bringing in settlements and fees" },
+  { key: "inventory", label: "Inventory", needed: "seeing your stock at Walmart" },
 ] as const;
 
 export type WalmartScopeArea = (typeof WALMART_SCOPE_AREAS)[number]["key"];

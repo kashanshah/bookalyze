@@ -350,7 +350,7 @@ export function WalmartAccount({
                 >
                   {ACCESS_LABEL[access]}
                 </dd>
-                <dd className="text-muted-foreground text-xs">For {area.needed.toLowerCase()}</dd>
+                <dd className="text-muted-foreground text-xs">For {area.needed}</dd>
               </div>
             );
           })}

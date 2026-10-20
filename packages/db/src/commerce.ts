@@ -54,8 +54,8 @@ export async function listAmazonConnections(tx: Transaction) {
   return rows.map((c) => ({ ...c, channels: channels.filter((ch) => ch.connectionId === c.id) }));
 }
 
-/** Marketplaces whose orders come in by API (Amazon and eBay); Noon's come from its rows. */
-const ORDER_PROVIDERS = ["amazon_sp", "ebay"] as const;
+/** Marketplaces whose orders come in by API (Amazon, eBay, Walmart); Noon's come from its rows. */
+const ORDER_PROVIDERS = ["amazon_sp", "ebay", "walmart"] as const;
 
 /**
  * The companies' marketplace connections that can bring orders in (not disconnected), with their
