@@ -5,7 +5,7 @@ export type Question = { q: string; a: React.ReactNode };
 /** Questions that open in place. */
 export function Faq({ items }: { items: readonly Question[] }) {
   return (
-    <div className="mx-auto grid max-w-3xl divide-y rounded-2xl border bg-card shadow-xs">
+    <div className="mx-auto grid w-full max-w-3xl divide-y rounded-2xl border bg-card shadow-xs">
       {items.map((item) => (
         <details key={item.q} className="group px-5 sm:px-6">
           <summary className="flex list-none items-center justify-between gap-4 py-5 font-medium">
