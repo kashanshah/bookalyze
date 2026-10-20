@@ -1,19 +1,24 @@
 "use server";
 
 import {
+  BRAND_IMAGE_TYPES,
   COMPLIANCE_RECURRENCES,
   DOCUMENT_KINDS,
   IDENTIFIER_KINDS,
   JURISDICTIONS,
+  LETTERHEAD_TYPES,
   PERSON_ROLES,
 } from "@bookalyze/core";
 import {
+  BrandError,
   createEntityDocument,
   deleteComplianceItem,
   deleteEntityDocument,
   deleteIdentifier,
   deletePerson,
   EntityError,
+  getAttachment,
+  saveBranding,
   saveComplianceItem,
   saveEntityDetails,
   saveIdentifier,
@@ -24,6 +29,7 @@ import {
 } from "@bookalyze/db";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { type BrandInput, brandSchema } from "@/lib/validation/brand";
 import { inOrg } from "@/server/accounting";
 import { audit } from "@/server/audit";
 import { getEntityContext } from "@/server/compliance";
@@ -424,6 +430,69 @@ export async function setDoneAction(
       after: parsed.data,
     });
   });
+  revalidate(slug);
+  return { ok: true };
+}
+
+// --- brand ---------------------------------------------------------------------------------
+
+/** Logo, colour, footer, Arabic name and letterhead for the company's documents. Owners and admins. */
+export async function saveBrandAction(slug: string, input: BrandInput): Promise<EntityResult> {
+  const ctx = await getEntityContext(slug);
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only owners and admins can change this." };
+  const parsed = brandSchema.safeParse(input);
+  if (!parsed.success) return invalid(parsed.error);
+  const settings = parsed.data;
+  let replaced: { storageKey: string }[] = [];
+  try {
+    replaced = await inOrg(ctx, async (tx) => {
+      for (const [field, id, types, what] of [
+        [
+          "logoAttachmentId",
+          settings.logoAttachmentId,
+          BRAND_IMAGE_TYPES,
+          "The logo must be a PNG or JPEG image.",
+        ],
+        [
+          "letterheadAttachmentId",
+          settings.letterheadAttachmentId,
+          LETTERHEAD_TYPES,
+          "The letterhead must be a PDF, PNG or JPEG.",
+        ],
+      ] as const) {
+        if (!id) continue;
+        const file = await getAttachment(tx, id);
+        if (!file || !(types as readonly string[]).includes(file.contentType)) {
+          throw new BrandError(`${field}:${what}`);
+        }
+      }
+      const result = await saveBranding(tx, {
+        orgId: ctx.org.id,
+        userId: ctx.session.user.id,
+        settings,
+      });
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "entity.brand_updated",
+        entityType: "organization",
+        entityId: ctx.org.id,
+        after: settings,
+      });
+      return result.replaced;
+    });
+  } catch (error) {
+    if (error instanceof BrandError) {
+      const [field, message] = error.message.includes(":")
+        ? (error.message.split(/:(.*)/s) as [string, string])
+        : ["form", error.message];
+      return field === "form"
+        ? { ok: false, message }
+        : { ok: false, errors: { [field.replace("AttachmentId", "")]: message } };
+    }
+    throw error;
+  }
+  for (const file of replaced) await removeStoredFile(file.storageKey);
   revalidate(slug);
   return { ok: true };
 }

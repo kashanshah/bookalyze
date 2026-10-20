@@ -155,6 +155,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     features: ["entity.profile", "entity.documents", "entity.compliance"],
     nav: [
       { label: "Profile", href: "/company" },
+      { label: "Brand", href: "/company/brand" },
       { label: "Documents", href: "/company/documents" },
       { label: "Compliance calendar", href: "/company/calendar" },
     ],

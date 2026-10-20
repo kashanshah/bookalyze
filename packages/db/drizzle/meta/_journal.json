@@ -470,6 +470,13 @@
       "when": 1792072691304,
       "tag": "0066_reorder",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1792527078583,
+      "tag": "0067_brand",
+      "breakpoints": true
     }
   ]
 }

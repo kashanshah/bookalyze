@@ -1,14 +1,24 @@
 import "server-only";
-import { csvAmount, type OrderInvoice } from "@bookalyze/core";
-import { PDFDocument, rgb } from "pdf-lib";
+import {
+  csvAmount,
+  formatDecimal,
+  hexToRgb,
+  isDarkColor,
+  type OrderInvoice,
+  parseDecimal,
+} from "@bookalyze/core";
+import { type PDFDocument as Doc, PDFDocument, type PDFImage, type PDFPage, rgb } from "pdf-lib";
+import type { DocumentBrand } from "./brand";
 import { drawable, drawLine, embedFaces, type Face, widthOf, wrap } from "./pdf-text";
 
 const WIDTH = 595.28;
 const HEIGHT = 841.89;
 const MARGIN = 48;
 const INK = rgb(0.11, 0.13, 0.16);
-const MUTED = rgb(0.38, 0.4, 0.44);
-const RULE = rgb(0.82, 0.83, 0.86);
+const MUTED = rgb(0.4, 0.42, 0.46);
+const RULE = rgb(0.86, 0.87, 0.9);
+const PANEL = rgb(0.965, 0.969, 0.976);
+const WHITE = rgb(1, 1, 1);
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -30,25 +40,110 @@ function money(amount: string, currency: string, signed = false): string {
   return negative || signed ? `-${body}` : body;
 }
 
+const NO_BRAND: DocumentBrand = {
+  accentColor: null,
+  footer: null,
+  nameArabic: null,
+  letterheadTop: 0,
+  letterheadBottom: 0,
+  letterheadPages: "first",
+  logo: null,
+  letterhead: null,
+};
+
+type Background =
+  | { kind: "pdf"; page: Awaited<ReturnType<Doc["embedPdf"]>>[number] }
+  | { kind: "image"; image: PDFImage };
+
+async function embedImage(doc: Doc, file: { bytes: Uint8Array; contentType: string }) {
+  return file.contentType === "image/png" ? doc.embedPng(file.bytes) : doc.embedJpg(file.bytes);
+}
+
+/** The letterhead as something every page can draw, or null when it can't be read. */
+async function embedLetterhead(doc: Doc, brand: DocumentBrand): Promise<Background | null> {
+  const file = brand.letterhead;
+  if (!file) return null;
+  try {
+    if (file.contentType === "application/pdf") {
+      const [page] = await doc.embedPdf(file.bytes, [0]);
+      return page ? { kind: "pdf", page } : null;
+    }
+    return { kind: "image", image: await embedImage(doc, file) };
+  } catch {
+    // A damaged or encrypted file: the invoice is still issued, on a plain page.
+    return null;
+  }
+}
+
+/** Fits a box inside max width × height, keeping its shape. */
+function fitWithin(width: number, height: number, maxWidth: number, maxHeight: number) {
+  const scale = Math.min(maxWidth / width, maxHeight / height, 1);
+  return { width: width * scale, height: height * scale };
+}
+
 /**
- * A customer invoice as a PDF: Helvetica for Latin text, Noto Sans Arabic for Arabic names,
- * addresses and product titles (see pdf-text.ts).
+ * A customer invoice as a PDF, in the company's brand: its logo (or full letterhead), accent
+ * colour, Arabic name and footer. Helvetica for Latin text, Noto Sans Arabic for Arabic (see
+ * pdf-text.ts). Invoices saved before newer fields existed (unit prices, shipping discounts)
+ * still render: those parts are left out.
  */
-export async function renderOrderInvoicePdf(invoice: OrderInvoice): Promise<Uint8Array> {
+export async function renderOrderInvoicePdf(
+  invoice: OrderInvoice,
+  brand: DocumentBrand = NO_BRAND,
+): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const { regular: font, bold } = await embedFaces(doc);
   doc.setTitle(invoice.number);
   doc.setAuthor(invoice.seller.legalName || "Invoice");
+  doc.setCreator("Bookalyze");
 
-  let page = doc.addPage([WIDTH, HEIGHT]);
-  let y = HEIGHT - MARGIN;
+  const accentRgb = hexToRgb(brand.accentColor);
+  const ACCENT = rgb(accentRgb.r, accentRgb.g, accentRgb.b);
+  const onAccent = isDarkColor(brand.accentColor) ? WHITE : INK;
+  // A pale accent still fills bands, but text in it would be hard to read on white.
+  const accentText = onAccent === WHITE ? ACCENT : INK;
+  const letterhead = await embedLetterhead(doc, brand);
+  const logo =
+    brand.logo && !letterhead ? await embedImage(doc, brand.logo).catch(() => null) : null;
+
   const right = WIDTH - MARGIN;
   const contentWidth = right - MARGIN;
+  const footerLines = (brand.footer ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  /** Room the footer (brand lines and page number) needs above the bottom margin. */
+  const footerSpace = 18 + footerLines.length * 10;
+  const pages: PDFPage[] = [];
+  let page = undefined as unknown as PDFPage;
+  let y = 0;
+  let bottom = MARGIN;
+
+  /** Starts a page: draws the letterhead when it applies and sets the safe area. */
+  const newPage = () => {
+    page = doc.addPage([WIDTH, HEIGHT]);
+    pages.push(page);
+    const withLetterhead = letterhead && (pages.length === 1 || brand.letterheadPages === "all");
+    if (withLetterhead) {
+      if (letterhead.kind === "pdf") {
+        page.drawPage(letterhead.page, { x: 0, y: 0, width: WIDTH, height: HEIGHT });
+      } else {
+        page.drawImage(letterhead.image, { x: 0, y: 0, width: WIDTH, height: HEIGHT });
+      }
+      y = HEIGHT - Math.max(brand.letterheadTop, 24);
+      bottom = Math.max(brand.letterheadBottom, 24) + footerSpace;
+    } else {
+      y = HEIGHT - MARGIN;
+      bottom = MARGIN + footerSpace - 18;
+    }
+  };
+  newPage();
 
   const ensure = (height: number) => {
-    if (y - height >= MARGIN) return;
-    page = doc.addPage([WIDTH, HEIGHT]);
-    y = HEIGHT - MARGIN;
+    if (y - height >= bottom) return false;
+    newPage();
+    return true;
   };
 
   const text = (
@@ -57,133 +152,295 @@ export async function renderOrderInvoicePdf(invoice: OrderInvoice): Promise<Uint
   ) => {
     const size = options.size ?? 10;
     const face = options.face ?? font;
-    const color = options.color ?? INK;
     const lines = wrap(value, face, size, options.width ?? contentWidth);
-    ensure(lines.length * (size + 3));
     for (const line of lines) {
-      if (line) drawLine(page, line, { x: options.x ?? MARGIN, y, size, face, color });
+      ensure(size + 3);
+      if (line)
+        drawLine(page, line, {
+          x: options.x ?? MARGIN,
+          y,
+          size,
+          face,
+          color: options.color ?? INK,
+        });
       y -= size + 3;
     }
   };
 
-  const gap = (n: number) => {
-    y -= n;
-  };
+  const rightText = (value: string, atY: number, size: number, face: Face, color = INK) =>
+    drawLine(page, value, { x: right - widthOf(value, face, size), y: atY, size, face, color });
 
-  text(invoice.title, { size: 20, face: bold, width: contentWidth - 140 });
-  drawLine(page, invoice.number, {
-    x: right - widthOf(invoice.number, bold, 12),
-    y: HEIGHT - MARGIN - 2,
-    size: 12,
-    face: bold,
-    color: INK,
-  });
-  gap(6);
+  // --- header ---------------------------------------------------------------------------------
+  const headerTop = y;
+  const titleSize = 24;
+  const title = invoice.title.toUpperCase();
+  rightText(title, headerTop - titleSize + 4, titleSize, bold, accentText);
+  let rightY = headerTop - titleSize - 14;
+  if (invoice.titleArabic) {
+    rightText(invoice.titleArabic, rightY, 12, bold, accentText);
+    rightY -= 20;
+  }
+  rightText(invoice.number, rightY, 11, bold, INK);
+  rightY -= 14;
 
+  const leftWidth = contentWidth - 200;
+  if (logo) {
+    const box = fitWithin(logo.width, logo.height, 170, 56);
+    page.drawImage(logo, {
+      x: MARGIN,
+      y: headerTop - box.height,
+      width: box.width,
+      height: box.height,
+    });
+    y = headerTop - box.height - 12;
+  }
+  text(invoice.seller.legalName, { size: 12, face: bold, width: leftWidth });
+  if (brand.nameArabic?.trim())
+    text(brand.nameArabic.trim(), { size: 11, face: bold, width: leftWidth });
   const sellerLines = [
-    invoice.seller.legalName,
     invoice.seller.tradeName && invoice.seller.tradeName !== invoice.seller.legalName
       ? invoice.seller.tradeName
       : null,
-    invoice.seller.address,
-    invoice.seller.tradeLicense ? `Trade license ${invoice.seller.tradeLicense}` : null,
+    ...(invoice.seller.address ?? "").split(/\r?\n/),
+    invoice.seller.tradeLicense ? `Trade licence ${invoice.seller.tradeLicense}` : null,
     invoice.seller.taxNumber
       ? `${invoice.seller.taxNumberLabel} ${invoice.seller.taxNumber}`
       : null,
-  ].filter((line): line is string => Boolean(line));
-  for (const line of sellerLines) text(line, { size: 10, color: MUTED, width: contentWidth - 140 });
-  gap(8);
+  ].filter((line): line is string => Boolean(line?.trim()));
+  for (const line of sellerLines) text(line.trim(), { size: 9.5, color: MUTED, width: leftWidth });
+  y = Math.min(y, rightY) - 14;
 
-  text("Bill to", { size: 9, face: bold, color: MUTED });
+  ensure(4);
+  page.drawRectangle({ x: MARGIN, y, width: contentWidth, height: 2, color: ACCENT });
+  y -= 22;
+
+  // --- bill to and details --------------------------------------------------------------------
+  const blockTop = y;
+  const detailsX = MARGIN + contentWidth * 0.55;
+  const detailsWidth = right - detailsX;
+  text("BILL TO", { size: 8, face: bold, color: MUTED, width: detailsX - MARGIN - 16 });
+  y -= 2;
   const buyerLines = [
     invoice.buyer.name,
     invoice.buyer.company,
     invoice.buyer.taxNumber ? `Tax number ${invoice.buyer.taxNumber}` : null,
-    invoice.buyer.address,
+    ...(invoice.buyer.address ?? "").split(/\r?\n/),
   ].filter((line): line is string => Boolean(line && drawable(line, font).trim()));
   if (buyerLines.length) {
-    for (const line of buyerLines) text(line, { size: 11 });
+    buyerLines.forEach((line, index) => {
+      text(line.trim(), {
+        size: index === 0 ? 11 : 9.5,
+        face: index === 0 ? bold : font,
+        color: index === 0 ? INK : MUTED,
+        width: detailsX - MARGIN - 16,
+      });
+    });
   } else {
-    text("Not provided", { size: 11, color: MUTED });
+    text("Not provided", { size: 10, color: MUTED });
   }
-  gap(8);
-  text(
-    [
-      `Order ${invoice.orderNumber}`,
-      invoice.marketplace,
-      `Purchased ${longDate(invoice.purchasedOn)}`,
-      `Invoice date ${longDate(invoice.invoiceDate)}`,
-    ].join("  ·  "),
-    { size: 9, color: MUTED },
-  );
-  gap(8);
-  ensure(8);
-  page.drawLine({
-    start: { x: MARGIN, y },
-    end: { x: right, y },
-    thickness: 0.6,
-    color: RULE,
-  });
-  gap(14);
+  const leftBottom = y;
 
-  const qtyX = MARGIN + 360;
-  const drawRow = (title: string, qty: string, amount: string, face: Face, color = INK) => {
-    const size = 10;
-    const titleLines = wrap(title, face, size, 330);
-    ensure(titleLines.length * (size + 3) + 2);
+  const details: [string, string][] = [
+    ["Invoice date", longDate(invoice.invoiceDate)],
+    ["Order", invoice.orderNumber],
+    ["Marketplace", invoice.marketplace],
+    ["Purchased", longDate(invoice.purchasedOn)],
+  ];
+  const rowHeight = 15;
+  const panelHeight = details.length * rowHeight + 12;
+  page.drawRectangle({
+    x: detailsX - 10,
+    y: blockTop - panelHeight + 10,
+    width: detailsWidth + 10,
+    height: panelHeight,
+    color: PANEL,
+  });
+  details.forEach(([label, value], index) => {
+    const rowY = blockTop - index * rowHeight - 2;
+    drawLine(page, label, { x: detailsX, y: rowY, size: 9, face: font, color: MUTED });
+    rightText(value, rowY, 9, bold, INK);
+  });
+  y = Math.min(leftBottom, blockTop - panelHeight) - 18;
+
+  // --- items ----------------------------------------------------------------------------------
+  const qtyRight = MARGIN + contentWidth * 0.66;
+  const unitRight = MARGIN + contentWidth * 0.83;
+  const descWidth = contentWidth * 0.66 - 50;
+  const headerRow = () => {
+    ensure(22);
+    page.drawRectangle({ x: MARGIN, y: y - 7, width: contentWidth, height: 21, color: ACCENT });
+    const size = 8.5;
+    drawLine(page, "DESCRIPTION", { x: MARGIN + 8, y, size, face: bold, color: onAccent });
+    const qty = "QTY";
+    drawLine(page, qty, {
+      x: qtyRight - widthOf(qty, bold, size),
+      y,
+      size,
+      face: bold,
+      color: onAccent,
+    });
+    const unit = "UNIT PRICE";
+    drawLine(page, unit, {
+      x: unitRight - widthOf(unit, bold, size),
+      y,
+      size,
+      face: bold,
+      color: onAccent,
+    });
+    const amount = "AMOUNT";
+    drawLine(page, amount, {
+      x: right - 8 - widthOf(amount, bold, size),
+      y,
+      size,
+      face: bold,
+      color: onAccent,
+    });
+    y -= 26;
+  };
+  headerRow();
+
+  let subtotal = 0n;
+  for (const line of invoice.lines) {
+    subtotal += parseDecimal(line.amount);
+    const size = 9.5;
+    const titleLines = wrap(line.title, font, size, descWidth);
+    const height = titleLines.length * (size + 3) + (line.sku ? 11 : 0) + 8;
+    if (ensure(height)) headerRow();
     const top = y;
-    for (const line of titleLines) {
-      if (line) drawLine(page, line, { x: MARGIN, y, size, face, color });
+    for (const part of titleLines) {
+      if (part) drawLine(page, part, { x: MARGIN + 8, y, size, face: font, color: INK });
       y -= size + 3;
     }
-    drawLine(page, qty, { x: qtyX, y: top, size, face, color });
-    drawLine(page, amount, { x: right - widthOf(amount, face, size), y: top, size, face, color });
-  };
-
-  drawRow("Item", "Qty", "Amount", bold, MUTED);
-  gap(4);
-  for (const line of invoice.lines) {
-    const detail = line.sku && line.sku !== line.title ? `${line.title} · ${line.sku}` : line.title;
-    drawRow(detail, String(line.quantity), money(line.amount, invoice.currency), font);
-    gap(2);
+    if (line.sku) {
+      drawLine(page, `SKU ${line.sku}`, { x: MARGIN + 8, y, size: 8, face: font, color: MUTED });
+      y -= 11;
+    }
+    const qty = String(line.quantity);
+    drawLine(page, qty, {
+      x: qtyRight - widthOf(qty, font, size),
+      y: top,
+      size,
+      face: font,
+      color: INK,
+    });
+    if (line.unitPrice) {
+      const unit = money(line.unitPrice, invoice.currency);
+      drawLine(page, unit, {
+        x: unitRight - widthOf(unit, font, size),
+        y: top,
+        size,
+        face: font,
+        color: INK,
+      });
+    }
+    const amount = money(line.amount, invoice.currency);
+    drawLine(page, amount, {
+      x: right - 8 - widthOf(amount, font, size),
+      y: top,
+      size,
+      face: font,
+      color: INK,
+    });
+    y -= 4;
+    page.drawLine({
+      start: { x: MARGIN, y: y + 2 },
+      end: { x: right, y: y + 2 },
+      thickness: 0.5,
+      color: RULE,
+    });
+    y -= 10;
   }
 
-  gap(6);
-  ensure(8);
-  page.drawLine({
-    start: { x: MARGIN, y },
-    end: { x: right, y },
-    thickness: 0.6,
-    color: RULE,
-  });
-  gap(14);
-
-  const totalRow = (label: string, amount: string, face = font) => {
-    const size = 10;
-    ensure(size + 6);
-    drawLine(page, label, { x: MARGIN + 250, y, size, face, color: INK });
-    drawLine(page, amount, { x: right - widthOf(amount, face, size), y, size, face, color: INK });
-    y -= size + 5;
+  // --- totals ---------------------------------------------------------------------------------
+  const labelX = MARGIN + contentWidth * 0.55;
+  const totalRow = (label: string, amount: string, emphasis = false) => {
+    const size = emphasis ? 11 : 9.5;
+    if (emphasis) {
+      ensure(26);
+      page.drawRectangle({
+        x: labelX - 10,
+        y: y - 8,
+        width: right - labelX + 10,
+        height: 24,
+        color: ACCENT,
+      });
+      drawLine(page, label, { x: labelX, y, size, face: bold, color: onAccent });
+      drawLine(page, amount, {
+        x: right - 8 - widthOf(amount, bold, size),
+        y,
+        size,
+        face: bold,
+        color: onAccent,
+      });
+      y -= 28;
+      return;
+    }
+    ensure(size + 7);
+    drawLine(page, label, { x: labelX, y, size, face: font, color: MUTED });
+    drawLine(page, amount, {
+      x: right - 8 - widthOf(amount, font, size),
+      y,
+      size,
+      face: font,
+      color: INK,
+    });
+    y -= size + 7;
   };
 
+  y -= 2;
+  totalRow("Subtotal", money(formatDecimal(subtotal), invoice.currency));
   if (invoice.shipping) totalRow("Shipping", money(invoice.shipping, invoice.currency));
+  if (invoice.shippingDiscount) {
+    totalRow("Shipping discount", money(invoice.shippingDiscount, invoice.currency, true));
+  }
   if (invoice.discounts) totalRow("Discounts", money(invoice.discounts, invoice.currency, true));
   if (invoice.tax) totalRow(invoice.tax.label, money(invoice.tax.amount, invoice.currency));
-  totalRow("Order total", money(invoice.total, invoice.currency), bold);
+  y -= 4;
+  totalRow("Total", money(invoice.total, invoice.currency), true);
   if (invoice.refunded) {
     totalRow("Refunded", money(invoice.refunded, invoice.currency, true));
-    gap(4);
+    y -= 2;
     text("This order was refunded in whole or in part. This invoice shows what was ordered.", {
-      size: 9,
+      size: 8.5,
       color: MUTED,
     });
   }
-  if (invoice.registrationNote) {
-    gap(6);
-    text(invoice.registrationNote, { size: 9, color: MUTED });
-  }
-  gap(14);
-  text(invoice.paymentNote, { size: 9, color: MUTED });
+
+  // --- notes ----------------------------------------------------------------------------------
+  y -= 10;
+  if (invoice.registrationNote) text(invoice.registrationNote, { size: 8.5, color: MUTED });
+  text(invoice.paymentNote, { size: 8.5, color: MUTED });
+
+  // --- footer on every page -------------------------------------------------------------------
+  pages.forEach((p, index) => {
+    const withLetterhead = letterhead && (index === 0 || brand.letterheadPages === "all");
+    const base = withLetterhead ? Math.max(brand.letterheadBottom, 24) + 6 : MARGIN - 18;
+    const pageLabel = pages.length > 1 ? `Page ${index + 1} of ${pages.length}` : "";
+    let lineY = base + 10 * footerLines.length;
+    if (footerLines.length) {
+      p.drawLine({
+        start: { x: MARGIN, y: lineY + 8 },
+        end: { x: right, y: lineY + 8 },
+        thickness: 0.5,
+        color: RULE,
+      });
+    }
+    for (const line of footerLines) {
+      const lines = wrap(line, font, 8, contentWidth - 80);
+      const first = lines[0] ?? "";
+      drawLine(p, first, { x: MARGIN, y: lineY, size: 8, face: font, color: MUTED });
+      lineY -= 10;
+    }
+    if (pageLabel) {
+      drawLine(p, pageLabel, {
+        x: right - widthOf(pageLabel, font, 8),
+        y: base,
+        size: 8,
+        face: font,
+        color: MUTED,
+      });
+    }
+  });
 
   return doc.save();
 }
