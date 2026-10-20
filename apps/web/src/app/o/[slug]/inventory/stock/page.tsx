@@ -11,6 +11,10 @@ import { RemoveStockCount, StockCountDialog } from "./stock-count";
 
 export const metadata: Metadata = { title: "Stock" };
 
+/** Product, In the books, Amazon, Noon, At hand (room for its buttons), Difference. */
+const GRID =
+  "lg:grid-cols-[minmax(0,2.4fr)_repeat(3,minmax(0,1fr))_minmax(0,1.4fr)_minmax(0,0.9fr)]";
+
 const MONTH = (m: string, locale: string) =>
   new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(
     new Date(`${m}-01T00:00:00Z`),
@@ -93,7 +97,9 @@ export default async function StockPage({ params }: { params: Promise<{ slug: st
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
-          <div className="hidden grid-cols-[minmax(0,1.6fr)_repeat(5,minmax(0,1fr))] gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider lg:grid">
+          <div
+            className={`hidden ${GRID} gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider lg:grid`}
+          >
             <span>Product</span>
             <span className="text-end">In the books</span>
             <span className="text-end">Amazon</span>
@@ -112,7 +118,9 @@ export default async function StockPage({ params }: { params: Promise<{ slug: st
               </li>
             ))}
           </ul>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-t bg-muted/30 px-5 py-3 font-medium text-sm lg:grid-cols-[minmax(0,1.6fr)_repeat(5,minmax(0,1fr))]">
+          <div
+            className={`grid grid-cols-2 gap-x-4 gap-y-1 border-t bg-muted/30 px-5 py-3 font-medium text-sm ${GRID}`}
+          >
             <span className="col-span-2 lg:col-span-1">All products</span>
             <Cell label="In the books" value={n.format(totals.expected)} />
             <Cell label="Amazon" value={n.format(totals.amazon)} />
@@ -162,19 +170,21 @@ function StockRow({
         amazon.reserved ? `${n.format(amazon.reserved)} reserved` : null,
         amazon.inbound ? `${n.format(amazon.inbound)} inbound` : null,
         amazon.unsellable ? `${n.format(amazon.unsellable)} unsellable` : null,
-        amazon.researching ? `${n.format(amazon.researching)} being looked for` : null,
+        amazon.researching ? `${n.format(amazon.researching)} missing` : null,
       ]
         .filter(Boolean)
         .join(" · ")
     : "";
   const booksHint =
     row.notPosted !== 0
-      ? `${n.format(row.inLots)} in lots, ${row.notPosted > 0 ? "less" : "plus"} ${n.format(Math.abs(row.notPosted))} not posted`
+      ? `${n.format(row.inLots)} in lots ${row.notPosted > 0 ? "−" : "+"} ${n.format(Math.abs(row.notPosted))} unposted`
       : undefined;
   return (
-    <div className="grid grid-cols-2 items-start gap-x-4 gap-y-1.5 px-5 py-3.5 text-sm lg:grid-cols-[minmax(0,1.6fr)_repeat(5,minmax(0,1fr))]">
+    <div className={`grid grid-cols-2 items-start gap-x-4 gap-y-1.5 px-5 py-3.5 text-sm ${GRID}`}>
       <div className="col-span-2 min-w-0 lg:col-span-1">
-        <p className="truncate font-medium">{row.productName}</p>
+        <p className="line-clamp-2 font-medium" title={row.productName}>
+          {row.productName}
+        </p>
         {row.productSku ? (
           <p className="truncate text-muted-foreground text-xs">Your SKU {row.productSku}</p>
         ) : null}
@@ -190,32 +200,34 @@ function StockRow({
         value={row.noon ? n.format(row.noon.total) : "—"}
         hint={row.noon?.other ? `${n.format(row.noon.other)} not sellable` : undefined}
       />
-      <span className="flex items-center justify-between gap-2 lg:justify-end">
+      <span className="flex items-start justify-between gap-2 lg:justify-end">
         <span className="text-muted-foreground text-xs lg:hidden">At hand</span>
-        <span className="flex items-center gap-1">
+        <span className="flex items-start gap-1">
           {row.atHand ? (
-            <span className="text-end">
+            <span className="text-end" title={row.atHand.notes ?? undefined}>
               <span className="tabular-nums">{n.format(row.atHand.quantity)}</span>
-              <span className="block text-muted-foreground text-xs">
+              <span className="block whitespace-nowrap text-muted-foreground text-xs">
                 {formatDate(row.atHand.countedOn, locale)}
               </span>
             </span>
           ) : null}
-          <StockCountDialog
-            slug={slug}
-            productId={row.productId}
-            productName={row.productName}
-            today={today}
-            current={row.atHand?.quantity ?? null}
-          />
-          {row.atHand ? (
-            <RemoveStockCount
+          <span className="-my-1.5 flex items-center">
+            <StockCountDialog
               slug={slug}
               productId={row.productId}
-              countId={row.atHand.id}
-              label={`${row.productName} on ${formatDate(row.atHand.countedOn, locale)}`}
+              productName={row.productName}
+              today={today}
+              current={row.atHand?.quantity ?? null}
             />
-          ) : null}
+            {row.atHand ? (
+              <RemoveStockCount
+                slug={slug}
+                productId={row.productId}
+                countId={row.atHand.id}
+                label={`${row.productName} on ${formatDate(row.atHand.countedOn, locale)}`}
+              />
+            ) : null}
+          </span>
         </span>
       </span>
       <span className="flex items-center justify-between gap-2 lg:justify-end">

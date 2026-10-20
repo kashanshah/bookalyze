@@ -69,10 +69,21 @@ export function StockCountDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" aria-label={`Count ${productName} at hand`}>
-          <ClipboardCheck />
-          {current === null ? "Count" : "Recount"}
-        </Button>
+        {current === null ? (
+          <Button variant="ghost" size="sm" aria-label={`Count ${productName} at hand`}>
+            <ClipboardCheck />
+            Count
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Recount ${productName} at hand`}
+            title="Recount"
+          >
+            <ClipboardCheck />
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
