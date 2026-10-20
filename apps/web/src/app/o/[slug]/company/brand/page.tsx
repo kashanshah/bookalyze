@@ -42,6 +42,8 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
           letterhead: file(brand.letterhead),
           letterheadTop: brand.letterheadTop,
           letterheadBottom: brand.letterheadBottom,
+          letterheadLeft: brand.letterheadLeft,
+          letterheadRight: brand.letterheadRight,
           letterheadPages: brand.letterheadPages,
         }}
       />

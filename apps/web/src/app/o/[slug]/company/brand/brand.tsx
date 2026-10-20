@@ -7,6 +7,7 @@ import {
   DEFAULT_LETTERHEAD_MARGINS,
   DEFAULT_LOGO_HEIGHT,
   LETTERHEAD_MARGIN_MAX,
+  LETTERHEAD_SIDE_MAX,
   LETTERHEAD_TYPES,
   type LetterheadPages,
   LOGO_HEIGHT_MAX,
@@ -39,6 +40,8 @@ export type BrandView = {
   letterhead: BrandFile | null;
   letterheadTop: number;
   letterheadBottom: number;
+  letterheadLeft: number;
+  letterheadRight: number;
   letterheadPages: LetterheadPages;
 };
 
@@ -171,6 +174,8 @@ export function BrandScreen({ view }: { view: BrandView }) {
   const [letterhead, setLetterhead] = useState(view.letterhead);
   const [top, setTop] = useState(String(view.letterheadTop));
   const [bottom, setBottom] = useState(String(view.letterheadBottom));
+  const [left, setLeft] = useState(String(view.letterheadLeft));
+  const [right, setRight] = useState(String(view.letterheadRight));
   const [pages, setPages] = useState<LetterheadPages>(view.letterheadPages);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, startSave] = useTransition();
@@ -187,10 +192,12 @@ export function BrandScreen({ view }: { view: BrandView }) {
       letterheadAttachmentId: letterhead?.id ?? null,
       letterheadTop: Number(top),
       letterheadBottom: Number(bottom),
+      letterheadLeft: Number(left),
+      letterheadRight: Number(right),
       letterheadPages: pages,
       logoHeight,
     }),
-    [accent, footer, nameArabic, logo, logoHeight, letterhead, top, bottom, pages],
+    [accent, footer, nameArabic, logo, logoHeight, letterhead, top, bottom, left, right, pages],
   );
 
   // The preview redraws a moment after the last change, from the unsaved settings.
@@ -411,6 +418,40 @@ export function BrandScreen({ view }: { view: BrandView }) {
                     value={bottom}
                     disabled={disabled}
                     onChange={(event) => setBottom(event.target.value)}
+                  />
+                </Field>
+                <Field
+                  label="Space on the left"
+                  htmlFor="brand-left"
+                  hint={`For a side band. Default ${DEFAULT_LETTERHEAD_MARGINS.left}.`}
+                  error={errors.letterheadLeft}
+                >
+                  <Input
+                    id="brand-left"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={LETTERHEAD_SIDE_MAX}
+                    value={left}
+                    disabled={disabled}
+                    onChange={(event) => setLeft(event.target.value)}
+                  />
+                </Field>
+                <Field
+                  label="Space on the right"
+                  htmlFor="brand-right"
+                  hint={`Default ${DEFAULT_LETTERHEAD_MARGINS.right}.`}
+                  error={errors.letterheadRight}
+                >
+                  <Input
+                    id="brand-right"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={LETTERHEAD_SIDE_MAX}
+                    value={right}
+                    disabled={disabled}
+                    onChange={(event) => setRight(event.target.value)}
                   />
                 </Field>
               </div>
