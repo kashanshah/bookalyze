@@ -1,15 +1,28 @@
-import { divideDecimals, purchaseOrderNumber, sumDecimals } from "@bookalyze/core";
-import { type LotRow, listLots, listProducts } from "@bookalyze/db";
+import {
+  divideDecimals,
+  isMoneyAccountSubtype,
+  purchaseOrderNumber,
+  sumDecimals,
+} from "@bookalyze/core";
+import {
+  type LotRow,
+  listLots,
+  listProducts,
+  type StockRemovalRow,
+  stockRemovalsFor,
+} from "@bookalyze/db";
 import { Layers, Search } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
+import type { ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { formatDate, nowIn } from "@/lib/dates";
-import { inOrg } from "@/server/accounting";
+import { inOrg, listAccounts } from "@/server/accounting";
 import { getInventoryContext } from "@/server/inventory";
 import { OpeningStockDialog, RemoveOpeningStock } from "./opening-stock";
+import { PutBackInStock, TakeOutDialog } from "./take-out";
 
 export const metadata: Metadata = { title: "Stock lots" };
 
@@ -29,12 +42,42 @@ export default async function LotsPage({
   const q = ((await searchParams).q ?? "").trim().slice(0, 100);
   const ctx = await getInventoryContext(slug, "inventory.purchasing");
   const { locale } = ctx.profile;
-  const { lots, products } = await inOrg(ctx, async (tx) => ({
-    lots: await listLots(tx, q ? { search: q } : {}),
-    products: (await listProducts(tx))
-      .filter((p) => !p.isArchived)
-      .map((p) => ({ id: p.id, name: p.name, sku: p.sku })),
-  }));
+  const { lots, products, removals } = await inOrg(ctx, async (tx) => {
+    const lots = await listLots(tx, q ? { search: q } : {});
+    return {
+      lots,
+      products: (await listProducts(tx))
+        .filter((p) => !p.isArchived)
+        .map((p) => ({ id: p.id, name: p.name, sku: p.sku })),
+      removals: await stockRemovalsFor(
+        tx,
+        lots.map((l) => l.id),
+      ),
+    };
+  });
+  const removalsByLot = new Map<string, StockRemovalRow[]>();
+  for (const r of removals) removalsByLot.set(r.lotId, [...(removalsByLot.get(r.lotId) ?? []), r]);
+  // Where a take-out's cost can go: any category (not a bank or card, not Inventory itself).
+  const accountRows = (await listAccounts(ctx)).filter(
+    (a) => !a.isArchived && !isMoneyAccountSubtype(a.subtype) && a.systemKey !== "inventory",
+  );
+  const typeLabel = {
+    asset: "Assets",
+    liability: "Liabilities",
+    equity: "Equity",
+    income: "Income",
+    expense: "Expenses",
+  } as const;
+  const takeOutAccounts: ComboboxOption[] = accountRows
+    .filter((a) => a.type === "equity" || a.type === "expense")
+    .map((a) => ({
+      value: a.id,
+      label: a.code ? `${a.code} · ${a.name}` : a.name,
+      group: typeLabel[a.type],
+      keywords: a.code ?? undefined,
+    }));
+  const writeOffs = accountRows.find((a) => a.systemKey === "inventory_write_offs")?.id ?? "";
+  const today = nowIn(ctx.profile.timezone).date;
   const groups = new Map<string, LotRow[]>();
   for (const lot of lots) groups.set(lot.productId, [...(groups.get(lot.productId) ?? []), lot]);
   const n = new Intl.NumberFormat(locale);
@@ -147,6 +190,8 @@ export default async function LotsPage({
                         locale={locale}
                         perUnit={perUnit(lot.currency, unitCost(lot))}
                         n={n}
+                        removals={removalsByLot.get(lot.id) ?? []}
+                        takeOut={{ accounts: takeOutAccounts, defaultAccountId: writeOffs, today }}
                       />
                     </li>
                   ))}
@@ -167,6 +212,8 @@ function LotRowView({
   locale,
   perUnit,
   n,
+  removals,
+  takeOut,
 }: {
   lot: LotRow;
   index: number;
@@ -174,6 +221,8 @@ function LotRowView({
   locale: string;
   perUnit: string;
   n: Intl.NumberFormat;
+  removals: StockRemovalRow[];
+  takeOut: { accounts: ComboboxOption[]; defaultAccountId: string; today: string };
 }) {
   const left = lot.quantity - lot.consumed;
   const cells = (
@@ -221,28 +270,62 @@ function LotRowView({
   );
   const grid =
     "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-0.5 px-5 py-3 text-sm sm:grid-cols-[2rem_8rem_minmax(0,1fr)_7rem_8rem]";
-  if (lot.source !== "receipt") {
-    return (
-      <div className="flex items-center">
-        <div className={`${grid} min-w-0 flex-1 pe-1`}>{cells}</div>
-        <div className="w-11 shrink-0 pe-2">
-          {lot.source === "opening" && lot.consumed === 0 ? (
-            <RemoveOpeningStock
-              slug={slug}
-              lotId={lot.id}
-              label={`opening stock from ${formatDate(lot.receivedOn, locale)}`}
-            />
-          ) : null}
-        </div>
-      </div>
-    );
-  }
+  const label = `the lot of ${formatDate(lot.receivedOn, locale)}`;
+  const action =
+    lot.source === "opening" && lot.consumed === 0 ? (
+      <RemoveOpeningStock
+        slug={slug}
+        lotId={lot.id}
+        label={`opening stock from ${formatDate(lot.receivedOn, locale)}`}
+      />
+    ) : left > 0 ? (
+      <TakeOutDialog
+        slug={slug}
+        lotId={lot.id}
+        left={left}
+        label={label}
+        receivedOn={lot.receivedOn}
+        today={takeOut.today}
+        accounts={takeOut.accounts}
+        defaultAccountId={takeOut.defaultAccountId}
+      />
+    ) : null;
   return (
-    <Link
-      href={`/o/${slug}/inventory/purchase-orders/${lot.purchaseOrderId}/deliveries/${lot.receiptId}`}
-      className={`${grid} transition-colors hover:bg-accent/40`}
-    >
-      {cells}
-    </Link>
+    <>
+      <div className="flex items-center">
+        {lot.source === "receipt" ? (
+          <Link
+            href={`/o/${slug}/inventory/purchase-orders/${lot.purchaseOrderId}/deliveries/${lot.receiptId}`}
+            className={`${grid} min-w-0 flex-1 pe-1 transition-colors hover:bg-accent/40`}
+          >
+            {cells}
+          </Link>
+        ) : (
+          <div className={`${grid} min-w-0 flex-1 pe-1`}>{cells}</div>
+        )}
+        <div className="w-11 shrink-0 pe-2">{action}</div>
+      </div>
+      {removals.length ? (
+        <ul className="grid gap-1 px-5 pb-3 sm:ps-[3.5rem]">
+          {removals.map((r) => (
+            <li
+              key={r.id}
+              className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg bg-muted/40 px-3 py-1.5 text-muted-foreground text-xs"
+            >
+              <span>
+                {n.format(r.quantity)} taken out on {formatDate(r.removedOn, locale)} ·{" "}
+                <Amount value={r.cost} currency={lot.currency} locale={locale} /> to {r.accountName}
+                {r.notes ? ` · ${r.notes}` : ""}
+              </span>
+              <PutBackInStock
+                slug={slug}
+                removalId={r.id}
+                label={`${n.format(r.quantity)} taken out on ${formatDate(r.removedOn, locale)}`}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
   );
 }

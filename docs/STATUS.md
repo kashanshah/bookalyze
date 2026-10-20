@@ -2344,6 +2344,29 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   revalidate the layout each; the upload refreshes the page once at the end, so a large report
   doesn't set off a stream of page requests. Its summary toast stays 15 seconds.
 
+### Stock taken out by hand
+
+- **What it is:** Stock lots → a lot with units left → **Take out of stock** (box-minus button):
+  how many, the day they left, where the cost goes (any equity or expense category: Owner
+  drawings when the owner took or sold them outside the marketplaces, Inventory losses and
+  write-offs, the default, when lost or thrown away) and a note. For units no marketplace or
+  ledger accounts for. Each shows under its lot ("2 taken out on … · AED … to Owner drawings")
+  with **Put back** (reverses the entry, the units return).
+- **Books:** Dr the chosen account / Cr Inventory on the day, at the lot's cost in cents (the last
+  units take what's left of the lot), source `stock_removal`.
+- **Stock:** a `lot_consumptions` row of kind `removal` (now `cogs_period_id` or `removal_id`,
+  never both) takes the units, so FIFO, prices, reorder and "Your stock against Amazon's" count
+  them as gone. They come from the lot chosen, whenever they left; months posted later take from
+  what's left. A lot with units taken out fixes its landed cost, like a posted month.
+- **Schema** (migration `0067_stock_removals`): `stock_removals` (lot, day, units, cost, account,
+  entry, note, who), `lot_consumptions.removal_id` (cascade), kind `removal`, journal source
+  `stock_removal`. All under RLS.
+- **Code:** db `stock-removals.ts` (`takeOutOfStock`, `putBackInStock`, `stockRemovalsFor`);
+  actions `takeOutOfStockAction` / `putBackInStockAction` (audited `inventory_lot.taken_out` /
+  `inventory_lot.put_back`); web `inventory/lots/take-out.tsx`.
+- Tests: db `stock-removals.test.ts` (cost shared to the cent, more than left / before the lot /
+  Inventory refused, opening lot can't be removed after, putting back, tenant isolation).
+
 ### Phase 5, slice 4: opening stock and cost of goods sold
 
 - **Decisions** (PLAN decision log, 2026-10-08): supplier payments are categorised to

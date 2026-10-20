@@ -18,7 +18,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { contacts, journalEntries } from "./accounting";
+import { accounts, contacts, journalEntries } from "./accounting";
 import { organization, user } from "./auth";
 import { salesChannels } from "./commerce";
 import { currencies } from "./reference";
@@ -579,7 +579,57 @@ export const cogsPeriods = pgTable(
   ],
 );
 
-/** Units a month's cost of goods sold took from one lot, and what they cost. */
+/**
+ * Units taken out of a lot by hand, not through a marketplace: sold or used outside it, taken by
+ * the owner, lost or thrown away. Posted on its day: Dr `account_id` (Owner drawings, Inventory
+ * losses and write-offs…) / Cr Inventory at the lot's cost. Its `lot_consumptions` row (kind
+ * "removal") takes the units from the lot; putting it back removes both and reverses the entry.
+ */
+export const stockRemovals = pgTable(
+  "stock_removals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    lotId: uuid("lot_id").notNull(),
+    removedOn: date("removed_on").notNull(),
+    quantity: integer("quantity").notNull(),
+    cost: numeric("cost", { precision: 20, scale: 4 }).notNull(),
+    /** Where the cost goes. */
+    accountId: uuid("account_id").notNull(),
+    journalEntryId: uuid("journal_entry_id"),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("stock_removals_org_id_key").on(t.organizationId, t.id),
+    index("stock_removals_lot_idx").on(t.organizationId, t.lotId),
+    foreignKey({
+      name: "stock_removals_lot_fk",
+      columns: [t.organizationId, t.lotId],
+      foreignColumns: [inventoryLots.organizationId, inventoryLots.id],
+    }),
+    foreignKey({
+      name: "stock_removals_account_fk",
+      columns: [t.organizationId, t.accountId],
+      foreignColumns: [accounts.organizationId, accounts.id],
+    }),
+    foreignKey({
+      name: "stock_removals_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    check("stock_removals_quantity_positive", sql`${t.quantity} > 0 and ${t.cost} >= 0`),
+    tenantIsolationPolicy("stock_removals", t.organizationId),
+  ],
+);
+
+/**
+ * Units taken from one lot, and what they cost: by a month's cost of goods sold (`cogs_period_id`;
+ * a sale or a write-off), or by hand (`removal_id`; see `stock_removals`).
+ */
 export const lotConsumptions = pgTable(
   "lot_consumptions",
   {
@@ -587,10 +637,14 @@ export const lotConsumptions = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    cogsPeriodId: uuid("cogs_period_id").notNull(),
+    cogsPeriodId: uuid("cogs_period_id"),
+    removalId: uuid("removal_id"),
     lotId: uuid("lot_id").notNull(),
-    /** "sale": shipped to a customer; "write_off": lost, damaged or disposed. */
-    kind: text("kind", { enum: ["sale", "write_off"] })
+    /**
+     * "sale": shipped to a customer; "write_off": lost, damaged or disposed (Amazon's ledger);
+     * "removal": taken out by hand.
+     */
+    kind: text("kind", { enum: ["sale", "write_off", "removal"] })
       .notNull()
       .default("sale"),
     quantity: integer("quantity").notNull(),
@@ -598,12 +652,22 @@ export const lotConsumptions = pgTable(
   },
   (t) => [
     unique("lot_consumptions_period_lot_kind_key").on(t.cogsPeriodId, t.lotId, t.kind),
-    check("lot_consumptions_kind_valid", sql`${t.kind} in ('sale', 'write_off')`),
+    check("lot_consumptions_kind_valid", sql`${t.kind} in ('sale', 'write_off', 'removal')`),
+    check(
+      "lot_consumptions_source_valid",
+      sql`(${t.kind} = 'removal' and ${t.removalId} is not null and ${t.cogsPeriodId} is null) or (${t.kind} <> 'removal' and ${t.cogsPeriodId} is not null and ${t.removalId} is null)`,
+    ),
+    uniqueIndex("lot_consumptions_removal_key").on(t.removalId),
     index("lot_consumptions_lot_idx").on(t.lotId),
     foreignKey({
       name: "lot_consumptions_period_fk",
       columns: [t.organizationId, t.cogsPeriodId],
       foreignColumns: [cogsPeriods.organizationId, cogsPeriods.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "lot_consumptions_removal_fk",
+      columns: [t.organizationId, t.removalId],
+      foreignColumns: [stockRemovals.organizationId, stockRemovals.id],
     }).onDelete("cascade"),
     foreignKey({
       name: "lot_consumptions_lot_fk",
