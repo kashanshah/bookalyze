@@ -11,8 +11,17 @@ import {
 import type { Metadata } from "next";
 import { ClosingCta } from "@/components/cta";
 import { MARKETPLACES } from "@/components/marketplaces";
-import { ReorderPreview, SettlementPreview } from "@/components/previews";
+import {
+  BankMatchPreview,
+  CompaniesPreview,
+  LotsPreview,
+  ReorderChart,
+  ReviewsPreview,
+  SettlementPreview,
+  TransactionsPreview,
+} from "@/components/previews";
 import { Checklist, Section, SectionHeading } from "@/components/section";
+import { cn } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Features",
@@ -27,11 +36,14 @@ type Group = {
   title: string;
   lead: string;
   points: readonly string[];
+  /** A moving picture of this part of the app. */
+  picture: () => React.ReactNode;
 };
 
 const GROUPS: Group[] = [
   {
     id: "accounting",
+    picture: TransactionsPreview,
     icon: BookOpenCheck,
     title: "Accounting",
     lead: "Real double-entry books, without having to think in debits and credits.",
@@ -49,6 +61,7 @@ const GROUPS: Group[] = [
   },
   {
     id: "banking",
+    picture: BankMatchPreview,
     icon: Landmark,
     title: "Banking",
     lead: "Every account in one place, agreeing with the bank.",
@@ -63,6 +76,7 @@ const GROUPS: Group[] = [
   },
   {
     id: "inventory",
+    picture: LotsPreview,
     icon: Boxes,
     title: "Stock and cost of goods sold",
     lead: "Know what each sale really cost, down to freight and duties.",
@@ -78,6 +92,7 @@ const GROUPS: Group[] = [
   },
   {
     id: "reorder",
+    picture: ReorderChart,
     icon: ChartNoAxesCombined,
     title: "Profit and reorder",
     lead: "See what's earning, and order before you run out.",
@@ -91,6 +106,7 @@ const GROUPS: Group[] = [
   },
   {
     id: "reviews",
+    picture: ReviewsPreview,
     icon: Star,
     title: "Reviews and listings",
     lead: "Small jobs that used to take an afternoon.",
@@ -103,6 +119,7 @@ const GROUPS: Group[] = [
   },
   {
     id: "companies",
+    picture: CompaniesPreview,
     icon: Building2,
     title: "Every company you run",
     lead: "One login for all of your businesses, each completely separate.",
@@ -169,18 +186,13 @@ export default function FeaturesPage() {
           key={g.id}
           id={g.id}
           tint={i % 2 === 0}
-          className={
-            g.id === "reorder" ? "grid gap-12 lg:grid-cols-2 lg:items-center" : "grid gap-8"
-          }
+          className="grid gap-12 lg:grid-cols-2 lg:items-center"
         >
-          <div className="grid gap-8">
+          <div className={cn("grid gap-8", i % 2 === 1 && "lg:order-last")}>
             <GroupHeading icon={g.icon} title={g.title} lead={g.lead} />
-            <Checklist
-              items={g.points}
-              className={g.id === "reorder" ? undefined : "sm:grid-cols-2 sm:gap-x-10"}
-            />
+            <Checklist items={g.points} />
           </div>
-          {g.id === "reorder" ? <ReorderPreview /> : null}
+          <g.picture />
         </Section>
       ))}
 
@@ -202,7 +214,7 @@ function GroupHeading({
 }) {
   return (
     <div className="grid gap-3">
-      <span className="flex size-11 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+      <span className="flex size-11 items-center justify-center rounded-xl bg-linear-to-br from-primary to-primary/70 text-primary-foreground shadow-md shadow-primary/20">
         <Icon className="size-5" />
       </span>
       <h2 className="font-semibold text-2xl tracking-tight sm:text-3xl">{title}</h2>

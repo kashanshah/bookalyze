@@ -1077,7 +1077,13 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   listings, companies) and **Pricing** (free during early access, everything included).
   "Start free" and "Sign in" go to the app (`NEXT_PUBLIC_APP_URL`).
 - **Pictures of the app** are drawn in code with the app's tokens (`previews.tsx`), made-up
-  companies and amounts, so they follow light and dark mode and hold no real data.
+  companies and amounts, so they follow light and dark mode and hold no real data. They move
+  like short GIFs: payouts flip to Matched, transactions get approved, review requests go out,
+  the oldest stock lot sells down, the company switcher moves (CSS loops, `anim-*` utilities in
+  `globals.css`). Charts draw when scrolled into view (`InView`, `on-view-*`): the Channel profit
+  waterfall and the reorder chart. The **money flow** infographic (`flow.tsx`: Amazon, eBay and
+  Noon into Bookalyze, out to books, bank and profit) is an SVG with moving dots, a tall version
+  for phones. With reduced motion every picture shows its finished state.
 - **Legal pages stay in the app**, one copy each: `/privacy-policy` and the new `/terms`
   (`components/legal-page.tsx` shared by both). The site's `/terms`, `/privacy` and
   `/privacy-policy` redirect there. Sign-up says "By creating an account you agree to the Terms

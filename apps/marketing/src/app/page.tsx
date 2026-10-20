@@ -13,8 +13,10 @@ import {
 import { ButtonLink } from "@/components/button";
 import { ClosingCta } from "@/components/cta";
 import { Faq, type Question } from "@/components/faq";
+import { MoneyFlow } from "@/components/flow";
+import { InView } from "@/components/in-view";
 import { MarketplaceCards } from "@/components/marketplaces";
-import { CompaniesPreview, PayoutsPreview, ProfitPreview } from "@/components/previews";
+import { CompaniesPreview, PayoutsPreview, ProfitWaterfall, timing } from "@/components/previews";
 import { Checklist, Section, SectionHeading } from "@/components/section";
 import { SIGN_UP_URL } from "@/lib/site";
 
@@ -149,18 +151,28 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* How the money flows */}
+      <Section className="grid gap-12">
+        <SectionHeading
+          eyebrow="How it works"
+          title="Connect once. Then it runs itself."
+          lead="Every day, Bookalyze collects each marketplace's sales, fees and payouts, posts them to your books, finds each payout in your bank, and works out what you made."
+        />
+        <MoneyFlow />
+      </Section>
+
       {/* Marketplaces */}
-      <Section id="marketplaces" className="grid gap-12">
+      <Section id="marketplaces" tint className="grid gap-12">
         <SectionHeading
           eyebrow="Marketplaces"
-          title="Connect once. Every payout lands in your books."
+          title="Amazon, eBay and Noon, each one fully connected"
           lead="Stop downloading reports and typing totals. Each connection keeps bringing in what your books need, and checks it adds up."
         />
         <MarketplaceCards />
       </Section>
 
       {/* From payout to profit */}
-      <Section tint className="grid gap-14 lg:grid-cols-2 lg:items-center">
+      <Section className="grid gap-14 lg:grid-cols-2 lg:items-center">
         <div className="grid gap-10">
           <SectionHeading
             align="start"
@@ -179,7 +191,7 @@ export default function HomePage() {
             ))}
           </ol>
         </div>
-        <ProfitPreview />
+        <ProfitWaterfall />
       </Section>
 
       {/* Everything else */}
@@ -189,17 +201,21 @@ export default function HomePage() {
           title="And everything else your business runs on"
           lead="Accounting, banking and stock in the same place as your sales, so the numbers agree."
         />
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((f) => (
-            <article key={f.title} className="grid content-start gap-3 rounded-2xl border p-6">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+        <InView className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {FEATURES.map((f, i) => (
+            <article
+              key={f.title}
+              className="on-view-rise group grid content-start gap-3 rounded-2xl border bg-card p-6 shadow-xs transition-shadow hover:shadow-md"
+              style={timing(i * 0.08)}
+            >
+              <span className="flex size-11 items-center justify-center rounded-xl bg-linear-to-br from-primary to-primary/70 text-primary-foreground shadow-md shadow-primary/20 transition-transform group-hover:-translate-y-0.5">
                 <f.icon className="size-5" />
               </span>
               <h3 className="font-semibold">{f.title}</h3>
               <p className="text-muted-foreground text-sm leading-6">{f.body}</p>
             </article>
           ))}
-        </div>
+        </InView>
         <div className="flex justify-center">
           <ButtonLink href="/features" variant="outline">
             See every feature

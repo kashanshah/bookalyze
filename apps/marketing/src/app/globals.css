@@ -131,3 +131,144 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * Moving pictures of the app. Each element's own style is its finished state, so with reduced
+ * motion (the rule above ends every animation at once) the picture simply shows the result.
+ */
+@keyframes swap-in {
+  0%,
+  14% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  20%,
+  86% {
+    opacity: 1;
+    transform: none;
+  }
+  92%,
+  100% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+@keyframes swap-out {
+  0%,
+  14% {
+    opacity: 1;
+  }
+  20%,
+  86% {
+    opacity: 0;
+  }
+  92%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+@keyframes grow-up {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+@keyframes sell-down {
+  0%,
+  10% {
+    transform: scaleX(1);
+  }
+  80%,
+  100% {
+    transform: scaleX(0.18);
+  }
+}
+@keyframes spotlight {
+  0%,
+  33.3%,
+  100% {
+    opacity: 0;
+  }
+  4%,
+  29% {
+    opacity: 1;
+  }
+}
+@keyframes ping-soft {
+  75%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@utility anim-swap-in {
+  animation: swap-in var(--loop, 8s) ease-in-out var(--delay, 0s) infinite backwards;
+}
+@utility anim-swap-out {
+  opacity: 0;
+  animation: swap-out var(--loop, 8s) ease-in-out var(--delay, 0s) infinite backwards;
+}
+@utility anim-dash-flow {
+  stroke-dasharray: 6 6;
+  animation: dash-flow 1.2s linear infinite;
+}
+@utility anim-sell-down {
+  transform-origin: left;
+  animation: sell-down 6s ease-in-out var(--delay, 0s) infinite alternate;
+}
+@utility anim-spotlight {
+  opacity: 0;
+  animation: spotlight var(--loop, 8s) ease-in-out var(--delay, 0s) infinite backwards;
+}
+@utility anim-ping {
+  animation: ping-soft 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Played once, when the picture scrolls into view (see components/in-view.tsx). */
+@media (prefers-reduced-motion: no-preference) {
+  [data-inview="true"] .on-view-rise {
+    animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) var(--delay, 0s) backwards;
+  }
+  [data-inview="true"] .on-view-grow {
+    transform-origin: bottom;
+    animation: grow-up 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) var(--delay, 0s) backwards;
+  }
+  [data-inview="true"] .on-view-grow-x {
+    transform-origin: left;
+    animation: grow-x 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) var(--delay, 0s) backwards;
+  }
+  [data-inview="true"] .on-view-draw {
+    stroke-dasharray: 1;
+    animation: draw 1.6s cubic-bezier(0.4, 0, 0.2, 1) var(--delay, 0s) backwards;
+  }
+  [data-inview="false"] .on-view-grow,
+  [data-inview="false"] .on-view-grow-x,
+  [data-inview="false"] .on-view-rise {
+    opacity: 0;
+  }
+  [data-inview="false"] .on-view-draw {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+}

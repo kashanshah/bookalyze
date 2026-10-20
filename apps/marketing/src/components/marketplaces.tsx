@@ -50,7 +50,16 @@ export function MarketplaceCards() {
           className="flex flex-col gap-5 rounded-2xl border bg-card p-6 shadow-xs sm:p-7"
         >
           <div className="grid gap-1.5">
-            <h3 className="font-semibold text-2xl tracking-tight">{m.name}</h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-semibold text-2xl tracking-tight">{m.name}</h3>
+              <span className="inline-flex items-center gap-2 rounded-full bg-success/12 px-2.5 py-1 font-medium text-success text-xs">
+                <span className="relative flex size-1.5">
+                  <span className="anim-ping absolute inline-flex size-full rounded-full bg-success" />
+                  <span className="relative inline-flex size-1.5 rounded-full bg-success" />
+                </span>
+                Syncs daily
+              </span>
+            </div>
             <p className="text-muted-foreground text-sm leading-6">{m.where}</p>
           </div>
           <Checklist items={m.brings} />
