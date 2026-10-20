@@ -207,7 +207,7 @@ export async function uploadReportSettlementsAction(
     }
     return { added, updated, skipped, posted };
   });
-  revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
+  // Sent a part at a time: the upload refreshes the page once, when every part is in.
   return { ok: true, ...counts };
 }
 
@@ -292,7 +292,7 @@ export async function uploadReportOrdersAction(
   });
   if (added === null)
     return { ok: false, message: `There's no ${marketplace} channel to add its orders to.` };
-  revalidatePath(`/o/${slug}/commerce`, "layout");
+  // Sent a part at a time: the upload refreshes the page once, when every part is in.
   return { ok: true, added };
 }
 
@@ -344,7 +344,7 @@ export async function uploadReportReturnsAction(
   });
   if (result === null)
     return { ok: false, message: `There's no ${marketplace} channel to add its returns to.` };
-  revalidatePath(`/o/${slug}/inventory`, "layout");
+  // Sent a part at a time: the upload refreshes the page once, when every part is in.
   return { ok: true, ...result };
 }
 
