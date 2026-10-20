@@ -25,3 +25,4 @@ export * from "./reviews";
 export * from "./settlements";
 export * from "./transaction-report";
 export * from "./walmart";
+export * from "./walmart-api";

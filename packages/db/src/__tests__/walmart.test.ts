@@ -1,8 +1,12 @@
 import { walmartMarketplace } from "@bookalyze/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createConnection, getConnection, listConnections, setConnectionSecret } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import {
   addWalmartChannel,
+  attachWalmartChannel,
+  disconnectWalmart,
+  getWalmartConnection,
   listEbayChannels,
   listWalmartChannels,
   setChannelActive,
@@ -26,7 +30,8 @@ const scoped = <T>(fn: (tx: Transaction) => Promise<T>, org = orgId) =>
 
 const us = walmartMarketplace("walmart-us");
 const ca = walmartMarketplace("walmart-ca");
-if (!us || !ca) throw new Error("Walmart marketplaces are missing.");
+const mx = walmartMarketplace("walmart-mx");
+if (!us || !ca || !mx) throw new Error("Walmart marketplaces are missing.");
 
 beforeAll(async () => {
   const orgs = await owner.db
@@ -101,5 +106,63 @@ describe("Walmart channels", () => {
       "Walmart US",
     ]);
     expect(await scoped((tx) => listEbayChannels(tx))).toEqual([]);
+  });
+
+  it("connects one country's seller account to that country's channel only", async () => {
+    const connection = await scoped(async (tx) => {
+      const c = await createConnection(tx, {
+        orgId,
+        userId: null,
+        provider: "walmart",
+        name: "Walmart Canada",
+        settings: { marketplace: "walmart-ca", market: "ca" },
+      });
+      await setConnectionSecret(tx, c.id, "sealed-walmart-key");
+      await attachWalmartChannel(tx, c.id, "walmart-ca");
+      return c;
+    });
+    const channels = await scoped((tx) => listWalmartChannels(tx));
+    expect(channels.find((c) => c.marketplaceId === "walmart-ca")?.connectionId).toBe(
+      connection.id,
+    );
+    expect(channels.find((c) => c.marketplaceId === "walmart-us")?.connectionId).toBeNull();
+    expect((await scoped((tx) => getWalmartConnection(tx, "walmart-ca")))?.hasSecret).toBe(true);
+    expect(await scoped((tx) => getWalmartConnection(tx, "walmart-us"))).toBeNull();
+    // Another company sees none of it.
+    expect(await scoped((tx) => getWalmartConnection(tx, "walmart-ca"), otherOrgId)).toBeNull();
+    // Marketplace connections stay out of Banking.
+    expect((await scoped((tx) => listConnections(tx))).map((c) => c.provider)).not.toContain(
+      "walmart",
+    );
+  });
+
+  it("puts a country added later on its live connection, and takes it off on disconnect", async () => {
+    const connection = await scoped(async (tx) => {
+      const c = await createConnection(tx, {
+        orgId,
+        userId: null,
+        provider: "walmart",
+        name: "Walmart Mexico",
+        settings: { marketplace: "walmart-mx", market: "mx" },
+      });
+      await setConnectionSecret(tx, c.id, "sealed-walmart-mx-key");
+      return c;
+    });
+    const added = await scoped((tx) =>
+      addWalmartChannel(tx, { orgId, marketplace: mx, fulfilment: "marketplace" }),
+    );
+    expect(added.channel.connectionId).toBe(connection.id);
+
+    await scoped((tx) => disconnectWalmart(tx, connection.id));
+    const after = await scoped((tx) => getConnection(tx, connection.id));
+    expect(after).toMatchObject({ status: "disconnected", secret: null });
+    const mexico = (await scoped((tx) => listWalmartChannels(tx))).find(
+      (c) => c.marketplaceId === "walmart-mx",
+    );
+    expect(mexico).toMatchObject({ connectionId: null, isActive: true });
+    // Disconnected, it's still found (to show "Connect again"), but its status says so.
+    expect((await scoped((tx) => getWalmartConnection(tx, "walmart-mx")))?.status).toBe(
+      "disconnected",
+    );
   });
 });

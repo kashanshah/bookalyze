@@ -41,6 +41,8 @@ const schema = z.object({
   AMAZON_SPAPI_URL: z.url().optional(),
   /** Noon's partner API base URL. Tests point it at a stand-in; leave unset in production. */
   NOON_API_URL: z.url().optional(),
+  /** Walmart's Marketplace API base URL. Tests point it at a stand-in; leave unset in production. */
+  WALMART_API_URL: z.url().optional(),
   /**
    * Bookalyze's own eBay developer app (one app; each company connects its own seller account
    * by consent). Without these three, Connect eBay is unavailable. See docs/SETUP.md → eBay.

@@ -1,5 +1,5 @@
 import "server-only";
-import type { NoonCredentials } from "@bookalyze/core";
+import type { NoonCredentials, WalmartCredentials } from "@bookalyze/core";
 import { can } from "@bookalyze/core";
 import { connectionSecretContext, openSecret, sealSecret } from "@bookalyze/db";
 import { notFound } from "next/navigation";
@@ -63,4 +63,27 @@ export function openNoonCredentials(
   return JSON.parse(
     openSecret(sealed, connectionSecretContext(orgId, connectionId), env().APP_ENCRYPTION_KEY),
   ) as NoonCredentials;
+}
+
+/** A Walmart API key (client ID and secret), sealed like the others. */
+export function sealWalmartCredentials(
+  orgId: string,
+  connectionId: string,
+  creds: WalmartCredentials,
+) {
+  return sealSecret(
+    JSON.stringify(creds),
+    connectionSecretContext(orgId, connectionId),
+    env().APP_ENCRYPTION_KEY,
+  );
+}
+
+export function openWalmartCredentials(
+  orgId: string,
+  connectionId: string,
+  sealed: string,
+): WalmartCredentials {
+  return JSON.parse(
+    openSecret(sealed, connectionSecretContext(orgId, connectionId), env().APP_ENCRYPTION_KEY),
+  ) as WalmartCredentials;
 }

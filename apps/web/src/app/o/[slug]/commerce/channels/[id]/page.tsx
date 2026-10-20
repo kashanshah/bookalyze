@@ -5,6 +5,7 @@ import {
   getChannel,
   getEbayConnection,
   getNoonConnection,
+  getWalmartConnection,
   listAmazonConnections,
 } from "@bookalyze/db";
 import { ArrowLeft, ArrowRight, BookCheck, ListOrdered, ReceiptText } from "lucide-react";
@@ -21,7 +22,7 @@ import { AmazonAccount } from "../amazon";
 import { EbayAccount, EbayConnectNotice } from "../ebay";
 import { NoonAccount, type NoonConnectionView, NoonFulfilment } from "../noon";
 import { PLATFORMS } from "../platforms";
-import { WalmartAccount, WalmartFulfilment } from "../walmart";
+import { WalmartAccount, type WalmartConnectionView, WalmartFulfilment } from "../walmart";
 import { ChannelSwitch, RemoveChannel } from "./channel-settings";
 
 export const metadata: Metadata = { title: "Channel" };
@@ -55,6 +56,10 @@ export default async function ChannelPage({
           : null,
       noon: channel.kind === "noon" ? await getNoonConnection(tx) : null,
       ebay: channel.kind === "ebay" ? await getEbayConnection(tx) : null,
+      walmart:
+        channel.kind === "walmart"
+          ? await getWalmartConnection(tx, channel.marketplaceId ?? "")
+          : null,
       blockers: channel.kind === "amazon" ? [] : await channelRemovalBlockers(tx, channel.id),
     };
   });
@@ -220,7 +225,15 @@ export default async function ChannelPage({
         </>
       ) : null}
 
-      {ch.kind === "walmart" ? <WalmartAccount /> : null}
+      {ch.kind === "walmart" ? (
+        <WalmartAccount
+          slug={slug}
+          locale={locale}
+          canManage={canManage}
+          channel={{ id: ch.id, name: ch.name }}
+          connection={walmartView(data.walmart)}
+        />
+      ) : null}
 
       {ch.kind === "ebay" ? (
         <>
@@ -317,5 +330,23 @@ function noonView(c: Awaited<ReturnType<typeof getNoonConnection>>): NoonConnect
       Object.entries(params).map(([code, spec]) => [code, noonReportInputs(spec)]),
     ),
     payoutsReport: c.settings.payoutsReport === true,
+  };
+}
+
+function walmartView(
+  c: Awaited<ReturnType<typeof getWalmartConnection>>,
+): WalmartConnectionView | null {
+  if (!c) return null;
+  const scopes =
+    c.settings.scopes && typeof c.settings.scopes === "object"
+      ? (c.settings.scopes as WalmartConnectionView["scopes"])
+      : null;
+  return {
+    status: c.status,
+    clientIdEnding:
+      typeof c.settings.clientIdEnding === "string" ? c.settings.clientIdEnding : null,
+    scopes,
+    lastSyncedAt: c.lastSyncedAt?.toISOString() ?? null,
+    lastError: c.lastError,
   };
 }

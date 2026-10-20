@@ -22,8 +22,16 @@ import { tenantIsolationPolicy } from "./tenancy";
 /**
  * "csv": bank statements uploaded as files, one connection per account. "amazon_sp": an Amazon
  * seller account through the Selling Partner API (with the company's own developer app).
+ * "walmart": one Walmart seller account (one market) with the company's own API keys.
  */
-export const CONNECTION_PROVIDERS = ["wise", "csv", "amazon_sp", "noon", "ebay"] as const;
+export const CONNECTION_PROVIDERS = [
+  "wise",
+  "csv",
+  "amazon_sp",
+  "noon",
+  "ebay",
+  "walmart",
+] as const;
 export type ConnectionProvider = (typeof CONNECTION_PROVIDERS)[number];
 
 export const CONNECTION_STATUSES = ["active", "error", "disconnected"] as const;

@@ -248,7 +248,7 @@ export async function listWalmartChannels(tx: Transaction) {
 /**
  * Adds a Walmart country as a channel, switched on, with who ships its orders. Adding one the
  * company already has switches it back on and keeps its history. Returns the channel and whether
- * it was new. (No Walmart connection yet: channels are added by hand.)
+ * it was new. A country added while its seller account is connected joins that connection.
  */
 export async function addWalmartChannel(
   tx: Transaction,
@@ -273,10 +273,12 @@ export async function addWalmartChannel(
     if (!row) throw new Error("The Walmart channel couldn't be updated.");
     return { channel: row, created: false };
   }
+  const live = await getWalmartConnection(tx, input.marketplace.id);
   const [row] = await tx
     .insert(salesChannels)
     .values({
       organizationId: input.orgId,
+      connectionId: live && live.status !== "disconnected" ? live.id : null,
       kind: "walmart",
       name: input.marketplace.name,
       marketplaceId: input.marketplace.id,
@@ -288,6 +290,58 @@ export async function addWalmartChannel(
     .returning();
   if (!row) throw new Error("The Walmart channel couldn't be added.");
   return { channel: row, created: true };
+}
+
+/**
+ * The company's Walmart connection for one country (the live one first, else the latest),
+ * without its secret. A Walmart seller account, and so its API key, covers one country:
+ * `settings.marketplace` is the channel key it belongs to (walmart-us…).
+ */
+export async function getWalmartConnection(tx: Transaction, marketplaceId: string) {
+  const [row] = await tx
+    .select({
+      id: connections.id,
+      name: connections.name,
+      status: connections.status,
+      settings: connections.settings,
+      hasSecret: sql<boolean>`${connections.secret} is not null`,
+      lastSyncedAt: connections.lastSyncedAt,
+      lastError: connections.lastError,
+    })
+    .from(connections)
+    .where(
+      and(
+        eq(connections.provider, "walmart"),
+        sql`${connections.settings}->>'marketplace' = ${marketplaceId}`,
+      ),
+    )
+    .orderBy(sql`${connections.status} = 'disconnected'`, desc(connections.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Puts the company's Walmart channel for that country on this connection. */
+export async function attachWalmartChannel(
+  tx: Transaction,
+  connectionId: string,
+  marketplaceId: string,
+) {
+  await tx
+    .update(salesChannels)
+    .set({ connectionId })
+    .where(and(eq(salesChannels.kind, "walmart"), eq(salesChannels.marketplaceId, marketplaceId)));
+}
+
+/**
+ * Forgets a Walmart API key. Its channel comes off the connection and stays as it is (switched
+ * on, with everything brought in), like Noon's.
+ */
+export async function disconnectWalmart(tx: Transaction, connectionId: string) {
+  await disconnectConnection(tx, connectionId);
+  await tx
+    .update(salesChannels)
+    .set({ connectionId: null })
+    .where(and(eq(salesChannels.kind, "walmart"), eq(salesChannels.connectionId, connectionId)));
 }
 
 /** The company's eBay connection (the live one first, else the latest), without its secret. */

@@ -10,6 +10,7 @@ import {
 import {
   getEbayConnection,
   getNoonConnection,
+  getWalmartConnection,
   listAmazonConnections,
   listEbayChannels,
   listNoonChannels,
@@ -44,11 +45,17 @@ export default async function ChannelsPage({ params }: { params: Promise<{ slug:
   const { connections, ebay, noon, walmart, noonConnection, ebayConnection } = await inOrg(
     ctx,
     async (tx) => ({
+      // Each Walmart country is its own seller account, with its own connection.
+      walmart: await Promise.all(
+        (await listWalmartChannels(tx)).map(async (ch) => ({
+          ...ch,
+          connection: await getWalmartConnection(tx, ch.marketplaceId ?? ""),
+        })),
+      ),
       ebayConnection: await getEbayConnection(tx),
       connections: await listAmazonConnections(tx),
       ebay: await listEbayChannels(tx),
       noon: await listNoonChannels(tx),
-      walmart: await listWalmartChannels(tx),
       noonConnection: await getNoonConnection(tx),
     }),
   );
@@ -101,7 +108,6 @@ export default async function ChannelsPage({ params }: { params: Promise<{ slug:
           : ("connected" as const)
         : ("none" as const),
     })),
-    // Walmart accounts can't be connected yet: its countries are added by hand.
     ...walmart.map((ch) => ({
       id: ch.id,
       platform: "walmart" as const,
@@ -111,7 +117,12 @@ export default async function ChannelsPage({ params }: { params: Promise<{ slug:
       isActive: ch.isActive,
       shipping:
         ch.fulfilment && isFulfilmentMode(ch.fulfilment) ? WALMART_SHIPPING[ch.fulfilment] : null,
-      account: "none" as const,
+      account:
+        ch.connection && ch.connection.status !== "disconnected"
+          ? ch.connection.status === "error"
+            ? ("attention" as const)
+            : ("connected" as const)
+          : ("none" as const),
     })),
   ];
   const existing = (list: typeof ebay) =>

@@ -13,8 +13,8 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-20, phase 4e slice 1: Walmart channels (US, Canada and Mexico, shipped
-by the seller, by WFS or both)._
+_Last updated: 2026-10-20, phase 4e slice 2: connect Walmart (each country's seller account
+with its own API key, checked with Walmart, sealed, with what the key may see)._
 
 ---
 
@@ -31,7 +31,7 @@ by the seller, by WFS or both)._
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) slice 10 (a freight payment is its delivery's cost) and slice 11 (Amazon prices: each listing's price next to its cost, a change with Amazon's fees and the profit first) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off; what Noon holds beside your lots, and Noon's summary checking its ledger day by day) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: Kazomo's FBN transaction types checked against what Stock movements lists as not counted, then FBP stock (the seller's own warehouses). Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold), 4 (eBay money: the Finances API's rows by month, in Channel profit) 5 (payouts and posting: each site's month as one entry to an eBay balance account, payouts matched to bank deposits, in the daily job) and 6 (Seller Hub's transaction report upload, with the API's rows winning on days it has) done. Next: eBay's digital signatures for EU and UK sellers. See §3 "Phase 4d" |
-| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slice 1 (Walmart channels, added by hand, with who ships the orders) done. Next: connect Walmart's API with the seller's own API keys. See §3 "Phase 4e" |
+| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) and 2 (connect Walmart: each country's seller account with its own API key) done. Next: orders from the Orders API. See §3 "Phase 4e" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
@@ -1559,6 +1559,38 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   from the mock (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema; the
   summary disagrees on one day last month), then uploads a summary file.
 
+### Phase 4e, slice 2: connect Walmart
+
+- **One key per country:** a seller's Walmart US, Canada and Mexico accounts are separate, so
+  each Walmart channel's page has its own **Walmart account** card. "Connect Walmart" takes the
+  client ID and secret from Walmart's Developer Portal (with the three steps to get them), checks
+  them with Walmart and seals them in the vault (`sealWalmartCredentials`). One connection per
+  country per company (`provider = 'walmart'`, `settings.marketplace` the channel key,
+  `settings.market` us/ca/mx, `clientIdEnding` (the last four characters, shown as "Key ending
+  …") and `scopes`); the country's channel goes on it (`attachWalmartChannel`), and a country
+  added later joins its live connection.
+- **Checked with Walmart** (web `server/walmart.ts`): a fresh token (`POST /v3/token`, Basic
+  client ID and secret, `grant_type=client_credentials`; 15 minutes, kept in memory until a
+  minute before it runs out, keyed by a hash, never the secret), then `GET /v3/token/detail`
+  for what the key may do. Every call sends `WM_SVC.NAME`, a fresh `WM_QOS.CORRELATION_ID`,
+  `WM_MARKET` and, after the token, `WM_SEC.ACCESS_TOKEN` (core `walmartHeaders`). A token
+  Walmart stops taking is renewed once. Walmart's own error words are shown and logged with the
+  correlation ID (core `walmartErrorDetail` reads its three error shapes).
+- **What the key can see:** Orders, Reports and Inventory, each Full access, View only or No
+  access (core `parseWalmartTokenDetail`); an area the key can't see gets a warning to give it
+  access in Walmart's portal and test again.
+- **Test connection**, **Replace key** (status back to active), **Disconnect** (key deleted,
+  the channel comes off the connection and keeps everything; `disconnectWalmart`). The channel
+  list shows Connected / Needs attention. Walmart connections are left out of Banking. Audit:
+  `connection.created`, `connection.credentials_replaced`, `connection.disconnected`.
+- Schema (migration `0075_walmart_connections`): `connections.provider` takes `walmart`.
+- Tests: core `walmart-api.test.ts` (keys, Basic auth, headers, token, scopes, errors); db
+  `walmart.test.ts` (a country's connection takes only its channel, a later country joins,
+  disconnect keeps the channel, isolation, not in Banking); e2e "walmart: connect Walmart Canada
+  with its API key…" against `e2e/walmart-mock.mjs` (an unknown key refused in Walmart's words,
+  a key without Inventory warned, test, replace, disconnect). `WALMART_API_URL` points the app at
+  it in e2e; leave it unset in production.
+
 ### Phase 4e, slice 1: Walmart channels
 
 - **Walmart as a product** (core `walmart.ts`): each Walmart country is a channel in its
@@ -2796,8 +2828,7 @@ Built like Noon and eBay: channels first, then the account, orders, money and th
 - **WFS stock:** the WFS inventory and its inventory health/ledger reports, like FBA's.
 
 1. [x] **Walmart channels.** Done in slice 1.
-2. [ ] **Connect Walmart** with the seller's client id and secret: checked, sealed, Test
-   connection, Replace keys, Disconnect, a mock for e2e.
+2. [x] **Connect Walmart** with the seller's client id and secret. Done in slice 2.
 3. [ ] **Orders** from the Orders API, a year back and every few minutes; SKUs, so cost of goods
    sold counts Walmart.
 4. [ ] **Settlements** from the reconciliation report kept row by row, by settlement period, in
