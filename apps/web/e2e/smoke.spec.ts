@@ -2886,18 +2886,37 @@ test("home: what needs your attention, each line opening where it's done", async
   await page.goBack();
   await list.getByRole("link", { name: /transactions? to review/ }).click();
   await expect(page).toHaveURL(/accounting\/transactions\?status=unreviewed/);
-  // Every transaction, 25 a page: page numbers, then the next page with the size kept.
+  // Every transaction, 25 a page: the size is kept in the address; with more than one page,
+  // page numbers and the next page.
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page).toHaveURL(/accounting\/transactions$/);
   await choose(page.getByLabel("Transactions per page"), "25");
+  await expect(page).toHaveURL(/\?per=25$/);
   const pages = page.getByRole("navigation", { name: "Pages" });
-  await expect(pages.getByRole("link", { name: "Page 1" })).toHaveAttribute("aria-current", "page");
-  await pages.getByRole("link", { name: "Next page" }).click();
-  await expect(page).toHaveURL(/\?per=25&page=2$/);
-  await expect(pages.getByRole("link", { name: "Page 2" })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByText(/^26–\d+ of \d+ transactions$/)).toBeVisible();
-  await pages.getByRole("link", { name: "Previous page" }).click();
-  await expect(pages.getByRole("link", { name: "Page 1" })).toHaveAttribute("aria-current", "page");
+  const summary = page.getByText(/^(\d+–\d+ of )?[\d,]+ transactions$/);
+  const total = Number(
+    ((await summary.innerText()).match(/([\d,]+) transactions$/)?.[1] ?? "0").replace(/,/g, ""),
+  );
+  if (total > 25) {
+    await expect(pages.getByRole("link", { name: "Page 1" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await pages.getByRole("link", { name: "Next page" }).click();
+    await expect(page).toHaveURL(/\?per=25&page=2$/);
+    await expect(pages.getByRole("link", { name: "Page 2" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(page.getByText(/^26–\d+ of [\d,]+ transactions$/)).toBeVisible();
+    await pages.getByRole("link", { name: "Previous page" }).click();
+    await expect(pages.getByRole("link", { name: "Page 1" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  } else {
+    await expect(pages).toHaveCount(0);
+  }
   await page.getByRole("link", { name: "Home", exact: true }).click();
   // Stock: SKUs to link, and cost of goods sold months to post.
   await list
