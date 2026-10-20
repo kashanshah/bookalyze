@@ -1,6 +1,11 @@
 "use server";
 
-import { can, SETTLEMENT_ACCOUNT_KEYS, type SettlementAccounts } from "@bookalyze/core";
+import {
+  can,
+  parseDecimal,
+  SETTLEMENT_ACCOUNT_KEYS,
+  type SettlementAccounts,
+} from "@bookalyze/core";
 import {
   dismissSettlementDeposit,
   getSettlementSettings,
@@ -127,13 +132,14 @@ export async function uploadSettlementAction(
 
 /**
  * Adds the settlements of Amazon's date range transaction report (read in the browser, a part
- * at a time). Settlements already here are left as they are: Amazon's own report for them (from
- * the API or a flat file) is more detailed than this one.
+ * at a time). Settlements already here are left as they are (Amazon's own report for them, from
+ * the API or a flat file, is more detailed), except one not in the books yet whose payout now
+ * reads differently: an earlier upload of this report, before it carried what Amazon held back.
  */
 export async function uploadReportSettlementsAction(
   slug: string,
   input: z.input<typeof settlementSchema>[],
-): Promise<SettlementResult<{ added: number; skipped: number }>> {
+): Promise<SettlementResult<{ added: number; updated: number; skipped: number; posted: number }>> {
   const { ctx, allowed } = await settlementsContext(slug);
   if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
   if (!isOrgAdmin(ctx))
@@ -142,14 +148,28 @@ export async function uploadReportSettlementsAction(
   if (!parsed.success) return { ok: false, message: "Those settlements couldn't be read." };
   const counts = await inOrg(ctx, async (tx) => {
     let added = 0;
+    let updated = 0;
     let skipped = 0;
+    let posted = 0;
     for (const settlement of parsed.data) {
       const [existing] = await tx
-        .select({ id: schema.settlements.id })
+        .select({
+          id: schema.settlements.id,
+          total: schema.settlements.total,
+          source: schema.settlements.source,
+          posted: schema.settlements.journalEntryId,
+        })
         .from(schema.settlements)
         .where(eq(schema.settlements.externalId, settlement.settlementId));
-      if (existing) {
-        skipped++;
+      const refresh =
+        existing &&
+        existing.source === "upload" &&
+        !existing.posted &&
+        parseDecimal(existing.total) !== parseDecimal(settlement.total);
+      if (existing && !refresh) {
+        const differs = parseDecimal(existing.total) !== parseDecimal(settlement.total);
+        if (existing.source === "upload" && existing.posted && differs) posted++;
+        else skipped++;
         continue;
       }
       const channelId = await settlementChannel(tx, {
@@ -177,9 +197,10 @@ export async function uploadReportSettlementsAction(
           from: "transaction report",
         },
       });
-      added++;
+      if (existing) updated++;
+      else added++;
     }
-    return { added, skipped };
+    return { added, updated, skipped, posted };
   });
   revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
   return { ok: true, ...counts };

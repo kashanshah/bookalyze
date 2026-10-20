@@ -14,7 +14,9 @@ import { readSettlementAmount, type Settlement, type SettlementLine } from "./se
  * ItemPrice / Principal, selling fees ItemFees / Commission, and so on. Fee, adjustment and
  * service rows keep Amazon's own type and description ("Service Fee", "Cost of Advertising").
  * Transfer rows are payouts, not earnings: they're left out, and give the settlement they pay
- * its deposit date.
+ * its deposit date. When a payout differs from the period's total, Amazon held some back or
+ * released what it held before: the difference becomes the flat file's reserve lines, so each
+ * closed settlement's total is what reached the bank.
  */
 
 /** Order and refund columns, as the flat file names them. Unknown money columns go to Other. */
@@ -221,34 +223,65 @@ export function parseTransactionReport(text: string): Settlement[] {
   }
   if (!built.size) throw new Error("The report has no settlements in it.");
 
-  const used = new Set<number>();
-  const result: Settlement[] = [...built.entries()]
-    .map(([settlementId, s]) => {
-      const lines = [...s.sums.values()].map(({ units, ...l }) => ({
-        ...l,
-        amount: formatDecimal(units),
-      }));
-      const place = [...s.places.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
-      const market = marketplaceOf(place);
-      // Its payout: the first transfer after it of exactly what it paid.
-      const t = transfers.findIndex(
-        (x, i) => !used.has(i) && x.amount === -s.total && x.at >= s.last.slice(0, 10),
-      );
-      if (t >= 0) used.add(t);
-      const linesTotal = [...s.sums.values()].reduce((sum, l) => sum + l.units, 0n);
-      return {
-        settlementId: settlementId.slice(0, 100),
-        startAt: s.first,
-        endAt: s.last,
-        depositDate: t >= 0 ? (transfers[t]?.at.slice(0, 10) ?? null) : null,
-        total: formatDecimal(s.total),
-        currency: market?.currency ?? "",
-        marketplace: market?.name ?? (place.slice(0, 100) || null),
-        lines,
-        orderCount: s.orders.size,
-        balanced: linesTotal === s.total,
+  const ordered = [...built.entries()].sort((a, b) => a[1].last.localeCompare(b[1].last));
+  // Each transfer pays the settlement that closed last before it.
+  const paid = new Map<string, { amount: bigint; at: string | null }>();
+  for (const t of transfers) {
+    const owner = ordered.filter(([, s]) => s.last <= t.at).at(-1);
+    if (!owner) continue;
+    const p = paid.get(owner[0]) ?? { amount: 0n, at: null };
+    p.amount += -t.amount;
+    if (!p.at || t.at > p.at) p.at = t.at;
+    paid.set(owner[0], p);
+  }
+  const lastTransfer = transfers.reduce<string | null>(
+    (latest, t) => (!latest || t.at > latest ? t.at : latest),
+    null,
+  );
+
+  // What Amazon held back: the payout is the period's total plus what it released from the
+  // last period, less what it held this time. The report has no rows for it, so it comes from
+  // the payouts: a settlement is closed once a transfer follows it.
+  let held = 0n;
+  return ordered.map(([settlementId, s]) => {
+    const lines: SettlementLine[] = [...s.sums.values()].map(({ units, ...l }) => ({
+      ...l,
+      amount: formatDecimal(units),
+    }));
+    const place = [...s.places.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+    const market = marketplaceOf(place);
+    const payout = paid.get(settlementId);
+    const closed = lastTransfer !== null && lastTransfer >= s.last;
+    let total = s.total;
+    if (closed) {
+      const released = held;
+      held = released + s.total - (payout?.amount ?? 0n);
+      const reserve = (description: string, units: bigint) => {
+        if (units !== 0n) {
+          lines.push({
+            transactionType: "Other",
+            amountType: "Other",
+            amountDescription: description,
+            amount: formatDecimal(units),
+            count: 1,
+          });
+        }
       };
-    })
-    .sort((a, b) => a.endAt.localeCompare(b.endAt));
-  return result;
+      reserve("Previous Reserve Amount Balance", released);
+      reserve("Current Reserve Amount", -held);
+      total = payout?.amount ?? 0n;
+    }
+    return {
+      settlementId: settlementId.slice(0, 100),
+      startAt: s.first,
+      endAt: s.last,
+      depositDate: payout?.at ? payout.at.slice(0, 10) : null,
+      total: formatDecimal(total),
+      currency: market?.currency ?? "",
+      marketplace: market?.name ?? (place.slice(0, 100) || null),
+      lines,
+      orderCount: s.orders.size,
+      balanced: lines.reduce((sum, l) => sum + parseDecimal(l.amount), 0n) === total,
+    };
+  });
 }

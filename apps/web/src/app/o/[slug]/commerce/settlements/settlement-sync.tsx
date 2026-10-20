@@ -83,40 +83,47 @@ async function addTransactionReport(
   slug: string,
   name: string,
   text: string,
-): Promise<{ added: number }> {
+): Promise<{ added: number; updated: number }> {
   let settlements: ReturnType<typeof parseTransactionReport>;
   try {
     settlements = parseTransactionReport(text);
   } catch (error) {
     toast.error(`${name}: ${(error as Error).message}`);
-    return { added: 0 };
+    return { added: 0, updated: 0 };
   }
   const newest = settlements.at(-1);
   const open = newest && !newest.depositDate ? newest : null;
   const ready = settlements.filter((s) => s !== open && s.currency);
   let added = 0;
+  let updated = 0;
   let skipped = 0;
+  let posted = 0;
   for (let i = 0; i < ready.length; i += 20) {
     const result = await uploadReportSettlementsAction(slug, ready.slice(i, i + 20));
     if (!result.ok) {
       toast.error(`${name}: ${result.message}`);
-      return { added };
+      return { added, updated };
     }
     added += result.added;
+    updated += result.updated;
     skipped += result.skipped;
+    posted += result.posted;
   }
   const notes = [
     skipped ? `${plural(skipped, "settlement")} already here, kept as they were.` : null,
+    posted
+      ? `${plural(posted, "settlement")} in the books read differently now (what Amazon held back). Take them out of the books, then upload the report again.`
+      : null,
     open ? "The newest one is still open: it comes in once Amazon closes it." : null,
   ].filter(Boolean);
-  if (!added) {
+  if (!added && !updated) {
     toast.info(`${name}: nothing new`, notes.length ? { description: notes.join(" ") } : {});
   } else if (notes.length) {
     toast.info(`${name}: ${plural(added, "settlement")} from the transaction report`, {
       description: notes.join(" "),
     });
   }
-  return { added };
+  return { added, updated };
 }
 
 /**
@@ -138,6 +145,7 @@ export function UploadSettlements({ slug }: { slug: string }) {
         if (isTransactionReport(text)) {
           const report = await addTransactionReport(slug, file.name, text);
           added += report.added;
+          updated += report.updated;
           continue;
         }
         let settlement: ReturnType<typeof parseSettlementReport>;
