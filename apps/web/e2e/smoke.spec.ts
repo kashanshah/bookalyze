@@ -1544,9 +1544,12 @@ test("purchase orders: draft, send, a partial delivery, then the rest", async ({
   await expect(page.getByText("Everything on this order has arrived.").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Record a delivery" })).toHaveCount(0);
 
-  // It's in the Received tab, not Open.
+  // All orders by default; it's in the Received tab, not Open.
   await page.getByRole("link", { name: "Purchase orders", exact: true }).first().click();
   await expect(page).toHaveURL(/\/purchase-orders$/);
+  await expect(page.getByRole("link", { name: "PO-0001, Office Depot" })).toBeVisible();
+  await page.getByRole("link", { name: "Open", exact: true }).click();
+  await expect(page).toHaveURL(/status=open/);
   await expect(page.getByText("Nothing on order")).toBeVisible();
   await page.getByRole("link", { name: "Received", exact: true }).click();
   await expect(page).toHaveURL(/status=received/);

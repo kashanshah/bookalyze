@@ -18,10 +18,10 @@ import { StatusBadge } from "./status-badge";
 export const metadata: Metadata = { title: "Purchase orders" };
 
 const TABS = [
+  { key: "all", label: "All" },
   { key: "open", label: "Open" },
   { key: "received", label: "Received" },
   { key: "cancelled", label: "Cancelled" },
-  { key: "all", label: "All" },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
 
@@ -34,7 +34,7 @@ export default async function PurchaseOrdersPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const tab: Tab = TABS.some((t) => t.key === sp.status) ? (sp.status as Tab) : "open";
+  const tab: Tab = TABS.some((t) => t.key === sp.status) ? (sp.status as Tab) : "all";
   const q = (sp.q ?? "").trim().slice(0, 100);
   const ctx = await getInventoryContext(slug, "inventory.purchasing");
   const { locale } = ctx.profile;
@@ -49,7 +49,7 @@ export default async function PurchaseOrdersPage({
   const base = `/o/${slug}/inventory/purchase-orders`;
   const href = (status: Tab) => {
     const p = new URLSearchParams();
-    if (status !== "open") p.set("status", status);
+    if (status !== "all") p.set("status", status);
     if (q) p.set("q", q);
     return `${base}${p.size ? `?${p}` : ""}`;
   };
@@ -99,7 +99,7 @@ export default async function PurchaseOrdersPage({
           ))}
         </nav>
         <form className="relative w-full sm:w-72" action={base}>
-          {tab !== "open" ? <input type="hidden" name="status" value={tab} /> : null}
+          {tab !== "all" ? <input type="hidden" name="status" value={tab} /> : null}
           <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             name="q"
@@ -117,7 +117,13 @@ export default async function PurchaseOrdersPage({
             <ClipboardList className="size-6" />
           </span>
           <p className="font-medium">
-            {q ? "No purchase orders match." : tab === "open" ? "Nothing on order" : "None here"}
+            {q
+              ? "No purchase orders match."
+              : tab === "all"
+                ? "No purchase orders yet"
+                : tab === "open"
+                  ? "Nothing on order"
+                  : "None here"}
           </p>
           <p className="max-w-sm text-muted-foreground text-sm">
             {q
