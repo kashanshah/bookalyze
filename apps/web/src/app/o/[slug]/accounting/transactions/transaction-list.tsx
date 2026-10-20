@@ -49,8 +49,6 @@ type Filters = {
   per: string;
 };
 
-export const PER_PAGE = [25, 50, 100] as const;
-
 function useFilterNavigation() {
   const router = useRouter();
   const pathname = usePathname();
@@ -416,22 +414,7 @@ export function TransactionList({
         </div>
       )}
 
-      {optimisticRows.length ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <span>Show</span>
-            <Combobox
-              aria-label="Transactions per page"
-              value={filters.per || "50"}
-              onChange={(v) => set({ per: v === "50" ? "" : v })}
-              options={PER_PAGE.map((n) => ({ value: String(n), label: String(n) }))}
-              className="h-8 w-20"
-            />
-            <span>per page</span>
-          </div>
-          {footer}
-        </div>
-      ) : null}
+      {optimisticRows.length ? footer : null}
 
       <DuplicateReviewDialog row={reviewing} ctx={ctx} onClose={() => setReviewing(null)} />
       <TransferReviewDialog row={transferring} ctx={ctx} onClose={() => setTransferring(null)} />

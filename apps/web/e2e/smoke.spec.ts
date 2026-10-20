@@ -1505,7 +1505,7 @@ test("purchase orders: draft, send, a partial delivery, then the rest", async ({
   await expect(page).toHaveURL(/\/inventory\/products/);
   await page.getByRole("link", { name: "Purchase orders", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Purchase orders", exact: true })).toBeVisible();
-  await expect(page.getByText("Nothing on order")).toBeVisible();
+  await expect(page.getByText("No purchase orders yet")).toBeVisible();
 
   // A draft: 120 mugs at 2.45 from the vendor added earlier, with a supplier reference.
   await page.getByRole("link", { name: "New purchase order" }).click();
@@ -1544,9 +1544,12 @@ test("purchase orders: draft, send, a partial delivery, then the rest", async ({
   await expect(page.getByText("Everything on this order has arrived.").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Record a delivery" })).toHaveCount(0);
 
-  // It's in the Received tab, not Open.
+  // All orders by default; it's in the Received tab, not Open.
   await page.getByRole("link", { name: "Purchase orders", exact: true }).first().click();
   await expect(page).toHaveURL(/\/purchase-orders$/);
+  await expect(page.getByRole("link", { name: "PO-0001, Office Depot" })).toBeVisible();
+  await page.getByRole("link", { name: "Open", exact: true }).click();
+  await expect(page).toHaveURL(/status=open/);
   await expect(page.getByText("Nothing on order")).toBeVisible();
   await page.getByRole("link", { name: "Received", exact: true }).click();
   await expect(page).toHaveURL(/status=received/);
@@ -2883,7 +2886,38 @@ test("home: what needs your attention, each line opening where it's done", async
   await page.goBack();
   await list.getByRole("link", { name: /transactions? to review/ }).click();
   await expect(page).toHaveURL(/accounting\/transactions\?status=unreviewed/);
-  await page.goBack();
+  // Every transaction, 25 a page: the size is kept in the address; with more than one page,
+  // page numbers and the next page.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await expect(page).toHaveURL(/accounting\/transactions$/);
+  await choose(page.getByLabel("Transactions per page"), "25");
+  await expect(page).toHaveURL(/\?per=25$/);
+  const pages = page.getByRole("navigation", { name: "Pages" });
+  const summary = page.getByText(/^(\d+–\d+ of )?[\d,]+ transactions$/);
+  const total = Number(
+    ((await summary.innerText()).match(/([\d,]+) transactions$/)?.[1] ?? "0").replace(/,/g, ""),
+  );
+  if (total > 25) {
+    await expect(pages.getByRole("link", { name: "Page 1" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await pages.getByRole("link", { name: "Next page" }).click();
+    await expect(page).toHaveURL(/\?per=25&page=2$/);
+    await expect(pages.getByRole("link", { name: "Page 2" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(page.getByText(/^26–\d+ of [\d,]+ transactions$/)).toBeVisible();
+    await pages.getByRole("link", { name: "Previous page" }).click();
+    await expect(pages.getByRole("link", { name: "Page 1" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  } else {
+    await expect(pages).toHaveCount(0);
+  }
+  await page.getByRole("link", { name: "Home", exact: true }).click();
   // Stock: SKUs to link, and cost of goods sold months to post.
   await list
     .getByRole("link", { name: /marketplace SKUs? (isn't|aren't) linked to a product/ })
