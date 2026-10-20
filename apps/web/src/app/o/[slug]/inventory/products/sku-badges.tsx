@@ -68,7 +68,7 @@ export function SkuBadges({ items, label }: { items: React.ReactNode[]; label: s
     >
       {items.map((item, i) => (
         <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: the list is fixed for the row's life
+          // biome-ignore lint/suspicious/noArrayIndexKey: the list is fixed for the row's life (keyed by its SKUs)
           key={i}
           data-sku=""
           aria-hidden={i >= shown || undefined}
@@ -100,7 +100,7 @@ export function SkuBadges({ items, label }: { items: React.ReactNode[]; label: s
               <p className="mb-2 text-muted-foreground text-xs">{items.length} marketplace SKUs</p>
               <div className="flex flex-wrap gap-1.5">
                 {items.map((item, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: the list is fixed for the row's life
+                  // biome-ignore lint/suspicious/noArrayIndexKey: the list is fixed for the row's life (keyed by its SKUs)
                   <React.Fragment key={i}>{item}</React.Fragment>
                 ))}
               </div>
