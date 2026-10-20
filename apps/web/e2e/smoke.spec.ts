@@ -1491,10 +1491,18 @@ test("inventory: products from the SKUs on orders, and a 2-pack linked by hand",
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
-  // Both show on the product (the pack as ×2); 2 mugs + one 2-pack sold = 4 units.
-  await expect(mug.getByText("×2")).toBeVisible();
-  await expect(mug.getByText(/PINE-CANDLE/)).toBeVisible();
+  // 2 mugs + one 2-pack sold = 4 units. Both SKUs show on the product (the pack as ×2); when
+  // the row is full, the second waits behind "+1 more", which shows them all.
   await expect(mug.getByText("4", { exact: true })).toBeVisible();
+  const all = mug.getByRole("button", {
+    name: "Show all 2 marketplace SKUs for Maple leaf ceramic mug",
+  });
+  const behindMore = await all.isVisible();
+  if (behindMore) await all.click();
+  const skus = behindMore ? page.getByRole("dialog") : mug;
+  await expect(skus.getByText("×2")).toBeVisible();
+  await expect(skus.getByText(/PINE-CANDLE/)).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(sku("PINE-CANDLE")).toHaveCount(0);
   await expect(sku("BIRCH-COASTER")).toBeVisible();
 });
