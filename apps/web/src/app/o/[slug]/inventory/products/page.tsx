@@ -17,6 +17,7 @@ import { inOrg } from "@/server/accounting";
 import { getInventoryContext } from "@/server/inventory";
 import { AmazonSkusButton } from "./amazon-skus-button";
 import { ProductDialog } from "./product-dialog";
+import { SkuBadges } from "./sku-badges";
 import { UnlinkedSkus } from "./unlinked-skus";
 
 export const metadata: Metadata = { title: "Products" };
@@ -171,24 +172,27 @@ export default async function ProductsPage({
                     <p className="truncate text-muted-foreground text-xs">Your SKU {p.sku}</p>
                   ) : null}
                 </div>
-                <div className="col-span-3 row-start-2 flex min-w-0 flex-wrap gap-1.5 md:col-span-1 md:row-start-auto">
+                <div className="col-span-3 row-start-2 min-w-0 md:col-span-1 md:row-start-auto">
                   {p.skus.length ? (
-                    p.skus.map((s) => (
-                      <Badge
-                        key={s.id}
-                        variant="primary"
-                        title={`${s.channelName}: ${s.units === 1 ? "1 unit" : `${s.units} units`} per listing${s.bundleWith.length ? `, in a bundle with ${s.bundleWith.map((b) => b.name).join(", ")}` : ""}`}
-                      >
-                        {manyChannels ? (
-                          <span className="font-normal opacity-75">{s.channelName}</span>
-                        ) : null}
-                        {s.sku}
-                        {s.units > 1 ? <span className="opacity-75">×{s.units}</span> : null}
-                        {s.bundleWith.length ? (
-                          <span className="font-normal opacity-75">bundle</span>
-                        ) : null}
-                      </Badge>
-                    ))
+                    <SkuBadges
+                      label={p.name}
+                      items={p.skus.map((s) => (
+                        <Badge
+                          key={s.id}
+                          variant="primary"
+                          title={`${s.channelName}: ${s.units === 1 ? "1 unit" : `${s.units} units`} per listing${s.bundleWith.length ? `, in a bundle with ${s.bundleWith.map((b) => b.name).join(", ")}` : ""}`}
+                        >
+                          {manyChannels ? (
+                            <span className="font-normal opacity-75">{s.channelName}</span>
+                          ) : null}
+                          {s.sku}
+                          {s.units > 1 ? <span className="opacity-75">×{s.units}</span> : null}
+                          {s.bundleWith.length ? (
+                            <span className="font-normal opacity-75">bundle</span>
+                          ) : null}
+                        </Badge>
+                      ))}
+                    />
                   ) : (
                     <span className="text-muted-foreground text-xs">No SKUs linked yet</span>
                   )}
