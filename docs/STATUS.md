@@ -2400,6 +2400,11 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   entry's lines on deposits); the transaction stays as it is (`moveToAccount` leaves it), and
   taking the payment off leaves it there too, to recategorise by hand. A split with no part on
   deposits is still refused. Test: db `purchase-books.test.ts`.
+- **Its rate:** a cost paid in the transaction's own currency takes the transaction's own rate
+  (what left the bank in the main currency over its amount), so a split one's part is priced
+  right; it used to divide the whole transaction by the part linked (a $3,950 part of a $7,526
+  bill came out at 7.00 AED/USD, not 3.6725). Paid in another currency, it's still what left the
+  bank over what the payments on it say they were (`paidRate`).
 - **Purchase orders list** by order date, newest first (then the latest number), not by number.
 
 ### Stock taken out by hand

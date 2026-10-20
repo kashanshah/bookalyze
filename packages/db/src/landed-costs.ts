@@ -589,6 +589,19 @@ async function paidRate(
   payment: { journalEntryId: string; currency: string; poCurrency: string },
   receiptId: string,
 ): Promise<string | null> {
+  // Paid in the cost's own currency: the transaction's own rate (main currency per unit), so a
+  // split one (part for this order, part for something else) prices its part right.
+  const [own] = await tx
+    .execute<{ rate: string | null }>(sql`
+    select round(abs(sum(l.base_amount)) / nullif(abs(sum(l.amount)), 0), 10)::text as rate
+    from ${journalLines} l join ${accounts} a on a.id = l.account_id
+    where l.journal_entry_id = ${payment.journalEntryId} and a.subtype in (${moneySubtypes})
+      and l.currency = ${payment.currency}
+    having count(*) > 0`)
+    .then((r) => r.rows);
+  if (own?.rate && Number(own.rate) > 0) return own.rate;
+  // Paid in another currency (e.g. a USD freight bill paid in AED): what left the bank over
+  // what the payments on it say they were.
   const [row] = await tx
     .execute<{ rate: string | null }>(sql`
     select round(abs(sum(l.base_amount)) / nullif((
