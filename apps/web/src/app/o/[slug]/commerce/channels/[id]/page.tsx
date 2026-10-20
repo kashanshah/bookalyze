@@ -1,5 +1,7 @@
 import { can, isFulfilmentMode, noonReportInputs } from "@bookalyze/core";
 import {
+  channelRemovalBlockers,
+  describeBlockers,
   getChannel,
   getEbayConnection,
   getNoonConnection,
@@ -19,7 +21,7 @@ import { AmazonAccount } from "../amazon";
 import { EbayAccount, EbayConnectNotice } from "../ebay";
 import { NoonAccount, type NoonConnectionView, NoonFulfilment } from "../noon";
 import { PLATFORMS } from "../platforms";
-import { ChannelSwitch } from "./channel-settings";
+import { ChannelSwitch, RemoveChannel } from "./channel-settings";
 
 export const metadata: Metadata = { title: "Channel" };
 
@@ -52,6 +54,7 @@ export default async function ChannelPage({
           : null,
       noon: channel.kind === "noon" ? await getNoonConnection(tx) : null,
       ebay: channel.kind === "ebay" ? await getEbayConnection(tx) : null,
+      blockers: channel.kind === "amazon" ? [] : await channelRemovalBlockers(tx, channel.id),
     };
   });
   if (!data) notFound();
@@ -132,6 +135,13 @@ export default async function ChannelPage({
               }}
             />
           </div>
+        ) : null}
+        {canManage && (ch.kind === "noon" || ch.kind === "ebay") ? (
+          <RemoveChannel
+            slug={slug}
+            channel={{ id: ch.id, name: ch.name, kind: ch.kind }}
+            blocked={data.blockers.length ? describeBlockers(data.blockers) : null}
+          />
         ) : null}
       </section>
 

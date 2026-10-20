@@ -1591,6 +1591,22 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   account…" against `e2e/ebay-mock.mjs` (declined, connected, test, every site connected, the
   endpoint check, a forged notice refused and eBay's own forgetting the account, disconnect).
 
+### Removing a channel added by mistake
+
+- **Channel page → "Remove {name}"** (Noon countries and eBay sites; owners and admins): for a
+  channel added on the wrong company (Kazomo CA had Noon UAE with the Dubai company's Noon
+  rows, counted in its Channel profit). Its orders, Noon or eBay transactions, ledger movements,
+  SKU links and prices are deleted with it (cascade); the books don't change.
+- **Only while nothing of it is in the books** (db `channelRemovalBlockers`): Amazon settlements,
+  posted cost of goods sold months, Noon or eBay months whose entry still stands, Noon payouts
+  matched to a deposit. The button is off and says what to take out first; `removeChannel`
+  checks again under a row lock. Months already taken out keep their reversed entries.
+- Amazon marketplaces aren't removed: they come from their account (connecting again adds them
+  back), so switching one off stays the way.
+- `removeChannelAction` (audit `channel.removed`), `RemoveChannel` (channel-settings.tsx).
+  Test: db `channel-removal.test.ts` (waits for a posted month, goes once it's reversed, takes its
+  orders, items and SKU links; refuses Amazon and settlements; tenant isolation).
+
 ### Channels redesign: a list, "Add a channel", and a page per channel
 
 - **Commerce → Channels** lists every channel the company has, whatever the platform (Amazon

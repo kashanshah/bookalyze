@@ -21,6 +21,7 @@ import {
   addNoonChannel,
   amazonConnectionsForRegion,
   attachNoonChannels,
+  ChannelRemovalError,
   createConnection,
   disconnectAmazon,
   disconnectEbay,
@@ -32,6 +33,7 @@ import {
   listAmazonConnections,
   listOrderConnections,
   recordConnectionSync,
+  removeChannel,
   saveAmazonChannels,
   schema,
   setChannelActive,
@@ -292,6 +294,39 @@ export async function setChannelActiveAction(
   if (!row) return { ok: false, message: "This channel no longer exists." };
   revalidate(slug);
   return { ok: true };
+}
+
+/**
+ * Removes a Noon country or eBay site added by mistake, with everything brought in for it, while
+ * nothing of it is in the books (db `removeChannel` checks).
+ */
+export async function removeChannelAction(
+  slug: string,
+  channelId: string,
+): Promise<CommerceResult<{ name: string }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  if (!z.string().uuid().safeParse(channelId).success)
+    return { ok: false, message: "Unknown channel." };
+  try {
+    const removed = await inOrg(ctx, async (tx) => {
+      const channel = await removeChannel(tx, channelId);
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "channel.removed",
+        entityType: "sales_channel",
+        entityId: channelId,
+        before: { name: channel.name, kind: channel.kind },
+      });
+      return channel;
+    });
+    revalidatePath(`/o/${slug}`, "layout");
+    return { ok: true, name: removed.name };
+  } catch (e) {
+    if (e instanceof ChannelRemovalError) return { ok: false, message: e.message };
+    throw e;
+  }
 }
 
 const noonChannelSchema = z.object({
