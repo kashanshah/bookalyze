@@ -14,7 +14,7 @@ import {
   reviewWindow,
   sellerCentralOrderUrl,
 } from "@bookalyze/core";
-import { getOrder, getOrderInvoice, getReviewRequest } from "@bookalyze/db";
+import { getOrder, getOrderInvoice, getReviewRequest, invoiceRequestForOrder } from "@bookalyze/db";
 import { ArrowLeft, Download, ExternalLink, FileText, Package, Star, Undo2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -30,6 +30,7 @@ import { isOrgAdmin } from "@/server/org";
 import { AskOneButton, EligibilityCheck } from "../../../reviews/review-rows";
 import { refundBadge, statusVariant } from "../status";
 import { InvoiceDialog } from "./invoice-dialog";
+import { InvoiceRequestNotice, SendToAmazonButton } from "./invoice-send";
 
 /** Review requests and the invoice lookup talk to Amazon from this page. */
 export const maxDuration = 60;
@@ -56,10 +57,16 @@ export default async function OrderPage({
       ...row,
       request: reviewsOn ? await getReviewRequest(tx, id) : null,
       invoice: await getOrderInvoice(tx, id),
+      invoiceRequest: await invoiceRequestForOrder(tx, {
+        orderId: id,
+        externalId: row.order.externalId,
+      }),
     };
   });
   if (!found) notFound();
-  const { order, channel, items, refunds, request, replaces, replacedBy, invoice } = found;
+  const { order, channel, items, refunds, request, replaces, replacedBy, invoice, invoiceRequest } =
+    found;
+  const openRequest = invoiceRequest?.status === "open" ? invoiceRequest : null;
   const claim = order.buyerClaim ? BUYER_CLAIMS[order.buyerClaim as BuyerClaim] : null;
   const ordersBase = `/o/${slug}/commerce/orders`;
   const refund = refundBadge(order.total, order.refunded);
@@ -439,18 +446,47 @@ export default async function OrderPage({
                 <FileText className="size-4 text-primary" />
                 Customer invoice
               </h2>
+              {openRequest ? (
+                <InvoiceRequestNotice
+                  slug={slug}
+                  requestId={openRequest.id}
+                  text={`${openRequest.buyerName ?? "The buyer"} asked for an invoice on ${formatDate(
+                    openRequest.requestedAt.toISOString().slice(0, 10),
+                    locale,
+                  )}.${invoice ? " Send it below." : " Create it, then send it from here."}`}
+                />
+              ) : null}
               {invoice ? (
                 <>
                   <p className="mt-2 text-sm">
                     <span className="tabular font-medium">
                       {invoice.snapshot.number || formatInvoiceNumber(invoice.invoiceNumber)}
                     </span>
+                    {invoice.sentAt ? (
+                      <Badge variant="secondary" className="ms-2">
+                        Sent to Amazon{" "}
+                        {formatDate(invoice.sentAt.toISOString().slice(0, 10), locale)}
+                      </Badge>
+                    ) : null}
                   </p>
                   <p className="mt-1 text-muted-foreground text-xs leading-relaxed">
-                    Upload this file in Seller Central, on the buyer's invoice request. Sending it
-                    from here comes later.
+                    {channel.kind === "amazon"
+                      ? invoice.sentAt
+                        ? "The buyer has it in their Amazon order and messages."
+                        : "Send it to the buyer through Amazon, or download it and upload it in Seller Central."
+                      : "Download it and send it to the buyer yourself."}
                   </p>
                   <div className="mt-4 flex flex-wrap items-center gap-2">
+                    {channel.kind === "amazon" && isOrgAdmin(ctx) ? (
+                      <SendToAmazonButton
+                        slug={slug}
+                        orderId={order.id}
+                        number={
+                          invoice.snapshot.number || formatInvoiceNumber(invoice.invoiceNumber)
+                        }
+                        sent={Boolean(invoice.sentAt)}
+                      />
+                    ) : null}
                     <Button asChild variant="outline" size="sm">
                       <a href={`/api/o/${slug}/invoices/${invoice.id}?download=1`}>
                         <Download />
@@ -475,7 +511,7 @@ export default async function OrderPage({
                 <>
                   <p className="mt-2 text-muted-foreground text-sm leading-relaxed">
                     {channel.kind === "amazon"
-                      ? "A PDF for the buyer, from this order. Upload it in Seller Central on their invoice request. Sending it from here comes later."
+                      ? "A PDF for the buyer, from this order. Once it's created, send it to them through Amazon from here."
                       : "A PDF for the buyer, from this order, to send them yourself."}
                   </p>
                   <div className="mt-4">

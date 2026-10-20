@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import {
   AMAZON_LWA_TOKEN_URL,
@@ -12,6 +13,7 @@ import {
   type FeesEstimate,
   type ListingPatchResult,
   type MarketplaceParticipation,
+  messagingAllowsInvoice,
   parseBuyerInfo,
   parseFbaInventoryPage,
   parseFeesEstimate,
@@ -735,4 +737,89 @@ export async function reviewTopics(
     return { body: null, unavailable: true };
   }
   return { body: await response.json(), unavailable: false };
+}
+
+const BUYER_COMMUNICATION = roleMissing("Buyer Communication");
+
+/** Whether Amazon offers its invoice message for the order right now (Messaging API). */
+export async function canSendInvoice(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  order: { externalId: string; marketplaceId: string },
+): Promise<boolean> {
+  const body = await call(
+    creds,
+    region,
+    `/messaging/v1/orders/${encodeURIComponent(order.externalId)}`,
+    { marketplaceIds: order.marketplaceId },
+    { forbidden: BUYER_COMMUNICATION },
+  );
+  return messagingAllowsInvoice(body);
+}
+
+/**
+ * Sends a PDF to the buyer with Amazon's invoice message: asks the Uploads API where to put the
+ * file, puts it there, then sends the message with it attached. Amazon shows it to the buyer in
+ * their order and messages, and it answers the buyer's invoice request.
+ */
+export async function sendInvoice(
+  creds: AmazonCredentials,
+  region: AmazonRegion,
+  order: { externalId: string; marketplaceId: string },
+  file: { fileName: string; bytes: Uint8Array },
+): Promise<void> {
+  const id = encodeURIComponent(order.externalId);
+  const contentType = "application/pdf";
+  const contentMD5 = createHash("md5").update(file.bytes).digest("base64");
+  const destination = (await call(
+    creds,
+    region,
+    `/uploads/2020-11-01/uploadDestinations/messaging/v1/orders/${id}/messages/invoice`,
+    { marketplaceIds: order.marketplaceId, contentMD5, contentType },
+    { method: "POST", forbidden: BUYER_COMMUNICATION },
+  )) as {
+    payload?: { uploadDestinationId?: string; url?: string; headers?: Record<string, string> };
+  };
+  const target = destination.payload;
+  if (!target?.uploadDestinationId || !target.url) {
+    throw new AmazonError(
+      "Amazon didn't say where to upload the invoice. Try again.",
+      "unexpected",
+    );
+  }
+  let upload: Response;
+  try {
+    upload = await fetch(target.url, {
+      method: "PUT",
+      headers: { "Content-Type": contentType, "Content-MD5": contentMD5, ...target.headers },
+      body: new Uint8Array(file.bytes),
+      cache: "no-store",
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch (cause) {
+    logError("amazon.invoice_upload_unreachable", cause, { region });
+    throw new AmazonError("The invoice couldn't be uploaded to Amazon. Try again.", "unavailable", {
+      cause,
+    });
+  }
+  if (!upload.ok) {
+    logWarn("amazon.invoice_upload_failed", { region, status: upload.status });
+    throw new AmazonError(
+      `Amazon didn't take the invoice file (${upload.status}). Try again.`,
+      "unexpected",
+    );
+  }
+  await send(
+    creds,
+    region,
+    `/messaging/v1/orders/${id}/messages/invoice`,
+    { marketplaceIds: order.marketplaceId },
+    {
+      method: "POST",
+      body: {
+        attachments: [{ uploadDestinationId: target.uploadDestinationId, fileName: file.fileName }],
+      },
+      forbidden: BUYER_COMMUNICATION,
+    },
+  );
 }

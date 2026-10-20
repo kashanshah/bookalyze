@@ -87,6 +87,7 @@ export const modules: Record<ModuleKey, ModuleManifest> = {
     features: ["commerce.channels", "commerce.orders", "commerce.settlements", "commerce.listings"],
     nav: [
       { label: "Orders", href: "/commerce/orders" },
+      { label: "Invoice requests", href: "/commerce/invoice-requests" },
       { label: "Listing watch", href: "/commerce/watch" },
       { label: "Settlements", href: "/commerce/settlements" },
       { label: "Channel profit", href: "/commerce/profit" },
