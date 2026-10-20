@@ -2,6 +2,7 @@ export * from "./amount-fix";
 export * from "./attachments";
 export * from "./banking";
 export * from "./channel-costs";
+export * from "./channel-removal";
 export * from "./client";
 export * from "./cogs";
 export * from "./commerce";
