@@ -2494,6 +2494,16 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   bank over what the payments on it say they were (`paidRate`).
 - **Purchase orders list** by order date, newest first (then the latest number), not by number.
 
+### Your stake: the entries behind it
+
+- Each year's **Put in** and **Took out** on Your stake (and the All years total) opens
+  **Put in and taken out** (`reports/your-stake/transactions?from&to&date&way=in|out`): every
+  line on an owner account in those dates, each read the way its account counts on the stake's
+  day (a line against it, negative: a correction), with Both / Put in / Took out tabs and totals
+  that match the year. Lines open their journal entry. The year table's Net column is now
+  "Net put in". core `ownerDirections`, `stakeLine`, `isOwnerAccount`; db `ownerLines`; web
+  `loadStakeLines`. Tests: core `stake.test.ts`, db `reports.test.ts`.
+
 ### Channel profit: shared costs on their own row; quieter unlinked SKUs
 
 - **Channel profit** shows costs counted against no one channel on their own row, **Shared costs

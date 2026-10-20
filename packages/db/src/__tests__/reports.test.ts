@@ -2,7 +2,7 @@ import { prepareJournalEntry, type TransactionInput, transactionLines } from "@b
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
 import { createDefaultChart, postJournalEntry, reverseJournalEntry } from "../ledger";
-import { accountLedgerLines, ledgerActivity, transactionExportLines } from "../reports";
+import { accountLedgerLines, ledgerActivity, ownerLines, transactionExportLines } from "../reports";
 import * as schema from "../schema";
 
 const ownerUrl =
@@ -110,6 +110,41 @@ describe("general ledger queries", () => {
       ["2025-01-10", "300.0000"],
       ["2025-01-20", "-120.0000"],
     ]);
+  });
+
+  it("lists the lines on owner accounts only, not retained earnings or anything else", async () => {
+    const bank = code["1000"] as string;
+    await post(orgA, "2027-02-01", {
+      kind: "deposit",
+      moneyAccountId: bank,
+      splits: [{ accountId: code["3000"] as string, amount: "500" }],
+    });
+    await post(orgA, "2027-03-01", {
+      kind: "withdrawal",
+      moneyAccountId: bank,
+      splits: [{ accountId: code["3100"] as string, amount: "200" }],
+    });
+    await post(orgA, "2027-03-02", {
+      kind: "deposit",
+      moneyAccountId: bank,
+      splits: [{ accountId: code["3900"] as string, amount: "40" }],
+    });
+    const owner = await inOrg(orgA, (tx) =>
+      ownerLines(tx, { from: "2027-01-01", to: "2027-12-31" }),
+    );
+    expect(owner.lineCount).toBe(2);
+    expect(owner.lines.map((l) => [l.date, l.accountName, l.amount])).toEqual([
+      ["2027-02-01", "Owner contributions", "-500.0000"],
+      ["2027-03-01", "Owner drawings and dividends", "200.0000"],
+    ]);
+    const cut = await inOrg(orgA, (tx) =>
+      ownerLines(tx, { from: "2027-01-01", to: "2027-12-31" }, 1),
+    );
+    expect([cut.lines.length, cut.lineCount]).toEqual([1, 2]);
+    expect(
+      (await inOrg(orgB, (tx) => ownerLines(tx, { from: "2027-01-01", to: "2027-12-31" })))
+        .lineCount,
+    ).toBe(0);
   });
 
   it("cuts long lists at the limit but still counts every line", async () => {

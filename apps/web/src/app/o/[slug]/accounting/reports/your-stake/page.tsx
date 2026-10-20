@@ -1,5 +1,6 @@
 import { parseDecimal } from "@bookalyze/core";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Amount } from "@/components/accounting/amount";
 import { formatDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,19 @@ export default async function YourStakePage({
   const money = (value: string) => <Amount value={value} currency={currency} locale={locale} />;
   const upOrDown = parseDecimal(stake.upOrDown);
   const abs = (value: string) => (value.startsWith("-") ? value.slice(1) : value);
+  const linesHref = (from: string, to: string, way?: "in" | "out") =>
+    `/o/${slug}/accounting/reports/your-stake/transactions?from=${from}&to=${to}&date=${date}${way ? `&way=${way}` : ""}`;
+  /** An amount that opens the entries behind it. */
+  const linked = (value: string, href: string, label: string) => (
+    <Link
+      href={href}
+      aria-label={label}
+      className="text-end tabular-nums underline-offset-4 hover:text-primary hover:underline"
+    >
+      {money(value)}
+    </Link>
+  );
+  const firstDay = stake.years[0]?.from;
 
   return (
     <div className="grid gap-6">
@@ -42,7 +56,11 @@ export default async function YourStakePage({
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile label="You put in" value={money(stake.putIn)} hint="Owner contributions" />
         <Tile label="You took out" value={money(stake.tookOut)} hint="Drawings and dividends" />
-        <Tile label="Net put in" value={money(stake.net)} hint="Put in less taken out" />
+        <Tile
+          label="Net put in"
+          value={money(stake.net)}
+          hint="Put in less taken out: your money still in the company"
+        />
         <Tile
           label="Worth today"
           value={money(stake.worthTotal)}
@@ -78,7 +96,7 @@ export default async function YourStakePage({
           <span>Financial year</span>
           <span className="text-end">Put in</span>
           <span className="text-end">Took out</span>
-          <span className="hidden text-end sm:block">Net</span>
+          <span className="hidden text-end sm:block">Net put in</span>
           <span className="text-end">Profit</span>
         </div>
         {stake.years.length === 0 ? (
@@ -94,8 +112,8 @@ export default async function YourStakePage({
                   {formatDate(y.from, locale)} – {formatDate(y.to, locale)}
                 </span>
               </span>
-              <span className="text-end tabular-nums">{money(y.putIn)}</span>
-              <span className="text-end tabular-nums">{money(y.tookOut)}</span>
+              {linked(y.putIn, linesHref(y.from, y.to, "in"), `What you put in, ${y.label}`)}
+              {linked(y.tookOut, linesHref(y.from, y.to, "out"), `What you took out, ${y.label}`)}
               <span className="hidden text-end tabular-nums sm:block">{money(y.net)}</span>
               <span className="text-end tabular-nums">{money(y.profit)}</span>
             </div>
@@ -112,8 +130,21 @@ export default async function YourStakePage({
         ) : null}
         <div className={`${YEAR_GRID} bg-primary/5 px-5 py-3.5 font-semibold text-sm sm:px-6`}>
           <span>All years</span>
-          <span className="text-end tabular-nums">{money(stake.putIn)}</span>
-          <span className="text-end tabular-nums">{money(stake.tookOut)}</span>
+          {firstDay ? (
+            <>
+              {linked(stake.putIn, linesHref(firstDay, date, "in"), "What you put in, all years")}
+              {linked(
+                stake.tookOut,
+                linesHref(firstDay, date, "out"),
+                "What you took out, all years",
+              )}
+            </>
+          ) : (
+            <>
+              <span className="text-end tabular-nums">{money(stake.putIn)}</span>
+              <span className="text-end tabular-nums">{money(stake.tookOut)}</span>
+            </>
+          )}
           <span className="hidden text-end tabular-nums sm:block">{money(stake.net)}</span>
           <span className="text-end tabular-nums">{money(stake.profit)}</span>
         </div>
@@ -144,10 +175,12 @@ export default async function YourStakePage({
         badText="Worth doesn't equal what you put in plus profit. Please contact support."
       />
       <p className="max-w-3xl text-muted-foreground text-xs leading-relaxed">
-        Took out counts everything that went from the company to you, in any form: money you
-        withdrew, marketplace payouts kept in a personal account, the company's money spent on
-        something that isn't the company's, stock you took or sold yourself. Stock is at what it
-        cost; it becomes money only when it sells.
+        Click an amount to see the entries behind it. Net put in is what you put in less what you
+        took out: positive means more of your money went in than came back out. Took out counts
+        everything that went from the company to you, in any form: money you withdrew, marketplace
+        payouts kept in a personal account, the company's money spent on something that isn't the
+        company's, stock you took or sold yourself. Stock is at what it cost; it becomes money only
+        when it sells.
       </p>
     </div>
   );

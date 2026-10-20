@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccountBalance } from "../accounting/reports";
-import { yourStake } from "../accounting/stake";
+import { ownerDirections, stakeLine, yourStake } from "../accounting/stake";
 
 const acct = (
   id: string,
@@ -93,5 +93,24 @@ describe("your stake", () => {
       label: "Less what it owes",
       amount: "-200.0000",
     });
+  });
+
+  it("reads each owner line as put in or taken out, the way its account counts", () => {
+    const ways = ownerDirections([
+      acct("contrib", "equity", "owner_equity", "-1000.0000"),
+      acct("drawings", "equity", "owner_equity", "400.0000"),
+      acct("retained", "equity", "retained_earnings", "-100.0000"),
+      acct("empty", "equity", "owner_equity", "0.0000"),
+    ]);
+    expect([...ways]).toEqual([
+      ["contrib", "in"],
+      ["drawings", "out"],
+      ["empty", null],
+    ]);
+    expect(stakeLine(ways.get("contrib"), "-500.0000")).toEqual({ way: "in", amount: "500.0000" });
+    // A contribution taken back off: less put in, not money taken out.
+    expect(stakeLine(ways.get("contrib"), "50.0000")).toEqual({ way: "in", amount: "-50.0000" });
+    expect(stakeLine(ways.get("drawings"), "400.0000")).toEqual({ way: "out", amount: "400.0000" });
+    expect(stakeLine(ways.get("empty"), "-20.0000")).toEqual({ way: "in", amount: "20.0000" });
   });
 });
