@@ -1,6 +1,6 @@
 "use client";
 
-import { PackageMinus, Undo2 } from "lucide-react";
+import { ArrowRightLeft, PackageMinus, Undo2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -18,7 +18,7 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { putBackInStockAction, takeOutOfStockAction } from "../cogs/actions";
+import { moveStockAction, putBackInStockAction, takeOutOfStockAction } from "../cogs/actions";
 
 /**
  * Takes units out of a lot by hand: sold or used outside the marketplaces, taken by the owner,
@@ -163,6 +163,165 @@ export function TakeOutDialog({
           <Button type="submit" form={formId} disabled={pending}>
             {pending ? <Spinner /> : <PackageMinus />}
             Take out
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Moves units from a lot to the product they really are (a label or listing mixed up): a new lot
+ * there at the same cost. Nothing posts: it's stock either way.
+ */
+export function MoveStockDialog({
+  slug,
+  lotId,
+  left,
+  label,
+  productName,
+  receivedOn,
+  today,
+  products,
+}: {
+  slug: string;
+  lotId: string;
+  left: number;
+  label: string;
+  productName: string;
+  receivedOn: string;
+  today: string;
+  products: ComboboxOption[];
+}) {
+  const router = useRouter();
+  const formId = useId();
+  const [open, setOpen] = useState(false);
+  const [quantity, setQuantity] = useState(String(left));
+  const [date, setDate] = useState(today);
+  const [productId, setProductId] = useState("");
+  const [notes, setNotes] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [pending, start] = useTransition();
+
+  const submit = () =>
+    start(async () => {
+      const result = await moveStockAction(slug, { lotId, quantity, date, productId, notes });
+      if (!result.ok) {
+        setErrors(result.errors ?? {});
+        toast.error(result.message);
+        return;
+      }
+      setOpen(false);
+      toast.success("Moved to the other product", {
+        description: "A new lot there carries them, at the same cost.",
+      });
+      router.refresh();
+    });
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setQuantity(String(left));
+          setDate(today);
+          setProductId("");
+          setNotes("");
+          setErrors({});
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`Move units from ${label} to another product`}
+        >
+          <ArrowRightLeft />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Move to another product</DialogTitle>
+          <DialogDescription>
+            For units that are really another product: a label or a listing mixed up. They leave{" "}
+            {label} of {productName} and become a lot of the product you choose, at the same cost.
+            Nothing is posted: it's stock either way.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          id={formId}
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          <Field
+            label="The product they really are"
+            htmlFor={`${formId}-product`}
+            error={errors.productId}
+          >
+            <Combobox
+              id={`${formId}-product`}
+              value={productId}
+              onChange={setProductId}
+              placeholder="Choose a product…"
+              searchPlaceholder="Search products"
+              searchable
+              invalid={Boolean(errors.productId)}
+              options={products}
+            />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="How many"
+              htmlFor={`${formId}-qty`}
+              error={errors.quantity}
+              hint={`${left} left in this lot.`}
+            >
+              <Input
+                id={`${formId}-qty`}
+                inputMode="numeric"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value.trim())}
+                aria-invalid={Boolean(errors.quantity)}
+                className="tabular-nums"
+              />
+            </Field>
+            <Field
+              label="From"
+              htmlFor={`${formId}-date`}
+              error={errors.date}
+              hint="Sales of the other product use them from this day."
+            >
+              <Input
+                id={`${formId}-date`}
+                type="date"
+                min={receivedOn}
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                aria-invalid={Boolean(errors.date)}
+              />
+            </Field>
+          </div>
+          <Field label="Note (optional)" htmlFor={`${formId}-notes`} error={errors.notes}>
+            <Input
+              id={`${formId}-notes`}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Labelled as the 8.5 oz pair"
+            />
+          </Field>
+        </form>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setOpen(false)} disabled={pending}>
+            Cancel
+          </Button>
+          <Button type="submit" form={formId} disabled={pending}>
+            {pending ? <Spinner /> : <ArrowRightLeft />}
+            Move
           </Button>
         </DialogFooter>
       </DialogContent>

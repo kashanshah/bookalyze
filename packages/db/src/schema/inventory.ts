@@ -456,7 +456,7 @@ export const purchasePayments = pgTable(
  * cost in the company's main currency. Rebuilt in place (same id) when the delivery's costs
  * change. Sales will draw on the oldest lots first once cost of goods sold is posted.
  */
-export const LOT_SOURCES = ["receipt", "opening", "return", "found"] as const;
+export const LOT_SOURCES = ["receipt", "opening", "return", "found", "moved"] as const;
 
 export const inventoryLots = pgTable(
   "inventory_lots",
@@ -468,7 +468,8 @@ export const inventoryLots = pgTable(
     productId: uuid("product_id").notNull(),
     /**
      * "receipt": a delivery line; "opening": stock on hand before Bookalyze; "return" and
-     * "found": units customers sent back or Amazon found, added when their month is posted.
+     * "found": units customers sent back or Amazon found, added when their month is posted;
+     * "moved": units moved here from another product's lot (see `stock_removals`).
      */
     source: text("source", { enum: LOT_SOURCES }).notNull().default("receipt"),
     /** The delivery line it came from (receipt lots only). */
@@ -613,7 +614,9 @@ export const stockCounts = pgTable(
 /**
  * Units taken out of a lot by hand, not through a marketplace: sold or used outside it, taken by
  * the owner, lost or thrown away. Posted on its day: Dr `account_id` (Owner drawings, Inventory
- * losses and write-offs…) / Cr Inventory at the lot's cost. Its `lot_consumptions` row (kind
+ * losses and write-offs…) / Cr Inventory at the lot's cost. Or moved to another product (they were
+ * that product all along: a mix-up in labels or listings): a new lot there at the same cost
+ * (`moved_to_lot_id`), nothing posted (Inventory stays Inventory). Its `lot_consumptions` row (kind
  * "removal") takes the units from the lot; putting it back removes both and reverses the entry.
  */
 export const stockRemovals = pgTable(
@@ -627,8 +630,10 @@ export const stockRemovals = pgTable(
     removedOn: date("removed_on").notNull(),
     quantity: integer("quantity").notNull(),
     cost: numeric("cost", { precision: 20, scale: 4 }).notNull(),
-    /** Where the cost goes. */
-    accountId: uuid("account_id").notNull(),
+    /** Where the cost goes (null for a move to another product). */
+    accountId: uuid("account_id"),
+    /** A move to another product: the lot it made there, at the same cost. */
+    movedToLotId: uuid("moved_to_lot_id"),
     journalEntryId: uuid("journal_entry_id"),
     notes: text("notes"),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
@@ -652,7 +657,16 @@ export const stockRemovals = pgTable(
       columns: [t.organizationId, t.journalEntryId],
       foreignColumns: [journalEntries.organizationId, journalEntries.id],
     }),
+    foreignKey({
+      name: "stock_removals_moved_lot_fk",
+      columns: [t.organizationId, t.movedToLotId],
+      foreignColumns: [inventoryLots.organizationId, inventoryLots.id],
+    }),
     check("stock_removals_quantity_positive", sql`${t.quantity} > 0 and ${t.cost} >= 0`),
+    check(
+      "stock_removals_target_valid",
+      sql`(${t.accountId} is null) <> (${t.movedToLotId} is null)`,
+    ),
     tenantIsolationPolicy("stock_removals", t.organizationId),
   ],
 );

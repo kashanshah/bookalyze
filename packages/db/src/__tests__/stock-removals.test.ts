@@ -6,7 +6,7 @@ import { createProduct } from "../inventory";
 import { listLots } from "../landed-costs";
 import { accountBalances, createDefaultChart } from "../ledger";
 import * as schema from "../schema";
-import { putBackInStock, stockRemovalsFor, takeOutOfStock } from "../stock-removals";
+import { moveStock, putBackInStock, stockRemovalsFor, takeOutOfStock } from "../stock-removals";
 
 const ownerUrl =
   process.env.TEST_DATABASE_URL_MIGRATOR ??
@@ -169,6 +169,103 @@ describe("taking units out of stock by hand", () => {
     await expect(
       scoped((tx) => putBackInStock(tx, { orgId, userId: null, removalId: first?.id ?? "" })),
     ).rejects.toThrow(/already put back/);
+  });
+
+  it("moves units to the product they really are, at their cost, posting nothing", async () => {
+    const inventory = await scoped((tx) => ensureSystemAccount(tx, orgId, "inventory"));
+    const { pair, glass, from } = await scoped(async (tx) => {
+      const pair = await createProduct(tx, {
+        orgId,
+        userId: null,
+        name: "Cup pair 350",
+        sku: null,
+        notes: null,
+      });
+      const glass = await createProduct(tx, {
+        orgId,
+        userId: null,
+        name: "Cup pair 250",
+        sku: null,
+        notes: null,
+      });
+      const lot = await addOpeningStock(tx, {
+        ...base,
+        orgId,
+        productId: pair.id,
+        quantity: 10,
+        unitCost: "2.00",
+        date: "2026-02-28",
+        notes: null,
+      });
+      return { pair, glass, from: lot.id };
+    });
+    const stockBefore = await balance(inventory);
+    const moved = await scoped((tx) =>
+      moveStock(tx, {
+        ...base,
+        orgId,
+        lotId: from,
+        quantity: 4,
+        date: "2026-03-10",
+        productId: glass.id,
+        notes: "Labelled as the 250",
+      }),
+    );
+    expect(moved.cost).toBe("8.0000");
+    // Stock is stock: Inventory doesn't change, and nothing was posted.
+    expect(await balance(inventory)).toBe(stockBefore);
+    const lots = await scoped((tx) => listLots(tx));
+    expect(lots.find((l) => l.id === from)).toMatchObject({ quantity: 10, consumed: 4 });
+    expect(lots.find((l) => l.id === moved.lotId)).toMatchObject({
+      productId: glass.id,
+      source: "moved",
+      receivedOn: "2026-03-10",
+      quantity: 4,
+      productCost: "8.0000",
+      notes: "From Cup pair 350 · Labelled as the 250",
+    });
+    const [row] = await scoped((tx) => stockRemovalsFor(tx, [from]));
+    expect(row).toMatchObject({
+      quantity: 4,
+      accountId: null,
+      movedToProductName: "Cup pair 250",
+      journalEntryId: null,
+    });
+    // Not to the same product.
+    await expect(
+      scoped((tx) =>
+        moveStock(tx, {
+          ...base,
+          orgId,
+          lotId: from,
+          quantity: 1,
+          date: "2026-03-10",
+          productId: pair.id,
+          notes: null,
+        }),
+      ),
+    ).rejects.toThrow(/Choose another product/);
+
+    // Once some moved units are gone, the move can't be put back; after, it can.
+    const drawn = await scoped((tx) =>
+      takeOutOfStock(tx, {
+        ...base,
+        orgId,
+        lotId: moved.lotId,
+        quantity: 1,
+        date: "2026-03-11",
+        accountId: drawingsId,
+        notes: null,
+      }),
+    );
+    await expect(
+      scoped((tx) => putBackInStock(tx, { orgId, userId: null, removalId: moved.id })),
+    ).rejects.toThrow(/already sold or taken out/);
+    await scoped((tx) => putBackInStock(tx, { orgId, userId: null, removalId: drawn.id }));
+    await scoped((tx) => putBackInStock(tx, { orgId, userId: null, removalId: moved.id }));
+    const after = await scoped((tx) => listLots(tx));
+    expect(after.find((l) => l.id === moved.lotId)).toBeUndefined();
+    expect(after.find((l) => l.id === from)).toMatchObject({ consumed: 0 });
   });
 
   it("keeps each company's removals to itself", async () => {
