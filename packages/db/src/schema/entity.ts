@@ -63,6 +63,8 @@ export const organizationBranding = pgTable(
     /** Points kept free at the top and bottom of a letterhead page. */
     letterheadTop: smallint("letterhead_top").notNull().default(120),
     letterheadBottom: smallint("letterhead_bottom").notNull().default(72),
+    /** The logo's printed height in points. */
+    logoHeight: smallint("logo_height").notNull().default(48),
     /** "first": the letterhead on page 1 only; "all": on every page. */
     letterheadPages: text("letterhead_pages").notNull().default("first"),
     updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
@@ -75,6 +77,7 @@ export const organizationBranding = pgTable(
         and ${t.letterheadTop} between 0 and 300 and ${t.letterheadBottom} between 0 and 300
         and ${t.letterheadPages} in ('first', 'all')`,
     ),
+    check("organization_branding_logo_height", sql`${t.logoHeight} between 24 and 120`),
     foreignKey({
       name: "organization_branding_logo_fk",
       columns: [t.organizationId, t.logoAttachmentId],

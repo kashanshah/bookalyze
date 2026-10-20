@@ -1,6 +1,7 @@
 import "server-only";
 import {
   csvAmount,
+  DEFAULT_LOGO_HEIGHT,
   formatDecimal,
   hexToRgb,
   isDarkColor,
@@ -44,6 +45,7 @@ const NO_BRAND: DocumentBrand = {
   accentColor: null,
   footer: null,
   nameArabic: null,
+  logoHeight: DEFAULT_LOGO_HEIGHT,
   letterheadTop: 0,
   letterheadBottom: 0,
   letterheadPages: "first",
@@ -184,17 +186,23 @@ export async function renderOrderInvoicePdf(
   rightY -= 14;
 
   const leftWidth = contentWidth - 200;
+  // Text is drawn on its baseline, so the first line starts about a cap height lower.
+  const capHeight = (size: number) => size * 0.72;
   if (logo) {
-    const box = fitWithin(logo.width, logo.height, 170, 56);
+    // The height is the company's choice; a very wide logo is capped at the left column.
+    const box = fitWithin(logo.width, logo.height, leftWidth, brand.logoHeight);
     page.drawImage(logo, {
       x: MARGIN,
       y: headerTop - box.height,
       width: box.width,
       height: box.height,
     });
-    y = headerTop - box.height - 12;
+    y = headerTop - box.height - 16 - capHeight(12);
+  } else {
+    y = headerTop - capHeight(12);
   }
   text(invoice.seller.legalName, { size: 12, face: bold, width: leftWidth });
+  y -= 2;
   if (brand.nameArabic?.trim())
     text(brand.nameArabic.trim(), { size: 11, face: bold, width: leftWidth });
   const sellerLines = [
@@ -207,12 +215,15 @@ export async function renderOrderInvoicePdf(
       ? `${invoice.seller.taxNumberLabel} ${invoice.seller.taxNumber}`
       : null,
   ].filter((line): line is string => Boolean(line?.trim()));
-  for (const line of sellerLines) text(line.trim(), { size: 9.5, color: MUTED, width: leftWidth });
-  y = Math.min(y, rightY) - 14;
+  // Below the title block on the right, the seller's lines can run wider.
+  const sellerWidth = () => (y < rightY - 4 ? contentWidth * 0.72 : leftWidth);
+  for (const line of sellerLines)
+    text(line.trim(), { size: 9.5, color: MUTED, width: sellerWidth() });
+  y = Math.min(y, rightY) - 10;
 
   ensure(4);
   page.drawRectangle({ x: MARGIN, y, width: contentWidth, height: 2, color: ACCENT });
-  y -= 22;
+  y -= 26;
 
   // --- bill to and details --------------------------------------------------------------------
   const blockTop = y;
@@ -258,7 +269,13 @@ export async function renderOrderInvoicePdf(
   details.forEach(([label, value], index) => {
     const rowY = blockTop - index * rowHeight - 2;
     drawLine(page, label, { x: detailsX, y: rowY, size: 9, face: font, color: MUTED });
-    rightText(value, rowY, 9, bold, INK);
+    drawLine(page, value, {
+      x: right - 10 - widthOf(value, bold, 9),
+      y: rowY,
+      size: 9,
+      face: bold,
+      color: INK,
+    });
   });
   y = Math.min(leftBottom, blockTop - panelHeight) - 18;
 

@@ -1,0 +1,2 @@
+ALTER TABLE "organization_branding" ADD COLUMN "logo_height" smallint DEFAULT 48 NOT NULL;--> statement-breakpoint
+ALTER TABLE "organization_branding" ADD CONSTRAINT "organization_branding_logo_height" CHECK ("organization_branding"."logo_height" between 24 and 120);

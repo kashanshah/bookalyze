@@ -38,6 +38,7 @@ export default async function BrandPage({ params }: { params: Promise<{ slug: st
           footer: brand.footer,
           nameArabic: brand.nameArabic,
           logo: file(brand.logo),
+          logoHeight: brand.logoHeight,
           letterhead: file(brand.letterhead),
           letterheadTop: brand.letterheadTop,
           letterheadBottom: brand.letterheadBottom,

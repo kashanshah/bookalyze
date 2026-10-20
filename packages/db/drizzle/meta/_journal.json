@@ -484,6 +484,13 @@
       "when": 1792528457007,
       "tag": "0068_stock_removals",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1792530205363,
+      "tag": "0069_logo_height",
+      "breakpoints": true
     }
   ]
 }
