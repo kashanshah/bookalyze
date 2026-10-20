@@ -78,6 +78,9 @@ export function SyncSettlementsButton({ slug }: { slug: string }) {
   );
 }
 
+/** Long enough to read what a whole report brought in. */
+const REPORT_TOAST_MS = 15_000;
+
 /**
  * Amazon's date range transaction report: every settlement in it, sent a part at a time. The
  * newest one is left out while it has no payout yet (it may still be open); ones already here
@@ -158,9 +161,13 @@ async function addTransactionReport(
     open ? "The newest one is still open: it comes in once Amazon closes it." : null,
   ].filter(Boolean);
   if (!added && !updated && !orders && !returned) {
-    toast.info(`${name}: nothing new`, notes.length ? { description: notes.join(" ") } : {});
+    toast.info(`${name}: nothing new`, {
+      duration: REPORT_TOAST_MS,
+      ...(notes.length ? { description: notes.join(" ") } : {}),
+    });
   } else if (notes.length) {
     toast.info(`${name}: ${plural(added, "settlement")} from the transaction report`, {
+      duration: REPORT_TOAST_MS,
       description: notes.join(" "),
     });
   }

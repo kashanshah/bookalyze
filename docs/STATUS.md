@@ -2340,6 +2340,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   back over them, `importLedgerEvents` drops the refund rows from its first day on, so a return
   counts once. "In through" doesn't move. Tests: core `transaction-report.test.ts`, db
   `report-returns.test.ts`.
+- **One refresh per report upload:** the report's parts (settlements, orders, refunds) don't
+  revalidate the layout each; the upload refreshes the page once at the end, so a large report
+  doesn't set off a stream of page requests. Its summary toast stays 15 seconds.
 
 ### Phase 5, slice 4: opening stock and cost of goods sold
 
