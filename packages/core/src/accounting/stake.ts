@@ -55,8 +55,34 @@ const WORTH_GROUPS: { key: string; label: string; subtypes: string[] }[] = [
   },
 ];
 
-const isOwner = (b: AccountBalance) => b.type === "equity" && b.subtype !== "retained_earnings";
+/** An owner account: equity that isn't retained earnings (contributions, drawings, dividends). */
+export const isOwnerAccount = (a: { type: string; subtype: string }) =>
+  a.type === "equity" && a.subtype !== "retained_earnings";
+const isOwner = isOwnerAccount;
 const isProfit = (b: AccountBalance) => b.type === "income" || b.type === "expense";
+
+/** Which way each owner account counts, by its balance on the day (null: at zero). */
+export function ownerDirections(asOf: AccountBalance[]): Map<string, "in" | "out" | null> {
+  const direction = new Map<string, "in" | "out" | null>();
+  for (const b of asOf.filter(isOwner)) {
+    const v = parseDecimal(b.balance);
+    direction.set(b.accountId, v < 0n ? "in" : v > 0n ? "out" : null);
+  }
+  return direction;
+}
+
+/**
+ * One line on an owner account as money put in or taken out: the way its account counts (else
+ * the line's own sign), and the amount that way (negative: a correction the other way).
+ */
+export function stakeLine(
+  direction: "in" | "out" | null | undefined,
+  amount: string,
+): { way: "in" | "out"; amount: string } {
+  const v = parseDecimal(amount);
+  const way = direction ?? (v < 0n ? "in" : "out");
+  return { way, amount: formatDecimal(way === "in" ? -v : v) };
+}
 
 export function yourStake(input: {
   /** Balances of every account up to the day (all time). */
@@ -64,11 +90,7 @@ export function yourStake(input: {
   /** Each year's activity (balances from its first to its last day). */
   years: { label: string; from: string; to: string; balances: AccountBalance[] }[];
 }): Stake {
-  const direction = new Map<string, "in" | "out" | null>();
-  for (const b of input.asOf.filter(isOwner)) {
-    const v = parseDecimal(b.balance);
-    direction.set(b.accountId, v < 0n ? "in" : v > 0n ? "out" : null);
-  }
+  const direction = ownerDirections(input.asOf);
   let putIn = 0n;
   let tookOut = 0n;
   let yearsProfit = 0n;

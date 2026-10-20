@@ -167,6 +167,58 @@ export async function accountLedgerLines(
   };
 }
 
+export type OwnerLineRow = LedgerLineRow & { accountId: string; accountName: string };
+
+/**
+ * Every line in [from, to] on an owner account (equity other than retained earnings:
+ * contributions, drawings, dividends), oldest first, at most `limit`, with how many in all.
+ */
+export async function ownerLines(
+  tx: Transaction,
+  range: { from: string; to: string },
+  limit = 1000,
+): Promise<{ lines: OwnerLineRow[]; lineCount: number }> {
+  const join = and(
+    eq(journalLines.journalEntryId, journalEntries.id),
+    gte(journalEntries.date, range.from),
+    lte(journalEntries.date, range.to),
+  );
+  const owner = and(eq(accounts.type, "equity"), sql`${accounts.subtype} <> 'retained_earnings'`);
+  const [[count], lines] = await Promise.all([
+    tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(journalLines)
+      .innerJoin(journalEntries, join)
+      .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+      .where(owner),
+    tx
+      .select({
+        id: journalLines.id,
+        entryId: journalEntries.id,
+        entryNumber: journalEntries.entryNumber,
+        date: journalEntries.date,
+        memo: journalEntries.memo,
+        reference: journalEntries.reference,
+        description: journalLines.description,
+        contactName: contacts.name,
+        source: journalEntries.source,
+        currency: journalLines.currency,
+        currencyAmount: sql<string>`${journalLines.amount}::text`,
+        amount: sql<string>`${journalLines.baseAmount}::text`,
+        accountId: accounts.id,
+        accountName: accounts.name,
+      })
+      .from(journalLines)
+      .innerJoin(journalEntries, join)
+      .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+      .leftJoin(contacts, eq(contacts.id, journalEntries.contactId))
+      .where(owner)
+      .orderBy(asc(journalEntries.date), asc(journalEntries.entryNumber), asc(journalLines.lineNo))
+      .limit(limit),
+  ]);
+  return { lines, lineCount: count?.n ?? 0 };
+}
+
 /**
  * Every journal line dated in [from, to], in date, entry and line order, for the accountant's
  * export. An entry and its reversal are both left out when both fall in the period (an edited

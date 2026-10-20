@@ -5,10 +5,14 @@ import {
   compareProfitAndLoss,
   comparisonPeriod,
   fiscalYearFor,
+  formatDecimal,
   generalLedgerSummary,
   isCompareMode,
+  ownerDirections,
+  parseDecimal,
   profitAndLoss,
   salesTaxSummary,
+  stakeLine,
   trialBalance,
   yourStake,
 } from "@bookalyze/core";
@@ -19,6 +23,7 @@ import {
   ledgerActivity,
   listTaxRates,
   listTaxRegistrations,
+  ownerLines,
   salesTaxRows,
   transactionExportLines,
 } from "@bookalyze/db";
@@ -101,6 +106,43 @@ export async function loadYourStake(ctx: AccountingContext, query: ReportQuery) 
     return yourStake({ asOf: await accountBalances(tx, { to: date }), years });
   });
   return { date, presets, stake };
+}
+
+/**
+ * The lines behind Your stake for a period: each owner-account line as put in or taken out (the
+ * way its account counts on `date`, the stake's day), filtered to one way or both.
+ */
+export async function loadStakeLines(
+  ctx: AccountingContext,
+  query: ReportQuery & { way?: string },
+  limit = LEDGER_LINE_LIMIT,
+) {
+  const { today, cfg } = setup(ctx);
+  const { from, to, presets } = resolveRange(query, today, cfg);
+  const { date } = resolveDate(query, today, cfg);
+  const way = query.way === "in" || query.way === "out" ? query.way : null;
+  const { lines, lineCount, asOf } = await inOrg(ctx, async (tx) => ({
+    ...(await ownerLines(tx, { from, to }, limit)),
+    asOf: await accountBalances(tx, { to: date }),
+  }));
+  const ways = ownerDirections(asOf);
+  const all = lines.map((line) => ({
+    ...line,
+    ...stakeLine(ways.get(line.accountId), line.amount),
+  }));
+  const sum = (w: "in" | "out") =>
+    formatDecimal(all.filter((l) => l.way === w).reduce((t, l) => t + parseDecimal(l.amount), 0n));
+  return {
+    from,
+    to,
+    date,
+    presets,
+    way,
+    lines: way ? all.filter((l) => l.way === way) : all,
+    putIn: sum("in"),
+    tookOut: sum("out"),
+    truncated: lineCount > lines.length,
+  };
 }
 
 function nextDay(day: string): string {
