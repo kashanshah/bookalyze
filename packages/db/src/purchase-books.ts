@@ -45,7 +45,7 @@ type Ctx = { orgId: string; userId: string | null; baseCurrency: string };
 /**
  * Puts a bank transaction's category on Supplier deposits (a corrected entry replaces it; its
  * payments, receipts and review follow). Only a transaction with a single category can be moved;
- * one already there is left alone. Returns the entry now holding the payment.
+ * one already there, or split with a part already there, is left alone. Returns the entry now holding the payment.
  */
 export async function moveToAccount(
   tx: Transaction,
@@ -82,6 +82,9 @@ export async function moveToAccount(
     .orderBy(journalLines.lineNo);
   const categories = lines.filter((l) => !isMoneyAccountSubtype(l.subtype));
   if (categories.every((l) => l.accountId === input.accountId)) return entry.id;
+  // A split transaction with a part already there (e.g. freight for this company, the rest
+  // another company's share): that part is what counts, and the transaction stays as it is.
+  if (categories.some((l) => l.accountId === input.accountId)) return entry.id;
   if (new Set(categories.map((l) => l.accountId)).size > 1 || categories.some((l) => l.taxRateId)) {
     throw new PurchasingError(
       "That transaction is split across categories or has tax on it. Change its category to Supplier deposits yourself, then link it.",

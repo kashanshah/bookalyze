@@ -288,6 +288,52 @@ describe("purchase orders in the books", () => {
     ).rejects.toThrow(/everything on the order has arrived/);
   });
 
+  it("takes the part of a split transaction already on Supplier deposits", async () => {
+    const po = await sentOrder("2026-09-14");
+    // 70 out: 40 on deposits for this order, 30 another company's share (Owner drawings).
+    const payment = await scoped(async (tx) => {
+      const all = await tx.select().from(schema.accounts);
+      const byCode = new Map(all.map((a) => [a.code, a.id]));
+      const prepared = prepareJournalEntry(
+        {
+          currency: "CAD",
+          baseCurrency: "CAD",
+          lines: transactionLines({
+            kind: "withdrawal",
+            moneyAccountId: byCode.get("1000") as string,
+            splits: [
+              { accountId: byCode.get("1250") as string, amount: "40.00" },
+              { accountId: byCode.get("3100") as string, amount: "30.00" },
+            ],
+          }),
+        },
+        new Map(all.map((a) => [a.id, a])),
+      );
+      if (!prepared.ok) throw new Error("bad entry");
+      return postJournalEntry(tx, { orgId, date: "2026-09-15", entry: prepared.entry });
+    });
+    const linked = await link({
+      purchaseOrderId: po.id,
+      journalEntryId: payment.id,
+      amount: "40.00",
+    });
+    const deposits = await scoped((tx) => orderDeposits(tx, { orgId, purchaseOrderId: po.id }));
+    expect(deposits.paidIn).toBe("40.0000");
+    // The transaction stayed as it was, and taking the payment off leaves it there too.
+    const entries = await scoped((tx) =>
+      tx.select().from(schema.journalEntries).where(eq(schema.journalEntries.id, payment.id)),
+    );
+    expect(entries[0]?.reversedByEntryId).toBeNull();
+    await scoped((tx) =>
+      removePurchasePayment(tx, {
+        orgId,
+        userId: null,
+        purchaseOrderId: po.id,
+        paymentId: linked.id,
+      }),
+    );
+  });
+
   it("won't move the start later once deliveries before it are posted", async () => {
     await expect(
       scoped((tx) => savePurchaseSettings(tx, { ...ctx(), postFrom: "2026-11-01" })),

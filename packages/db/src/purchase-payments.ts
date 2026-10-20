@@ -246,12 +246,18 @@ export async function removePurchasePayment(
     )
     .limit(1);
   if (!onDeposits) return;
-  await moveToAccount(tx, {
-    orgId: input.orgId,
-    userId: input.userId,
-    entryId: gone.journalEntryId,
-    accountId: await ensureSystemAccount(tx, input.orgId, "inventory"),
-  });
+  try {
+    await moveToAccount(tx, {
+      orgId: input.orgId,
+      userId: input.userId,
+      entryId: gone.journalEntryId,
+      accountId: await ensureSystemAccount(tx, input.orgId, "inventory"),
+    });
+  } catch (error) {
+    // A split transaction can't be moved: its part stays on Supplier deposits, to recategorise
+    // by hand if it no longer pays an order.
+    if (!(error instanceof PurchasingError)) throw error;
+  }
 }
 
 export async function savePaymentPlan(
