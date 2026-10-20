@@ -118,6 +118,14 @@ export const channelSkus = pgTable(
     title: text("title"),
     /** Units Amazon holds that can be sold, when last seen. */
     fulfillable: integer("fulfillable"),
+    /** Reserved (customer orders, moves between warehouses, processing), when last seen. */
+    reserved: integer("reserved"),
+    /** On their way in (working, shipped, being received), when last seen. */
+    inbound: integer("inbound"),
+    /** Damaged, defective or expired, when last seen. */
+    unfulfillable: integer("unfulfillable"),
+    /** Being looked for (lost or misplaced), when last seen. */
+    researching: integer("researching"),
     seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

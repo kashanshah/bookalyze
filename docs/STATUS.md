@@ -2408,6 +2408,29 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   bank over what the payments on it say they were (`paidRate`).
 - **Purchase orders list** by order date, newest first (then the latest number), not by number.
 
+### Stock in one place
+
+- **Inventory → Stock** (`/inventory/stock`, feature `inventory.cogs`): one row per product.
+  - **In the books:** units left in the lots, less what sold in months cost of goods sold hasn't
+    posted yet (from the start month on), plus returns and net adjustments in them; the hint
+    shows both parts, and the page names the months.
+  - **Amazon:** its FBA inventory (sellable + reserved + inbound + unsellable + being looked
+    for; the hint breaks it down), from Check Amazon for all SKUs. The sync now keeps all five
+    (`channel_skus.reserved`, `inbound`, `unfulfillable`, `researching`; core
+    `parseFbaInventoryPage`).
+  - **Noon:** its FBN summary's latest day (sellable + not sellable), when one was uploaded.
+  - **At hand:** your own latest count (with you, a warehouse, a 3PL): **Count** / **Recount**
+    with the day and a note, and remove a count made by mistake. It doesn't change the books.
+  - **Difference:** in the books less everything counted (+: the books have more than anyone
+    holds). "Matches" at 0; a small one (±2) is quiet, a bigger one a warning. Totals row.
+- **Schema** (migration `0070_stock_overview`): `stock_counts` (product, day, units, note, who;
+  RLS) and the four `channel_skus` columns.
+- **Code:** db `stock-overview.ts` (`stockOverview`, `addStockCount`, `removeStockCount`);
+  actions `addStockCountAction` / `removeStockCountAction` (audited `stock_count.added` /
+  `stock_count.removed`); web `inventory/stock/`.
+- Tests: core `fba-inventory.test.ts` (the new quantities); db `stock-overview.test.ts` (months
+  not posted, a return in them, Amazon's parts, the latest count, removing one).
+
 ### Stock taken out by hand
 
 - **What it is:** Stock lots → a lot with units left → **Take out of stock** (box-minus button):
