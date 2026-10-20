@@ -43,8 +43,9 @@ export function UnlinkedSkus({
             SKUs that aren't linked to a product yet
           </h2>
           <p className="mt-1 max-w-2xl text-muted-foreground text-sm leading-relaxed">
-            From your orders and your Amazon inventory, so variations that haven't sold yet are here
-            too. Make a new product from one in one click, or link it to one you already have.
+            From your orders and your Amazon inventory, so variations that haven't sold yet but have
+            stock at Amazon or on its way are here too (listings with no orders and nothing in stock
+            aren't). Make a new product from one in one click, or link it to one you already have.
           </p>
         </div>
         <AmazonSkusButton slug={slug} />

@@ -400,8 +400,10 @@ export type UnlinkedSku = {
 
 /**
  * Seller SKUs that aren't linked to a product yet, on marketplaces still connected: every SKU
- * seen on orders, and every SKU the marketplace lists (its FBA inventory) even if never sold.
- * Most recently ordered first, then the never-ordered ones by title; with how many in all.
+ * seen on orders, and every SKU the marketplace lists (its FBA inventory) even if never sold, as
+ * long as it holds or expects some units (a listing never ordered with nothing in stock or on its
+ * way has nothing to count, so it's left out). Most recently ordered first, then the
+ * never-ordered ones by title; with how many in all.
  */
 export async function unlinkedSkus(
   tx: Transaction,
@@ -426,14 +428,17 @@ export async function unlinkedSkus(
         coalesce(s.orders, 0) as orders,
         coalesce(s.units, 0) as units,
         s.last_ordered_at,
-        l.fulfillable
+        l.fulfillable,
+        coalesce(l.fulfillable, 0) + coalesce(l.reserved, 0) + coalesce(l.inbound, 0)
+          + coalesce(l.unfulfillable, 0) + coalesce(l.researching, 0) as held
       from seen s
       full outer join ${channelSkus} l on l.channel_id = s.channel_id and l.sku = s.sku
     )
     select c.*, sc.name as channel_name
     from candidates c
     join ${salesChannels} sc on sc.id = c.channel_id
-    where (
+    where (c.orders > 0 or c.held > 0)
+      and (
         sc.connection_id is null
         or exists (
           select 1 from ${connections} cn
