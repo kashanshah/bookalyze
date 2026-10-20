@@ -47,6 +47,7 @@ export async function getBranding(tx: Transaction): Promise<BrandRecord> {
     letterheadAttachmentId: row.letterheadAttachmentId,
     letterheadTop: row.letterheadTop,
     letterheadBottom: row.letterheadBottom,
+    logoHeight: row.logoHeight,
     letterheadPages: row.letterheadPages as LetterheadPages,
   };
   return {
@@ -103,6 +104,7 @@ export async function saveBranding(
     letterheadAttachmentId: next.letterheadAttachmentId,
     letterheadTop: next.letterheadTop,
     letterheadBottom: next.letterheadBottom,
+    logoHeight: next.logoHeight,
     letterheadPages: next.letterheadPages,
     updatedBy: input.userId,
     updatedAt: new Date(),

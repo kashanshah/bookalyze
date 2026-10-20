@@ -4,6 +4,8 @@ import {
   type BrandSettings,
   LETTERHEAD_MARGIN_MAX,
   LETTERHEAD_PAGES,
+  LOGO_HEIGHT_MAX,
+  LOGO_HEIGHT_MIN,
   normalizeHexColor,
 } from "@bookalyze/core";
 import { z } from "zod";
@@ -35,6 +37,11 @@ export const brandSchema = z.object({
   letterheadTop: margin,
   letterheadBottom: margin,
   letterheadPages: z.enum(LETTERHEAD_PAGES),
+  logoHeight: z.coerce
+    .number()
+    .int("Use whole points.")
+    .min(LOGO_HEIGHT_MIN, `Use ${LOGO_HEIGHT_MIN} or more.`)
+    .max(LOGO_HEIGHT_MAX, `Use ${LOGO_HEIGHT_MAX} or less.`),
 });
 
 export type BrandInput = z.input<typeof brandSchema>;

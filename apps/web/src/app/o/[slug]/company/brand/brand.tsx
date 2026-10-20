@@ -5,9 +5,12 @@ import {
   BRAND_IMAGE_TYPES,
   DEFAULT_ACCENT,
   DEFAULT_LETTERHEAD_MARGINS,
+  DEFAULT_LOGO_HEIGHT,
   LETTERHEAD_MARGIN_MAX,
   LETTERHEAD_TYPES,
   type LetterheadPages,
+  LOGO_HEIGHT_MAX,
+  LOGO_HEIGHT_MIN,
   normalizeHexColor,
 } from "@bookalyze/core";
 import { FileText, ImageIcon, Palette, RefreshCw, Trash2, Upload } from "lucide-react";
@@ -32,6 +35,7 @@ export type BrandView = {
   footer: string | null;
   nameArabic: string | null;
   logo: BrandFile | null;
+  logoHeight: number;
   letterhead: BrandFile | null;
   letterheadTop: number;
   letterheadBottom: number;
@@ -163,6 +167,7 @@ export function BrandScreen({ view }: { view: BrandView }) {
   const [nameArabic, setNameArabic] = useState(view.nameArabic ?? "");
   const [footer, setFooter] = useState(view.footer ?? "");
   const [logo, setLogo] = useState(view.logo);
+  const [logoHeight, setLogoHeight] = useState(view.logoHeight);
   const [letterhead, setLetterhead] = useState(view.letterhead);
   const [top, setTop] = useState(String(view.letterheadTop));
   const [bottom, setBottom] = useState(String(view.letterheadBottom));
@@ -183,8 +188,9 @@ export function BrandScreen({ view }: { view: BrandView }) {
       letterheadTop: Number(top),
       letterheadBottom: Number(bottom),
       letterheadPages: pages,
+      logoHeight,
     }),
-    [accent, footer, nameArabic, logo, letterhead, top, bottom, pages],
+    [accent, footer, nameArabic, logo, logoHeight, letterhead, top, bottom, pages],
   );
 
   // The preview redraws a moment after the last change, from the unsaved settings.
@@ -262,6 +268,31 @@ export function BrandScreen({ view }: { view: BrandView }) {
               />
             ) : null}
           </Field>
+          {logo ? (
+            <Field
+              label="Logo size"
+              htmlFor="brand-logo-height"
+              hint={`How tall it prints on the invoice. Default ${DEFAULT_LOGO_HEIGHT} pt; wide logos stop at half the page.`}
+              error={errors.logoHeight}
+            >
+              <div className="flex items-center gap-4">
+                <input
+                  id="brand-logo-height"
+                  type="range"
+                  min={LOGO_HEIGHT_MIN}
+                  max={LOGO_HEIGHT_MAX}
+                  step={2}
+                  value={logoHeight}
+                  disabled={disabled}
+                  onChange={(event) => setLogoHeight(Number(event.target.value))}
+                  className="min-w-0 flex-1 accent-primary"
+                />
+                <span className="w-14 shrink-0 text-end text-muted-foreground text-sm tabular-nums">
+                  {logoHeight} pt
+                </span>
+              </div>
+            </Field>
+          ) : null}
           <Field
             label="Company name in Arabic"
             htmlFor="brand-name-ar"

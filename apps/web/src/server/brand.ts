@@ -10,7 +10,13 @@ export type BrandFile = { bytes: Uint8Array; contentType: string };
 /** What a document renderer needs from the company's brand. */
 export type DocumentBrand = Pick<
   BrandSettings,
-  "accentColor" | "footer" | "nameArabic" | "letterheadTop" | "letterheadBottom" | "letterheadPages"
+  | "accentColor"
+  | "footer"
+  | "nameArabic"
+  | "logoHeight"
+  | "letterheadTop"
+  | "letterheadBottom"
+  | "letterheadPages"
 > & {
   logo: BrandFile | null;
   letterhead: BrandFile | null;
@@ -33,6 +39,7 @@ export async function documentBrandFrom(record: BrandRecord): Promise<DocumentBr
     accentColor: record.accentColor,
     footer: record.footer,
     nameArabic: record.nameArabic,
+    logoHeight: record.logoHeight,
     letterheadTop: record.letterheadTop,
     letterheadBottom: record.letterheadBottom,
     letterheadPages: record.letterheadPages,

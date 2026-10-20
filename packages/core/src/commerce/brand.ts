@@ -13,6 +13,11 @@ export const LETTERHEAD_PAGES = ["first", "all"] as const;
 export type LetterheadPages = (typeof LETTERHEAD_PAGES)[number];
 
 /** The ink used when a company hasn't picked a colour: a deep slate that prints well. */
+/** How tall the logo prints, in points (72 = 1 inch). */
+export const LOGO_HEIGHT_MIN = 24;
+export const LOGO_HEIGHT_MAX = 120;
+export const DEFAULT_LOGO_HEIGHT = 48;
+
 export const DEFAULT_ACCENT = "#1F2937";
 
 export const BRAND_FOOTER_MAX = 600;
@@ -31,6 +36,8 @@ export type BrandSettings = {
   nameArabic: string | null;
   /** Shown top-left, unless a letterhead is set (the letterhead carries its own logo). */
   logoAttachmentId: string | null;
+  /** The logo's printed height in points; its width follows, up to half the page. */
+  logoHeight: number;
   letterheadAttachmentId: string | null;
   /** The space the letterhead's header and footer take, kept free of content. */
   letterheadTop: number;
@@ -43,6 +50,7 @@ export const EMPTY_BRAND: BrandSettings = {
   footer: null,
   nameArabic: null,
   logoAttachmentId: null,
+  logoHeight: DEFAULT_LOGO_HEIGHT,
   letterheadAttachmentId: null,
   letterheadTop: DEFAULT_LETTERHEAD_MARGINS.top,
   letterheadBottom: DEFAULT_LETTERHEAD_MARGINS.bottom,
