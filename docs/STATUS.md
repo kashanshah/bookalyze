@@ -2392,6 +2392,16 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   revalidate the layout each; the upload refreshes the page once at the end, so a large report
   doesn't set off a stream of page requests. Its summary toast stays 15 seconds.
 
+### Purchase orders: split payments, and the list by date
+
+- **A split transaction can pay an order** when the part for this company is already on Supplier
+  deposits (e.g. one freight bill shared with another company: this company's part on deposits,
+  the other's on Owner drawings). That part is what the order counts (`orderPayments` reads the
+  entry's lines on deposits); the transaction stays as it is (`moveToAccount` leaves it), and
+  taking the payment off leaves it there too, to recategorise by hand. A split with no part on
+  deposits is still refused. Test: db `purchase-books.test.ts`.
+- **Purchase orders list** by order date, newest first (then the latest number), not by number.
+
 ### Stock taken out by hand
 
 - **What it is:** Stock lots → a lot with units left → **Take out of stock** (box-minus button):

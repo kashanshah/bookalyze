@@ -124,7 +124,7 @@ const PO_COLUMNS = {
   reference: purchaseOrders.reference,
 };
 
-/** Newest first. `search` matches the supplier, the supplier's reference, or "PO-12". */
+/** By order date, newest first (then the latest number). `search` matches the supplier, the supplier's reference, or "PO-12". */
 export async function listPurchaseOrders(
   tx: Transaction,
   options: { status?: PurchaseOrderStatus | "open"; search?: string } = {},
@@ -151,7 +151,7 @@ export async function listPurchaseOrders(
     .from(purchaseOrders)
     .innerJoin(contacts, eq(contacts.id, purchaseOrders.supplierId))
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(purchaseOrders.number))
+    .orderBy(desc(purchaseOrders.orderDate), desc(purchaseOrders.number))
     .limit(200);
   if (!rows.length) return [];
   const lines = await tx
