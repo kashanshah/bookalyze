@@ -2883,12 +2883,14 @@ test("home: what needs your attention, each line opening where it's done", async
   await page.goBack();
   await list.getByRole("link", { name: /transactions? to review/ }).click();
   await expect(page).toHaveURL(/accounting\/transactions\?status=unreviewed/);
-  // 25 a page: page numbers, then the next page with the filter kept.
+  // Every transaction, 25 a page: page numbers, then the next page with the size kept.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await expect(page).toHaveURL(/accounting\/transactions$/);
   await choose(page.getByLabel("Transactions per page"), "25");
   const pages = page.getByRole("navigation", { name: "Pages" });
   await expect(pages.getByRole("link", { name: "Page 1" })).toHaveAttribute("aria-current", "page");
   await pages.getByRole("link", { name: "Next page" }).click();
-  await expect(page).toHaveURL(/status=unreviewed&per=25&page=2/);
+  await expect(page).toHaveURL(/\?per=25&page=2$/);
   await expect(pages.getByRole("link", { name: "Page 2" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByText(/^26–\d+ of \d+ transactions$/)).toBeVisible();
   await pages.getByRole("link", { name: "Previous page" }).click();
