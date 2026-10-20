@@ -665,6 +665,9 @@ export const orderInvoices = pgTable(
     fileName: text("file_name").notNull(),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    /** When it was last sent to the buyer through Amazon's invoice message. */
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    sentBy: uuid("sent_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -685,6 +688,72 @@ export const orderInvoices = pgTable(
     check("order_invoices_number_positive", sql`${t.invoiceNumber} > 0`),
     check("order_invoices_title_valid", sql`${t.title} in ('Invoice', 'Tax invoice')`),
     tenantIsolationPolicy("order_invoices", t.organizationId),
+  ],
+);
+
+/**
+ * The company's private address for forwarded marketplace emails (invoice requests):
+ * `invoices-<token>@<INBOUND_EMAIL_DOMAIN>`. The token is the only key the inbound webhook
+ * has, so it's long and random. The latest email that wasn't an invoice request is kept by its
+ * subject, so a mailbox's forwarding confirmation code can be read in the app.
+ */
+export const invoiceInboxes = pgTable(
+  "invoice_inboxes",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    token: text("token").notNull(),
+    lastOtherSubject: text("last_other_subject"),
+    lastOtherFrom: text("last_other_from"),
+    lastOtherAt: timestamp("last_other_at", { withTimezone: true }),
+    lastRequestAt: timestamp("last_request_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("invoice_inboxes_token_key").on(t.token),
+    check("invoice_inboxes_token_valid", sql`${t.token} ~ '^[a-z0-9]{20,64}$'`),
+    tenantIsolationPolicy("invoice_inboxes", t.organizationId),
+  ],
+);
+
+export const INVOICE_REQUEST_STATUSES = ["open", "done", "dismissed"] as const;
+
+/**
+ * A buyer asking for an invoice, learned from a forwarded marketplace email (or added by hand).
+ * One row per order: a repeat request opens it again. The order is matched by its number when
+ * it has synced; until then `order_id` is null and the number is shown. Removing the order
+ * (with its channel) removes the request.
+ */
+export const invoiceRequests = pgTable(
+  "invoice_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    externalOrderId: text("external_order_id").notNull(),
+    orderId: uuid("order_id"),
+    /** As the marketplace names them in the email (often a first name only). */
+    buyerName: text("buyer_name"),
+    source: text("source").notNull().default("email"),
+    status: text("status").notNull().default("open"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedBy: uuid("resolved_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("invoice_requests_order_key").on(t.organizationId, t.externalOrderId),
+    index("invoice_requests_status_idx").on(t.organizationId, t.status),
+    foreignKey({
+      name: "invoice_requests_order_fk",
+      columns: [t.organizationId, t.orderId],
+      foreignColumns: [orders.organizationId, orders.id],
+    }).onDelete("cascade"),
+    check("invoice_requests_status_valid", sql`${t.status} in ('open', 'done', 'dismissed')`),
+    check("invoice_requests_source_valid", sql`${t.source} in ('email', 'manual')`),
+    tenantIsolationPolicy("invoice_requests", t.organizationId),
   ],
 );
 

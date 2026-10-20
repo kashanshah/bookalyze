@@ -9,6 +9,7 @@ export * from "./ebay-report";
 export * from "./fba-inventory";
 export * from "./glance";
 export * from "./inventory-ledger";
+export * from "./invoice-requests";
 export * from "./invoices";
 export * from "./listings";
 export * from "./noon";

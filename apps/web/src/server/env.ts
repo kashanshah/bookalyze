@@ -9,6 +9,10 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
+  /** Signing secret of the Resend webhook for received emails ("whsec_…"). */
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
+  /** Domain that receives forwarded emails (invoice requests), e.g. in.bookalyze.com. */
+  INBOUND_EMAIL_DOMAIN: z.string().optional(),
   EMAIL_FROM: z.string().default("Bookalyze <no-reply@bookalyze.com>"),
   /** Write emails to .dev-mail.log instead of sending them (local/CI testing without Resend). */
   EMAIL_DEV_LOG: z

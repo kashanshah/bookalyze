@@ -798,9 +798,25 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   is typed, not requested. A 403 explains the **Tax Invoicing** role (Seller Central → Develop
   Apps, then a new refresh token in Commerce → Channels). The form still saves without Amazon.
   The order row stays free of buyer fields.
-- **Not sent through Amazon yet.** The page says to upload the file in Seller Central on the
-  buyer's invoice request. Messaging API `sendInvoice` waits until Buyer Communication is
-  granted and `getMessagingActionsForOrder` allows it. The PDF uses standard fonts, so a name
+- **Send to Amazon** (owners and admins, Amazon orders): checks `getMessagingActionsForOrder`
+  lists the invoice message (core `messagingAllowsInvoice`), uploads the saved PDF through the
+  Uploads API (`uploadDestinations/messaging/v1/orders/{id}/messages/invoice`, Content-MD5),
+  then `POST /messaging/v1/orders/{id}/messages/invoice` with it attached (server `amazon.ts`
+  `canSendInvoice` / `sendInvoice`, Buyer Communication role). `order_invoices.sent_at` /
+  `sent_by` record it, the order's invoice request closes, and it's audited
+  (`order_invoice.sent`). Downloading for Seller Central stays available.
+- **Invoice requests** (`invoice_requests`, migration `0076_invoice_requests`): Amazon has no API
+  for buyer messages, so each company gets a forwarding address
+  `invoices-<token>@INBOUND_EMAIL_DOMAIN` (`invoice_inboxes`, 48-hex token). Resend receives the
+  domain and posts `email.received` to `POST /api/inbound/email` (Svix-signed with
+  `RESEND_WEBHOOK_SECRET`). The token is found anywhere in the event, or in the full email from
+  Resend's API, since Gmail forwards keep the original To. The company is found through the
+  security-definer `invoice_inbox_org()`. Core `parseInvoiceRequestEmail` reads "Invoice request
+  from Amazon customer <name> (Order: <id>)". One row per order: the same email again changes
+  nothing, a newer one reopens it. Any other email's subject is kept, so Gmail's forwarding
+  confirmation code shows on Commerce → Invoice requests, with the setup steps. Home's Needs your
+  attention shows "N buyers are waiting for an invoice". The order page shows the request, with
+  Answered / Dismiss for one handled elsewhere. The PDF uses standard fonts, so a name
   outside Latin-1 is left off the file (the dialog still shows what was typed).
 - **Registered or not:** a registration only counts when it's active, with the company's own
   country's authority, and has a number (or a TRN / GST number is saved under registration

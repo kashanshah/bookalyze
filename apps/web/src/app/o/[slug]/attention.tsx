@@ -25,6 +25,7 @@ import {
   noonLedgerCheck,
   noonMonths,
   noonPayoutsWithOneDeposit,
+  openInvoiceRequests,
   reorderProducts,
   salesByCurrencySince,
   schema,
@@ -42,6 +43,7 @@ import {
   BookCheck,
   CircleCheck,
   Copy,
+  FileText,
   Inbox,
   Landmark,
   Link2,
@@ -317,6 +319,24 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
           tone: "warning",
         });
       }
+    }
+  }
+
+  // Buyers who asked for an invoice (from forwarded marketplace emails).
+  if (on("commerce")) {
+    const requests = await openInvoiceRequests(tx);
+    if (requests.count) {
+      items.push({
+        key: "invoice-requests",
+        icon: FileText,
+        title: `${requests.count} ${plural(requests.count, "buyer is", "buyers are")} waiting for an invoice`,
+        hint: "Create the invoice on the order and send it through Amazon from there.",
+        href:
+          requests.count === 1 && requests.orderId
+            ? `${base}/commerce/orders/${requests.orderId}`
+            : `${base}/commerce/invoice-requests`,
+        tone: "warning",
+      });
     }
   }
 

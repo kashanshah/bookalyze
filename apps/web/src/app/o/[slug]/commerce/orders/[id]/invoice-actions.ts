@@ -1,12 +1,14 @@
 "use server";
 
 import type { InvoiceBuyer } from "@bookalyze/core";
+import { setInvoiceRequestStatus } from "@bookalyze/db";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { InvoiceDraft } from "@/lib/invoice-draft";
 import { inOrg } from "@/server/accounting";
 import { audit } from "@/server/audit";
 import { getCommerceContext } from "@/server/commerce";
+import { sendOrderInvoiceToAmazon } from "@/server/invoice-requests";
 import { issueOrderInvoice, loadOrderInvoiceDraft } from "@/server/order-invoices";
 import { isOrgAdmin } from "@/server/org";
 
@@ -83,4 +85,51 @@ export async function saveOrderInvoiceAction(
   );
   revalidatePath(`/o/${slug}/commerce/orders`, "layout");
   return { ok: true, id: result.id, number: result.number };
+}
+
+/** Sends the saved invoice to the buyer through Amazon's invoice message. */
+export async function sendInvoiceToAmazonAction(
+  slug: string,
+  orderId: string,
+): Promise<{ ok: true; number: string; sentAt: string } | { ok: false; message: string }> {
+  const { ctx, denied } = await admin(slug);
+  if (denied) return { ok: false, message: "Only owners and admins can send invoices." };
+  if (!z.uuid().safeParse(orderId).success) {
+    return { ok: false, message: "This order is no longer here." };
+  }
+  const result = await sendOrderInvoiceToAmazon(ctx, orderId);
+  if (!result.ok) return result;
+  await inOrg(ctx, (tx) =>
+    audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "order_invoice.sent",
+      entityType: "order",
+      entityId: orderId,
+      after: { number: result.number, via: "amazon_messaging" },
+    }),
+  );
+  revalidatePath(`/o/${slug}/commerce`, "layout");
+  revalidatePath(`/o/${slug}`);
+  return result;
+}
+
+/** Marks a buyer's invoice request handled (or open again), e.g. when it was answered elsewhere. */
+export async function setInvoiceRequestStatusAction(
+  slug: string,
+  requestId: string,
+  status: "open" | "done" | "dismissed",
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { ctx, denied } = await admin(slug);
+  if (denied) return { ok: false, message: "Only owners and admins can change this." };
+  if (!z.uuid().safeParse(requestId).success || !["open", "done", "dismissed"].includes(status)) {
+    return { ok: false, message: "This request is no longer here." };
+  }
+  const changed = await inOrg(ctx, (tx) =>
+    setInvoiceRequestStatus(tx, { ids: [requestId], status, userId: ctx.session.user.id }),
+  );
+  if (!changed) return { ok: false, message: "This request is no longer here." };
+  revalidatePath(`/o/${slug}/commerce`, "layout");
+  revalidatePath(`/o/${slug}`);
+  return { ok: true };
 }
