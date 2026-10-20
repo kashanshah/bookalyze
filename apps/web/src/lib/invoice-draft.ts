@@ -17,6 +17,7 @@ export type InvoiceDraft = {
   lines: { title: string; sku: string | null; quantity: number; amount: string }[];
   shipping: string | null;
   discounts: string | null;
+  shippingDiscount: string | null;
   tax: { label: string; amount: string } | null;
   total: string;
   refunded: string | null;

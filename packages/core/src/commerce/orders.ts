@@ -75,6 +75,8 @@ export type AmazonOrderItem = {
   shippingTax: string | null;
   /** Shown as positive amounts taken off. */
   promotionDiscount: string | null;
+  /** Free or reduced shipping, as a positive amount ("0.0000" when none). Only the Orders API reports it. */
+  shippingDiscount?: string | null;
 };
 
 const record = (v: unknown): Record<string, unknown> =>
@@ -149,6 +151,7 @@ export function parseOrderItemsPage(json: unknown): {
     const itemId = text(i.OrderItemId);
     if (!itemId) return [];
     const discount = money(i.PromotionDiscount);
+    const shippingDiscount = money(i.ShippingDiscount);
     return [
       {
         itemId,
@@ -162,6 +165,8 @@ export function parseOrderItemsPage(json: unknown): {
         shippingPrice: money(i.ShippingPrice),
         shippingTax: money(i.ShippingTax),
         promotionDiscount: discount && parseDecimal(discount) !== 0n ? discount : null,
+        // "0" (not null) when there's none, so a stored null means "synced before this was kept".
+        shippingDiscount: shippingDiscount ?? "0.0000",
       },
     ];
   });

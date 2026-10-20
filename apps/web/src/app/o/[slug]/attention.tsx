@@ -1,19 +1,32 @@
 import "server-only";
-import { can, planReorder } from "@bookalyze/core";
+import {
+  can,
+  formatDecimal,
+  invoiceRegistration,
+  multiplyDecimals,
+  parseDecimal,
+  planReorder,
+  VAT_THRESHOLDS,
+  vatThresholdStatus,
+} from "@bookalyze/core";
 import {
   cogsMonthsToPost,
   countNeedsAccount,
   countOpenDuplicates,
   ebayPayoutsWithOneDeposit,
   ebayPostingMonths,
+  fxRateOn,
   getReorderSettings,
   getSettlementSettings,
+  listIdentifiers,
+  listTaxRegistrations,
   listTransactions,
   liveChannels,
   noonLedgerCheck,
   noonMonths,
   noonPayoutsWithOneDeposit,
   reorderProducts,
+  salesByCurrencySince,
   schema,
   settlementsToPost,
   settlementsWithOneDeposit,
@@ -34,6 +47,7 @@ import {
   Link2,
   ListChecks,
   Package,
+  Scale,
   Settings2,
   ShoppingCart,
   Tag,
@@ -306,7 +320,84 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
     }
   }
 
+  const vat = await vatThresholdItem(tx, ctx, today);
+  if (vat) items.push(vat);
+
   return items;
+}
+
+const money = (amount: string, currency: string) =>
+  `${currency} ${Number(amount).toLocaleString("en", { maximumFractionDigits: 0 })}`;
+
+/**
+ * An unregistered company nearing (or past) its country's sales-tax registration threshold,
+ * from the last 12 months of marketplace sales.
+ */
+async function vatThresholdItem(
+  tx: Transaction,
+  ctx: OrgContext,
+  today: string,
+): Promise<Item | null> {
+  const country = ctx.profile?.countryCode;
+  const threshold = country ? VAT_THRESHOLDS[country] : undefined;
+  if (!country || !threshold || !ctx.activeModules.includes("commerce" as never)) return null;
+
+  const identifiers = await listIdentifiers(tx);
+  const { registered } = invoiceRegistration({
+    country,
+    registrations: await listTaxRegistrations(tx),
+    identifierNumber:
+      identifiers.find((row) => row.kind === "ae_trn" || row.kind === "ca_gst")?.value ?? null,
+  });
+  if (registered) return null;
+
+  const since = new Date(`${today}T00:00:00Z`);
+  since.setUTCFullYear(since.getUTCFullYear() - 1);
+  let total = 0n;
+  for (const row of await salesByCurrencySince(tx, since)) {
+    const quote = await fxRateOn(tx, {
+      base: row.currency,
+      quote: threshold.currency,
+      date: today,
+    });
+    // A currency with no stored rate is left out rather than guessed.
+    if (quote) total += parseDecimal(multiplyDecimals(row.sales, quote.rate, 4));
+  }
+  const status = vatThresholdStatus({ country, registered, sales: formatDecimal(total) });
+  if (!status) return null;
+
+  const { taxName, authority, mandatory, voluntary } = status.threshold;
+  const sales = money(status.sales, threshold.currency);
+  const limit = money(mandatory, threshold.currency);
+  const href = `/o/${ctx.org.slug}/accounting/sales-tax`;
+  if (status.level === "over") {
+    return {
+      key: "vat-threshold",
+      icon: Scale,
+      title: `Sales passed the ${taxName} threshold: register with ${authority}`,
+      hint: `${sales} in the last 12 months, over the ${limit} limit. ${status.threshold.rule} Until then, invoices aren't tax invoices.`,
+      href,
+      tone: "destructive",
+    };
+  }
+  if (status.level === "approaching") {
+    return {
+      key: "vat-threshold",
+      icon: Scale,
+      title: `Sales are at ${status.percent}% of the ${taxName} threshold`,
+      hint: `${sales} in the last 12 months, of ${limit}. ${status.threshold.rule} Getting your TRN ready now avoids late-registration penalties.`,
+      href,
+      tone: "warning",
+    };
+  }
+  return {
+    key: "vat-threshold",
+    icon: Scale,
+    title: `You can now register for ${taxName} voluntarily`,
+    hint: `${sales} in the last 12 months passed the ${money(voluntary ?? mandatory, threshold.currency)} voluntary line (${limit} makes it required). Registering lets you reclaim ${taxName} on costs.`,
+    href,
+    tone: "primary",
+  };
 }
 
 export async function Attention({ ctx }: { ctx: OrgContext }) {

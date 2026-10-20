@@ -103,6 +103,7 @@ describe("parseOrderItemsPage", () => {
         itemTax: "5.2000",
         shippingPrice: null,
         shippingTax: null,
+        shippingDiscount: "0.0000",
         promotionDiscount: null,
       },
     ]);

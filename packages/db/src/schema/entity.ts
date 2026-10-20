@@ -44,6 +44,51 @@ export const entityDetails = pgTable(
   (t) => [tenantIsolationPolicy("entity_details", t.organizationId)],
 );
 
+/**
+ * One row per company: how its documents look (Company → Brand). Logo and letterhead are
+ * attachments, linked as "brand_asset" so they stay out of the receipts inbox.
+ */
+export const organizationBranding = pgTable(
+  "organization_branding",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** "#RRGGBB". Null: the default ink. */
+    accentColor: text("accent_color"),
+    footer: text("footer"),
+    nameArabic: text("name_arabic"),
+    logoAttachmentId: uuid("logo_attachment_id"),
+    letterheadAttachmentId: uuid("letterhead_attachment_id"),
+    /** Points kept free at the top and bottom of a letterhead page. */
+    letterheadTop: smallint("letterhead_top").notNull().default(120),
+    letterheadBottom: smallint("letterhead_bottom").notNull().default(72),
+    /** "first": the letterhead on page 1 only; "all": on every page. */
+    letterheadPages: text("letterhead_pages").notNull().default("first"),
+    updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      "organization_branding_valid",
+      sql`(${t.accentColor} is null or ${t.accentColor} ~ '^#[0-9A-F]{6}$')
+        and ${t.letterheadTop} between 0 and 300 and ${t.letterheadBottom} between 0 and 300
+        and ${t.letterheadPages} in ('first', 'all')`,
+    ),
+    foreignKey({
+      name: "organization_branding_logo_fk",
+      columns: [t.organizationId, t.logoAttachmentId],
+      foreignColumns: [attachments.organizationId, attachments.id],
+    }),
+    foreignKey({
+      name: "organization_branding_letterhead_fk",
+      columns: [t.organizationId, t.letterheadAttachmentId],
+      foreignColumns: [attachments.organizationId, attachments.id],
+    }),
+    tenantIsolationPolicy("organization_branding", t.organizationId),
+  ],
+);
+
 /** Registration numbers (BN, corporation number, trade license…), some with an expiry date. */
 export const entityIdentifiers = pgTable(
   "entity_identifiers",

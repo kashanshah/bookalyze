@@ -15,7 +15,7 @@ import { organization, user } from "./auth";
 import { tenantIsolationPolicy } from "./tenancy";
 
 export const ATTACHMENT_STATUSES = ["pending", "ready"] as const;
-export const ATTACHMENT_ENTITY_TYPES = ["journal_entry", "entity_document"] as const;
+export const ATTACHMENT_ENTITY_TYPES = ["journal_entry", "entity_document", "brand_asset"] as const;
 export type AttachmentEntityType = (typeof ATTACHMENT_ENTITY_TYPES)[number];
 
 /**
@@ -74,7 +74,7 @@ export const attachmentLinks = pgTable(
     index("attachment_links_entity_idx").on(t.organizationId, t.entityType, t.entityId),
     check(
       "attachment_links_entity_type_valid",
-      sql`${t.entityType} in ('journal_entry', 'entity_document')`,
+      sql`${t.entityType} in ('journal_entry', 'entity_document', 'brand_asset')`,
     ),
     tenantIsolationPolicy("attachment_links", t.organizationId),
   ],

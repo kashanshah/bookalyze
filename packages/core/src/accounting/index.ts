@@ -10,4 +10,5 @@ export * from "./reports";
 export * from "./tax";
 export * from "./transactions";
 export * from "./transfer-match";
+export * from "./vat-threshold";
 export * from "./wave-export";

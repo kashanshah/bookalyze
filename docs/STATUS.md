@@ -798,6 +798,18 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   buyer's invoice request. Messaging API `sendInvoice` waits until Buyer Communication is
   granted and `getMessagingActionsForOrder` allows it. The PDF uses standard fonts, so a name
   outside Latin-1 is left off the file (the dialog still shows what was typed).
+- **Registered or not:** a registration only counts when it's active, with the company's own
+  country's authority, and has a number (or a TRN / GST number is saved under registration
+  numbers): `invoiceRegistration`. Otherwise the PDF is an "Invoice" (فاتورة), with "Not
+  registered for VAT" and no TRN; Amazon's reported tax is shown as Amazon's.
+- **Shipping discounts** are kept per item (`order_items.shipping_discount`, migration
+  `0067_brand`). Items synced before that are null; when lines + shipping − discounts minus the
+  total is exactly the shipping, the shipping is shown as discounted.
+- **Brand** (Company → Brand, `organization_branding`): logo, accent colour, Arabic name, footer,
+  and a letterhead (PDF or full-page image) with top/bottom space and first-page or every-page,
+  with a live preview of a sample invoice (`POST /api/o/[slug]/brand/preview`). Brand files are
+  attachments linked as `brand_asset`, so they stay out of the receipts inbox; replaced files are
+  deleted. Issued invoices keep the brand they were drawn with.
 - The invoice can't be created until the order has items and a total, or until Company has a
   registered address. File storage has to be set up (S3, or the local driver in development).
 
@@ -1118,6 +1130,12 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     (`cogsMonthsToPost` in `packages/db/src/cogs.ts`: over, with sales, from the start month,
     not posted) → Cost of goods sold, and the days Noon's two stock reports disagree
     (`noonLedgerCheck`) → Stock movements' "Noon's numbers checked".
+  - **Sales-tax threshold** (Commerce on, company not registered in its own country): the last
+    12 months of order totals after refunds (cancelled left out, db `salesByCurrencySince`),
+    converted to the country's currency, against `VAT_THRESHOLDS` in
+    `packages/core/src/accounting/vat-threshold.ts`: UAE and KSA 375,000 required / 187,500
+    voluntary, Canada CAD 30,000. "Voluntary" (primary), from 80% "approaching" (warning), and
+    "over" (destructive) → Sales tax. A currency with no stored rate is left out.
   - Nothing waiting: "You're all caught up."
 - e2e "home: what needs your attention, each line opening where it's done"; db `cogs.test.ts`
   (`cogsMonthsToPost`).

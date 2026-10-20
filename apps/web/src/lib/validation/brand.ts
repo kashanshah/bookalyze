@@ -1,0 +1,41 @@
+import {
+  BRAND_FOOTER_MAX,
+  BRAND_NAME_MAX,
+  type BrandSettings,
+  LETTERHEAD_MARGIN_MAX,
+  LETTERHEAD_PAGES,
+  normalizeHexColor,
+} from "@bookalyze/core";
+import { z } from "zod";
+
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .transform((v) => v || null);
+
+const margin = z.coerce
+  .number()
+  .int("Use whole points.")
+  .min(0, "Use 0 or more.")
+  .max(LETTERHEAD_MARGIN_MAX, `Use ${LETTERHEAD_MARGIN_MAX} or less.`);
+
+/** What Company → Brand saves (and the preview draws before saving). */
+export const brandSchema = z.object({
+  accentColor: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || normalizeHexColor(v) !== null, "Use a colour like #1F6FEB.")
+    .transform((v) => (v ? normalizeHexColor(v) : null)),
+  footer: optionalText(BRAND_FOOTER_MAX),
+  nameArabic: optionalText(BRAND_NAME_MAX),
+  logoAttachmentId: z.uuid().nullable(),
+  letterheadAttachmentId: z.uuid().nullable(),
+  letterheadTop: margin,
+  letterheadBottom: margin,
+  letterheadPages: z.enum(LETTERHEAD_PAGES),
+});
+
+export type BrandInput = z.input<typeof brandSchema>;
+export type BrandParsed = z.output<typeof brandSchema> & BrandSettings;

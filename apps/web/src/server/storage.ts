@@ -194,6 +194,16 @@ export async function readLocalFile(key: string): Promise<Buffer> {
   return readFile(localPath(key));
 }
 
+/** A stored file's bytes, read on the server (a logo or letterhead drawn into a PDF). */
+export async function readStoredFile(key: string): Promise<Uint8Array> {
+  if (storageDriver() === "s3") {
+    const object = await s3().send(new GetObjectCommand({ Bucket: env().AWS_S3_BUCKET, Key: key }));
+    if (!object.Body) throw new Error("Stored file is empty");
+    return object.Body.transformToByteArray();
+  }
+  return new Uint8Array(await readLocalFile(key));
+}
+
 /**
  * Deletes a file when losing it isn't worth failing over (a replaced invoice PDF, a discarded
  * receipt): a failure is logged, so orphaned files can be found, and never thrown.

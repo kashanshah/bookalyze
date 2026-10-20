@@ -263,6 +263,14 @@ function InvoiceForm({
               locale={locale}
             />
           ) : null}
+          {draft.shippingDiscount ? (
+            <Total
+              label="Shipping discount"
+              value={`-${draft.shippingDiscount}`}
+              currency={draft.currency}
+              locale={locale}
+            />
+          ) : null}
           {draft.discounts ? (
             <Total
               label="Discounts"
