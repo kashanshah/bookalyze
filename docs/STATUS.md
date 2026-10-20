@@ -2435,6 +2435,22 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   bank over what the payments on it say they were (`paidRate`).
 - **Purchase orders list** by order date, newest first (then the latest number), not by number.
 
+### Your stake (the owner's view) and three financial years
+
+- **Reports → Your stake** (`/accounting/reports/your-stake`, as of a day): what you put in
+  (owner contributions), what you took out (drawings, dividends: everything that went from the
+  company to you), net put in, and what the company is worth (what it owns less what it owes:
+  cash, stock at cost, money on its way, everything else, less what it owes). "You're AED X up or
+  down overall" is worth less net put in, which is every year's profit added up: a table by
+  financial year (put in, took out, net, profit) from the first entry, plus profit from before
+  (retained earnings brought in), and a check that worth = net put in + profit.
+- Each owner equity account counts one way by its balance on the day (credit: put in; debit:
+  taken out), so a contribution entered and then removed nets to nothing. core `yourStake`
+  (`accounting/stake.ts`), db `firstEntryDate`, web `loadYourStake` and `reports/your-stake/`.
+  Tests: core `stake.test.ts`.
+- **Period dropdown** (profit and loss, channel profit): **Last 3 financial years** (the three
+  before this one, e.g. FY2023–FY2025).
+
 ### Stock in one place
 
 - **Inventory → Stock** (`/inventory/stock`, feature `inventory.cogs`): one row per product.

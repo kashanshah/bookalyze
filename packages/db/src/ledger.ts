@@ -195,6 +195,14 @@ export function formatEntryNumber(n: number): string {
   return `JE-${String(n).padStart(4, "0")}`;
 }
 
+/** The day of the company's first journal entry (null: no entries yet). */
+export async function firstEntryDate(tx: Transaction): Promise<string | null> {
+  const [row] = await tx
+    .select({ day: sql<string | null>`min(${journalEntries.date})::text` })
+    .from(journalEntries);
+  return row?.day ?? null;
+}
+
 /**
  * Every account with its balance (sum of base amounts, debits positive) for entries dated
  * within [from, to]. Either bound may be omitted. Accounts without activity have "0.0000".

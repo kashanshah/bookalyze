@@ -7,6 +7,7 @@ export * from "./journal";
 export * from "./merge";
 export * from "./reconcile";
 export * from "./reports";
+export * from "./stake";
 export * from "./tax";
 export * from "./transactions";
 export * from "./transfer-match";

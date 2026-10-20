@@ -38,6 +38,8 @@ function currentAndPreviousQuarter(today: string, cfg: FiscalYearConfig) {
 export function rangePresets(today: string, cfg: FiscalYearConfig): RangePreset[] {
   const fy = fiscalYearFor(today, cfg);
   const last = previousFiscalYear(today, cfg);
+  // The three financial years before this one, oldest first.
+  const third = previousFiscalYear(previousFiscalYear(last.start, cfg).start, cfg);
   const { current, previous } = currentAndPreviousQuarter(today, cfg);
   const month = monthOf(today);
   const lastMonth = monthOf(addDays(month.from, -1));
@@ -47,6 +49,12 @@ export function rangePresets(today: string, cfg: FiscalYearConfig): RangePreset[
       key: "last-year",
       label: `Last financial year (${last.label})`,
       from: last.start,
+      to: last.end,
+    },
+    {
+      key: "last-3-years",
+      label: `Last 3 financial years (${third.label}–${last.label})`,
+      from: third.start,
       to: last.end,
     },
     ...(current

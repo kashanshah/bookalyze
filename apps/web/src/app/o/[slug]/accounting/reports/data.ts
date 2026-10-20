@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  type AccountBalance,
   balanceSheet,
   compareProfitAndLoss,
   comparisonPeriod,
@@ -9,10 +10,12 @@ import {
   profitAndLoss,
   salesTaxSummary,
   trialBalance,
+  yourStake,
 } from "@bookalyze/core";
 import {
   accountBalances,
   accountLedgerLines,
+  firstEntryDate,
   ledgerActivity,
   listTaxRates,
   listTaxRegistrations,
@@ -72,6 +75,38 @@ export async function loadBalanceSheet(ctx: AccountingContext, query: ReportQuer
     ),
   );
   return { date, presets, fy, bs };
+}
+
+/** Your stake on a day: put in, taken out, worth, by financial year from the first entry. */
+export async function loadYourStake(ctx: AccountingContext, query: ReportQuery) {
+  const { today, cfg } = setup(ctx);
+  const { date, presets } = resolveDate(query, today, cfg);
+  const stake = await inOrg(ctx, async (tx) => {
+    const first = await firstEntryDate(tx);
+    const years: { label: string; from: string; to: string; balances: AccountBalance[] }[] = [];
+    if (first && first <= date) {
+      let fy = fiscalYearFor(first, cfg);
+      for (let guard = 0; guard < 100; guard++) {
+        const to = fy.end < date ? fy.end : date;
+        years.push({
+          label: fy.label,
+          from: fy.start,
+          to,
+          balances: await accountBalances(tx, { from: fy.start, to }),
+        });
+        if (fy.end >= date) break;
+        fy = fiscalYearFor(nextDay(fy.end), cfg);
+      }
+    }
+    return yourStake({ asOf: await accountBalances(tx, { to: date }), years });
+  });
+  return { date, presets, stake };
+}
+
+function nextDay(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
 }
 
 export async function loadTrialBalance(ctx: AccountingContext, query: ReportQuery) {
