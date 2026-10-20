@@ -4,6 +4,7 @@ import {
   BookOpen,
   Columns3,
   FileSpreadsheet,
+  HandCoins,
   Landmark,
   ReceiptText,
   Scale,
@@ -28,6 +29,12 @@ const REPORTS = [
     title: "Balance sheet",
     body: "What the company owns, owes and the owners' stake, on a given date.",
     icon: Landmark,
+  },
+  {
+    href: "your-stake",
+    title: "Your stake",
+    body: "What you put in, what you took out, and what the company is worth today: the owner's view.",
+    icon: HandCoins,
   },
   {
     href: "trial-balance",
