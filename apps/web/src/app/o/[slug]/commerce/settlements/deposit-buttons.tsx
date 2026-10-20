@@ -1,6 +1,6 @@
 "use client";
 
-import { Link2, Link2Off, X } from "lucide-react";
+import { Link2, Link2Off, RotateCcw, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ import {
   dismissDepositAction,
   matchDepositAction,
   matchFoundDepositsAction,
+  restoreDismissedDepositsAction,
   unmatchDepositAction,
 } from "./actions";
 
@@ -170,5 +171,38 @@ export function MatchFoundDepositsButton({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** "Suggest them again": brings back the deposits turned down for this settlement. */
+export function RestoreDepositsButton({
+  slug,
+  settlementId,
+  count,
+}: {
+  slug: string;
+  settlementId: string;
+  count: number;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="w-fit"
+      onClick={() =>
+        start(async () => {
+          const result = await restoreDismissedDepositsAction(slug, settlementId);
+          if (!result.ok) return void toast.error(result.message);
+          toast.success(`${plural(count, "deposit")} suggested again`);
+          router.refresh();
+        })
+      }
+      disabled={pending}
+    >
+      {pending ? <Spinner /> : <RotateCcw />}
+      Suggest {count === 1 ? "the deposit you turned down" : `the ${count} you turned down`} again
+    </Button>
   );
 }

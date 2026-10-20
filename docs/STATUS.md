@@ -920,6 +920,21 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   nothing earned sits in the clearing account. Grouping happens when a settlement posts:
   taking one out of the books and posting it again applies it.
 
+### Settlements: post again, and turned-down deposits
+
+- **Post again** (a settlement's page, and on **How settlements post** for every settlement in
+  the books): reverses its entry on its own date and posts it with the accounts and grouping as
+  they are now. A matched deposit stays matched (it moved the payout through the clearing
+  account, which the new entry still uses); in another currency the new entry must value the
+  payout as the old one did, or it asks to unmatch first. Db `repostSettlement`,
+  `postedSettlements`; `repostSettlementsAction` (one, or 25 per call with a cursor). Before,
+  changing an account meant unmatching, taking out, posting and matching each one again, and
+  unmatching turns the deposit down for that settlement.
+- **Turned-down deposits** ("Not this one", or unmatched) can be suggested again from the
+  settlement's page (`restoreDismissedDeposits`).
+- Tests: db `settlements.test.ts` (post a matched settlement again with new accounts; suggest
+  turned-down deposits again).
+
 ### Phase 4, slice 2: settlements post to the books
 
 - **How settlements post** (`/commerce/settlements/accounts`, admins): an account for each group

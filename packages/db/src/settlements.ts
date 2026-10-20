@@ -509,6 +509,75 @@ export async function unpostSettlement(
 }
 
 /** Settlements not in the books whose period ends on or after `from`, oldest first. */
+/**
+ * Posts a settlement in the books again, with the accounts and grouping as they are now: its
+ * entry is reversed (on its own date) and a new one posted, and a matched bank deposit stays
+ * matched (it moved the payout through the clearing account, which the new entry still uses).
+ * For a payout in another currency whose deposit is matched, the new entry must value the
+ * payout as the old one did (the deposit's exchange difference was worked out from it).
+ */
+export async function repostSettlement(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    userId: string | null;
+    settlementId: string;
+    baseCurrency: string;
+    date: string;
+    memo: string;
+  },
+) {
+  const [s] = await tx
+    .select()
+    .from(settlements)
+    .where(eq(settlements.id, input.settlementId))
+    .for("update");
+  if (!s?.journalEntryId) throw new LedgerError("This settlement isn't in the books.");
+  const [entry] = await tx
+    .select({ date: journalEntries.date, reversed: journalEntries.reversedByEntryId })
+    .from(journalEntries)
+    .where(eq(journalEntries.id, s.journalEntryId));
+  if (!entry || entry.reversed) throw new LedgerError("This settlement isn't in the books.");
+  const matched = await isDepositMatched(tx, s.id);
+  await reverseJournalEntry(tx, {
+    orgId: input.orgId,
+    userId: input.userId,
+    entryId: s.journalEntryId,
+    date: entry.date,
+  });
+  const posted = await postSettlement(tx, input);
+  if (matched && s.currency !== input.baseCurrency) {
+    const [after] = await tx
+      .select({ payoutBase: settlements.payoutBaseAmount })
+      .from(settlements)
+      .where(eq(settlements.id, s.id));
+    if (String(after?.payoutBase ?? "") !== String(s.payoutBaseAmount ?? "")) {
+      throw new LedgerError(
+        "Its payout converts at a different rate now. Unmatch its deposit, post it again, then match it.",
+      );
+    }
+  }
+  return posted;
+}
+
+/** The settlements in the books, oldest first, a page at a time (for posting them again). */
+export async function postedSettlements(
+  tx: Transaction,
+  input: { after: string | null; limit: number },
+) {
+  return tx
+    .select({ id: settlements.id, endAt: settlements.endAt })
+    .from(settlements)
+    .where(
+      and(
+        isNotNull(settlements.journalEntryId),
+        input.after ? sql`${settlements.id} > ${input.after}` : sql`true`,
+      ),
+    )
+    .orderBy(settlements.id)
+    .limit(input.limit);
+}
+
 export async function settlementsToPost(tx: Transaction, input: { from: string; limit: number }) {
   return tx
     .select({ id: settlements.id })
@@ -953,6 +1022,22 @@ export async function unmatchSettlementDeposit(
 }
 
 /** "Not this one": the deposit isn't suggested for this settlement again. */
+/** How many deposits were turned down ("Not this one", or unmatched) for a settlement. */
+export async function dismissedDepositCount(tx: Transaction, settlementId: string) {
+  const [row] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(settlementDepositDismissals)
+    .where(eq(settlementDepositDismissals.settlementId, settlementId));
+  return row?.n ?? 0;
+}
+
+/** Suggests the deposits turned down for a settlement again. */
+export async function restoreDismissedDeposits(tx: Transaction, settlementId: string) {
+  await tx
+    .delete(settlementDepositDismissals)
+    .where(eq(settlementDepositDismissals.settlementId, settlementId));
+}
+
 export async function dismissSettlementDeposit(
   tx: Transaction,
   input: { orgId: string; userId: string | null; settlementId: string; entryId: string },

@@ -11,6 +11,7 @@ import {
   settlementLineLabel,
 } from "@bookalyze/core";
 import {
+  dismissedDepositCount,
   getSettlement,
   getSettlementAccounts,
   getSettlementSettings,
@@ -30,8 +31,12 @@ import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { suggestRate } from "@/server/fx";
 import { isOrgAdmin } from "@/server/org";
-import { DepositChoice, UnmatchDepositButton } from "../deposit-buttons";
-import { PostSettlementButton, UnpostSettlementButton } from "../posting-buttons";
+import { DepositChoice, RestoreDepositsButton, UnmatchDepositButton } from "../deposit-buttons";
+import {
+  PostSettlementButton,
+  RepostSettlementButton,
+  UnpostSettlementButton,
+} from "../posting-buttons";
 
 export const metadata: Metadata = { title: "Settlement" };
 
@@ -55,6 +60,7 @@ export default async function SettlementPage({
     return {
       settlement,
       candidates: lookForDeposit ? await settlementDepositCandidates(tx, id) : [],
+      dismissed: lookForDeposit ? await dismissedDepositCount(tx, id) : 0,
       accounts: await getSettlementAccounts(tx),
       settings: await getSettlementSettings(tx),
       names: new Map(
@@ -66,7 +72,7 @@ export default async function SettlementPage({
     };
   });
   if (!found) notFound();
-  const { settlement: s, candidates, accounts, settings, names } = found;
+  const { settlement: s, candidates, dismissed, accounts, settings, names } = found;
   const canPost = isOrgAdmin(ctx);
   const posted = Boolean(s.entryId);
   const before = settings.postFrom ? s.endAt.toISOString().slice(0, 10) < settings.postFrom : false;
@@ -225,7 +231,12 @@ export default async function SettlementPage({
                     <Amount value={s.payoutBaseAmount} currency={baseCurrency} locale={locale} />.
                   </p>
                 ) : null}
-                {canPost ? <UnpostSettlementButton slug={slug} id={s.id} /> : null}
+                {canPost ? (
+                  <div className="flex flex-wrap gap-2">
+                    <RepostSettlementButton slug={slug} id={s.id} />
+                    <UnpostSettlementButton slug={slug} id={s.id} />
+                  </div>
+                ) : null}
               </div>
             ) : !settings.postFrom ? (
               <div className="mt-2 grid gap-3 text-sm">
@@ -428,6 +439,11 @@ export default async function SettlementPage({
                   currency. It shows here once your bank brings it in.
                 </p>
               )}
+              {!candidates.length && dismissed && canPost ? (
+                <div className="mt-3">
+                  <RestoreDepositsButton slug={slug} settlementId={s.id} count={dismissed} />
+                </div>
+              ) : null}
             </div>
           ) : null}
         </aside>

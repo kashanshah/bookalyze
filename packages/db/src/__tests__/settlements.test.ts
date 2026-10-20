@@ -8,13 +8,17 @@ import { upsertFxRates } from "../fx";
 import { createDefaultChart, postJournalEntry } from "../ledger";
 import * as schema from "../schema";
 import {
+  dismissedDepositCount,
   dismissSettlementDeposit,
   getSettlement,
   getSettlementAccounts,
   knownSettlementReports,
   listSettlements,
   matchSettlementDeposit,
+  postedSettlements,
   postSettlement,
+  repostSettlement,
+  restoreDismissedDeposits,
   saveSettlement,
   saveSettlementSetup,
   settlementChannel,
@@ -444,6 +448,119 @@ describe("settlements", () => {
       dismissSettlementDeposit(tx, { orgId, userId: null, settlementId: id, entryId: another.id }),
     );
     expect(await scoped((tx) => settlementDepositCandidates(tx, id))).toEqual([]);
+    // "Suggest them again" brings both back.
+    expect(await scoped((tx) => dismissedDepositCount(tx, id))).toBe(2);
+    await scoped((tx) => restoreDismissedDeposits(tx, id));
+    expect(
+      (await scoped((tx) => settlementDepositCandidates(tx, id))).map((c) => c.entryId).sort(),
+    ).toEqual([back.id, another.id].sort());
+    await scoped((tx) =>
+      dismissSettlementDeposit(tx, { orgId, userId: null, settlementId: id, entryId: back.id }),
+    );
+    await scoped((tx) =>
+      dismissSettlementDeposit(tx, { orgId, userId: null, settlementId: id, entryId: another.id }),
+    );
+  });
+
+  it("posts a matched settlement again with new accounts, its deposit still matched", async () => {
+    const accounts = await scoped((tx) => tx.select().from(schema.accounts));
+    const sales = accounts.find((a) => a.code === "4000")?.id ?? "";
+    const bank = accounts.find((a) => a.code === "1010")?.id ?? "";
+    const clearing = accounts.find((a) => a.code === "1150")?.id ?? "";
+    const fees = accounts.find((a) => a.type === "expense" && a.systemKey === null)?.id ?? "";
+    const otherSales = accounts.find((a) => a.type === "income" && a.code !== "4000")?.id ?? "";
+    const setup = (salesId: string) =>
+      scoped((tx) =>
+        saveSettlementSetup(tx, {
+          orgId,
+          userId: null,
+          accounts: { sales: salesId, fees, clearing },
+          postFrom: "2026-09-01",
+        }),
+      );
+    await setup(sales);
+    const id =
+      (await scoped((tx) => listSettlements(tx, { limit: 10, offset: 0 }))).rows.find(
+        (r) => r.externalId === "11223344556",
+      )?.id ?? "";
+    const deposit = await scoped((tx) =>
+      postJournalEntry(tx, {
+        orgId,
+        date: "2026-09-17",
+        memo: "AMAZON.CA DEPOSIT",
+        entry: {
+          currency: "CAD",
+          fxRate: "1",
+          total: "47.0500",
+          lines: [
+            {
+              index: 0,
+              accountId: bank,
+              description: null,
+              currency: "CAD",
+              amount: "47.0500",
+              baseAmount: "47.0500",
+            },
+            {
+              index: 1,
+              accountId: sales,
+              description: null,
+              currency: "CAD",
+              amount: "-47.0500",
+              baseAmount: "-47.0500",
+            },
+          ],
+        },
+      }),
+    );
+    const matched = await scoped((tx) =>
+      matchSettlementDeposit(tx, {
+        orgId,
+        userId: null,
+        settlementId: id,
+        entryId: deposit.id,
+        baseCurrency: "CAD",
+      }),
+    );
+    const before = await scoped((tx) => getSettlement(tx, id));
+    expect(
+      (await scoped((tx) => postedSettlements(tx, { after: null, limit: 10 }))).map((r) => r.id),
+    ).toContain(id);
+
+    await setup(otherSales);
+    const again = await scoped((tx) =>
+      repostSettlement(tx, {
+        orgId,
+        userId: null,
+        settlementId: id,
+        baseCurrency: "CAD",
+        date: "2026-09-15",
+        memo: "Amazon.ca settlement 11223344556",
+      }),
+    );
+    const after = await scoped((tx) => getSettlement(tx, id));
+    expect(after?.entryId).toBe(again.id);
+    expect(after?.entryId).not.toBe(before?.entryId);
+    // The old entry is reversed; the deposit is still the matched one.
+    const [old] = await scoped((tx) =>
+      tx
+        .select()
+        .from(schema.journalEntries)
+        .where(sql`${schema.journalEntries.id} = ${before?.entryId}`),
+    );
+    expect(old?.reversedByEntryId).not.toBeNull();
+    expect(after?.deposit?.entryId).toBe(matched.id);
+    const lines = await scoped((tx) =>
+      tx
+        .select()
+        .from(schema.journalLines)
+        .where(sql`${schema.journalLines.journalEntryId} = ${again.id}`),
+    );
+    const by = Object.fromEntries(lines.map((l) => [l.accountId, String(l.amount)]));
+    expect(by[otherSales]).toBe("-47.0500");
+    expect(by[sales]).toBeUndefined();
+    expect(by[clearing]).toBe("47.0500");
+    await setup(sales);
   });
 
   it("matches a negative settlement to the bank withdrawal Amazon charged, not a deposit", async () => {
