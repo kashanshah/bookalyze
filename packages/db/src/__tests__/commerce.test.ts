@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import {
+  addReportOrders,
   amazonConnectionsForRegion,
   countOrdersNeedingItems,
   disconnectAmazon,
@@ -608,5 +609,72 @@ describe("order glance", () => {
       { date: "2026-01-10", currency: "CAD", orders: 1, units: 3, sales: "10.5000" },
       { date: "2026-01-11", currency: "CAD", orders: 1, units: 1, sales: "0.0000" },
     ]);
+  });
+});
+
+describe("orders from the transaction report", () => {
+  it("adds older orders with their items, and leaves orders from the API as they are", async () => {
+    const mug = (sku: string, quantity: number) => ({
+      itemId: `report:${sku}`,
+      asin: "",
+      sku,
+      title: "Report mug",
+      quantityOrdered: quantity,
+      quantityShipped: quantity,
+      itemPrice: "50.0000",
+      itemTax: null,
+      shippingPrice: "0.0000",
+      shippingTax: null,
+      promotionDiscount: "0.0000",
+    });
+    const added = await scoped((tx) =>
+      addReportOrders(tx, {
+        orgId,
+        channelId,
+        orders: [
+          {
+            order: order("702-0000099-0000099", {
+              purchasedAt: "2024-03-05T10:00:00Z",
+              lastUpdatedAt: "2024-03-05T10:00:00Z",
+              total: "50.0000",
+              shipCountry: null,
+              shipRegion: null,
+            }),
+            items: [mug("REPORT-MUG", 2)],
+          },
+          // Already here from the API: kept as it is.
+          { order: order("702-0000001-0000001", { total: "99.0000" }), items: [mug("OTHER", 9)] },
+        ],
+      }),
+    );
+    expect(added).toBe(1);
+    const rows = await scoped((tx) =>
+      tx
+        .select({
+          ext: schema.orders.externalId,
+          total: schema.orders.total,
+          synced: schema.orders.itemsSyncedAt,
+        })
+        .from(schema.orders)
+        .where(inArray(schema.orders.externalId, ["702-0000099-0000099", "702-0000001-0000001"])),
+    );
+    const byExt = Object.fromEntries(rows.map((r) => [r.ext, r]));
+    expect(String(byExt["702-0000001-0000001"]?.total)).toBe("25.0000");
+    // Its items are in, so the order sync doesn't try to fetch them from the API.
+    expect(byExt["702-0000099-0000099"]?.synced).not.toBeNull();
+    const items = await scoped((tx) =>
+      tx.select().from(schema.orderItems).where(sql`sku in ('REPORT-MUG', 'OTHER')`),
+    );
+    expect(items.map((i) => [i.sku, i.quantityShipped])).toEqual([["REPORT-MUG", 2]]);
+    // Reading the report again adds nothing.
+    expect(
+      await scoped((tx) =>
+        addReportOrders(tx, {
+          orgId,
+          channelId,
+          orders: [{ order: order("702-0000099-0000099"), items: [mug("REPORT-MUG", 2)] }],
+        }),
+      ),
+    ).toBe(0);
   });
 });

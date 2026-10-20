@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isTransactionReport,
   parseTransactionReport,
+  parseTransactionReportOrders,
   readReportDate,
   settlementGroup,
 } from "../commerce";
@@ -314,6 +315,31 @@ describe("Amazon's date range transaction report", () => {
     // Still open: nothing paid after it, so nothing held is known yet.
     expect(open).toMatchObject({ total: "30.0000", depositDate: null });
     expect(reserves(open)).toEqual([]);
+  });
+
+  it("reads its orders: SKUs and quantities, dated when they settled, refunds left out", () => {
+    const [ae] = parseTransactionReportOrders(REPORT);
+    expect(ae).toMatchObject({ marketplace: "Amazon.ae", currency: "AED" });
+    expect(ae?.orders.map((o) => o.order.orderId)).toEqual(["406-1", "406-2", "406-3"]);
+    expect(ae?.orders[0]).toMatchObject({
+      order: {
+        purchasedAt: "2026-02-02T09:15:00.000Z",
+        status: "Shipped",
+        fulfillment: "amazon",
+        total: "120.0000",
+        itemsShipped: 1,
+      },
+      items: [
+        {
+          sku: "MUG",
+          quantityShipped: 1,
+          itemPrice: "120.0000",
+          shippingPrice: "5.0000",
+          promotionDiscount: "5.0000",
+        },
+      ],
+    });
+    expect(ae?.orders[2]?.items[0]).toMatchObject({ sku: "MUG", quantityShipped: 2 });
   });
 
   it("refuses a file that isn't the report", () => {
