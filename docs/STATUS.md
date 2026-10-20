@@ -887,6 +887,24 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `amazon-settlements.test.ts`, db `settlements.test.ts`, e2e "settlements: bring in
   Amazon's settlement report…" (the mock serves one gzipped report; a second is uploaded).
 
+### Settlements from Amazon's date range transaction report
+
+- **Settlements → Upload settlement files** also takes Amazon's **transaction report** (Payments →
+  Reports Repository → Transaction, custom date range: one CSV, every row with its settlement
+  ID, years back). Flat files only go back so far and come one per settlement; this rebuilds them
+  all (Kazomo UAE: 79 settlements from 2023, each adding up to its payout).
+- Core `parseTransactionReport` (`commerce/transaction-report.ts`): order and refund columns
+  become flat-file-style lines (product sales → ItemPrice / Principal, selling fees → ItemFees /
+  Commission, FBA fees → FBAPerUnitFulfillmentFee, promotional rebates → Promotion…), so
+  `settlementGroup` sorts them unchanged; fee, adjustment and service rows keep Amazon's type
+  and description ("Service Fee · Cost of Advertising"). Transfer rows aren't earnings: left out,
+  each gives the settlement it pays (same amount, after it) its deposit date. Dates are day-first
+  or month-first with the zone (`readReportDate`); the currency comes from the marketplace.
+- The page sends them 20 at a time (`uploadReportSettlementsAction`); settlements already here are
+  kept as they are (Amazon's own report for them is more detailed), and the newest is left out
+  while it has no payout (it may still be open).
+- Test: core `transaction-report.test.ts`.
+
 ### Phase 4, slice 2: settlements post to the books
 
 - **How settlements post** (`/commerce/settlements/accounts`, admins): an account for each group
