@@ -3271,6 +3271,19 @@ test("the privacy policy is public and linked from sign-in", async ({ browser })
   await page.close();
 });
 
+test("the terms of service are public and linked from sign-up", async ({ browser }) => {
+  const page = await browser.newPage();
+  await page.goto("/sign-up");
+  await expect(page.getByText("By creating an account you agree to the")).toBeVisible();
+  await page.getByRole("link", { name: "Terms of service" }).click();
+  await expect(page).toHaveURL(/\/terms$/);
+  await expect(page.getByRole("heading", { name: "Terms of service", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Not professional advice" })).toBeVisible();
+  await page.getByRole("contentinfo").getByRole("link", { name: "Privacy policy" }).click();
+  await expect(page).toHaveURL(/\/privacy-policy$/);
+  await page.close();
+});
+
 test("invite-only sign-up blocks strangers", async ({ page }) => {
   await signUp(page, "Stranger", `stranger+${run}@example.com`, "some-long-password");
   await expect(page.getByText(/invite-only for now/i).last()).toBeVisible();

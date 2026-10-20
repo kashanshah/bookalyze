@@ -14,6 +14,7 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "env": ["NEXT_PUBLIC_APP_URL", "NEXT_PUBLIC_SITE_URL"],
       "passThroughEnv": [
         "BETTER_AUTH_*",
         "GOOGLE_*",
