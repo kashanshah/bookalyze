@@ -469,6 +469,80 @@ describe("purchase orders in the books", () => {
     expect(await stock()).toBe(cad("3095"));
   });
 
+  it("prices a split payment's part at the rate the transaction was paid", async () => {
+    const po = await sentOrder("2026-09-16");
+    const { receiptId } = await scoped(async (tx) => {
+      const detail = await getPurchaseOrder(tx, po.id);
+      return receivePurchaseOrder(tx, {
+        id: po.id,
+        orgId,
+        userId: null,
+        baseCurrency: "CAD",
+        receivedOn: "2026-10-08",
+        exchangeRate: "1.38",
+        notes: null,
+        quantities: Object.fromEntries((detail?.lines ?? []).map((l) => [l.id, l.quantity])),
+      });
+    });
+    // USD 70 out of a USD account at 1.40 (CAD 98): USD 40 freight for this order on deposits,
+    // USD 30 another company's share.
+    const payment = await scoped(async (tx) => {
+      const [usdBank] = await tx
+        .insert(schema.accounts)
+        .values({
+          organizationId: orgId,
+          code: "1010",
+          name: "Bank (USD)",
+          type: "asset",
+          subtype: "cash_bank",
+          currency: "USD",
+        })
+        .returning();
+      const all = await tx.select().from(schema.accounts);
+      const byCode = new Map(all.map((a) => [a.code, a.id]));
+      const prepared = prepareJournalEntry(
+        {
+          currency: "USD",
+          baseCurrency: "CAD",
+          fxRate: "1.40",
+          lines: transactionLines({
+            kind: "withdrawal",
+            moneyAccountId: usdBank?.id as string,
+            splits: [
+              { accountId: byCode.get("1250") as string, amount: "40.00" },
+              { accountId: byCode.get("3100") as string, amount: "30.00" },
+            ],
+          }),
+        },
+        new Map(all.map((a) => [a.id, a])),
+      );
+      if (!prepared.ok) throw new Error("bad entry");
+      return postJournalEntry(tx, { orgId, date: "2026-10-09", entry: prepared.entry });
+    });
+    await scoped((tx) =>
+      addPurchasePayment(tx, {
+        orgId,
+        userId: null,
+        purchaseOrderId: po.id,
+        journalEntryId: payment.id,
+        contactId: shipperId,
+        receiptId,
+        label: "Freight",
+        amount: "40.00",
+        currency: "USD",
+        baseCurrency: "CAD",
+        cost: { costId: null, kind: "freight", description: "Freight" },
+      }),
+    );
+    const costs = (await scoped((tx) => getDeliveryCosting(tx, receiptId)))?.costs ?? [];
+    // 1.40, not the whole CAD 98 over the USD 40 linked (2.45).
+    expect(costs[0]).toMatchObject({
+      amount: "40.0000",
+      currency: "USD",
+      exchangeRate: "1.4000000000",
+    });
+  });
+
   it("moves a delivery to the day it arrived: its lots, and its entry into stock", async () => {
     const inventoryBefore = await balance("inventory");
     const po = await sentOrder("2026-09-10");
