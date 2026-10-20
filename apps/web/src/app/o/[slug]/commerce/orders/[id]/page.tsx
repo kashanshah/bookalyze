@@ -439,7 +439,7 @@ export default async function OrderPage({
                 <>
                   <p className="mt-2 text-sm">
                     <span className="tabular font-medium">
-                      {formatInvoiceNumber(invoice.invoiceNumber)}
+                      {invoice.snapshot.number || formatInvoiceNumber(invoice.invoiceNumber)}
                     </span>
                   </p>
                   <p className="mt-1 text-muted-foreground text-xs leading-relaxed">

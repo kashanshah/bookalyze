@@ -67,6 +67,9 @@ export const organizationBranding = pgTable(
     letterheadRight: smallint("letterhead_right").notNull().default(48),
     /** The logo's printed height in points. */
     logoHeight: smallint("logo_height").notNull().default(48),
+    /** Around the running invoice number: "INV-" + 0001 + "". */
+    invoicePrefix: text("invoice_prefix").notNull().default("INV-"),
+    invoiceSuffix: text("invoice_suffix").notNull().default(""),
     /** "first": the letterhead on page 1 only; "all": on every page. */
     letterheadPages: text("letterhead_pages").notNull().default("first"),
     updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
@@ -80,6 +83,10 @@ export const organizationBranding = pgTable(
         and ${t.letterheadPages} in ('first', 'all')`,
     ),
     check("organization_branding_logo_height", sql`${t.logoHeight} between 24 and 120`),
+    check(
+      "organization_branding_invoice_affix",
+      sql`length(${t.invoicePrefix}) <= 20 and length(${t.invoiceSuffix}) <= 20`,
+    ),
     check(
       "organization_branding_side_margins",
       sql`${t.letterheadLeft} between 0 and 200 and ${t.letterheadRight} between 0 and 200`,

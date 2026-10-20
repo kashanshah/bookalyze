@@ -505,6 +505,13 @@
       "when": 1792533503570,
       "tag": "0071_stock_overview",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792533680680,
+      "tag": "0072_invoice_number_affix",
+      "breakpoints": true
     }
   ]
 }

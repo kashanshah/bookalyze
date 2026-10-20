@@ -2,6 +2,8 @@ import {
   BRAND_FOOTER_MAX,
   BRAND_NAME_MAX,
   type BrandSettings,
+  INVOICE_AFFIX_MAX,
+  isValidInvoiceAffix,
   LETTERHEAD_MARGIN_MAX,
   LETTERHEAD_PAGES,
   LETTERHEAD_SIDE_MAX,
@@ -30,6 +32,11 @@ const sideMargin = z.coerce
   .min(0, "Use 0 or more.")
   .max(LETTERHEAD_SIDE_MAX, `Use ${LETTERHEAD_SIDE_MAX} or less.`);
 
+const affix = z
+  .string()
+  .max(INVOICE_AFFIX_MAX, `Use ${INVOICE_AFFIX_MAX} characters or fewer.`)
+  .refine(isValidInvoiceAffix, "Use letters, numbers, spaces, - _ . / # and {YYYY}, {YY} or {MM}.");
+
 /** What Company → Brand saves (and the preview draws before saving). */
 export const brandSchema = z.object({
   accentColor: z
@@ -46,6 +53,8 @@ export const brandSchema = z.object({
   letterheadLeft: sideMargin,
   letterheadRight: sideMargin,
   letterheadPages: z.enum(LETTERHEAD_PAGES),
+  invoicePrefix: affix,
+  invoiceSuffix: affix,
   logoHeight: z.coerce
     .number()
     .int("Use whole points.")

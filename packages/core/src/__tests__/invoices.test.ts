@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatInvoiceNumber,
   type InvoiceItem,
   type InvoiceSeller,
   invoiceLineTitle,
   invoiceRegistration,
+  isValidInvoiceAffix,
   parseBuyerInfo,
   prepareOrderInvoice,
   registrationCountry,
@@ -197,6 +199,34 @@ describe("invoiceLineTitle", () => {
     expect(short.length).toBeLessThanOrEqual(91);
     expect(long.startsWith(short.replace(/…$/, ""))).toBe(true);
     expect(short).not.toMatch(/\s$/);
+  });
+});
+
+describe("formatInvoiceNumber", () => {
+  it("is INV-0001 by default", () => {
+    expect(formatInvoiceNumber(1)).toBe("INV-0001");
+  });
+
+  it("writes the company's prefix and suffix, with date tokens", () => {
+    expect(formatInvoiceNumber(12, { prefix: "KZ-", suffix: "-AE" })).toBe("KZ-0012-AE");
+    expect(
+      formatInvoiceNumber(7, { prefix: "INV-{YYYY}-", suffix: "/{MM}{YY}" }, "2026-10-21"),
+    ).toBe("INV-2026-0007/1026");
+    expect(formatInvoiceNumber(3, { prefix: "", suffix: "" })).toBe("0003");
+  });
+});
+
+describe("isValidInvoiceAffix", () => {
+  it("allows plain characters and known tokens", () => {
+    expect(isValidInvoiceAffix("KZ-{YYYY}-")).toBe(true);
+    expect(isValidInvoiceAffix("")).toBe(true);
+    expect(isValidInvoiceAffix("INV/{YYYY}/")).toBe(true);
+  });
+
+  it("rejects other symbols, unknown tokens and long values", () => {
+    expect(isValidInvoiceAffix("{DD}")).toBe(false);
+    expect(isValidInvoiceAffix("a<b")).toBe(false);
+    expect(isValidInvoiceAffix("X".repeat(21))).toBe(false);
   });
 });
 

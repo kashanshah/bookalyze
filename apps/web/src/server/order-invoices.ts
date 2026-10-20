@@ -3,6 +3,7 @@ import {
   formatInvoiceNumber,
   type InvoiceBuyer,
   type InvoiceItem,
+  type InvoiceNumbering,
   type InvoiceSeller,
   invoiceRegistration,
   isAmazonRegion,
@@ -11,6 +12,7 @@ import {
 } from "@bookalyze/core";
 import {
   deleteOrderInvoice,
+  getBranding,
   getChannelForSync,
   getEntityDetails,
   getOrder,
@@ -67,6 +69,15 @@ function dayIn(date: Date, timezone: string): string {
 const pgCode = (error: unknown) =>
   (error as { code?: string; cause?: { code?: string } }).cause?.code ??
   (error as { code?: string }).code;
+
+/** The company's prefix and suffix for invoice numbers. */
+const numberingOf = (brand: {
+  invoicePrefix: string;
+  invoiceSuffix: string;
+}): InvoiceNumbering => ({
+  prefix: brand.invoicePrefix,
+  suffix: brand.invoiceSuffix,
+});
 
 async function sellerOf(
   tx: Transaction,
@@ -190,10 +201,11 @@ export async function loadOrderInvoiceDraft(
     if (!order) return null;
     const invoice = await getOrderInvoice(tx, orderId);
     const seller = await sellerOf(tx, ctx.profile);
-    return { order, invoice, seller };
+    const numbering = invoice ? null : numberingOf(await getBranding(tx));
+    return { order, invoice, seller, numbering };
   });
   if (!found) return { ok: false, message: "This order is no longer here." };
-  const { order: row, invoice, seller } = found;
+  const { order: row, invoice, seller, numbering } = found;
   if (!row.items.length || row.order.total == null) {
     return { ok: false, message: "You can create an invoice once Amazon has priced this order." };
   }
@@ -202,7 +214,10 @@ export async function loadOrderInvoiceDraft(
     ? { buyer: invoice.snapshot.buyer, note: null as string | null }
     : await buyerFromAmazon(ctx, row.order.channelId, row.order.externalId);
   const preview = prepareOrderInvoice({
-    number: invoice ? formatInvoiceNumber(invoice.invoiceNumber) : "INV-0000",
+    // A new invoice's number is only taken when it's saved.
+    number: invoice
+      ? invoice.snapshot.number || formatInvoiceNumber(invoice.invoiceNumber)
+      : formatInvoiceNumber(0, numbering ?? undefined, nowIn(ctx.profile.timezone).date),
     seller: seller.seller,
     buyer: lookedUp.buyer,
     orderNumber: row.order.externalId,
@@ -291,21 +306,26 @@ export async function issueOrderInvoice(
       const invoiceNumber = existing
         ? existing.invoiceNumber
         : await nextInvoiceNumber(tx, ctx.org.id);
+      const invoiceDate = existing?.snapshot.invoiceDate ?? nowIn(ctx.profile.timezone).date;
+      // An issued number never changes, even when the prefix or suffix does later.
+      const number =
+        existing?.snapshot.number ||
+        formatInvoiceNumber(invoiceNumber, numberingOf(await getBranding(tx)), invoiceDate);
       const snapshot = prepareOrderInvoice({
-        number: formatInvoiceNumber(invoiceNumber),
+        number,
         seller,
         buyer,
         orderNumber: order.order.externalId,
         marketplace: order.channel.name,
         currency: order.order.currency ?? order.channel.currency,
         purchasedOn: dayIn(order.order.purchasedAt, ctx.profile.timezone),
-        invoiceDate: existing?.snapshot.invoiceDate ?? nowIn(ctx.profile.timezone).date,
+        invoiceDate,
         total: order.order.total,
         refunded: order.order.refunded,
         items: invoiceItems(order.items),
       });
       const bytes = await renderOrderInvoicePdf(snapshot, await loadDocumentBrand(tx));
-      const fileName = `${snapshot.number}.pdf`;
+      const fileName = `${snapshot.number.replace(/[^A-Za-z0-9._-]+/g, "-")}.pdf`;
       const invoiceId = existing?.id ?? id;
       const key = invoiceKey(ctx.org.id, invoiceId, fileName);
       if (existing) {
@@ -403,11 +423,12 @@ export async function issueOrderInvoice(
 export async function sampleInvoice(
   tx: Transaction,
   profile: CommerceContext["profile"],
+  numbering?: InvoiceNumbering,
 ): Promise<ReturnType<typeof prepareOrderInvoice>> {
   const { seller } = await sellerOf(tx, profile);
   const today = nowIn(profile.timezone).date;
   return prepareOrderInvoice({
-    number: "INV-0001",
+    number: formatInvoiceNumber(1, numbering ?? numberingOf(await getBranding(tx)), today),
     seller: { ...seller, address: seller.address ?? "Your registered address" },
     buyer: {
       name: "Sample customer",

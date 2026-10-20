@@ -813,6 +813,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   with a live preview of a sample invoice (`POST /api/o/[slug]/brand/preview`). Brand files are
   attachments linked as `brand_asset`, so they stay out of the receipts inbox; replaced files are
   deleted. Issued invoices keep the brand they were drawn with.
+- **Invoice numbers:** Company → Brand → Invoice numbers sets a prefix and suffix around the
+  4-digit running number (default `INV-` + `0001`), with `{YYYY}`, `{YY}`, `{MM}` from the
+  invoice date (`formatInvoiceNumber`). The running number stays one sequence per company. An
+  issued invoice keeps the number in its snapshot when it's corrected later.
 - The invoice can't be created until the order has items and a total, or until Company has a
   registered address. File storage has to be set up (S3, or the local driver in development).
 

@@ -99,9 +99,38 @@ export const INVOICE_PAYMENT_NOTE =
 
 export const INVOICE_TITLES_ARABIC = { Invoice: "فاتورة", "Tax invoice": "فاتورة ضريبية" } as const;
 
-/** "INV-0001". */
-export function formatInvoiceNumber(n: number): string {
-  return `INV-${String(n).padStart(4, "0")}`;
+/** How a company writes its invoice numbers around the running number. */
+export type InvoiceNumbering = { prefix: string; suffix: string };
+
+export const DEFAULT_INVOICE_NUMBERING: InvoiceNumbering = { prefix: "INV-", suffix: "" };
+
+/** Characters a prefix or suffix may use, besides the date tokens. Safe in a file name. */
+export const INVOICE_AFFIX_PATTERN = /^[A-Za-z0-9 ._#/-]*$/;
+export const INVOICE_AFFIX_MAX = 20;
+/** Tokens a prefix or suffix may carry, filled from the invoice date. */
+export const INVOICE_DATE_TOKENS = ["{YYYY}", "{YY}", "{MM}"] as const;
+
+/** Whether a prefix or suffix is usable: allowed characters and known tokens only. */
+export function isValidInvoiceAffix(value: string): boolean {
+  if (value.length > INVOICE_AFFIX_MAX) return false;
+  let rest = value;
+  for (const token of INVOICE_DATE_TOKENS) rest = rest.split(token).join("");
+  return INVOICE_AFFIX_PATTERN.test(rest);
+}
+
+/**
+ * The invoice number as printed: "INV-0001" by default, or the company's prefix and suffix
+ * around the 4-digit running number. {YYYY}, {YY} and {MM} come from `date` (YYYY-MM-DD).
+ */
+export function formatInvoiceNumber(
+  n: number,
+  numbering: InvoiceNumbering = DEFAULT_INVOICE_NUMBERING,
+  date?: string,
+): string {
+  const [year = "", month = ""] = (date ?? "").split("-");
+  const fill = (value: string) =>
+    value.replaceAll("{YYYY}", year).replaceAll("{YY}", year.slice(2)).replaceAll("{MM}", month);
+  return `${fill(numbering.prefix)}${String(n).padStart(4, "0")}${fill(numbering.suffix)}`.trim();
 }
 
 /** The name of sales tax in the company's country, for the invoice's wording. */

@@ -6,6 +6,8 @@ import {
   DEFAULT_ACCENT,
   DEFAULT_LETTERHEAD_MARGINS,
   DEFAULT_LOGO_HEIGHT,
+  formatInvoiceNumber,
+  INVOICE_AFFIX_MAX,
   LETTERHEAD_MARGIN_MAX,
   LETTERHEAD_SIDE_MAX,
   LETTERHEAD_TYPES,
@@ -14,7 +16,7 @@ import {
   LOGO_HEIGHT_MIN,
   normalizeHexColor,
 } from "@bookalyze/core";
-import { FileText, ImageIcon, Palette, RefreshCw, Trash2, Upload } from "lucide-react";
+import { FileText, Hash, ImageIcon, Palette, RefreshCw, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -37,6 +39,8 @@ export type BrandView = {
   nameArabic: string | null;
   logo: BrandFile | null;
   logoHeight: number;
+  invoicePrefix: string;
+  invoiceSuffix: string;
   letterhead: BrandFile | null;
   letterheadTop: number;
   letterheadBottom: number;
@@ -171,6 +175,8 @@ export function BrandScreen({ view }: { view: BrandView }) {
   const [footer, setFooter] = useState(view.footer ?? "");
   const [logo, setLogo] = useState(view.logo);
   const [logoHeight, setLogoHeight] = useState(view.logoHeight);
+  const [prefix, setPrefix] = useState(view.invoicePrefix);
+  const [suffix, setSuffix] = useState(view.invoiceSuffix);
   const [letterhead, setLetterhead] = useState(view.letterhead);
   const [top, setTop] = useState(String(view.letterheadTop));
   const [bottom, setBottom] = useState(String(view.letterheadBottom));
@@ -196,8 +202,24 @@ export function BrandScreen({ view }: { view: BrandView }) {
       letterheadRight: Number(right),
       letterheadPages: pages,
       logoHeight,
+      invoicePrefix: prefix,
+      invoiceSuffix: suffix,
     }),
-    [accent, footer, nameArabic, logo, logoHeight, letterhead, top, bottom, left, right, pages],
+    [
+      accent,
+      footer,
+      nameArabic,
+      logo,
+      logoHeight,
+      prefix,
+      suffix,
+      letterhead,
+      top,
+      bottom,
+      left,
+      right,
+      pages,
+    ],
   );
 
   // The preview redraws a moment after the last change, from the unsaved settings.
@@ -485,6 +507,52 @@ export function BrandScreen({ view }: { view: BrandView }) {
               </fieldset>
             </>
           ) : null}
+        </Section>
+
+        <Section
+          icon={Hash}
+          title="Invoice numbers"
+          description="Text written before and after the running number. Invoices already issued keep their number."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Prefix"
+              htmlFor="brand-prefix"
+              hint="For example KZ- or INV-{YYYY}-"
+              error={errors.invoicePrefix}
+            >
+              <Input
+                id="brand-prefix"
+                value={prefix}
+                disabled={disabled}
+                maxLength={INVOICE_AFFIX_MAX}
+                onChange={(event) => setPrefix(event.target.value)}
+                className="font-mono"
+              />
+            </Field>
+            <Field
+              label="Suffix"
+              htmlFor="brand-suffix"
+              hint="For example -AE or /{YY}"
+              error={errors.invoiceSuffix}
+            >
+              <Input
+                id="brand-suffix"
+                value={suffix}
+                disabled={disabled}
+                maxLength={INVOICE_AFFIX_MAX}
+                onChange={(event) => setSuffix(event.target.value)}
+                className="font-mono"
+              />
+            </Field>
+          </div>
+          <p className="text-muted-foreground text-sm">
+            Looks like{" "}
+            <span className="font-medium font-mono text-foreground">
+              {formatInvoiceNumber(1, { prefix, suffix }, new Date().toISOString().slice(0, 10))}
+            </span>
+            . {"{YYYY}"}, {"{YY}"} and {"{MM}"} are filled in from the invoice date.
+          </p>
         </Section>
 
         <Section
