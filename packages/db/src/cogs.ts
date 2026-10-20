@@ -675,10 +675,20 @@ export async function postCogs(
   if (posted.some((p) => p.channelId === input.channelId && p.month === input.month)) {
     throw new CogsError("This month is already in the books.", "state");
   }
-  // Months go in order, so the oldest stock is always used first.
+  // Months go in order, so the oldest stock is always used first. Months before the start (sales
+  // the opening stock already covers) never hold the rest up, as on the page.
   const done = new Set(posted.map((p) => `${p.channelId}:${p.month}`));
+  const start = cogsStartMonth({
+    openingDay: await earliestOpeningStock(tx),
+    postedMonths: posted.map((p) => p.month),
+  });
   const earlier = (await salesByMonth(tx, { timezone: input.timezone }))
-    .filter((m) => m.month < input.month && !done.has(`${m.channelId}:${m.month}`))
+    .filter(
+      (m) =>
+        m.month < input.month &&
+        (!start || m.month >= start) &&
+        !done.has(`${m.channelId}:${m.month}`),
+    )
     .sort((a, b) => (a.month < b.month ? -1 : 1))[0];
   if (earlier) {
     throw new CogsError(
