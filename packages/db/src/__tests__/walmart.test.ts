@@ -8,6 +8,7 @@ import {
   disconnectWalmart,
   getWalmartConnection,
   listEbayChannels,
+  listOrderConnections,
   listWalmartChannels,
   setChannelActive,
   setChannelFulfilment,
@@ -130,6 +131,10 @@ describe("Walmart channels", () => {
     expect(await scoped((tx) => getWalmartConnection(tx, "walmart-us"))).toBeNull();
     // Another company sees none of it.
     expect(await scoped((tx) => getWalmartConnection(tx, "walmart-ca"), otherOrgId)).toBeNull();
+    // A connected country brings orders in; one without a key doesn't.
+    const ordering = await scoped((tx) => listOrderConnections(tx));
+    expect(ordering.channels.map((c) => c.marketplaceId)).toContain("walmart-ca");
+    expect(ordering.channels.map((c) => c.marketplaceId)).not.toContain("walmart-us");
     // Marketplace connections stay out of Banking.
     expect((await scoped((tx) => listConnections(tx))).map((c) => c.provider)).not.toContain(
       "walmart",

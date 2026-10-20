@@ -2689,6 +2689,54 @@ test("walmart: connect Walmart Canada with its API key, test it, replace it and 
   await expect(page.getByRole("switch", { name: "Use Walmart Canada" })).toBeChecked();
 });
 
+test("walmart: bring in Walmart Canada's orders, shipped by the seller and by WFS, and open one", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Walmart Canada/ }).click();
+
+  // Walmart and the seller both ship this country's orders; its key is connected again.
+  await choose(page.getByLabel("Who ships Walmart Canada orders"), "Both");
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  const account = page.getByRole("region", { name: "Walmart account" });
+  await account.getByRole("button", { name: "Connect Walmart" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Client ID").fill("wmt-e2e-ca-full");
+  await dialog.getByLabel("Client secret").fill("wmt-e2e-ca-full-secret");
+  await dialog.getByRole("button", { name: "Check and connect" }).click();
+  await expect(page.getByText("Walmart Canada connected")).toBeVisible();
+
+  // Walmart Canada joins the orders already coming in; both lists come in, page by page.
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  await page.getByRole("button", { name: "Bring theirs in too" }).click();
+  const rows = page.getByRole("main");
+  await expect(rows.getByText("108800000003")).toBeVisible({ timeout: 30_000 });
+  await expect(rows.getByText("108800000001")).toBeVisible();
+  await expect(rows.getByText("108800000002")).toBeVisible();
+
+  // Walmart's states read like the others.
+  await page.getByLabel("Search orders").fill("108800000002");
+  await page.keyboard.press("Enter");
+  await expect(rows.getByText("Cancelled").first()).toBeVisible();
+  await expect(rows.getByText(/Walmart Canada/).first()).toBeVisible();
+
+  // An order Walmart shipped says so; its SKU is the product linked before. No buyer details.
+  await page.getByLabel("Search orders").fill("108800000003");
+  await page.keyboard.press("Enter");
+  await rows
+    .getByRole("link", { name: /108800000003/ })
+    .first()
+    .click();
+  await expect(page.getByRole("heading", { name: /108800000003/ })).toBeVisible();
+  await expect(page.getByText("Walmart Canada", { exact: true })).toBeVisible();
+  await expect(page.getByText("Walmart (Walmart Fulfillment Services, WFS)")).toBeVisible();
+  await expect(page.getByText("Maple leaf ceramic mug").first()).toBeVisible();
+  await expect(page.getByText(/SKU WMT-MAPLE-MUG/)).toBeVisible();
+  await expect(page.getByText("Synthetic Buyer")).toHaveCount(0);
+});
+
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
   const keyFile = async (path: string) => ({
     name: "noon_credentials.json",

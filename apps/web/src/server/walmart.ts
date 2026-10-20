@@ -119,7 +119,11 @@ async function accessToken(creds: WalmartCredentials, market: string): Promise<s
 }
 
 /** One GET with a token. A token Walmart no longer takes is renewed once. */
-async function get(creds: WalmartCredentials, market: string, path: string): Promise<unknown> {
+export async function walmartGet(
+  creds: WalmartCredentials,
+  market: string,
+  path: string,
+): Promise<unknown> {
   for (let attempt = 0; ; attempt++) {
     const token = await accessToken(creds, market);
     const correlationId = randomUUID();
@@ -170,5 +174,5 @@ export async function checkWalmartKey(
   market: string,
 ): Promise<Record<WalmartScopeArea, WalmartAccess>> {
   tokens.delete(cacheKey(creds, market));
-  return parseWalmartTokenDetail(await get(creds, market, WALMART_TOKEN_DETAIL_PATH));
+  return parseWalmartTokenDetail(await walmartGet(creds, market, WALMART_TOKEN_DETAIL_PATH));
 }

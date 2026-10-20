@@ -21,10 +21,11 @@ import { SKU_SYNC_EVERY_MS, syncChannelSkus } from "./amazon-skus";
 import { openAmazonCredentials } from "./commerce";
 import { syncEbayChannelOrders } from "./ebay-orders";
 import { logError, logWarn } from "./log";
+import { syncWalmartChannelOrders } from "./walmart-orders";
 
 /**
- * Bringing Amazon orders in, one sales channel (marketplace) at a time (eBay channels go to
- * `syncEbayChannelOrders`), within a time budget:
+ * Bringing Amazon orders in, one sales channel (marketplace) at a time (eBay and Walmart channels
+ * go to `syncEbayChannelOrders` and `syncWalmartChannelOrders`), within a time budget:
  * first the orders changed since the last sync (Amazon's pages, 100 at a time), then the refunds
  * posted since the last sync (Finances API), then the items of orders that don't have them yet.
  * Amazon rations every call, so a large first sync takes several runs; each run carries on where the last stopped (the page token is kept on the channel).
@@ -70,6 +71,7 @@ export async function syncChannelOrders(
   if (!found) return { ...result, error: "This channel no longer exists." };
   const { channel, connection } = found;
   if (connection.provider === "ebay") return syncEbayChannelOrders(ctx, found, deadline);
+  if (connection.provider === "walmart") return syncWalmartChannelOrders(ctx, found, deadline);
   const region = String(connection.settings.region ?? "");
   if (
     connection.provider !== "amazon_sp" ||
