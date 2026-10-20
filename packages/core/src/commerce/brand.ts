@@ -6,8 +6,10 @@
 
 /** Points: 72 to the inch. A4 is 595 × 842. */
 export const LETTERHEAD_MARGIN_MAX = 300;
+/** Side margins stop here so the invoice keeps a readable width. */
+export const LETTERHEAD_SIDE_MAX = 200;
 /** A comfortable default for a letterhead with a header band and a footer strip. */
-export const DEFAULT_LETTERHEAD_MARGINS = { top: 120, bottom: 72 } as const;
+export const DEFAULT_LETTERHEAD_MARGINS = { top: 120, bottom: 72, left: 48, right: 48 } as const;
 
 export const LETTERHEAD_PAGES = ["first", "all"] as const;
 export type LetterheadPages = (typeof LETTERHEAD_PAGES)[number];
@@ -42,6 +44,9 @@ export type BrandSettings = {
   /** The space the letterhead's header and footer take, kept free of content. */
   letterheadTop: number;
   letterheadBottom: number;
+  /** Side space, for letterheads with a band down one side. */
+  letterheadLeft: number;
+  letterheadRight: number;
   letterheadPages: LetterheadPages;
 };
 
@@ -54,6 +59,8 @@ export const EMPTY_BRAND: BrandSettings = {
   letterheadAttachmentId: null,
   letterheadTop: DEFAULT_LETTERHEAD_MARGINS.top,
   letterheadBottom: DEFAULT_LETTERHEAD_MARGINS.bottom,
+  letterheadLeft: DEFAULT_LETTERHEAD_MARGINS.left,
+  letterheadRight: DEFAULT_LETTERHEAD_MARGINS.right,
   letterheadPages: "first",
 };
 

@@ -2423,7 +2423,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     with the day and a note, and remove a count made by mistake. It doesn't change the books.
   - **Difference:** in the books less everything counted (+: the books have more than anyone
     holds). "Matches" at 0; a small one (±2) is quiet, a bigger one a warning. Totals row.
-- **Schema** (migration `0070_stock_overview`): `stock_counts` (product, day, units, note, who;
+- **Schema** (migration `0071_stock_overview`): `stock_counts` (product, day, units, note, who;
   RLS) and the four `channel_skus` columns.
 - **Code:** db `stock-overview.ts` (`stockOverview`, `addStockCount`, `removeStockCount`);
   actions `addStockCountAction` / `removeStockCountAction` (audited `stock_count.added` /

@@ -1,5 +1,5 @@
 {
-  "id": "b8d60973-6ea1-4927-a575-ae6e59a02866",
+  "id": "e333ade3-dda7-4863-b180-a9cf5f7968f1",
   "prevId": "a3c53c44-9ea4-4f69-834f-8e6140f2d4d2",
   "version": "7",
   "dialect": "postgresql",
@@ -3405,30 +3405,6 @@
         },
         "fulfillable": {
           "name": "fulfillable",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reserved": {
-          "name": "reserved",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "inbound": {
-          "name": "inbound",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "unfulfillable": {
-          "name": "unfulfillable",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "researching": {
-          "name": "researching",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -8853,6 +8829,20 @@
           "notNull": true,
           "default": 72
         },
+        "letterhead_left": {
+          "name": "letterhead_left",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 48
+        },
+        "letterhead_right": {
+          "name": "letterhead_right",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 48
+        },
         "logo_height": {
           "name": "logo_height",
           "type": "smallint",
@@ -8962,6 +8952,10 @@
         "organization_branding_logo_height": {
           "name": "organization_branding_logo_height",
           "value": "\"organization_branding\".\"logo_height\" between 24 and 120"
+        },
+        "organization_branding_side_margins": {
+          "name": "organization_branding_side_margins",
+          "value": "\"organization_branding\".\"letterhead_left\" between 0 and 200 and \"organization_branding\".\"letterhead_right\" between 0 and 200"
         }
       },
       "isRLSEnabled": false
@@ -12096,155 +12090,6 @@
         "reorder_settings_valid": {
           "name": "reorder_settings_valid",
           "value": "\"reorder_settings\".\"lead_time_days\" between 0 and 730 and \"reorder_settings\".\"cover_days\" between 1 and 730"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.stock_counts": {
-      "name": "stock_counts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "product_id": {
-          "name": "product_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "counted_on": {
-          "name": "counted_on",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "quantity": {
-          "name": "quantity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "stock_counts_product_idx": {
-          "name": "stock_counts_product_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "product_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "counted_on",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "stock_counts_organization_id_organization_id_fk": {
-          "name": "stock_counts_organization_id_organization_id_fk",
-          "tableFrom": "stock_counts",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "stock_counts_created_by_user_id_fk": {
-          "name": "stock_counts_created_by_user_id_fk",
-          "tableFrom": "stock_counts",
-          "tableTo": "user",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "stock_counts_product_fk": {
-          "name": "stock_counts_product_fk",
-          "tableFrom": "stock_counts",
-          "tableTo": "products",
-          "columnsFrom": [
-            "organization_id",
-            "product_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "stock_counts_tenant_isolation": {
-          "name": "stock_counts_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "public"
-          ],
-          "using": "\"stock_counts\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "\"stock_counts\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "stock_counts_quantity_valid": {
-          "name": "stock_counts_quantity_valid",
-          "value": "\"stock_counts\".\"quantity\" >= 0"
         }
       },
       "isRLSEnabled": false

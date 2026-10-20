@@ -4,6 +4,7 @@ import {
   type BrandSettings,
   LETTERHEAD_MARGIN_MAX,
   LETTERHEAD_PAGES,
+  LETTERHEAD_SIDE_MAX,
   LOGO_HEIGHT_MAX,
   LOGO_HEIGHT_MIN,
   normalizeHexColor,
@@ -23,6 +24,12 @@ const margin = z.coerce
   .min(0, "Use 0 or more.")
   .max(LETTERHEAD_MARGIN_MAX, `Use ${LETTERHEAD_MARGIN_MAX} or less.`);
 
+const sideMargin = z.coerce
+  .number()
+  .int("Use whole points.")
+  .min(0, "Use 0 or more.")
+  .max(LETTERHEAD_SIDE_MAX, `Use ${LETTERHEAD_SIDE_MAX} or less.`);
+
 /** What Company → Brand saves (and the preview draws before saving). */
 export const brandSchema = z.object({
   accentColor: z
@@ -36,6 +43,8 @@ export const brandSchema = z.object({
   letterheadAttachmentId: z.uuid().nullable(),
   letterheadTop: margin,
   letterheadBottom: margin,
+  letterheadLeft: sideMargin,
+  letterheadRight: sideMargin,
   letterheadPages: z.enum(LETTERHEAD_PAGES),
   logoHeight: z.coerce
     .number()
