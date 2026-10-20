@@ -300,6 +300,7 @@ The import is idempotent: re-running it skips anything already imported, so you 
 | Amazon Ads API | per region | Separate OAuth | Spend per campaign/ASIN, for true per-SKU profit (phase 6) |
 | eBay | REST (Fulfillment, Finances, Inventory) | OAuth user token | Orders, payouts, fees |
 | Noon | API if access is granted; otherwise report/CSV import | n/a | Orders, statements |
+| Walmart Marketplace | `marketplace.walmartapis.com`, `WM_MARKET` us / ca / mx | Seller's own client id + secret (client credentials, 15-minute tokens) | Orders, reconciliation (payment) reports, WFS inventory |
 | Website / Shopify / Woo | later | OAuth / API key | Orders, payouts |
 | Facebook Marketplace / manual | Manual entry or CSV | n/a | Orders |
 
@@ -570,6 +571,7 @@ A domain like 3dboxstudio.com works well because it is *both* a memorable brand 
 | 2026-10-04 | Kazomo For Online Selling is a **Dubai** sole establishment (DET e-Trader license), **not VAT-registered**. Kazomo Inc. is a federal (CBCA) corporation with a short first fiscal year (Jun–Dec 2026); Teknoffice is an Ontario corporation. Entity type and first fiscal year start become org settings, and an Entity & compliance module is added. |
 | 2026-10-04 | Sign-in: **email + password and Google**, with account linking, and Google users can set a password. |
 | 2026-10-05 | Review requests: **Amazon's official "Request a Review" only** (no custom emails for now); **refunds checked with the Finances API** before each request (the Amazon app needs the Buyer Solicitation and Finance and Accounting roles); an **hourly** Vercel Cron (Pro plan) so requests go out at the chosen time. |
+| 2026-10-20 | Walmart is built **as a product**: the US, Canada and Mexico, each its own channel in its currency (USD, CAD, MXN), shipped by the seller, by **Walmart Fulfillment Services (WFS)** or both, chosen per channel. A company connects with its **own Walmart API keys** (client id and secret from Walmart's Developer Portal), sealed in the vault; becoming a Walmart Solution Provider (one-click consent) can come later. Channels can exist before the connection. |
 
 ### Still open
 

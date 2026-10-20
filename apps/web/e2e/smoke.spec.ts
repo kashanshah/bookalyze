@@ -2565,6 +2565,74 @@ test("noon: add a Noon country, say who ships, and link a SKU on it", async ({ p
   await expect(dialog.getByText(/Noon UAE · 1 unit per listing/)).toBeVisible();
 });
 
+test("walmart: add Walmart countries, say who ships, link a SKU, and remove one added by mistake", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  const addCountry = async () => {
+    await page.getByRole("button", { name: "Add a channel" }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: /^Walmart/ })
+      .click();
+  };
+  await addCountry();
+
+  // A Canadian company is offered Walmart Canada first; the seller ships by default.
+  const add = page.getByRole("dialog");
+  await expect(add.getByRole("combobox", { name: "Walmart country" })).toContainText(
+    "Walmart Canada",
+  );
+  await expect(add.getByRole("combobox", { name: "Who ships the orders?" })).toContainText(
+    "Fulfilled by you",
+  );
+  await add.getByRole("button", { name: "Add country" }).click();
+  await expect(page.getByText("Walmart Canada added")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Walmart Canada" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Walmart account" })).toBeVisible();
+
+  // Who ships is changed on the country's own page.
+  await choose(
+    page.getByLabel("Who ships Walmart Canada orders"),
+    "Walmart Fulfillment Services (WFS)",
+  );
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await expect(page.getByRole("link", { name: /^Walmart Canada/ })).toContainText(
+    "CA · CAD · Walmart ships (WFS)",
+  );
+  await expect(page.getByRole("link", { name: /^Walmart Canada/ })).toContainText("Not connected");
+
+  // Canada can't be added twice; Mexico can, and goes again when added by mistake.
+  await addCountry();
+  await page.getByRole("combobox", { name: "Walmart country" }).click();
+  await expect(page.getByRole("option", { name: /Walmart Canada/ })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await page.getByRole("option", { name: /Walmart Mexico/ }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Add country" }).click();
+  await expect(page.getByText("Walmart Mexico added")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Walmart Mexico" })).toBeVisible();
+  await page.getByRole("button", { name: "Remove channel" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Remove channel" }).click();
+  await expect(page.getByText("Walmart Mexico removed")).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Walmart Mexico/ })).toHaveCount(0);
+
+  // Its SKUs link to products like every other channel's.
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
+  const mug = page.getByRole("listitem", { name: "Maple leaf ceramic mug", exact: true });
+  await mug.getByRole("button", { name: "Edit Maple leaf ceramic mug" }).click();
+  const dialog = page.getByRole("dialog");
+  await choose(dialog.getByLabel("Marketplace", { exact: true }), "Walmart Canada");
+  await dialog.getByLabel("Marketplace SKU", { exact: true }).fill("WMT-MAPLE-MUG");
+  await dialog.getByRole("button", { name: "Link SKU" }).click();
+  await expect(page.getByText("WMT-MAPLE-MUG linked")).toBeVisible();
+  await expect(dialog.getByText(/Walmart Canada · 1 unit per listing/)).toBeVisible();
+});
+
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
   const keyFile = async (path: string) => ({
     name: "noon_credentials.json",

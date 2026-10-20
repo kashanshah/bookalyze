@@ -4,6 +4,7 @@ import {
   type AmazonRegion,
   EBAY_MARKETPLACES as EBAY_IDS,
   NOON_MARKETPLACES as NOON_IDS,
+  WALMART_MARKETPLACES as WALMART_IDS,
 } from "@bookalyze/core";
 import { ChevronRight, Plus } from "lucide-react";
 import Link from "next/link";
@@ -23,6 +24,7 @@ import { ConnectAmazonForm } from "./amazon";
 import { AddEbayForm, type ExistingChannel } from "./ebay";
 import { AddNoonForm } from "./noon";
 import { PLATFORMS, type Platform } from "./platforms";
+import { AddWalmartForm } from "./walmart";
 
 export type ChannelRowView = {
   id: string;
@@ -37,7 +39,7 @@ export type ChannelRowView = {
   account: "connected" | "attention" | "none";
 };
 
-const ORDER: Platform[] = ["amazon", "ebay", "noon"];
+const ORDER: Platform[] = ["amazon", "ebay", "noon", "walmart"];
 
 /**
  * Every channel the company sells on, whatever the platform, each opening its own page. New
@@ -53,8 +55,8 @@ export function ChannelList({
   slug: string;
   canManage: boolean;
   rows: ChannelRowView[];
-  defaults: { amazonRegion: AmazonRegion; ebay: string; noon: string };
-  existing: { ebay: ExistingChannel[]; noon: ExistingChannel[] };
+  defaults: { amazonRegion: AmazonRegion; ebay: string; noon: string; walmart: string };
+  existing: { ebay: ExistingChannel[]; noon: ExistingChannel[]; walmart: ExistingChannel[] };
 }) {
   const [adding, setAdding] = useState<Platform | "pick" | null>(null);
   const [key, setKey] = useState(0);
@@ -129,8 +131,8 @@ export function ChannelList({
             <div className="text-center">
               <h2 className="font-semibold text-lg tracking-tight">Add your first channel</h2>
               <p className="mt-2 text-muted-foreground text-sm leading-relaxed">
-                A channel is where you sell: an Amazon marketplace, an eBay site or a Noon country.
-                Choose where you sell to start.
+                A channel is where you sell: an Amazon marketplace, an eBay site, or a Noon or
+                Walmart country. Choose where you sell to start.
               </p>
             </div>
             <PlatformChoices onChoose={open} disabled={!canManage} />
@@ -229,8 +231,8 @@ function AddForm({
 }: {
   slug: string;
   platform: Platform;
-  defaults: { amazonRegion: AmazonRegion; ebay: string; noon: string };
-  existing: { ebay: ExistingChannel[]; noon: ExistingChannel[] };
+  defaults: { amazonRegion: AmazonRegion; ebay: string; noon: string; walmart: string };
+  existing: { ebay: ExistingChannel[]; noon: ExistingChannel[]; walmart: ExistingChannel[] };
   onBack: () => void;
   onClose: () => void;
 }) {
@@ -263,6 +265,17 @@ function AddForm({
         slug={slug}
         channels={existing.ebay}
         initialMarketplace={first(existing.ebay, defaults.ebay, EBAY_IDS)}
+        onDone={opened}
+        onBack={onBack}
+      />
+    );
+  }
+  if (platform === "walmart") {
+    return (
+      <AddWalmartForm
+        slug={slug}
+        channels={existing.walmart}
+        initialMarketplace={first(existing.walmart, defaults.walmart, WALMART_IDS)}
         onDone={opened}
         onBack={onBack}
       />

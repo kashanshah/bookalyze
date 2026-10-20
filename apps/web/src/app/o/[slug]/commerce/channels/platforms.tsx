@@ -1,7 +1,7 @@
-import { ShoppingBag, Store, Tag } from "lucide-react";
+import { ShoppingBag, ShoppingCart, Store, Tag } from "lucide-react";
 
 /** The platforms a channel can be on, as the Channels pages name and picture them. */
-export type Platform = "amazon" | "ebay" | "noon";
+export type Platform = "amazon" | "ebay" | "noon" | "walmart";
 
 export const PLATFORMS: Record<
   Platform,
@@ -22,5 +22,10 @@ export const PLATFORMS: Record<
     label: "Noon",
     icon: <Store />,
     description: "Add the countries you sell in on Noon: the UAE, Saudi Arabia or Egypt.",
+  },
+  walmart: {
+    label: "Walmart",
+    icon: <ShoppingCart />,
+    description: "Add the countries you sell in on Walmart: the US, Canada or Mexico.",
   },
 };
