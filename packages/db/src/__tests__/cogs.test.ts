@@ -229,10 +229,27 @@ describe("cost of goods sold", () => {
     const post = (month: string) =>
       scoped((tx) => postCogs(tx, { ...ctx, channelId, month, ...where, currentMonth: "2026-10" }));
     await expect(post("2026-09")).rejects.toThrow(/Post August 2026 on Amazon.ca first/);
+    // A sale from before the start (the opening stock covers it) doesn't hold August up.
+    const june = await scoped(async (tx) => {
+      await upsertOrders(tx, {
+        orgId,
+        channelId,
+        from: "2000-01-01",
+        orders: [order("701-0", "2026-06-10T15:00:00Z")],
+      });
+      const [saved] = await tx
+        .select()
+        .from(schema.orders)
+        .where(eq(schema.orders.externalId, "701-0"));
+      await saveOrderItems(tx, { orgId, orderId: saved?.id ?? "", items: [item("MUG", 1)] });
+      return saved?.id ?? "";
+    });
     // August: 4 at 2.00 + 1 at 3.00.
     expect(await post("2026-08")).toMatchObject({ units: 5, cost: "11.0000" });
     await expect(post("2026-08")).rejects.toThrow(/already in the books/);
     expect(await post("2026-09")).toMatchObject({ units: 4, cost: "12.0000" });
+    await owner.db.delete(schema.orderItems).where(eq(schema.orderItems.orderId, june));
+    await owner.db.delete(schema.orders).where(eq(schema.orders.id, june));
     await expect(post("2026-10")).rejects.toThrow(/once it's over/);
     expect(await balance("cost_of_goods_sold")).toBe("23.0000");
     expect(await balance("inventory")).toBe("15.0000");

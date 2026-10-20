@@ -2259,7 +2259,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Start:** cost of goods sold starts at the month of the earliest opening stock, or the first
   posted month if earlier (db `earliestOpeningStock`, `cogsStartMonth`). Months before it show
   **Before your start** and never hold the rest up (eBay's two years of orders reached back past
-  Kazomo's opening stock and left every month Waiting). A month after the start that comes
+  Kazomo's opening stock and left every month Waiting). `postCogs` applies the same start when it
+  checks months go in order (it used to ask for the oldest month with sales, before the start). A month after the start that comes
   before an already posted month shows **Needs attention**: undo back to it, then post in order.
 - **Units sold:** order lines' `quantity_shipped` × the linked SKU's units per listing,
   cancelled orders left out, by purchase date in the company's time zone (orders carry no ship
