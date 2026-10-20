@@ -11,7 +11,10 @@ import {
   getSettlementSettings,
   LedgerError,
   matchSettlementDeposit,
+  postedSettlements,
   postSettlement,
+  repostSettlement,
+  restoreDismissedDeposits,
   saveSettlement,
   saveSettlementSetup,
   schema,
@@ -340,6 +343,73 @@ export async function postSettlementsAction(
 }
 
 /** Takes a settlement out of the books (its entry is reversed). */
+/**
+ * Posts settlements in the books again with the accounts and grouping as they are now (after
+ * the accounts changed): one by id, or all of them, 25 per call from `after` on (the page calls
+ * again with `next` until it's null). Matched deposits stay matched.
+ */
+export async function repostSettlementsAction(
+  slug: string,
+  input: { id: string } | { after: string | null },
+): Promise<
+  SettlementResult<{
+    reposted: number;
+    failed: number;
+    message: string | null;
+    next: string | null;
+  }>
+> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only owners and admins can do this." };
+  const one = "id" in input ? z.uuid().safeParse(input.id) : null;
+  if (one && !one.success) return { ok: false, message: "Settlement not found." };
+  const after =
+    "after" in input && input.after && z.uuid().safeParse(input.after).success ? input.after : null;
+  const page = one?.success
+    ? [one.data]
+    : (await inOrg(ctx, (tx) => postedSettlements(tx, { after, limit: 25 }))).map((r) => r.id);
+  let reposted = 0;
+  let failed = 0;
+  let message: string | null = null;
+  for (const id of page) {
+    try {
+      await inOrg(ctx, async (tx) => {
+        const [s] = await tx.select().from(schema.settlements).where(eq(schema.settlements.id, id));
+        if (!s) throw new LedgerError("This settlement no longer exists.");
+        if (s.currency !== ctx.profile.baseCurrency) {
+          await suggestRate(ctx.profile.baseCurrency, s.currency, entryFor(ctx, s).date);
+        }
+        const entry = await repostSettlement(tx, {
+          orgId: ctx.org.id,
+          userId: ctx.session.user.id,
+          settlementId: id,
+          baseCurrency: ctx.profile.baseCurrency,
+          ...entryFor(ctx, s),
+        });
+        await audit(tx, {
+          orgId: ctx.org.id,
+          actorUserId: ctx.session.user.id,
+          action: "settlements.reposted",
+          entityType: "settlement",
+          entityId: id,
+          before: { journalEntryId: s.journalEntryId },
+          after: { journalEntryId: entry.id },
+        });
+      });
+      reposted++;
+    } catch (error) {
+      failed++;
+      message ??= postingError(error);
+    }
+  }
+  revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
+  revalidatePath(`/o/${slug}/accounting`, "layout");
+  if (one && failed) return { ok: false, message: message ?? "It couldn't be posted again." };
+  const next = !one && page.length === 25 ? (page.at(-1) ?? null) : null;
+  return { ok: true, reposted, failed, message, next };
+}
+
 export async function unpostSettlementAction(slug: string, id: string): Promise<SettlementResult> {
   const { ctx, allowed } = await settlementsContext(slug);
   if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
@@ -447,6 +517,30 @@ export async function unmatchDepositAction(
 }
 
 /** "Not this one": the deposit isn't suggested for the settlement again. */
+/** "Suggest them again": the deposits turned down for this settlement show up again. */
+export async function restoreDismissedDepositsAction(
+  slug: string,
+  settlementId: string,
+): Promise<SettlementResult> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx)) return { ok: false, message: "Only owners and admins can do this." };
+  if (!z.uuid().safeParse(settlementId).success)
+    return { ok: false, message: "Settlement not found." };
+  await inOrg(ctx, async (tx) => {
+    await restoreDismissedDeposits(tx, settlementId);
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "settlements.deposits_restored",
+      entityType: "settlement",
+      entityId: settlementId,
+    });
+  });
+  revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
+  return { ok: true };
+}
+
 export async function dismissDepositAction(
   slug: string,
   input: z.input<typeof matchSchema>,

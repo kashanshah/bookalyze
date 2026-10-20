@@ -10,18 +10,20 @@ import {
   type SettlementAccounts,
 } from "@bookalyze/core";
 import { getSettlementAccounts, getSettlementSettings, schema } from "@bookalyze/db";
-import { eq } from "drizzle-orm";
+import { count, eq, isNotNull } from "drizzle-orm";
 import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PostingAccountsForm } from "@/components/commerce/posting-accounts-form";
 import { PageHeader } from "@/components/shell/page-header";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { nowIn } from "@/lib/dates";
 import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { fiscalConfigOf, isOrgAdmin } from "@/server/org";
 import { saveSettlementSetupAction } from "../actions";
+import { RepostAllSettlementsButton } from "../posting-buttons";
 
 export const metadata: Metadata = { title: "How settlements post" };
 
@@ -80,8 +82,15 @@ export default async function SettlementAccountsPage({
   const { slug } = await params;
   const ctx = await getCommerceContext(slug);
   if (!can(ctx.plan, ctx.enabledModules, "commerce.settlements")) notFound();
-  const { saved, settings, all } = await inOrg(ctx, async (tx) => ({
+  const { saved, settings, all, posted } = await inOrg(ctx, async (tx) => ({
     saved: await getSettlementAccounts(tx),
+    posted:
+      (
+        await tx
+          .select({ n: count() })
+          .from(schema.settlements)
+          .where(isNotNull(schema.settlements.journalEntryId))
+      )[0]?.n ?? 0,
     settings: await getSettlementSettings(tx),
     all: await tx
       .select()
@@ -142,6 +151,21 @@ export default async function SettlementAccountsPage({
         savedDescription="Settlements post with these accounts from now on."
         doneHref={`/o/${slug}/commerce/settlements`}
       />
+      {posted && isOrgAdmin(ctx) ? (
+        <Card className="fade-in-0 animate-in">
+          <CardHeader>
+            <CardTitle>Settlements already in your books</CardTitle>
+            <CardDescription>
+              They keep the accounts they were posted with. After changing an account here, post
+              them again: each entry is reversed and posted with these accounts, and matched bank
+              deposits stay matched.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RepostAllSettlementsButton slug={slug} count={posted} />
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }
