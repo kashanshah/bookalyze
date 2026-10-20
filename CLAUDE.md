@@ -21,6 +21,7 @@ apps/web/            Next.js app
   src/server/        server-only code: auth, env, email, org context, accounting context, audit
   src/lib/           shared helpers: dates, formatting, zod schemas (validation/)
   e2e/               Playwright end-to-end tests
+apps/marketing/      public site (bookalyze.com): Home, Features, Pricing; static, no database
 packages/core/       pure TS: module registry + entitlements, fiscal-year maths, money (exact decimals),
                      currency, accounting (taxonomy, chart template, journal rules, report shaping),
                      reference data

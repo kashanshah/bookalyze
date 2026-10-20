@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { Brand } from "@/components/brand";
+import { LegalPage, type LegalSection } from "@/components/legal-page";
 
 export const metadata: Metadata = {
   title: "Privacy policy",
@@ -11,7 +10,7 @@ export const metadata: Metadata = {
 const CONTACT = "privacy@bookalyze.com";
 const UPDATED = "October 13, 2026";
 
-const sections: { title: string; body: React.ReactNode }[] = [
+const sections: LegalSection[] = [
   {
     title: "Who we are",
     body: (
@@ -175,47 +174,11 @@ const sections: { title: string; body: React.ReactNode }[] = [
 
 export default function PrivacyPolicyPage() {
   return (
-    <div className="min-h-dvh bg-background">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4 sm:px-6">
-          <Link href="/" className="w-fit">
-            <Brand className="h-7" />
-          </Link>
-          <Link href="/sign-in" className="text-muted-foreground text-sm hover:text-foreground">
-            Sign in
-          </Link>
-        </div>
-      </header>
-      <main className="fade-in-0 slide-in-from-bottom-2 mx-auto max-w-3xl animate-in px-4 py-10 duration-500 sm:px-6 sm:py-14">
-        <h1 className="font-semibold text-3xl tracking-tight">Privacy policy</h1>
-        <p className="mt-2 text-muted-foreground text-sm">Last updated {UPDATED}</p>
-        <p className="mt-6 text-base leading-7">
-          Bookalyze keeps the books of the businesses that use it. This page explains, in plain
-          words, what we collect, why, who helps us run the service, and how to have your data
-          deleted.
-        </p>
-        <div className="mt-10 grid gap-10">
-          {sections.map((s) => (
-            <section key={s.title} aria-labelledby={slug(s.title)}>
-              <h2 id={slug(s.title)} className="font-semibold text-lg">
-                {s.title}
-              </h2>
-              <div className="mt-3 grid gap-3 text-muted-foreground text-sm leading-6 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4 [&_li]:ps-1 [&_strong]:font-medium [&_strong]:text-foreground [&_ul]:grid [&_ul]:list-disc [&_ul]:gap-2 [&_ul]:ps-5">
-                {s.body}
-              </div>
-            </section>
-          ))}
-        </div>
-      </main>
-      <footer className="border-t">
-        <p className="mx-auto max-w-3xl px-4 py-6 text-muted-foreground text-xs sm:px-6">
-          © {new Date().getFullYear()} Bookalyze
-        </p>
-      </footer>
-    </div>
+    <LegalPage
+      title="Privacy policy"
+      updated={UPDATED}
+      intro="Bookalyze keeps the books of the businesses that use it. This page explains, in plain words, what we collect, why, who helps us run the service, and how to have your data deleted."
+      sections={sections}
+    />
   );
-}
-
-function slug(title: string) {
-  return title.toLowerCase().replace(/[^a-z]+/g, "-");
 }

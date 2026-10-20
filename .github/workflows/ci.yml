@@ -66,6 +66,8 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm --filter @bookalyze/web build
+      - name: Build the public site
+        run: pnpm --filter @bookalyze/marketing build
 
       - name: Install Playwright browser
         run: pnpm --filter @bookalyze/web exec playwright install --with-deps chromium

@@ -13,8 +13,8 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-10, phase 4c slice 8: FBN stock (Noon's FBN inventory ledger: returns
-back into stock, losses written off, like Amazon's FBA ledger)._
+_Last updated: 2026-10-20, the public site (`apps/marketing`: Home, Features, Pricing) and the
+app's Terms of service._
 
 ---
 
@@ -34,8 +34,11 @@ back into stock, losses written off, like Amazon's FBA ledger)._
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
-sign-in pages and given to eBay). Every environment variable is listed in `.env.example`. A static landing page
-with a Resend waitlist (`apps/landing/`) is on Hostinger at bookalyze.com. A preview deploy is built
+sign-in pages and given to eBay), and `/terms` (Terms of service, a draft for the owner's legal
+review; linked from sign-up). Every environment variable is listed in `.env.example`. The public site
+(`apps/marketing`, Next.js) is built and waiting for its own Vercel project and the bookalyze.com
+domain (`docs/SETUP.md` → Public site); until then the static landing page with a Resend waitlist
+(`apps/landing/`) stays on Hostinger at bookalyze.com. A preview deploy is built
 for every PR.
 
 **Companies using it:**
@@ -90,7 +93,7 @@ Real company details are entered in the app and never committed.
 - **Emails:** React Email templates (verify, reset, invitation) sent with Resend, with a dev
   preview at `/dev/emails`.
 - **Landing page:** `apps/landing/`, static with a PHP waitlist endpoint that writes to a Resend
-  segment.
+  segment. Replaced by the public site below once its domain moves.
 
 ### Phase 1, slice 1: ledger foundations
 - **Money maths** (`packages/core/src/money.ts`):
@@ -1076,6 +1079,33 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   tagged **Switched off** or **Disconnected** under its name (its account's status wins).
 - Tests: core `amazon-settlements.test.ts` (`channelProfit`), db `settlements.test.ts`
   (`settlementsForProfit`), e2e settlements test (the page shows Amazon.ca's column); e2e "noon: choose how Noon posts…" switches Noon UAE off and sees its tag.
+
+### The public site (bookalyze.com)
+
+- **`apps/marketing`**, its own Next.js app and Vercel project (no database, no secrets, every
+  page static). Pages: **Home** (led by the marketplace connections: Amazon, eBay, Noon, then
+  payout → posted → matched → profit, the rest of the product, multi-company, safety, FAQ),
+  **Features** (marketplaces, accounting, banking, stock, profit and reorder, reviews and
+  listings, companies) and **Pricing** (free during early access, everything included).
+  "Start free" and "Sign in" go to the app (`NEXT_PUBLIC_APP_URL`).
+- **Pictures of the app** are drawn in code with the app's tokens (`previews.tsx`), made-up
+  companies and amounts, so they follow light and dark mode and hold no real data. They move
+  like short GIFs: payouts flip to Matched, transactions get approved, review requests go out,
+  the oldest stock lot sells down, the company switcher moves (CSS loops, `anim-*` utilities in
+  `globals.css`). Charts draw when scrolled into view (`InView`, `on-view-*`): the Channel profit
+  waterfall and the reorder chart. The **money flow** infographic (`flow.tsx`: Amazon, eBay and
+  Noon into Bookalyze, out to books, bank and profit) is an SVG with moving dots, a tall version
+  for phones. With reduced motion every picture shows its finished state.
+- **Legal pages stay in the app**, one copy each: `/privacy-policy` and the new `/terms`
+  (`components/legal-page.tsx` shared by both). The site's `/terms`, `/privacy` and
+  `/privacy-policy` redirect there. Sign-up says "By creating an account you agree to the Terms
+  of service and Privacy policy"; the auth pages' footer links both.
+- Brand tokens copied into `apps/marketing/src/app/globals.css`; dark mode follows the device.
+  Checked at 390px and in dark mode. CI builds it (`pnpm --filter @bookalyze/marketing build`).
+- **Launch (owner):** a Vercel project for `apps/marketing` with bookalyze.com, `SIGNUP_MODE=open`
+  on the app, a `hello@bookalyze.com` mailbox (the site's and the terms' contact), review of the
+  terms' wording, then retire `apps/landing/` (`docs/SETUP.md` → Public site).
+- Tests: e2e "the terms of service are public and linked from sign-up".
 
 ### Pagination on every paged list
 

@@ -93,6 +93,25 @@ available yet; eBay sites still work for linking SKUs.
    usual, and puts a build live once the "Bookalyze: migrations" check passes.
 4. Add the domain `app.bookalyze.com` under Project → Domains.
 
+## Public site (bookalyze.com)
+
+The marketing site is `apps/marketing`, a second Vercel project from the same repository. It
+needs no environment variables (optional: `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SITE_URL`).
+
+1. Vercel → Add New → Project → import the same repository. **Root Directory** `apps/marketing`
+   (framework: Next.js). Name it e.g. `bookalyze-site`.
+2. Project → Domains: add `bookalyze.com` and `www.bookalyze.com` (redirect `www` to the apex).
+   Vercel shows the DNS records; set them where the domain's DNS is managed (Hostinger → Domains
+   → DNS), replacing the old Hostinger site's records. Leave `app.bookalyze.com` as it is.
+3. Open sign-ups in the app: on the app's project set `SIGNUP_MODE=open` (Production) and
+   redeploy. Until then the site's "Start free" leads to the invite-only sign-up.
+4. Once bookalyze.com serves the new site, retire the Hostinger site (`apps/landing/`) and its
+   waitlist; email the Resend `Waitlist` segment that sign-up is open.
+
+Its production deploys also start the **Deploy** workflow (it can't tell the two projects apart);
+with nothing to migrate it just passes. Don't add the "Bookalyze: migrations" Deployment Check to
+this project.
+
 ## Deploys
 
 Merging a PR into `main` makes Vercel build it. When the production build is ready, Vercel

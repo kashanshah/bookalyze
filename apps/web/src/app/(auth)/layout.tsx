@@ -19,6 +19,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           <Link href="/privacy-policy" className="hover:text-foreground">
             Privacy policy
           </Link>
+          <Link href="/terms" className="hover:text-foreground">
+            Terms
+          </Link>
         </p>
       </div>
       <BrandPanel />
