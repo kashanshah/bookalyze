@@ -3,6 +3,7 @@ import { ACCOUNT_TYPES, type AccountType, can, type LedgerAccount } from "@booka
 import { getDb, schema, type Transaction, withOrg } from "@bookalyze/db";
 import { asc } from "drizzle-orm";
 import { notFound } from "next/navigation";
+import { guardWrites } from "./billing";
 import { getOrgContext, type OrgContext, type OrgProfile } from "./org";
 
 export type AccountingContext = OrgContext & { profile: OrgProfile };
@@ -15,6 +16,7 @@ export type AccountRow = typeof schema.accounts.$inferSelect;
 export async function getAccountingContext(slug: string): Promise<AccountingContext> {
   const ctx = await getOrgContext(slug);
   if (!can(ctx.plan, ctx.enabledModules, "accounting.core") || !ctx.profile) notFound();
+  await guardWrites(ctx, "accounting");
   return ctx as AccountingContext;
 }
 
@@ -22,6 +24,7 @@ export async function getAccountingContext(slug: string): Promise<AccountingCont
 export async function getBankingContext(slug: string): Promise<AccountingContext> {
   const ctx = await getAccountingContext(slug);
   if (!can(ctx.plan, ctx.enabledModules, "banking.wise")) notFound();
+  await guardWrites(ctx, "banking");
   return ctx;
 }
 

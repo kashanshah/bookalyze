@@ -154,6 +154,27 @@ then the migration that drops it.
 **By hand** (as before): `DATABASE_URL_MIGRATOR=… pnpm db:migrate` applies everything pending,
 safe or not.
 
+## Stripe (billing)
+
+Test mode until the owner decides otherwise. Nothing is gated before `BILLING_STARTS_ON`.
+
+1. Stripe dashboard, **Test mode** on. **Products**: one product per package and add-on (Books,
+   Seller, Seller Plus, Stock, Review requests), each with a monthly and a yearly price in USD
+   (yearly = ten months). Give every price its **lookup key**: `books_month`, `books_year`,
+   `seller_month`, `seller_year`, `seller_plus_month`, `seller_plus_year`, `stock_month`,
+   `stock_year`, `reviews_month`, `reviews_year`.
+2. **Developers → API keys**: the test secret key (`sk_test_…`) → `STRIPE_SECRET_KEY`. A live key
+   is ignored unless `STRIPE_LIVE=true`.
+3. **Developers → Webhooks → Add endpoint** `https://app.bookalyze.com/api/stripe/webhook` with
+   events `checkout.session.completed`, `customer.subscription.created`,
+   `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`,
+   `invoice.paid`. Its signing secret → `STRIPE_WEBHOOK_SECRET`.
+4. **Settings → Billing → Customer portal**: let customers update payment methods, see invoices,
+   cancel, and switch between the products above (so an add-on can be added or removed).
+5. `BILLING_STARTS_ON=YYYY-MM-DD` when billing should start; leave it unset for early access.
+   One company can start earlier (or later) with `billing_accounts.starts_on` (owner only, by SQL).
+6. Tax on subscriptions (Stripe Tax or not) is the owner's call; nothing here turns it on.
+
 ## Google sign-in
 
 1. Google Cloud Console → create (or pick) a project → **APIs & Services → OAuth consent screen**:

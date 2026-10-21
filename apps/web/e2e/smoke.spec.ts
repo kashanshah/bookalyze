@@ -3870,3 +3870,77 @@ test("a Google-only user can set a password and then sign in with it", async ({ 
   await signIn(page, googleOnly.email, "brand-new-password");
   await expect(page).toHaveURL(/\/onboarding/);
 });
+
+test("billing: a plan through Checkout, an add-on removed makes only its module read-only, then cancelled", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  // The read-only banner links Plan and billing too.
+  const sidebar = page.getByRole("navigation", { name: "Main" });
+  await sidebar.getByRole("link", { name: "Plan and billing", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Plan and billing" })).toBeVisible();
+  // No BILLING_STARTS_ON in tests: early access, everything free and usable.
+  await expect(page.getByText("Free during early access")).toBeVisible();
+
+  // Seller with both add-ons (the page notes Seller Plus would be cheaper).
+  await page.getByText("Everything in Books, plus Amazon, Walmart, Noon and eBay.").click();
+  for (const name of ["Stock", "Review requests"]) {
+    const box = page.getByRole("checkbox", { name: new RegExp(`^${name}`) });
+    if (!(await box.isChecked())) await box.check();
+  }
+  await expect(page.getByText("Both add-ons cost more than Seller Plus")).toBeVisible();
+  await expect(page.getByText(/Total \$32 a month/)).toBeVisible();
+  await page.getByRole("button", { name: "Continue to payment" }).click();
+
+  // The stand-in's Checkout, then back: Stripe's webhook has recorded the plan.
+  await expect(page.getByRole("heading", { name: "Stripe test checkout" })).toBeVisible();
+  await page.getByRole("button", { name: "Pay" }).click();
+  await expect(page).toHaveURL(/settings\/billing\?checkout=done/);
+  await expect(
+    page.getByRole("heading", { name: "Seller + Review requests + Stock" }),
+  ).toBeVisible();
+  await expect(page.getByText("Active", { exact: true })).toBeVisible();
+
+  // Billing starts for this company (as the owner would set it).
+  await withOwnerDb((db) =>
+    db.query(
+      "update billing_accounts set starts_on = '2026-01-01' where stripe_customer_id like 'cus_e2e%'",
+    ),
+  );
+  await page.reload();
+  await expect(page.getByText(/Read-only, because they aren't in the plan/)).toHaveCount(0);
+
+  // Remove Stock in the customer portal: only Inventory turns read-only.
+  await page.getByRole("button", { name: "Manage billing" }).click();
+  await expect(page.getByRole("heading", { name: "Stripe test portal" })).toBeVisible();
+  await page.getByRole("button", { name: "Remove stock_month" }).click();
+  await expect(page.getByRole("heading", { name: "Seller + Review requests" })).toBeVisible();
+  const banner = page.getByText(/Read-only, because they aren't in the plan/).first();
+  await expect(banner).toBeVisible();
+  await expect(page.locator("main").getByText("Inventory", { exact: true }).first()).toBeVisible();
+
+  // Inventory opens, but a change is refused and explained.
+  await page.getByRole("link", { name: "Reorder", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Reorder" })).toBeVisible();
+  await page.getByRole("button", { name: "Lead time and cover" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Save" }).click();
+  await expect(page).toHaveURL(/settings\/billing\?readonly=inventory/);
+  await expect(page.getByText("Inventory is read-only.")).toBeVisible();
+
+  // Review requests and the books carry on as before.
+  await page.getByRole("link", { name: "Automatic requests", exact: true }).first().click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Automatic requests are on")).toBeVisible();
+
+  // Cancelled: everything switched on is read-only, and nothing is deleted.
+  await sidebar.getByRole("link", { name: "Plan and billing", exact: true }).click();
+  await page.getByRole("button", { name: "Manage billing" }).click();
+  await page.getByRole("button", { name: "Cancel subscription" }).click();
+  await expect(page.getByRole("heading", { name: "Choose a plan" })).toBeVisible();
+  await expect(banner).toContainText("Accounting");
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Transactions" })).toBeVisible();
+
+  // Back to early access for anything after this test.
+  await withOwnerDb((db) => db.query("update billing_accounts set starts_on = null"));
+});

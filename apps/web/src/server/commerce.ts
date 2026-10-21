@@ -4,6 +4,7 @@ import { can } from "@bookalyze/core";
 import { connectionSecretContext, openSecret, sealSecret } from "@bookalyze/db";
 import { notFound } from "next/navigation";
 import type { AmazonCredentials } from "./amazon";
+import { guardWrites } from "./billing";
 import { env } from "./env";
 import { getOrgContext, type OrgContext, type OrgProfile } from "./org";
 
@@ -13,6 +14,7 @@ export type CommerceContext = OrgContext & { profile: OrgProfile };
 export async function getCommerceContext(slug: string): Promise<CommerceContext> {
   const ctx = await getOrgContext(slug);
   if (!can(ctx.plan, ctx.enabledModules, "commerce.channels") || !ctx.profile) notFound();
+  await guardWrites(ctx, "commerce");
   return ctx as CommerceContext;
 }
 
@@ -20,6 +22,7 @@ export async function getCommerceContext(slug: string): Promise<CommerceContext>
 export async function getReviewsContext(slug: string): Promise<CommerceContext> {
   const ctx = await getOrgContext(slug);
   if (!can(ctx.plan, ctx.enabledModules, "reviews.manual") || !ctx.profile) notFound();
+  await guardWrites(ctx, "reviews");
   return ctx as CommerceContext;
 }
 

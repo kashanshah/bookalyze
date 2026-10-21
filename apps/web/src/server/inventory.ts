@@ -1,6 +1,7 @@
 import "server-only";
 import { can } from "@bookalyze/core";
 import { notFound } from "next/navigation";
+import { guardWrites } from "./billing";
 import type { CommerceContext } from "./commerce";
 import { getOrgContext } from "./org";
 
@@ -11,5 +12,6 @@ export async function getInventoryContext(
 ): Promise<CommerceContext> {
   const ctx = await getOrgContext(slug);
   if (!can(ctx.plan, ctx.enabledModules, feature) || !ctx.profile) notFound();
+  await guardWrites(ctx, "inventory");
   return ctx as CommerceContext;
 }
