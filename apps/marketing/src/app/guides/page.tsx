@@ -40,6 +40,23 @@ export default function GuidesPage() {
             </a>
           ))}
         </nav>
+        <p className="mx-auto max-w-2xl text-center text-muted-foreground text-sm">
+          Using an AI assistant? Every guide is also plain Markdown: point it at{" "}
+          <a
+            href="/llms.txt"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            bookalyze.com/llms.txt
+          </a>{" "}
+          (the index) or{" "}
+          <a
+            href="/llms-full.txt"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            llms-full.txt
+          </a>{" "}
+          (everything), or add .md to any guide's address.
+        </p>
       </Section>
 
       {categories.map((c, i) => (

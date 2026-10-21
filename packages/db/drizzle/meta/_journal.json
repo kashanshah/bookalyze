@@ -624,6 +624,13 @@
       "when": 1792621943429,
       "tag": "0088_signup_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1792622344620,
+      "tag": "0089_ad_metrics",
+      "breakpoints": true
     }
   ]
 }

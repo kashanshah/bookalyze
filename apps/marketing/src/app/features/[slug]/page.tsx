@@ -12,6 +12,7 @@ import {
   CompaniesPreview,
   InvoicePreview,
   LotsPreview,
+  ProductProfitPreview,
   ProfitWaterfall,
   ReorderChart,
   ReviewsPreview,
@@ -30,6 +31,7 @@ const PICTURES: Record<FeaturePicture, () => React.ReactNode> = {
   lots: LotsPreview,
   reorder: ReorderChart,
   profit: ProfitWaterfall,
+  products: ProductProfitPreview,
   transactions: TransactionsPreview,
   companies: CompaniesPreview,
 };
@@ -50,7 +52,10 @@ export async function generateMetadata({
   return {
     title: f.name,
     description: f.tagline,
-    alternates: { canonical: `/features/${f.slug}` },
+    alternates: {
+      canonical: `/features/${f.slug}`,
+      types: { "text/markdown": `/features/${f.slug}.md` },
+    },
   };
 }
 

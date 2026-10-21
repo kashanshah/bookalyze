@@ -1,4 +1,5 @@
 import { ACCOUNTING_GUIDES } from "./accounting";
+import { ADVERTISING_GUIDES } from "./advertising";
 import { BANKING_GUIDES } from "./banking";
 import { COMPANY_GUIDES } from "./company";
 import { CONNECTION_GUIDES } from "./connections";
@@ -54,6 +55,11 @@ export const CATEGORIES: readonly { id: CategoryId; title: string; lead: string 
     title: "Reports and views",
     lead: "Channel profit, financial reports and Home.",
   },
+  {
+    id: "advertising",
+    title: "Advertising and profit",
+    lead: "What ads really cost each product: profit after ads, TACOS, break-even ACOS.",
+  },
   { id: "company", title: "Your company", lead: "Profile, documents and the compliance calendar." },
   {
     id: "playbooks",
@@ -75,6 +81,7 @@ export const GUIDES: readonly Guide[] = [
   ...ACCOUNTING_GUIDES,
   ...INVENTORY_GUIDES,
   ...REPORT_GUIDES,
+  ...ADVERTISING_GUIDES,
   ...COMPANY_GUIDES,
   ...PLAYBOOK_GUIDES,
 ].sort(
@@ -93,6 +100,7 @@ export const POPULAR_GUIDES: readonly string[] = [
   "automatic-review-requests",
   "buyer-invoices",
   "channel-profit",
+  "profit-after-ads",
 ];
 
 export function guide(slug: string): Guide | undefined {

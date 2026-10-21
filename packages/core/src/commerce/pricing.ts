@@ -1,5 +1,12 @@
 import { minorUnits } from "../currency";
-import { AMOUNT_SCALE, divideDecimals, formatDecimal, parseDecimal, roundUnits } from "../money";
+import {
+  AMOUNT_SCALE,
+  divideDecimals,
+  formatDecimal,
+  parseDecimal,
+  RATE_SCALE,
+  roundUnits,
+} from "../money";
 
 /**
  * Changing a listing's price on Amazon: the Listings Items API (2021-08-01) reads a listing and
@@ -269,7 +276,7 @@ export function listingCost(input: {
     if (!unit) continue;
     let units = parseDecimal(unit.cost) * BigInt(c.units);
     if (unit.currency !== input.currency) {
-      if (!input.rate || parseDecimal(input.rate) <= 0n) {
+      if (!input.rate || parseDecimal(input.rate, RATE_SCALE) <= 0n) {
         return { cost: null, missing: [], needsRate: true };
       }
       units = parseDecimal(divideDecimals(formatDecimal(units), input.rate, AMOUNT_SCALE));

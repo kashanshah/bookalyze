@@ -62,12 +62,12 @@ const FEATURES = [
   {
     icon: Boxes,
     title: "Stock and cost of goods",
-    body: "Purchase orders with freight and duties, stock costed first-in first-out, and cost of goods sold posted every month.",
+    body: "Purchase orders with freight and duties, stock costed first-in first-out, cost of goods sold every month, and when to reorder each product.",
   },
   {
     icon: ChartNoAxesCombined,
-    title: "Know when to reorder",
-    body: "When each product runs out at the pace it's selling, and how many to order by when, so new stock arrives in time.",
+    title: "Profit after ads",
+    body: "Every product's profit after fees, landed cost and its own Amazon ads, with its break-even ACOS. The ones losing money first.",
   },
   {
     icon: Star,

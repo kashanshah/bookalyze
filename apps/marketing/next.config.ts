@@ -8,6 +8,13 @@ const nextConfig: NextConfig = {
   // The header and footer links come from @bookalyze/core, shared with the app's public pages.
   transpilePackages: ["@bookalyze/core"],
   poweredByHeader: false,
+  // Each guide and feature page as Markdown at its own address plus ".md" (for AI assistants).
+  async rewrites() {
+    return [
+      { source: "/guides/:slug.md", destination: "/guides-md/:slug" },
+      { source: "/features/:slug.md", destination: "/features-md/:slug" },
+    ];
+  },
   async redirects() {
     return [
       { source: "/privacy", destination: `${APP_URL}/privacy-policy`, permanent: false },

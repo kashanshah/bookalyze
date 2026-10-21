@@ -1979,6 +1979,70 @@ test("commerce: a different seller account's credentials hide the previous accou
   await expect(page.getByText("Maple leaf ceramic mug")).toBeVisible();
 });
 
+test("ads: connect Amazon Ads, bring in ad spend, and see each product's profit after ads", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Amazon\.ca/ }).click();
+  const ads = page.getByRole("region", { name: /Amazon Ads/ });
+
+  // Declined on Amazon's page: nothing is connected.
+  await fetch("http://localhost:4016/test/decline-next");
+  await ads.getByRole("button", { name: "Connect Amazon Ads" }).click();
+  await expect(page.getByText("Amazon Ads wasn't connected")).toBeVisible();
+  await expect(page).not.toHaveURL(/ads=/);
+
+  // Agreed: back on the channel's page, connected to its ads account; the US one is noted.
+  await ads.getByRole("button", { name: "Connect Amazon Ads" }).click();
+  await expect(page.getByText("Amazon Ads connected")).toBeVisible();
+  await expect(ads.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(ads.getByText(/Ads account Maple Goods/)).toBeVisible();
+  await expect(ads.getByText(/Also covers Amazon\.com/)).toBeVisible();
+
+  // 60 days of ad spend, 31 at a time; Amazon's reports are ready at once here.
+  await expect(async () => {
+    await ads.getByRole("button", { name: "Bring in ads now" }).click();
+    await expect(page.getByText("Ad spend brought in").first()).toBeVisible({ timeout: 50_000 });
+    await page.reload();
+    await expect(ads.getByText(/Ad spend in through/)).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 80_000 });
+
+  // Profit by product: the mug's ads, the board whose ads sold nothing, Sponsored Brands apart.
+  await ads.getByRole("link", { name: /Profit by product, after ads/ }).click();
+  await expect(page.getByRole("heading", { name: "Profit by product" })).toBeVisible();
+  const day = (n: number) =>
+    new Date(Number(process.env.E2E_NOW ?? Date.now()) - n * 86_400_000).toISOString().slice(0, 10);
+  await page.goto(`${page.url().split("?")[0]}?from=${day(59)}&to=${day(0)}`);
+  const channel = page.getByRole("region", { name: /Amazon\.ca/ });
+  await expect(channel.getByText("MAPLE-MUG")).toBeVisible();
+  await expect(
+    channel.getByRole("row", { name: /OAK-BOARD/ }).getByText("Ads with no sales"),
+  ).toBeVisible();
+  await expect(channel.getByText("Sponsored Brands", { exact: true })).toBeVisible();
+  await expect(channel.getByText(/Advertising in your books/)).toBeVisible();
+  await expect(page.getByText("Products losing money", { exact: true })).toBeVisible();
+  await expect(page.getByText("Ads with no sales").first()).toBeVisible();
+
+  // The details a click away.
+  await channel.getByRole("button", { name: "Show details for MAPLE-MUG" }).click();
+  await expect(channel.getByText("Break-even cost per click")).toBeVisible();
+  await expect(channel.getByText("Sales from ads")).toBeVisible();
+
+  // The same as a CSV, and the ads on Channel profit for comparison.
+  const csv = await page.request.get(
+    (await page.getByRole("link", { name: "Download CSV" }).getAttribute("href")) ?? "",
+  );
+  const text = await csv.text();
+  expect(text).toContain("Break-even ACOS %");
+  expect(text).toContain("MAPLE-MUG");
+  expect(text).toContain("OAK-BOARD");
+  await page.getByRole("link", { name: "Channel profit", exact: true }).first().click();
+  await expect(page.getByRole("rowheader", { name: "Ad spend in the ads reports" })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: /TACOS/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "By product" })).toBeVisible();
+});
+
 test("amounts recorded in CAD on a USD account are flagged and corrected from Wise", async ({
   page,
 }) => {

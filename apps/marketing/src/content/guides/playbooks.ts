@@ -45,6 +45,10 @@ export const PLAYBOOK_GUIDES: readonly Guide[] = [
       {
         heading: "2. Which product",
         blocks: [
+          { where: "Commerce → Channel profit → By product" },
+          {
+            p: "Every product's profit after fees, cost and ads, the ones losing money first, each with its ACOS next to its break-even ACOS. The full routine is in **Find and fix the products losing money**.",
+          },
           { where: "Inventory → Prices" },
           {
             p: "Each Amazon listing's price beside its landed cost. Open **Change price** on a suspect to see Amazon's fee estimate and the profit and margin at today's price, without changing anything.",
@@ -81,7 +85,13 @@ export const PLAYBOOK_GUIDES: readonly Guide[] = [
         ],
       },
     ],
-    related: ["channel-profit", "amazon-prices", "landed-cost-and-lots", "cost-of-goods-sold"],
+    related: [
+      "profit-after-ads",
+      "fix-products-losing-money",
+      "channel-profit",
+      "amazon-prices",
+      "landed-cost-and-lots",
+    ],
   },
   {
     slug: "month-end-for-sellers",

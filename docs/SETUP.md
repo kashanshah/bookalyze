@@ -84,6 +84,43 @@ available yet; eBay sites still work for linking SKUs.
 5. Call limits are per app, shared by every connected account. eBay's "Application Growth Check"
    raises them when needed.
 
+## Amazon Ads (Connect Amazon Ads)
+
+Ad spend per product (Channel profit → By product) comes from the **Amazon Ads API**, through
+**one Bookalyze Ads app** (a Login with Amazon security profile approved for the Ads API). Its keys
+are system secrets (Vercel env vars); each company connects its own ads accounts from an Amazon
+marketplace's page (Channels → Amazon.ca → Amazon Ads → Connect Amazon Ads) by agreeing on
+Amazon's page, once per Ads region (North America for Amazon.ca, Europe for Amazon.ae). The
+refresh token is kept encrypted with `APP_ENCRYPTION_KEY`. Bookalyze only reads reports. This is
+separate from the Selling Partner app (Seller Central → Develop Apps): the two use different
+Login with Amazon clients. Design: `docs/ADS.md`.
+
+1. **Security profile.** developer.amazon.com → Login with Amazon → Create a New Security Profile:
+   name `Bookalyze`, a description, and the privacy notice URL
+   `https://app.bookalyze.com/privacy-policy`. Note its **Client ID** and **Client Secret**
+   (Show Client ID and Client Secret).
+2. **Return URL.** The profile's Web Settings → Edit → **Allowed Return URLs**:
+   `https://app.bookalyze.com/api/amazon-ads/callback` (add `http://localhost:3000/api/amazon-ads/callback`
+   only on a separate development profile). Allowed Origins can stay empty.
+3. **Ads API access.** Apply at advertising.amazon.com → Amazon Ads API → Apply for access (the
+   onboarding form), signed in with the Amazon Ads account Kazomo advertises with. Describe the use:
+   "Reads Sponsored Products and Sponsored Brands reports (spend and attributed sales per product
+   per day) for the advertiser's own accounting and profit reports; no campaign management." Amazon
+   reviews it (usually days) and emails when approved. Offering it to other companies' accounts may
+   need Amazon's partner (tool provider) route; Amazon says which when it reviews.
+4. **Link the profile.** When approved, follow Amazon's email to accept the Ads API terms and assign
+   the security profile from step 1 to Ads API access (its Client ID). Until this is done, consent
+   works but every report request is refused.
+5. **Vercel** (Production): `AMAZON_ADS_CLIENT_ID`, `AMAZON_ADS_CLIENT_SECRET`. Preview deployments
+   can't finish consent (their callback isn't an Allowed Return URL).
+6. **In Bookalyze**, as an owner or admin: Commerce → Channels → Amazon.ca → **Connect Amazon Ads**,
+   and the same on Amazon.ae (the Europe region needs its own consent). Sign in on Amazon's page
+   with a login that can see that marketplace's Campaign Manager. Never type an Amazon password or
+   one-time code anywhere but Amazon's own page.
+
+Reports: the daily job asks for each channel's last 15 days (60 on first connect); the 5-minute job
+collects them when Amazon has made them. Limits are per app and shared by every connected account.
+
 ## Vercel
 
 1. Import the GitHub repository. Set **Root Directory** to `apps/web` (framework: Next.js). Vercel

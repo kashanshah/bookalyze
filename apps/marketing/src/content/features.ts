@@ -14,6 +14,7 @@ export type FeatureSlug =
   | "stock-and-cost-of-goods"
   | "reorder"
   | "channel-profit"
+  | "profit-after-ads"
   | "listing-watch"
   | "bookkeeping"
   | "multi-company";
@@ -27,6 +28,7 @@ export type FeaturePicture =
   | "lots"
   | "reorder"
   | "profit"
+  | "products"
   | "transactions"
   | "companies";
 
@@ -396,6 +398,15 @@ export const FEATURES: readonly Feature[] = [
           "A column per marketplace, in its own currency",
           "All channels together in your main currency",
           "Your own costs per channel, such as software or agency fees",
+          "Ad spend from Amazon Ads and TACOS beside each marketplace",
+        ],
+      },
+      {
+        title: "Per product, after ads",
+        body: "By product: each product's profit after fees, cost and its own ads, the ones losing money first.",
+        points: [
+          "Break-even ACOS and break-even cost per click for every advertised product",
+          "See Profit after ads",
         ],
       },
       {
@@ -421,7 +432,117 @@ export const FEATURES: readonly Feature[] = [
         a: "No, but without cost of goods it shows profit before the product's cost. Stock adds the real cost of each unit sold.",
       },
     ],
-    guides: ["channel-profit", "amazon-prices", "are-you-losing-money"],
+    guides: ["channel-profit", "profit-after-ads", "amazon-prices", "are-you-losing-money"],
+  },
+  {
+    slug: "profit-after-ads",
+    name: "Profit after ads",
+    tagline: "Every product's real profit after fees, cost and ads. Find the ones losing money.",
+    intro:
+      "Plenty of Amazon sellers grow sales and lose money doing it. A product's price has to cover the marketplace's fees, refunds, the landed cost of the unit and the ads that sold it, and no one screen shows all four. Bookalyze brings your Amazon Ads spend in every day, per product, and sets it against what each product really earned, so you see which products make money, which lose it, and exactly how far each one's ads can go before they stop paying.",
+    module: "commerce",
+    picture: "products",
+    sections: [
+      {
+        title: "The real profit of every product",
+        body: "Per marketplace, from sales down to profit after ads, in the marketplace's own currency, for any period.",
+        points: [
+          "Sales and units from your orders, cancelled orders left out",
+          "What the marketplace left you after its fees, refunds and promotions, from its settlements",
+          "The landed cost of each unit, bundles and multipacks included",
+          "Each product's own ad spend, day by day, from Amazon Ads",
+          "Profit before and after ads, per product and per unit, with the margin",
+        ],
+      },
+      {
+        title: "The products losing money, first",
+        body: "Each product gets a plain verdict, and the worst come to the top.",
+        points: [
+          "Losing money: the price doesn't cover the fees and the cost, ads or not",
+          "Ads eat the profit: profitable on its own, not after its ads",
+          "Ads with no sales: spend that sold nothing",
+          "Ads cost more than they earn: ACOS above the product's break-even",
+          "How many products lost money in the period, and how much",
+        ],
+      },
+      {
+        title: "How far each product's ads can go",
+        body: "The numbers your ads console can't give you, because it doesn't know your costs.",
+        points: [
+          "Break-even ACOS: the most ACOS can be before each ad sale loses money",
+          "Break-even cost per click: the highest bid that still pays",
+          "ACOS, TACOS and ROAS next to it, per product and per marketplace",
+          "The share of sales that came without ads",
+        ],
+      },
+      {
+        title: "Ads counted once, and your books kept right",
+        body: "Amazon charges ads from payouts or a card; the ads reports say what each day cost. Bookalyze uses each where it belongs.",
+        points: [
+          "Channel profit keeps counting the advertising in your books",
+          "Profit by product uses each day's spend from the ads reports instead, never both",
+          "The two side by side, with the difference and why",
+          "Sponsored Brands kept as its own line, not spread over products it wasn't about",
+          "Every column as a CSV, for your accountant or your own sheet",
+        ],
+      },
+    ],
+    steps: [
+      {
+        title: "Connect Amazon Ads",
+        body: "On your Amazon marketplace's page, agree on Amazon's own page. Read-only; one sign-in per region.",
+      },
+      {
+        title: "Link products and costs",
+        body: "Your SKUs linked to products, and each product's landed cost from a delivery or opening stock.",
+      },
+      {
+        title: "Read By product",
+        body: "Commerce → Channel profit → By product: the losing products first, every month.",
+      },
+    ],
+    faq: [
+      {
+        q: "How is this different from ACOS in Seller Central?",
+        a: "ACOS says what ads cost against the sales they brought. It doesn't know your landed cost or what Amazon's fees left you, so it can't say whether those sales made money. Bookalyze compares each product's ACOS with its own break-even ACOS, and shows its profit after ads.",
+      },
+      {
+        q: "Can Bookalyze change my campaigns or bids?",
+        a: "No. It only reads the ads reports: spend, clicks, and the sales Amazon attributes to the ads. Keywords, search terms, bids and budgets stay in your ads tools.",
+      },
+      {
+        q: "Will ad costs be counted twice with my settlements?",
+        a: "No. Channel profit counts the advertising in your books. Profit by product takes that out of what the marketplace left you, then takes each product's own spend from the ads reports. The two totals show side by side, with the difference.",
+      },
+      {
+        q: "What about Sponsored Brands?",
+        a: "Amazon reports Sponsored Brands' cost per campaign, not per product, so it's its own line under each marketplace: in the marketplace's profit and TACOS, not spread over products.",
+      },
+      {
+        q: "Which marketplaces?",
+        a: "Amazon, every marketplace, through the Amazon Ads API. Noon (an upload of Ad Manager's export), eBay Promoted Listings and Walmart Connect are next. Until then their advertising shows per marketplace, from your books.",
+      },
+      {
+        q: "How far back, and how fresh?",
+        a: "60 days back when you connect, then every day. The last 15 days are fetched again daily, because Amazon keeps moving sales between days for 14 days after a click.",
+      },
+      {
+        q: "What if a product has no cost yet?",
+        a: "It still shows its sales and ads, marked Cost missing, with how to fix it: link its SKU to a product and add a delivery or opening stock with the cost.",
+      },
+      {
+        q: "Does it work in several currencies?",
+        a: "Yes. Each marketplace is in its own currency, and the summary is in your main currency at each day's exchange rate.",
+      },
+    ],
+    guides: [
+      "profit-after-ads",
+      "connect-amazon-ads",
+      "acos-tacos-break-even",
+      "fix-products-losing-money",
+      "ads-in-your-books",
+      "ads-data-and-limits",
+    ],
   },
   {
     slug: "listing-watch",

@@ -23,6 +23,7 @@ import { tenantIsolationPolicy } from "./tenancy";
  * "csv": bank statements uploaded as files, one connection per account. "amazon_sp": an Amazon
  * seller account through the Selling Partner API (with the company's own developer app).
  * "walmart": one Walmart seller account (one market) with the company's own API keys.
+ * "amazon_ads": an Amazon Ads account for one Ads region, by consent through Bookalyze's Ads app.
  */
 export const CONNECTION_PROVIDERS = [
   "wise",
@@ -31,6 +32,7 @@ export const CONNECTION_PROVIDERS = [
   "noon",
   "ebay",
   "walmart",
+  "amazon_ads",
 ] as const;
 export type ConnectionProvider = (typeof CONNECTION_PROVIDERS)[number];
 

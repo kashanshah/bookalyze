@@ -1,11 +1,20 @@
-import { CONNECTION_AREA, can, isFulfilmentMode, noonReportInputs } from "@bookalyze/core";
 import {
+  AMAZON_MARKETPLACES,
+  type AmazonAdsProfile,
+  CONNECTION_AREA,
+  can,
+  isFulfilmentMode,
+  noonReportInputs,
+} from "@bookalyze/core";
+import {
+  adsBroughtInThrough,
   channelRemovalBlockers,
   describeBlockers,
   getChannel,
   getEbayConnection,
   getNoonConnection,
   getWalmartConnection,
+  listAmazonAdsConnections,
   listAmazonConnections,
   listWalmartSettlements,
   schema,
@@ -18,10 +27,12 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button } from "@/components/ui/button";
 import { inOrg } from "@/server/accounting";
+import { amazonAdsApp } from "@/server/amazon-ads";
 import { getCommerceContext } from "@/server/commerce";
 import { ebayApp } from "@/server/ebay";
 import { isOrgAdmin } from "@/server/org";
 import { AmazonAccount } from "../amazon";
+import { AmazonAdsConnectNotice, AmazonAdsPanel, type AmazonAdsView } from "../amazon-ads";
 import { EbayAccount, EbayConnectNotice } from "../ebay";
 import { NoonAccount, type NoonConnectionView, NoonFulfilment } from "../noon";
 import { PLATFORMS } from "../platforms";
@@ -47,8 +58,11 @@ export default async function ChannelPage({
   searchParams,
 }: {
   params: Promise<{ slug: string; id: string }>;
-  /** `ebay` (connected, declined, failed) and `message`: eBay's callback sending the admin back. */
-  searchParams: Promise<{ ebay?: string; message?: string }>;
+  /**
+   * `ebay` or `ads` (connected, declined, failed) and `message`: eBay's or Amazon Ads' callback
+   * sending the admin back.
+   */
+  searchParams: Promise<{ ebay?: string; ads?: string; message?: string }>;
 }) {
   const { slug, id } = await params;
   const sp = await searchParams;
@@ -65,6 +79,9 @@ export default async function ChannelPage({
         channel.kind === "amazon"
           ? ((await listAmazonConnections(tx)).find((c) => c.id === channel.connectionId) ?? null)
           : null,
+      ads: channel.kind === "amazon" ? await listAmazonAdsConnections(tx) : [],
+      adsThrough:
+        channel.kind === "amazon" ? (await adsBroughtInThrough(tx)).get(channel.id) : undefined,
       noon: channel.kind === "noon" ? await getNoonConnection(tx) : null,
       ebay: channel.kind === "ebay" ? await getEbayConnection(tx) : null,
       walmart:
@@ -226,6 +243,28 @@ export default async function ChannelPage({
         />
       ) : null}
 
+      {ch.kind === "amazon" && data.amazon && money ? (
+        <>
+          <AmazonAdsPanel
+            slug={slug}
+            locale={locale}
+            canManage={canManage}
+            channelId={ch.id}
+            channelName={ch.name}
+            configured={Boolean(amazonAdsApp())}
+            connection={adsView(data.ads, ch.marketplaceId)}
+            through={data.adsThrough?.through ?? null}
+            pending={data.adsThrough?.pending ?? 0}
+            reportError={data.adsThrough?.lastError ?? null}
+            profitHref={`${base}/profit/products?channel=${ch.id}`}
+          />
+          <AmazonAdsConnectNotice
+            result={sp.ads ?? null}
+            message={typeof sp.message === "string" ? sp.message : null}
+          />
+        </>
+      ) : null}
+
       {ch.kind === "noon" ? (
         <>
           <NoonAccount
@@ -374,6 +413,30 @@ function LinkRow({
       <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
     </Link>
   );
+}
+
+/** The Ads connection for the marketplace's region, and what it says about this marketplace. */
+function adsView(
+  connections: Awaited<ReturnType<typeof listAmazonAdsConnections>>,
+  marketplaceId: string | null,
+): AmazonAdsView | null {
+  const region = AMAZON_MARKETPLACES.find((m) => m.id === marketplaceId)?.region;
+  const c = connections.find((x) => x.settings.region === region);
+  if (!c) return null;
+  const profiles = (
+    Array.isArray(c.settings.profiles) ? c.settings.profiles : []
+  ) as AmazonAdsProfile[];
+  const mine = profiles.find((p) => p.marketplaceId === marketplaceId);
+  return {
+    status: c.status,
+    accountName: mine?.accountName || null,
+    matches: Boolean(mine),
+    others: profiles
+      .filter((p) => p.marketplaceId !== marketplaceId && p.accountType === "seller")
+      .map((p) => AMAZON_MARKETPLACES.find((m) => m.id === p.marketplaceId)?.name ?? p.countryCode),
+    lastSyncedAt: c.lastSyncedAt?.toISOString() ?? null,
+    lastError: c.lastError,
+  };
 }
 
 function noonView(c: Awaited<ReturnType<typeof getNoonConnection>>): NoonConnectionView | null {
