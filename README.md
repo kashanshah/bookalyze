@@ -9,7 +9,7 @@ Bookkeeping, banking and marketplace sales for every company you run, in one cal
 - **Conventions for contributors and Claude Code:** [CLAUDE.md](CLAUDE.md)
 
 ```bash
-pnpm install && cp .env.example .env   # fill in .env
+pnpm install && cp apps/web/.env.example apps/web/.env   # fill it in
 pnpm db:up && pnpm db:setup
 pnpm dev                               # http://localhost:3000
 ```

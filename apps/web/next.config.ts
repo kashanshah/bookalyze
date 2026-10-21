@@ -2,9 +2,9 @@ import { resolve } from "node:path";
 import { config } from "dotenv";
 import type { NextConfig } from "next";
 
-// One set of env files for the whole monorepo: the repo-root .env.local, then .env. Earlier
-// sources win: existing variables (Vercel, apps/web/.env.local) first, then .env.local, then
-// .env. On Vercel there are no files and this does nothing.
+// Next.js reads apps/web/.env.local and apps/web/.env itself. A repo-root .env.local and .env
+// (older setups) also work; earlier sources win, so the app's own files come first. On Vercel
+// there are no files and this does nothing.
 config({ path: resolve(process.cwd(), "../../.env.local"), quiet: true });
 config({ path: resolve(process.cwd(), "../../.env"), quiet: true });
 

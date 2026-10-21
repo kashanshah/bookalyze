@@ -37,7 +37,8 @@ on each WFS channel and on Stock in its own column._
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
 sign-in pages and given to eBay), and `/terms` (Terms of service, a draft for the owner's legal
-review; linked from sign-up). Every environment variable is listed in `.env.example`. The public site
+review; linked from sign-up). Every environment variable is listed in `apps/web/.env.example` (the app) or
+`apps/marketing/.env.example` (the public site). The public site
 (`apps/marketing`, Next.js) is built and waiting for its own Vercel project and the bookalyze.com
 domain (`docs/SETUP.md` → Public site); until then the static landing page with a Resend waitlist
 (`apps/landing/`) stays on Hostinger at bookalyze.com. A preview deploy is built
@@ -3514,8 +3515,10 @@ screenshots work well).
 - **Drizzle leaves the column unqualified** (`"id"`) when a query selects from one table. Inside a
   hand-written subquery, qualify outer columns yourself (`"journal_entries"."id"`) or Postgres
   reports `column reference "id" is ambiguous`.
-- **Root `.env` loading:** `apps/web/next.config.ts` loads the root `.env` with dotenv.
-  `packages/db/scripts/load-env.ts` does the same for scripts.
+- **Env files:** the app's live in `apps/web/` (`.env`, `.env.local`), which Next.js reads itself;
+  `packages/db/scripts/load-env.ts` reads them for the database scripts. A repo-root `.env` /
+  `.env.local` still works (`apps/web/next.config.ts` and the scripts load it after the app's own).
+  The public site reads only `apps/marketing/.env*`.
 - **Local e2e and migrations follow `.env`**, which may point at the live database. Shell
   variables win over `.env`, so export `DATABASE_URL`, `DATABASE_URL_MIGRATOR` and
   `DATABASE_URL_UNPOOLED` for the local Docker database (as in CI) before `pnpm db:setup`,
