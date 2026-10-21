@@ -218,6 +218,10 @@ export const COUNTRIES: readonly Country[] = [
         q: "Does it connect to ZATCA for e-invoicing?",
         a: "No. Bookalyze makes invoices for marketplace buyers as PDFs; it isn't a ZATCA e-invoicing solution.",
       },
+      {
+        q: "Are riyal exchange rates filled in for me?",
+        a: "Not yet. Bookalyze's daily rates come from the Bank of Canada, which doesn't publish the riyal. Books kept in riyals need no rate; for anything in another currency, you type the rate your bank used.",
+      },
     ],
   },
   {
@@ -251,6 +255,10 @@ export const COUNTRIES: readonly Country[] = [
       {
         q: "Does it connect to the ETA e-invoicing system?",
         a: "No. Bookalyze keeps your books and makes PDF invoices for marketplace buyers; it isn't an ETA e-invoicing integration.",
+      },
+      {
+        q: "Are Egyptian pound exchange rates filled in for me?",
+        a: "Not yet. Bookalyze's daily rates come from the Bank of Canada, which doesn't publish the pound. Books kept in pounds need no rate; for anything in another currency, you type the rate your bank used.",
       },
     ],
   },

@@ -1,57 +1,38 @@
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
+import { MARKETPLACES, type Marketplace } from "@/content/marketplaces";
+import { cn } from "@/lib/site";
 import { Checklist } from "./section";
 
-/** What each marketplace connection does: where it works, how it connects, and what comes in. */
-export const MARKETPLACES = [
-  {
-    name: "Amazon",
-    where: "Seller Central in North America, Europe, the Middle East and the Far East",
-    connect: "Connect your own Selling Partner API app. Bookalyze walks you through each step.",
-    brings: [
-      "Orders, refunds, fees and every settlement",
-      "Each settlement posted as one clean entry",
-      "Each payout matched to its bank deposit",
-      "FBA inventory: returns back into stock, losses written off",
-      "Review requests, automatic or hundreds at once",
-      "Listing watch and prices with fees and profit",
-    ],
-  },
-  {
-    name: "eBay",
-    where: "United States, Canada, UK, Australia, Germany, France, Italy and Spain",
-    connect: "Connect in one click on eBay's own page. Access is read-only.",
-    brings: [
-      "Orders, ready for cost of goods sold",
-      "Fees, refunds and payouts, month by month",
-      "Each site's month posted as one entry",
-      "Each payout matched to its bank deposit",
-      "Or upload Seller Hub's transaction report",
-    ],
-  },
-  {
-    name: "Noon",
-    where: "UAE, Saudi Arabia and Egypt, fulfilled by Noon or by you",
-    connect: "Connect with a key file from Noon's partner portal. Bookalyze shows you how.",
-    brings: [
-      "Every transaction, row by row, a year back",
-      "Each country's month posted as one entry",
-      "Each payout matched to its bank deposit",
-      "FBN stock: returns and losses, checked day by day",
-      "Every report Noon offers, each with a check",
-    ],
-  },
-] as const;
-
-export function MarketplaceCards() {
+/**
+ * The marketplace cards (Home, Features, the marketplaces index): where each one works, what
+ * comes in and how it connects, each linking to its own page. The facts live in
+ * `content/marketplaces.ts`.
+ */
+export function MarketplaceCards({
+  items = MARKETPLACES,
+  className,
+}: {
+  items?: readonly Marketplace[];
+  className?: string;
+}) {
   return (
-    <div className="grid gap-5 lg:grid-cols-3">
-      {MARKETPLACES.map((m) => (
+    <div className={cn("grid gap-5 md:grid-cols-2", className)}>
+      {items.map((m) => (
         <article
-          key={m.name}
-          className="flex flex-col gap-5 rounded-2xl border bg-card p-6 shadow-xs sm:p-7"
+          key={m.slug}
+          className="group relative flex flex-col gap-5 rounded-2xl border bg-card p-6 shadow-xs transition-shadow hover:shadow-md sm:p-7"
         >
           <div className="grid gap-1.5">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="font-semibold text-2xl tracking-tight">{m.name}</h3>
+              <h3 className="font-semibold text-2xl tracking-tight">
+                <Link
+                  href={`/marketplaces/${m.slug}`}
+                  className="after:absolute after:inset-0 after:rounded-2xl focus-visible:outline-none"
+                >
+                  {m.name}
+                </Link>
+              </h3>
               <span className="inline-flex items-center gap-2 rounded-full bg-success/12 px-2.5 py-1 font-medium text-success text-xs">
                 <span className="relative flex size-1.5">
                   <span className="anim-ping absolute inline-flex size-full rounded-full bg-success" />
@@ -66,6 +47,10 @@ export function MarketplaceCards() {
           <p className="mt-auto rounded-xl bg-accent px-4 py-3 text-accent-foreground text-sm leading-6">
             {m.connect}
           </p>
+          <span className="inline-flex items-center gap-1.5 font-medium text-primary text-sm">
+            More about {m.name}
+            <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5" />
+          </span>
         </article>
       ))}
     </div>

@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, Check, Landmark } from "lucide-react";
+import { ArrowRight, Building2, Check, FileText, Landmark, RefreshCw, Send } from "lucide-react";
 import { cn } from "@/lib/site";
 import { InView } from "./in-view";
 
@@ -91,7 +91,7 @@ function Pill({
 
 const PAYOUTS = [
   { channel: "Amazon.com", period: "Oct 1 – Oct 15", amount: "$10,480.20", matched: true },
-  { channel: "eBay US", period: "September", amount: "$3,915.64", matched: true },
+  { channel: "Walmart US", period: "Sep 30 – Oct 13", amount: "$6,128.95", matched: true },
   { channel: "Noon UAE", period: "September", amount: "AED 18,206.00", matched: true },
   { channel: "Amazon.ca", period: "Sep 24 – Oct 8", amount: "CA$4,072.18", matched: false },
 ] as const;
@@ -109,8 +109,9 @@ export function PayoutsPreview() {
             </div>
             <div className="hidden gap-1 rounded-lg bg-muted p-1 text-xs sm:flex">
               <span className="rounded-md bg-card px-2.5 py-1 font-medium shadow-xs">Amazon</span>
-              <span className="px-2.5 py-1 text-muted-foreground">eBay</span>
+              <span className="px-2.5 py-1 text-muted-foreground">Walmart</span>
               <span className="px-2.5 py-1 text-muted-foreground">Noon</span>
+              <span className="px-2.5 py-1 text-muted-foreground">eBay</span>
             </div>
           </div>
           <ul className="divide-y rounded-xl border">
@@ -597,5 +598,144 @@ export function CompaniesPreview() {
         Add a company
       </div>
     </div>
+  );
+}
+
+const WISE_BALANCES = [
+  { currency: "CAD", amount: "CA$12,480.55" },
+  { currency: "USD", amount: "$8,215.10" },
+  { currency: "AED", amount: "AED 31,904.00" },
+] as const;
+
+const WISE_LINES = [
+  { name: "Amazon.ca payout", amount: "+CA$4,072.18", rule: "Matched to settlement" },
+  { name: "Ningbo Ceramics", amount: "−$1,250.00", rule: "Supplier deposits" },
+  { name: "Shopify", amount: "−$39.00", rule: "Rule: Software" },
+] as const;
+
+/** Banking → Wise: balances in each currency, and the day's lines arriving and sorting themselves. */
+export function WisePreview() {
+  return (
+    <Frame>
+      <div className="grid gap-4 p-4 sm:p-6">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-muted-foreground text-xs">Banking · Bank accounts</p>
+            <p className="font-semibold">Wise</p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
+            <RefreshCw className="size-3" />
+            Synced this morning
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {WISE_BALANCES.map((b) => (
+            <div key={b.currency} className="grid gap-0.5 rounded-xl border p-3">
+              <span className="text-muted-foreground text-xs">{b.currency}</span>
+              <span className="truncate font-semibold text-sm tabular-nums">{b.amount}</span>
+            </div>
+          ))}
+        </div>
+        <ul className="divide-y rounded-xl border">
+          {WISE_LINES.map((l, i) => (
+            <li
+              key={l.name}
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3"
+            >
+              <p className="truncate font-medium text-sm">{l.name}</p>
+              <p
+                className={cn(
+                  "text-end font-medium text-sm tabular-nums",
+                  l.amount.startsWith("+") && "text-success",
+                )}
+              >
+                {l.amount}
+              </p>
+              <Swap
+                className="col-span-2 justify-items-start"
+                delay={0.5 + i * 1}
+                before={<Pill tone="warning">New from Wise</Pill>}
+                after={<Pill tone="success">{l.rule}</Pill>}
+              />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Frame>
+  );
+}
+
+/** Commerce → an order: Create invoice, the bilingual PDF, then sent to the buyer through Amazon. */
+export function InvoicePreview() {
+  return (
+    <Frame>
+      <div className="grid gap-4 p-4 sm:p-6">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-muted-foreground text-xs">Commerce · Orders · Amazon.ae</p>
+            <p className="font-mono font-semibold text-sm">406-2281943-7710326</p>
+          </div>
+          <Swap
+            className="justify-items-end"
+            delay={0.6}
+            loop={7}
+            before={
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 font-medium text-primary-foreground text-xs">
+                <FileText className="size-3.5" />
+                Create invoice
+              </span>
+            }
+            after={
+              <span className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 font-medium text-xs">
+                <Send className="size-3.5" />
+                Send to Amazon
+              </span>
+            }
+          />
+        </div>
+        <div className="grid gap-3 rounded-xl border bg-background p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-semibold text-sm">Tax invoice</p>
+              <p className="text-muted-foreground text-xs" dir="rtl" lang="ar">
+                فاتورة ضريبية
+              </p>
+            </div>
+            <p className="text-end text-muted-foreground text-xs">
+              INV-0142
+              <span className="block">Northwind Gulf FZ-LLC</span>
+            </p>
+          </div>
+          <div className="grid gap-1.5 border-t pt-3 text-xs">
+            <p className="flex justify-between gap-3">
+              <span className="truncate">Glass coffee mugs, set of 4 × 2</span>
+              <span className="tabular-nums">AED 158.00</span>
+            </p>
+            <p className="flex justify-between gap-3 text-muted-foreground">
+              <span>VAT 5%</span>
+              <span className="tabular-nums">AED 7.90</span>
+            </p>
+            <p className="flex justify-between gap-3 font-semibold">
+              <span>Total</span>
+              <span className="tabular-nums">AED 165.90</span>
+            </p>
+          </div>
+        </div>
+        <Swap
+          delay={2.2}
+          loop={7}
+          before={
+            <p className="rounded-lg bg-muted px-3 py-2 text-muted-foreground text-sm">
+              Buyer asked for an invoice
+            </p>
+          }
+          after={
+            <p className="rounded-lg bg-success/12 px-3 py-2 text-sm text-success">
+              Sent to the buyer through Amazon
+            </p>
+          }
+        />
+      </div>
+    </Frame>
   );
 }

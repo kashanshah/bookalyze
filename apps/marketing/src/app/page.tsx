@@ -3,6 +3,7 @@ import {
   BookOpenCheck,
   Boxes,
   ChartNoAxesCombined,
+  FileText,
   Landmark,
   LockKeyhole,
   ScrollText,
@@ -11,34 +12,40 @@ import {
   UsersRound,
 } from "lucide-react";
 import { ButtonLink } from "@/components/button";
+import { CountryCards } from "@/components/countries";
 import { ClosingCta } from "@/components/cta";
 import { Faq, type Question } from "@/components/faq";
 import { MoneyFlow } from "@/components/flow";
 import { InView } from "@/components/in-view";
 import { MarketplaceCards } from "@/components/marketplaces";
-import { CompaniesPreview, PayoutsPreview, ProfitWaterfall, timing } from "@/components/previews";
+import { PainsGrid } from "@/components/pains";
+import {
+  CompaniesPreview,
+  InvoicePreview,
+  PayoutsPreview,
+  ProfitWaterfall,
+  ReviewsPreview,
+  timing,
+  WisePreview,
+} from "@/components/previews";
 import { Checklist, Section, SectionHeading } from "@/components/section";
-import { SIGN_UP_URL } from "@/lib/site";
+import { cn, SIGN_UP_URL } from "@/lib/site";
 
-const CONNECTS = ["Amazon", "eBay", "Noon", "Wise", "Any bank by statement", "Wave (import)"];
+const CONNECTS = [
+  "Amazon",
+  "Walmart",
+  "Noon",
+  "eBay",
+  "Wise",
+  "Any bank by statement",
+  "Wave (import)",
+];
 
-const FLOW = [
-  {
-    title: "Brought in",
-    body: "Orders, fees, refunds and payouts arrive from each marketplace every day, on their own.",
-  },
-  {
-    title: "Posted",
-    body: "Each settlement or month becomes one tidy entry, split into sales, fees, refunds and ads.",
-  },
-  {
-    title: "Matched",
-    body: "Each payout is paired with the deposit in your bank, so you know every dollar arrived.",
-  },
-  {
-    title: "Profit",
-    body: "Sales less fees, cost of goods and your own costs, for each marketplace and product.",
-  },
+/** The three things the owner wants every visitor to see, in the hero and in their own sections. */
+const HIGHLIGHTS = [
+  { icon: Star, label: "Automatic review requests", href: "#reviews" },
+  { icon: Landmark, label: "Wise bank sync", href: "#wise" },
+  { icon: FileText, label: "Buyer invoices in seconds", href: "#invoices" },
 ] as const;
 
 const FEATURES = [
@@ -77,11 +84,11 @@ const FEATURES = [
 const FAQ: Question[] = [
   {
     q: "What does it cost?",
-    a: "Nothing during early access, with every feature included. Paid plans will come later; we'll tell you well before anything changes, and nothing is charged unless you choose a plan.",
+    a: "Nothing during early access, with every feature included. Paid plans start at $9 a month per company; see Pricing. We'll tell you at least 30 days before anything changes, and nothing is charged unless you choose a plan.",
   },
   {
     q: "Which marketplaces can I connect?",
-    a: "Amazon (North America, Europe, the Middle East and the Far East), eBay (US, Canada, UK, Australia, Germany, France, Italy and Spain) and Noon (UAE, Saudi Arabia and Egypt). More are on the way.",
+    a: "Amazon (North America, Europe, the Middle East and the Far East), Walmart (the US, Canada and Mexico), Noon (the UAE, Saudi Arabia and Egypt) and eBay (US, Canada, UK, Australia, Germany, France, Italy and Spain).",
   },
   {
     q: "Do I still need a separate bookkeeping app?",
@@ -90,6 +97,10 @@ const FAQ: Question[] = [
   {
     q: "Can I run several companies in different countries?",
     a: "Yes, that's what it's built for. Each company has its own currency, tax settings, financial year, team and connections, and you switch between them in a click.",
+  },
+  {
+    q: "Are the review requests allowed by Amazon?",
+    a: "Yes. Bookalyze sends Amazon's own Request a Review, once per order, inside Amazon's window. It writes no custom emails to buyers.",
   },
   {
     q: "Is my data safe?",
@@ -113,20 +124,33 @@ export default function HomePage() {
               Free during early access
             </p>
             <h1 className="text-balance font-semibold text-4xl tracking-tight sm:text-5xl lg:text-6xl">
-              Your marketplaces, straight into your books.
+              Accounting built for Amazon, Walmart and Noon sellers.
             </h1>
             <p className="max-w-xl text-pretty text-lg text-muted-foreground leading-relaxed">
-              Bookalyze connects to Amazon, eBay and Noon, brings in every order, fee, refund and
-              payout, and turns them into clean accounting entries matched to your bank. For every
-              company you run, in any currency.
+              For sellers in the United States, Canada, Mexico, the UAE, Saudi Arabia and Egypt.
+              Every settlement posted, every payout matched to your bank, and what each channel
+              really earned after fees, refunds, ads and cost of goods. eBay too.
             </p>
+            <ul className="flex flex-wrap gap-2">
+              {HIGHLIGHTS.map((h) => (
+                <li key={h.href}>
+                  <a
+                    href={h.href}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 font-medium text-accent-foreground text-sm transition-colors hover:bg-primary hover:text-primary-foreground"
+                  >
+                    <h.icon className="size-3.5" />
+                    {h.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
             <div className="flex flex-wrap gap-3">
               <ButtonLink href={SIGN_UP_URL} size="lg">
                 Start free
                 <ArrowRight className="rtl:rotate-180" />
               </ButtonLink>
-              <ButtonLink href="#marketplaces" variant="outline" size="lg">
-                See what connects
+              <ButtonLink href="#losing-money" variant="outline" size="lg">
+                Am I making money?
               </ButtonLink>
             </div>
             <p className="text-muted-foreground text-sm">No card needed. Set up in an afternoon.</p>
@@ -151,6 +175,44 @@ export default function HomePage() {
         </div>
       </div>
 
+      {/* The losing-money message */}
+      <Section id="losing-money" className="grid gap-14 lg:grid-cols-2 lg:items-center">
+        <div className="grid gap-8">
+          <SectionHeading
+            align="start"
+            eyebrow="Are you really making money?"
+            title="Many sellers find out too late"
+            lead="The payout looks healthy, so the business must be too. Then every fee, refund, ad, storage charge and unit cost is set against each sale, and a channel or a product turns out to have been losing money for months."
+          />
+          <Checklist
+            items={[
+              "Channel profit for each marketplace: net from the marketplace, cost of goods sold, your own costs, profit and margin",
+              "Each listing's price beside what it costs you and Amazon's fees",
+              "Cost of goods from your real landed costs, not a guess",
+            ]}
+          />
+          <ButtonLink
+            href="/guides/are-you-losing-money"
+            variant="outline"
+            className="justify-self-start"
+          >
+            Find the channel that loses money
+            <ArrowRight className="rtl:rotate-180" />
+          </ButtonLink>
+        </div>
+        <ProfitWaterfall />
+      </Section>
+
+      {/* Pains → answers */}
+      <Section tint className="grid gap-12">
+        <SectionHeading
+          eyebrow="The pains of selling online"
+          title="The usual problems, answered"
+          lead="Each one is a real headache for marketplace sellers. Here's what Bookalyze does about it."
+        />
+        <PainsGrid />
+      </Section>
+
       {/* How the money flows */}
       <Section className="grid gap-12">
         <SectionHeading
@@ -165,33 +227,71 @@ export default function HomePage() {
       <Section id="marketplaces" tint className="grid gap-12">
         <SectionHeading
           eyebrow="Marketplaces"
-          title="Amazon, eBay and Noon, each one fully connected"
+          title="Amazon, Walmart, Noon and eBay, each one fully connected"
           lead="Stop downloading reports and typing totals. Each connection keeps bringing in what your books need, and checks it adds up."
         />
         <MarketplaceCards />
       </Section>
 
-      {/* From payout to profit */}
-      <Section className="grid gap-14 lg:grid-cols-2 lg:items-center">
-        <div className="grid gap-10">
-          <SectionHeading
-            align="start"
-            eyebrow="From payout to profit"
-            title="Know what every payout contains, and what you really made"
-          />
-          <ol className="grid gap-6 sm:grid-cols-2">
-            {FLOW.map((step, i) => (
-              <li key={step.title} className="grid content-start gap-2">
-                <span className="flex size-8 items-center justify-center rounded-full bg-primary font-semibold text-primary-foreground text-sm">
-                  {i + 1}
-                </span>
-                <h3 className="font-semibold">{step.title}</h3>
-                <p className="text-muted-foreground text-sm leading-6">{step.body}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-        <ProfitWaterfall />
+      {/* Highlight: review requests */}
+      <Highlight
+        id="reviews"
+        eyebrow="Automatic review requests"
+        title="Ask every Amazon buyer for a review, without lifting a finger"
+        lead="Switch it on once. Bookalyze sends Amazon's own Request a Review to every eligible buyer, on the day you choose after delivery, every hour, on every marketplace."
+        points={[
+          "Amazon's own request: within Amazon's rules, never twice for the same order",
+          "Refunded orders, A-to-z claims and chargebacks checked just before sending, and skipped",
+          "Leave out replacements, business orders, promotions or any SKU",
+          "Or ask hundreds of orders at once, by hand",
+        ]}
+        guide="automatic-review-requests"
+        picture={<ReviewsPreview />}
+      />
+
+      {/* Highlight: Wise */}
+      <Highlight
+        id="wise"
+        tint
+        reverse
+        eyebrow="Wise bank sync"
+        title="Your Wise account, in your books every morning"
+        lead="Connect Wise with a read-only token and every balance, in every currency, syncs on its own each day. Marketplace payouts find their settlement; rules sort the routine."
+        points={[
+          "Each Wise currency balance becomes its own bank account in your books",
+          "New lines every day, no exports or typing, and possible duplicates flagged",
+          "Marketplace payouts matched to their settlements; supplier payments linked to purchase orders",
+          "Any other bank by statement upload, with the columns remembered",
+          "Not yet: Wise profiles that need Wise's strong customer authentication (for example in the UAE); upload statements meanwhile",
+        ]}
+        guide="connect-wise"
+        picture={<WisePreview />}
+      />
+
+      {/* Highlight: buyer invoices */}
+      <Highlight
+        id="invoices"
+        eyebrow="Buyer invoices"
+        title="Create and send a buyer's invoice in seconds"
+        lead="A buyer asks for a VAT invoice? Open the order, choose Create invoice, and send it through Amazon. Arabic and English on one PDF, with your letterhead and tax number."
+        points={[
+          "Lines, shipping, discounts and totals come straight from the order",
+          '"Tax invoice" when you\'re registered, "Invoice" when you\'re not',
+          "Buyers' invoice requests collected from a forwarding address, so none are missed",
+          "Your own numbering, logo and letterhead",
+        ]}
+        guide="buyer-invoices"
+        picture={<InvoicePreview />}
+      />
+
+      {/* Countries */}
+      <Section tint className="grid gap-12">
+        <SectionHeading
+          eyebrow="Where we work"
+          title="Made for the countries where these marketplaces are"
+          lead="Where Amazon meets Walmart, and where Amazon meets Noon: each country's marketplaces, currency and tax."
+        />
+        <CountryCards />
       </Section>
 
       {/* Everything else */}
@@ -285,5 +385,42 @@ export default function HomePage() {
         <ClosingCta />
       </div>
     </>
+  );
+}
+
+/** A highlighted feature: copy and points on one side, its picture on the other. */
+function Highlight({
+  id,
+  eyebrow,
+  title,
+  lead,
+  points,
+  guide,
+  picture,
+  tint,
+  reverse,
+}: {
+  id: string;
+  eyebrow: string;
+  title: string;
+  lead: string;
+  points: readonly string[];
+  guide: string;
+  picture: React.ReactNode;
+  tint?: boolean;
+  reverse?: boolean;
+}) {
+  return (
+    <Section id={id} tint={tint} className="grid gap-14 lg:grid-cols-2 lg:items-center">
+      <div className={cn("grid gap-8", reverse && "lg:order-last")}>
+        <SectionHeading align="start" eyebrow={eyebrow} title={title} lead={lead} />
+        <Checklist items={points} />
+        <ButtonLink href={`/guides/${guide}`} variant="outline" className="justify-self-start">
+          Read the guide
+          <ArrowRight className="rtl:rotate-180" />
+        </ButtonLink>
+      </div>
+      {picture}
+    </Section>
   );
 }

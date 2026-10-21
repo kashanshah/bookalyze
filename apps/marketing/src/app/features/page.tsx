@@ -9,8 +9,8 @@ import {
   Store,
 } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ClosingCta } from "@/components/cta";
-import { MARKETPLACES } from "@/components/marketplaces";
 import {
   BankMatchPreview,
   CompaniesPreview,
@@ -21,12 +21,13 @@ import {
   TransactionsPreview,
 } from "@/components/previews";
 import { Checklist, Section, SectionHeading } from "@/components/section";
+import { MARKETPLACES } from "@/content/marketplaces";
 import { cn } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Features",
   description:
-    "Amazon, eBay and Noon connections, double-entry bookkeeping, bank reconciliation, stock and cost of goods sold, reorder planning, review requests and multi-company accounting.",
+    "Amazon, Walmart, Noon and eBay connections, double-entry bookkeeping, Wise sync and bank reconciliation, buyer invoices, stock and cost of goods sold, reorder planning, automatic review requests and multi-company accounting.",
   alternates: { canonical: "/features" },
 };
 
@@ -51,7 +52,8 @@ const GROUPS: Group[] = [
       "A Transactions screen to review, categorise and approve in seconds",
       "Your own chart of accounts, started from a sensible template",
       "Receipts and files on every transaction",
-      "Customers and vendors, and invoices for marketplace orders",
+      "Customers and vendors",
+      "Buyer tax invoices from the order in seconds, sent to the buyer through Amazon",
       "Sales tax: rates, what you collected and what you can claim back",
       "Profit and loss, balance sheet, trial balance and general ledger",
       "Any currency, with each day's exchange rate",
@@ -88,6 +90,7 @@ const GROUPS: Group[] = [
       "Freight, duties and prep added to each delivery's cost",
       "Stock costed first-in first-out, with cost of goods sold posted monthly",
       "Amazon's FBA and Noon's FBN stock movements: returns and losses",
+      "What Amazon (FBA), Noon (FBN) and Walmart (WFS) hold, beside your own stock",
     ],
   },
   {
@@ -166,9 +169,14 @@ export default function FeaturesPage() {
             lead="The heart of Bookalyze: each marketplace's money, in your books and matched to your bank."
           />
           {MARKETPLACES.map((m) => (
-            <div key={m.name} className="grid gap-3">
+            <div key={m.slug} className="grid gap-3">
               <h3 className="font-semibold text-lg">
-                {m.name}
+                <Link
+                  href={`/marketplaces/${m.slug}`}
+                  className="underline-offset-4 hover:text-primary hover:underline"
+                >
+                  {m.name}
+                </Link>
                 <span className="ms-2 font-normal text-muted-foreground text-sm">{m.where}</span>
               </h3>
               <Checklist items={m.brings} />
