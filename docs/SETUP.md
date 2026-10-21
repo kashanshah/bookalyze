@@ -160,12 +160,13 @@ safe or not.
 
 Test mode until the owner decides otherwise. Nothing is gated before `BILLING_STARTS_ON`.
 
-1. Stripe dashboard, **Test mode** on. **Products**: one product per package and add-on (Books,
-   Seller, Seller Plus, Review requests only, and the add-ons Stock and Review requests), each
-   with a monthly and a yearly price in USD (yearly = ten months). Give every price its **lookup
-   key**: `books_month`, `books_year`, `seller_month`, `seller_year`, `seller_plus_month`,
-   `seller_plus_year`, `reviews_only_month` ($9), `reviews_only_year` ($90), `stock_month`,
-   `stock_year`, `reviews_month`, `reviews_year`.
+1. Stripe dashboard, **Test mode** on. **Products**: one product per package (Books $9, Seller $19,
+   Seller + Reviews $24, Seller + Stock $27, Seller Plus $29, Review requests only $9), each with
+   a monthly and a yearly price in USD (yearly = ten months). Give every price its **lookup key**:
+   `books_month`, `books_year`, `seller_month`, `seller_year`, `seller_reviews_month`,
+   `seller_reviews_year`, `seller_stock_month`, `seller_stock_year`, `seller_plus_month`,
+   `seller_plus_year`, `reviews_only_month`, `reviews_only_year`. There are no add-ons: one
+   package per subscription, so the customer portal can switch plans.
 2. **Developers → API keys**: the test secret key (`sk_test_…`) → `STRIPE_SECRET_KEY`. A live key
    is ignored unless `STRIPE_LIVE=true`.
 3. **Developers → Webhooks → Add endpoint** `https://app.bookalyze.com/api/stripe/webhook` with
@@ -174,7 +175,7 @@ Test mode until the owner decides otherwise. Nothing is gated before `BILLING_ST
    `invoice.paid`. Its signing secret → `STRIPE_WEBHOOK_SECRET`.
 4. **Settings → Billing → Customer portal**: let customers update payment methods, see invoices,
    cancel (**at the end of the billing period**, so cancelling during the 30-day trial means no
-   charge), and switch between the products above (so an add-on can be added or removed).
+   charge), and **switch plans** between the six products above (monthly and yearly prices).
 
    **Sign-up asks for a card** as soon as `STRIPE_SECRET_KEY` is set: a new company's last step
    is Stripe Checkout. With a **test** key (`sk_test_…`), Checkout only accepts Stripe's test cards

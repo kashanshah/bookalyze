@@ -1,9 +1,6 @@
 "use client";
 
 import {
-  ADD_ON_KEYS,
-  type AddOnKey,
-  BILLING_ADD_ONS,
   BILLING_PACKAGES,
   type BillingInterval,
   PACKAGE_KEYS,
@@ -21,6 +18,8 @@ import { startCheckoutAction } from "./actions";
 const INCLUDES: Record<PackageKey, string> = {
   books: "Accounting, banking, and your company's profile and calendar.",
   seller: "Everything in Books, plus Amazon, Walmart, Noon and eBay.",
+  seller_reviews: "Everything in Seller, plus review requests, by hand or automatic.",
+  seller_stock: "Everything in Seller, plus stock, purchase orders and cost of goods.",
   seller_plus: "Everything in Seller, plus stock, cost of goods and review requests.",
   reviews_only:
     "Amazon review requests on their own: connect your store and its orders come in. No books.",
@@ -28,7 +27,7 @@ const INCLUDES: Record<PackageKey, string> = {
 
 const money = (amount: string) => `$${amount.replace(/\.00$/, "")}`;
 
-/** Choose a package, add-ons and how often to pay, then go to Stripe Checkout. */
+/** Choose a package and how often to pay, then go to Stripe Checkout. */
 export function PlanPicker({
   slug,
   suggested,
@@ -36,17 +35,15 @@ export function PlanPicker({
   cta = "Continue to payment",
 }: {
   slug: string;
-  suggested: { package: PackageKey; addOns: readonly AddOnKey[] };
+  suggested: PackageKey;
   canBuy: boolean;
   /** The button's label, e.g. "Start 30 days free" at sign-up. */
   cta?: string;
 }) {
   const [interval, setInterval] = useState<BillingInterval>("month");
-  const [pkg, setPkg] = useState<PackageKey>(suggested.package);
-  const [addOns, setAddOns] = useState<AddOnKey[]>([...suggested.addOns]);
+  const [pkg, setPkg] = useState<PackageKey>(suggested);
   const [pending, start] = useTransition();
-  const chosenAddOns = pkg === "seller" ? addOns : [];
-  const total = selectionTotal({ package: pkg, addOns: chosenAddOns, interval });
+  const total = selectionTotal({ package: pkg, interval });
   const per = interval === "year" ? "year" : "month";
 
   return (
@@ -74,7 +71,7 @@ export function PlanPicker({
         ))}
       </fieldset>
 
-      <fieldset className="grid gap-3 sm:grid-cols-2">
+      <fieldset className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <legend className="sr-only">Plan</legend>
         {PACKAGE_KEYS.map((key) => {
           const p = BILLING_PACKAGES[key];
@@ -113,43 +110,6 @@ export function PlanPicker({
         })}
       </fieldset>
 
-      {pkg === "seller" ? (
-        <div className="grid gap-2">
-          <p className="font-medium text-sm">Add to Seller</p>
-          {ADD_ON_KEYS.map((key) => {
-            const a = BILLING_ADD_ONS[key];
-            const on = addOns.includes(key);
-            return (
-              <label
-                key={key}
-                className={cn(
-                  "flex cursor-pointer items-center gap-3 rounded-xl border p-3.5 text-sm transition-colors",
-                  on ? "border-primary/50 bg-primary/[0.03]" : "hover:bg-muted/40",
-                )}
-              >
-                <input
-                  type="checkbox"
-                  checked={on}
-                  onChange={() =>
-                    setAddOns((list) => (on ? list.filter((k) => k !== key) : [...list, key]))
-                  }
-                  className="size-4 accent-primary"
-                />
-                <span className="flex-1">{a.name}</span>
-                <span className="text-muted-foreground tabular-nums">
-                  + {money(interval === "year" ? a.yearly : a.monthly)} / {per}
-                </span>
-              </label>
-            );
-          })}
-          {addOns.length === 2 ? (
-            <p className="text-muted-foreground text-xs">
-              Both add-ons cost more than Seller Plus, which includes them.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 px-4 py-3">
         <p className="text-sm">
           Total <span className="font-semibold tabular-nums">{money(total)}</span> a {per}, in US
@@ -159,11 +119,7 @@ export function PlanPicker({
           disabled={!canBuy || pending}
           onClick={() =>
             start(async () => {
-              const result = await startCheckoutAction(slug, {
-                package: pkg,
-                addOns: chosenAddOns,
-                interval,
-              });
+              const result = await startCheckoutAction(slug, { package: pkg, interval });
               if (!result.ok) {
                 toast.error(result.message);
                 return;

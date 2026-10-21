@@ -94,8 +94,10 @@ marketplaces):**
 | **Seller** | Books + Commerce: Amazon, Walmart, Noon and eBay orders, settlements posted, payouts matched, Channel profit, buyer invoices and invoice requests, listing watch | $19 | $190 |
 | **Seller Plus** | Seller + Inventory (stock, cost of goods sold, FBA/FBN/WFS, reorder, prices) + Review requests | $29 | $290 |
 
-**Add-ons** (on Seller): **Stock** (Inventory) +$8 · **Review requests** +$5. Seller with both add-ons
-is $32, so Seller Plus saves $3. Analytics (phase 6) isn't sold yet.
+**Seller with one extra** (packages, not add-ons): **Seller + Reviews** $24 ($240) · **Seller +
+Stock** $27 ($270). Analytics (phase 6) isn't sold yet. Until October 2026 these were add-ons on
+Seller (+$5, +$8); the owner made them packages so each subscription has one item, which Stripe's
+customer portal can switch.
 
 **Card at sign-up** (owner's decision, October 2026): a new company chooses a plan and gives a
 card in Stripe Checkout as its last setup step. An owner's first company is free for 30 days with

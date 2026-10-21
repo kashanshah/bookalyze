@@ -1,5 +1,5 @@
 /**
- * Packages and add-ons (docs/GROWTH-PLAN.md §2, "Pricing"). USD per company per month; yearly is
+ * Packages (docs/GROWTH-PLAN.md §2, "Pricing"), one per company. USD per company per month; yearly is
  * ten months (two months free). Unlimited users, orders and marketplaces. Billing in the app
  * (workstream C) uses the same table from `packages/core`; keep the two in step.
  * An owner's first company is free for 30 days; the card given at sign-up is charged on day 31.
@@ -69,29 +69,29 @@ export const PACKAGES: readonly Package[] = [
   },
 ];
 
-export type AddOn = {
-  id: "stock" | "reviews";
+export type SellerExtra = {
+  id: "seller-reviews" | "seller-stock";
   name: string;
   monthly: number;
   yearly: number;
   body: string;
 };
 
-/** Add-ons on Seller. Seller with both ($32) costs more than Seller Plus ($29). */
-export const ADD_ONS: readonly AddOn[] = [
+/** Seller with one part of Seller Plus. With both, Seller Plus ($29) is the better deal. */
+export const SELLER_EXTRAS: readonly SellerExtra[] = [
   {
-    id: "stock",
-    name: "Stock",
-    monthly: 8,
-    yearly: 80,
-    body: "Products, purchase orders, landed cost, FIFO lots, cost of goods sold, marketplace stock, reorder and Amazon prices.",
+    id: "seller-reviews",
+    name: "Seller + Reviews",
+    monthly: 24,
+    yearly: 240,
+    body: "Everything in Seller, plus Amazon's own Request a Review, by hand, in bulk or automatically.",
   },
   {
-    id: "reviews",
-    name: "Review requests",
-    monthly: 5,
-    yearly: 50,
-    body: "Amazon's own Request a Review, by hand, in bulk or automatically.",
+    id: "seller-stock",
+    name: "Seller + Stock",
+    monthly: 27,
+    yearly: 270,
+    body: "Everything in Seller, plus products, purchase orders, landed cost, FIFO lots, cost of goods sold, marketplace stock, reorder and Amazon prices.",
   },
 ];
 

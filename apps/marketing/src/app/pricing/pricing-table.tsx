@@ -4,12 +4,12 @@ import { ArrowRight, Star } from "lucide-react";
 import { useState } from "react";
 import { ButtonLink } from "@/components/button";
 import { Checklist } from "@/components/section";
-import { ADD_ONS, type Interval, PACKAGES, PEGGED, REVIEWS_ONLY } from "@/content/pricing";
+import { type Interval, PACKAGES, PEGGED, REVIEWS_ONLY, SELLER_EXTRAS } from "@/content/pricing";
 import { cn, SIGN_UP_URL } from "@/lib/site";
 
 /**
- * The three packages, Review requests on its own, and the add-ons, monthly or yearly. Prices are
- * per company.
+ * The three main packages, Review requests on its own, and Seller with one extra, monthly or
+ * yearly. Prices are per company.
  */
 export function PricingTable() {
   const [interval, setInterval] = useState<Interval>("month");
@@ -143,19 +143,18 @@ export function PricingTable() {
 
       <div className="mx-auto grid w-full max-w-3xl gap-4 rounded-2xl border bg-card p-6 shadow-xs sm:p-7">
         <div className="grid gap-1">
-          <h2 className="font-semibold text-lg">Add-ons for Seller</h2>
+          <h2 className="font-semibold text-lg">Seller, with just one extra</h2>
           <p className="text-muted-foreground text-sm">
-            Add just what you need. Taking both costs more than Seller Plus, so we'd suggest that
-            instead.
+            Need review requests or stock, but not both? These sit between Seller and Seller Plus.
           </p>
         </div>
         <ul className="grid gap-3 sm:grid-cols-2">
-          {ADD_ONS.map((a) => (
+          {SELLER_EXTRAS.map((a) => (
             <li key={a.id} className="grid content-start gap-1.5 rounded-xl bg-accent/60 p-4">
               <p className="flex items-baseline justify-between gap-3">
                 <span className="font-medium">{a.name}</span>
                 <span className="font-semibold tabular-nums">
-                  +${price(a)}
+                  ${price(a)}
                   <span className="font-normal text-muted-foreground text-xs"> {per}</span>
                 </span>
               </p>

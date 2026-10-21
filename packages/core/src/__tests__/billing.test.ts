@@ -1,16 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  BILLING_ADD_ONS,
   BILLING_PACKAGES,
   CONNECTION_AREA,
   catalogProblems,
   entitledModules,
   firstChargeOn,
+  LEGACY_ADD_ONS,
   mayChange,
   parseLookupKey,
   priceLookupKey,
   readOnlyModules,
-  selectionProblem,
   selectionTotal,
   signupTrialDays,
   suggestedSelection,
@@ -29,49 +28,51 @@ describe("billing catalogue", () => {
     expect(BILLING_PACKAGES.seller.monthly).toBe("19.00");
     expect(BILLING_PACKAGES.seller_plus.monthly).toBe("29.00");
     expect(BILLING_PACKAGES.reviews_only.monthly).toBe("9.00");
-    expect(BILLING_ADD_ONS.stock.monthly).toBe("8.00");
-    expect(BILLING_ADD_ONS.reviews.monthly).toBe("5.00");
-    for (const item of [...Object.values(BILLING_PACKAGES), ...Object.values(BILLING_ADD_ONS)]) {
+    // What Seller with the add-ons used to cost: Seller + Reviews $24, Seller + Stock $27.
+    expect(BILLING_PACKAGES.seller_reviews.monthly).toBe("24.00");
+    expect(BILLING_PACKAGES.seller_stock.monthly).toBe("27.00");
+    for (const item of Object.values(BILLING_PACKAGES)) {
       expect(Number(item.yearly)).toBe(Number(item.monthly) * 10);
     }
+  });
+
+  it("sells no add-ons, and keeps an old subscription's add-on modules", () => {
+    expect(Object.values(BILLING_PACKAGES).every((p) => p.kind === "package")).toBe(true);
+    const old = entitledModules({ status: "active", items: ["seller", "stock"] }, billing);
+    expect(old.modules).toEqual(expect.arrayContaining([...LEGACY_ADD_ONS.stock.modules]));
   });
 
   it("gives every module what it requires", () => {
     expect(catalogProblems()).toEqual([]);
   });
 
-  it("adds up a selection and refuses add-ons that don't fit", () => {
-    expect(
-      selectionTotal({ package: "seller", addOns: ["stock", "reviews"], interval: "month" }),
-    ).toBe("32.00");
-    expect(selectionTotal({ package: "books", addOns: [], interval: "year" })).toBe("90.00");
-    expect(
-      selectionProblem({ package: "seller", addOns: ["stock"], interval: "month" }),
-    ).toBeNull();
-    expect(selectionProblem({ package: "books", addOns: ["stock"], interval: "month" })).toMatch(
-      "can't be added to Books",
-    );
+  it("prices a selection", () => {
+    expect(selectionTotal({ package: "seller_stock", interval: "month" })).toBe("27.00");
+    expect(selectionTotal({ package: "books", interval: "year" })).toBe("90.00");
   });
 
   it("names Stripe prices by lookup key", () => {
     expect(priceLookupKey("seller_plus", "year")).toBe("seller_plus_year");
     expect(parseLookupKey("seller_plus_year")).toEqual({ key: "seller_plus", interval: "year" });
     expect(parseLookupKey("seller_month")).toEqual({ key: "seller", interval: "month" });
+    expect(parseLookupKey("seller_reviews_month")).toEqual({
+      key: "seller_reviews",
+      interval: "month",
+    });
+    expect(parseLookupKey("seller_stock_year")).toEqual({ key: "seller_stock", interval: "year" });
     expect(parseLookupKey("reviews_only_year")).toEqual({ key: "reviews_only", interval: "year" });
     expect(parseLookupKey("reviews_month")).toEqual({ key: "reviews", interval: "month" });
     expect(parseLookupKey("gold_month")).toBeNull();
   });
 
-  it("suggests a selection from what's switched on", () => {
-    expect(suggestedSelection(["accounting", "banking"])).toEqual({ package: "books", addOns: [] });
-    expect(suggestedSelection(["accounting", "commerce", "reviews"])).toEqual({
-      package: "seller",
-      addOns: ["reviews"],
-    });
-    expect(suggestedSelection(["accounting", "commerce", "inventory", "reviews"])).toEqual({
-      package: "seller_plus",
-      addOns: [],
-    });
+  it("suggests a package from what's switched on", () => {
+    expect(suggestedSelection(["accounting", "banking"])).toBe("books");
+    expect(suggestedSelection(["accounting", "commerce"])).toBe("seller");
+    expect(suggestedSelection(["accounting", "commerce", "reviews"])).toBe("seller_reviews");
+    expect(suggestedSelection(["accounting", "commerce", "inventory"])).toBe("seller_stock");
+    expect(suggestedSelection(["accounting", "commerce", "inventory", "reviews"])).toBe(
+      "seller_plus",
+    );
   });
 });
 
@@ -84,7 +85,7 @@ describe("entitlements", () => {
   });
 
   it("unlocks the subscription's modules once billing has started", () => {
-    const seller = entitledModules({ status: "active", items: ["seller", "stock"] }, billing);
+    const seller = entitledModules({ status: "active", items: ["seller_stock"] }, billing);
     expect(seller.mode).toBe("subscribed");
     expect(seller.modules).toEqual([
       "accounting",
@@ -110,7 +111,7 @@ describe("entitlements", () => {
     expect(entitledModules({ status: "canceled", items: ["books"] }, billing).mode).toBe("lapsed");
   });
 
-  it("removing an add-on makes only that module read-only (the independence rule)", () => {
+  it("moving to a package without a module makes only that module read-only (the independence rule)", () => {
     const enabled = [
       "accounting",
       "banking",
@@ -119,12 +120,9 @@ describe("entitlements", () => {
       "reviews",
       "entity",
     ] as const;
-    const before = entitledModules(
-      { status: "active", items: ["seller", "stock", "reviews"] },
-      billing,
-    );
+    const before = entitledModules({ status: "active", items: ["seller_plus"] }, billing);
     expect(readOnlyModules(enabled, before)).toEqual([]);
-    const after = entitledModules({ status: "active", items: ["seller", "reviews"] }, billing);
+    const after = entitledModules({ status: "active", items: ["seller_reviews"] }, billing);
     expect(readOnlyModules(enabled, after)).toEqual(["inventory"]);
     expect(after.modules).toEqual(expect.arrayContaining(["accounting", "commerce", "reviews"]));
   });
@@ -148,7 +146,7 @@ describe("review requests on their own", () => {
   });
 
   it("uses nothing in part on a plan that has Commerce in full", () => {
-    const seller = entitledModules({ status: "active", items: ["seller", "reviews"] }, billing);
+    const seller = entitledModules({ status: "active", items: ["seller_reviews"] }, billing);
     expect(seller.partly).toEqual([]);
     expect(entitledModules(null, { now, billingStartsOn: null }).partly).toEqual([]);
     const lapsed = entitledModules({ status: "canceled", items: ["reviews_only"] }, billing);
@@ -156,16 +154,10 @@ describe("review requests on their own", () => {
   });
 
   it("keeps Review requests working when a company moves down from Seller", () => {
-    const before = entitledModules({ status: "active", items: ["seller", "reviews"] }, billing);
+    const before = entitledModules({ status: "active", items: ["seller_reviews"] }, billing);
     expect(readOnlyModules(enabled, before)).toEqual([]);
     expect(only.modules).toContain("reviews");
-  });
-
-  it("can't take add-ons", () => {
-    expect(
-      selectionProblem({ package: "reviews_only", addOns: ["stock"], interval: "month" }),
-    ).toMatch("can't be added to Review requests only");
-    expect(selectionTotal({ package: "reviews_only", addOns: [], interval: "year" })).toBe("90.00");
+    expect(selectionTotal({ package: "reviews_only", interval: "year" })).toBe("90.00");
   });
 });
 
