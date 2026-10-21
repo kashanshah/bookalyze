@@ -14,8 +14,8 @@ Cursor, Copilot…).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
   - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
-_Last updated: 2026-10-21, phase 4e slice 5: WFS stock, what Walmart Fulfillment Services holds,
-on each WFS channel and on Stock in its own column._
+_Last updated: 2026-10-21, phase 4e slice 6: WFS returns and losses, from Walmart's WFS inventory
+log, on Stock movements and in cost of goods sold._
 
 ---
 
@@ -32,7 +32,7 @@ on each WFS channel and on Stock in its own column._
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) slice 10 (a freight payment is its delivery's cost) and slice 11 (Amazon prices: each listing's price next to its cost, a change with Amazon's fees and the profit first) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off; what Noon holds beside your lots, and Noon's summary checking its ledger day by day) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: Kazomo's FBN transaction types checked against what Stock movements lists as not counted, then FBP stock (the seller's own warehouses). Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold), 4 (eBay money: the Finances API's rows by month, in Channel profit) 5 (payouts and posting: each site's month as one entry to an eBay balance account, payouts matched to bank deposits, in the daily job) and 6 (Seller Hub's transaction report upload, with the API's rows winning on days it has) done. Next: eBay's digital signatures for EU and UK sellers. See §3 "Phase 4d" |
-| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) 2 (connect Walmart: each country's seller account with its own API key) 3 (orders from the Orders API, the seller's and WFS's) 4a (settlement reports listed, one checked without keeping anything) 4b-1 (settlements brought in and kept row by row) 4b-2 (each settlement read into the books, its payout matched to the bank deposit, the daily job) 4c (in Channel profit) and 5 (WFS stock) done. Next: confirm the reading on a live account's report, then WFS stock. See §3 "Phase 4e" |
+| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) 2 (connect Walmart: each country's seller account with its own API key) 3 (orders from the Orders API, the seller's and WFS's) 4a (settlement reports listed, one checked without keeping anything) 4b-1 (settlements brought in and kept row by row) 4b-2 (each settlement read into the books, its payout matched to the bank deposit, the daily job) 4c (in Channel profit), 5 (WFS stock) and 6 (WFS returns and losses) done. Next: confirm the reading on a live account's report, then WFS stock. See §3 "Phase 4e" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
@@ -1755,6 +1755,35 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   from the mock (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema; the
   summary disagrees on one day last month), then uploads a summary file.
 
+### Phase 4e, slice 6: WFS returns and losses
+
+- **WFS's inventory log** (core `walmart-inventory-log.ts`): `GET /v3/fulfillment/inventory-log`,
+  asked per GTIN between two days, 200 entries a page (`walmartInventoryLogQuery`,
+  `parseWalmartInventoryLogPage`). A SKU's GTIN comes once from the item API
+  (`GET /v3/items/{sku}?productIdType=SKU`, `parseWalmartItemGtin`: the GTIN, else the UPC) and is
+  kept on the channel's SKU (`channel_skus.gtin`, migration `0087_channel_sku_gtin`).
+- **Read as Amazon's ledger is** (`walmartLogEventType`, word starts in the transaction type and
+  reason): returned to the seller or removed → removals; any other return → customer returns;
+  damaged, lost, missing, found, defective, disposed, destroyed, expired, shrink, adjustment, cycle
+  count, unsellable → adjustments; receiving → receipts; customer order, shipped, fulfilled, sale
+  → shipments; transfer → transfers; anything else → "Other", listed on Stock movements as not
+  counted (with Walmart's name for it) so it can be read later. Units signed (in +, out −); each
+  entry's Walmart id is its key, so bringing it in twice adds it once. Built from Walmart's
+  published layout: **check the live account's names under "Movements not counted yet"**.
+- **Kept in `inventory_ledger_events`** like Amazon's and Noon's (web `server/walmart-ledger.ts`
+  `syncWalmartLedger`, `syncWalmartChannelLedger`): from the day after "in through" (the first
+  time 90 days back, or the day orders start if later) to yesterday, each WFS SKU in turn; "in
+  through" moves only once every SKU is read. So returns come back into the lots and losses are
+  written off when cost of goods sold posts (which waits for "Walmart's WFS inventory log" to
+  reach the month's end, as for Amazon's), and Stock's "in the books" counts them.
+- **Where:** Stock movements lists each WFS Walmart country with the ledgers (db `ledgerChannels`)
+  and "Bring in from … Walmart" reads it (`syncLedgerAction`); the daily job reads it after the
+  WFS stock (`runWalmartDaily`).
+- Tests: core `walmart-inventory-log.test.ts` (item GTIN, query, each kind of entry, page);
+  db `stock-overview.test.ts` (a WFS country among the ledgers, SKU GTINs kept); e2e
+  "walmart: bring in what WFS holds…" ends on Stock movements (the stand-in's log for the mug:
+  received, sold, returned, damaged and an unread "Quality Hold" listed as not counted).
+
 ### Phase 4e, slice 5: WFS stock
 
 - **What WFS holds** (core `walmart-inventory.ts`: `walmartWfsInventoryQuery`,
@@ -1774,7 +1803,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   hint) for companies with WFS stock, in the difference like Amazon's and Noon's (db
   `stockOverview`: `walmart`, `walmartAt`). **Products** says "N at WFS" for an unlinked Walmart
   SKU (`unlinkedSkus` returns the channel's kind).
-- Not yet: WFS's inventory ledger (returns, losses, found units) as stock movements.
+- WFS's returns and losses came in slice 6.
 - Tests: core `walmart-inventory.test.ts`; db `stock-overview.test.ts` (WFS stock in Walmart's
   column, not Amazon's); e2e "walmart: bring in what WFS holds…" (the stand-in's
   `/v3/fulfillment/inventory`: the linked mug, 30 sellable and 4 held, and an unlinked tote).
@@ -3291,8 +3320,7 @@ Built like Noon and eBay: channels first, then the account, orders, money and th
 5. [x] **Posting and deposit matching:** each settlement as one entry to a Walmart balance
    clearing account, payouts matched to bank deposits; the daily job. Done in slice 4b-2 (confirm
    the reading on the first live report).
-6. [ ] **WFS stock:** what Walmart holds beside your lots, returns and losses. What it holds
-   done in slice 5; returns and losses (its inventory ledger) remain.
+6. [x] **WFS stock:** what Walmart holds beside your lots (slice 5), returns and losses (slice 6).
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.

@@ -530,7 +530,12 @@ export async function previewCogs(
     .where(eq(salesChannels.id, input.channelId));
   const ledgerThrough = channel?.ledgerThrough ?? null;
   const kind = channel?.kind ?? "amazon";
-  const ledgerName = kind === "noon" ? "Noon's FBN inventory ledger" : "Amazon's inventory ledger";
+  const ledgerName =
+    kind === "noon"
+      ? "Noon's FBN inventory ledger"
+      : kind === "walmart"
+        ? "Walmart's WFS inventory log"
+        : "Amazon's inventory ledger";
   const sold = await unitsByProduct(tx, input);
   // Rows are there once the ledger is brought in, or as returns counted from refunds before it.
   const moved = await ledgerByProduct(tx, input);

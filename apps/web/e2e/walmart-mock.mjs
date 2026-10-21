@@ -275,6 +275,76 @@ createServer((req, res) => {
       return send(res, 200, ordersPage(url));
     }
 
+    // Items by SKU: their GTIN, which WFS's inventory log is asked for by.
+    const item = /^\/v3\/items\/([^/]+)$/.exec(url.pathname);
+    if (item && req.method === "GET") {
+      const sku = decodeURIComponent(item[1] ?? "");
+      const gtin = { "WMT-MAPLE-MUG": "00012345678905", "WMT-SPARE-TOTE": "00012345678912" }[sku];
+      if (!gtin) return walmartError(res, 404, "CONTENT_NOT_FOUND.GMP_GATEWAY_API", "No item");
+      return send(res, 200, { ItemResponse: [{ sku, gtin, productName: sku }], totalItems: 1 });
+    }
+
+    // WFS's inventory log: the mug was received, sold, returned, damaged and put on a hold
+    // Bookalyze doesn't read yet; the tote has had nothing happen (days before today).
+    if (url.pathname === "/v3/fulfillment/inventory-log" && req.method === "GET") {
+      if (KEYS[id].scopes.inventory === "no_access") {
+        return walmartError(res, 403, "FORBIDDEN.GMP_GATEWAY_API", "No access to inventory");
+      }
+      const gtin = url.searchParams.get("gtin");
+      const at = (days) => new Date(Date.now() - days * 86_400_000).toISOString();
+      const log =
+        gtin === "00012345678905"
+          ? [
+              {
+                id: "WFS-L1",
+                fcName: "YYZ1",
+                transactionType: "Receiving",
+                transactionTime: at(20),
+                changedQty: 10,
+              },
+              {
+                id: "WFS-L2",
+                fcName: "YYZ1",
+                transactionType: "Customer Order",
+                transactionTime: at(9),
+                changedQty: -2,
+              },
+              {
+                id: "WFS-L3",
+                fcName: "YYZ1",
+                transactionType: "Customer Return",
+                transactionTime: at(6),
+                changedQty: 1,
+              },
+              {
+                id: "WFS-L4",
+                fcName: "YYZ1",
+                transactionType: "Inventory Adjustment",
+                transactionReasonDesc: "Damaged",
+                transactionTime: at(4),
+                changedQty: -1,
+              },
+              {
+                id: "WFS-L5",
+                fcName: "YYZ1",
+                transactionType: "Quality Hold",
+                transactionTime: at(3),
+                changedQty: -1,
+              },
+            ]
+          : [];
+      const offset = Number(url.searchParams.get("offset") ?? "0");
+      const limit = Number(url.searchParams.get("limit") ?? "10");
+      return send(res, 200, {
+        headers: { totalCount: log.length, offset, limit },
+        payload: {
+          gtin,
+          productName: "Maple leaf ceramic mug",
+          inventoryLog: log.slice(offset, offset + limit),
+        },
+      });
+    }
+
     // What WFS holds: the linked mug, and a tote not linked to any product (synthetic SKUs).
     if (url.pathname === "/v3/fulfillment/inventory" && req.method === "GET") {
       if (KEYS[id].scopes.inventory === "no_access") {

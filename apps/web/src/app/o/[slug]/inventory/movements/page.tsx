@@ -63,8 +63,11 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
     .filter(Boolean)
     .join(" and ");
   const active = channels.filter((c) => c.isActive);
-  const sources = (["amazon", "noon"] as const).filter((k) => active.some((c) => c.kind === k));
-  const sourceNames = sources.map((k) => (k === "amazon" ? "Amazon" : "Noon")).join(" and ");
+  const sources = (["amazon", "noon", "walmart"] as const).filter((k) =>
+    active.some((c) => c.kind === k),
+  );
+  const SOURCE_NAMES = { amazon: "Amazon", noon: "Noon", walmart: "Walmart" } as const;
+  const sourceNames = sources.map((k) => SOURCE_NAMES[k]).join(" and ");
   const names = new Map(channels.map((c) => [c.id, c.name]));
   const monthKeys = [...new Set(months.map((m) => m.month))];
   const n = new Intl.NumberFormat(locale, { signDisplay: "exceptZero" });
@@ -75,7 +78,7 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
       <PageHeader
         eyebrow="Inventory"
         title="Stock movements"
-        description="Amazon's FBA and Noon's FBN inventory ledgers: every unit shipped, returned, lost, found, removed or received in their warehouses. Returns go back into your stock lots and losses are written off when each month's cost of goods sold is posted."
+        description="Amazon's FBA and Noon's FBN inventory ledgers, and Walmart's WFS inventory log: every unit shipped, returned, lost, found, removed or received in their warehouses. Returns go back into your stock lots and losses are written off when each month's cost of goods sold is posted."
         actions={
           active.length ? (
             <div className="flex flex-wrap gap-2">
@@ -97,10 +100,10 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
           <span className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <ArrowLeftRight className="size-6" />
           </span>
-          <p className="font-medium">Connect Amazon or add a Noon country first</p>
+          <p className="font-medium">Connect Amazon, or add a Noon or Walmart country first</p>
           <p className="max-w-sm text-muted-foreground text-sm">
-            Stock movements come from Amazon's and Noon's inventory ledgers, for the stock in their
-            warehouses. Add a channel under Commerce → Channels.
+            Stock movements come from Amazon's, Noon's and Walmart's (WFS) inventory ledgers, for
+            the stock in their warehouses. Add a channel under Commerce → Channels.
           </p>
         </div>
       ) : (
