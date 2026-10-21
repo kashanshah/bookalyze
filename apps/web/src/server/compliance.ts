@@ -24,6 +24,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { ComplianceReminder } from "@/emails/compliance-reminder";
 import { formatDate, nowIn } from "@/lib/dates";
+import { guardWrites } from "./billing";
 import { sendEmail } from "./email";
 import { env } from "./env";
 import { logError } from "./log";
@@ -35,6 +36,7 @@ export type EntityContext = OrgContext & { profile: OrgProfile };
 export async function getEntityContext(slug: string): Promise<EntityContext> {
   const ctx = await getOrgContext(slug);
   if (!can(ctx.plan, ctx.enabledModules, "entity.profile") || !ctx.profile) notFound();
+  await guardWrites(ctx, "entity");
   return ctx as EntityContext;
 }
 

@@ -64,6 +64,24 @@ const schema = z.object({
   EBAY_APIZ_URL: z.url().optional(),
   /** Secret Vercel Cron sends as a bearer token to scheduled routes (e.g. the daily FX sync). */
   CRON_SECRET: z.string().min(16).optional(),
+  /**
+   * Stripe, test mode only: a live key (sk_live_/rk_live_) is ignored, and billing stays off,
+   * unless STRIPE_LIVE=true, which only the owner sets when billing goes live.
+   */
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_LIVE: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  /** Signing secret of the Stripe webhook pointing at /api/stripe/webhook ("whsec_…"). */
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  /** Stripe's API base URL. Tests point it at a stand-in; leave unset in production. */
+  STRIPE_API_URL: z.url().optional(),
+  /** The day billing starts (YYYY-MM-DD). Until then, and while unset, everything is free. */
+  BILLING_STARTS_ON: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
+    .optional(),
   /** "s3", or "local" to keep files on disk (development and CI only). */
   STORAGE_DRIVER: z.enum(["s3", "local", ""]).optional(),
 });
