@@ -8,7 +8,7 @@ import { PricingTable } from "./pricing-table";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Simple monthly packages per company: Books $9, Seller $19, Seller Plus $29, with unlimited users, orders and marketplaces. Free during early access.",
+    "Simple monthly packages per company: Books $9, Seller $19, Seller Plus $29, or Amazon review requests on their own for $9, with unlimited users, orders and marketplaces. Free during early access.",
   alternates: { canonical: "/pricing" },
 };
 
@@ -31,6 +31,10 @@ const FAQ: Question[] = [
   {
     q: "Is there a free trial?",
     a: "Yes. Once billing starts, every company gets 30 days of everything, with nothing held back and no card needed. New companies get it from the day they're created. Choose a plan before it ends to keep what you use; anything you don't keep turns read-only, and nothing is deleted.",
+  },
+  {
+    q: "Can I buy only review requests?",
+    a: "Yes. Review requests only is $9 a month per company: connect your Amazon store, its orders come in, and you send Amazon's own review requests by hand, in bulk or automatically. It doesn't include the books or settlements. If you want those later, move to Seller with the Review requests add-on, or Seller Plus, and your requests carry on.",
   },
   {
     q: "What happens if I drop a package or an add-on?",

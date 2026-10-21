@@ -22,6 +22,8 @@ const INCLUDES: Record<PackageKey, string> = {
   books: "Accounting, banking, and your company's profile and calendar.",
   seller: "Everything in Books, plus Amazon, Walmart, Noon and eBay.",
   seller_plus: "Everything in Seller, plus stock, cost of goods and review requests.",
+  reviews_only:
+    "Amazon review requests on their own: connect your store and its orders come in. No books.",
 };
 
 const money = (amount: string) => `$${amount.replace(/\.00$/, "")}`;
@@ -69,7 +71,7 @@ export function PlanPicker({
         ))}
       </fieldset>
 
-      <fieldset className="grid gap-3 md:grid-cols-3">
+      <fieldset className="grid gap-3 sm:grid-cols-2">
         <legend className="sr-only">Plan</legend>
         {PACKAGE_KEYS.map((key) => {
           const p = BILLING_PACKAGES[key];

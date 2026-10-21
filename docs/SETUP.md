@@ -161,9 +161,10 @@ safe or not.
 Test mode until the owner decides otherwise. Nothing is gated before `BILLING_STARTS_ON`.
 
 1. Stripe dashboard, **Test mode** on. **Products**: one product per package and add-on (Books,
-   Seller, Seller Plus, Stock, Review requests), each with a monthly and a yearly price in USD
-   (yearly = ten months). Give every price its **lookup key**: `books_month`, `books_year`,
-   `seller_month`, `seller_year`, `seller_plus_month`, `seller_plus_year`, `stock_month`,
+   Seller, Seller Plus, Review requests only, and the add-ons Stock and Review requests), each
+   with a monthly and a yearly price in USD (yearly = ten months). Give every price its **lookup
+   key**: `books_month`, `books_year`, `seller_month`, `seller_year`, `seller_plus_month`,
+   `seller_plus_year`, `reviews_only_month` ($9), `reviews_only_year` ($90), `stock_month`,
    `stock_year`, `reviews_month`, `reviews_year`.
 2. **Developers → API keys**: the test secret key (`sk_test_…`) → `STRIPE_SECRET_KEY`. A live key
    is ignored unless `STRIPE_LIVE=true`.

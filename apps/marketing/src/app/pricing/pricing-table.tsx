@@ -1,13 +1,16 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Star } from "lucide-react";
 import { useState } from "react";
 import { ButtonLink } from "@/components/button";
 import { Checklist } from "@/components/section";
-import { ADD_ONS, type Interval, PACKAGES, PEGGED } from "@/content/pricing";
+import { ADD_ONS, type Interval, PACKAGES, PEGGED, REVIEWS_ONLY } from "@/content/pricing";
 import { cn, SIGN_UP_URL } from "@/lib/site";
 
-/** The three packages and the add-ons, monthly or yearly. Prices are per company. */
+/**
+ * The three packages, Review requests on its own, and the add-ons, monthly or yearly. Prices are
+ * per company.
+ */
 export function PricingTable() {
   const [interval, setInterval] = useState<Interval>("month");
   const price = (p: { monthly: number; yearly: number }) =>
@@ -101,6 +104,42 @@ export function PricingTable() {
           </article>
         ))}
       </div>
+
+      <article
+        aria-label={REVIEWS_ONLY.name}
+        className="mx-auto grid w-full max-w-5xl gap-6 rounded-3xl border border-primary/30 bg-linear-to-br from-primary/[0.06] via-card to-card p-7 shadow-xs md:grid-cols-[1fr_1.15fr] md:items-center md:gap-10 md:p-9"
+      >
+        <div className="grid gap-4">
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary text-xs">
+            <Star className="size-3.5" />
+            Only want review requests?
+          </span>
+          <div className="grid gap-1.5">
+            <h2 className="font-semibold text-2xl tracking-tight">{REVIEWS_ONLY.name}</h2>
+            <p className="text-muted-foreground text-sm">{REVIEWS_ONLY.forWhom}</p>
+          </div>
+          <div className="grid gap-1">
+            <p className="flex items-baseline gap-2">
+              <span className="font-semibold text-4xl tabular-nums tracking-tight">
+                ${price(REVIEWS_ONLY)}
+              </span>
+              <span className="text-muted-foreground text-sm">{per}, per company</span>
+            </p>
+            <p className="text-muted-foreground text-xs">
+              US dollars{PEGGED.length ? ` · about ${local(price(REVIEWS_ONLY))}` : ""}
+            </p>
+            <p className="mt-2 inline-flex w-fit items-center gap-2 rounded-full bg-success/12 px-2.5 py-1 font-medium text-success text-xs">
+              <span className="size-1.5 rounded-full bg-success" />
+              Free during early access, then a 30-day free trial
+            </p>
+          </div>
+          <ButtonLink href={SIGN_UP_URL} variant="outline" className="w-full sm:w-fit">
+            Start free
+            <ArrowRight className="rtl:rotate-180" />
+          </ButtonLink>
+        </div>
+        <Checklist items={REVIEWS_ONLY.includes} />
+      </article>
 
       <div className="mx-auto grid w-full max-w-3xl gap-4 rounded-2xl border bg-card p-6 shadow-xs sm:p-7">
         <div className="grid gap-1">

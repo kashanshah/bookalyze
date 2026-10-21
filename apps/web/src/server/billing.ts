@@ -1,8 +1,10 @@
 import "server-only";
 import {
+  type CONNECTION_AREA,
   type Entitlement,
   entitledModules,
   type ModuleKey,
+  mayChange,
   modules,
   readOnlyModules,
 } from "@bookalyze/core";
@@ -49,13 +51,15 @@ export async function loadOrgBilling(
 
 /**
  * Stops a change in a read-only module: a server action (a POST carrying Next-Action) is sent to
- * Plan and billing, which says why. Pages still open, so everything stays visible.
+ * Plan and billing, which says why. Pages still open, so everything stays visible. `area` names a
+ * part a plan may use on its own (Review requests only: Commerce's connections and orders).
  */
 export async function guardWrites(
   ctx: { org: { slug: string }; billing: OrgBilling },
   module: ModuleKey,
+  area?: typeof CONNECTION_AREA,
 ) {
-  if (!ctx.billing.readOnly.includes(module)) return;
+  if (mayChange(ctx.billing, module, area)) return;
   const h = await headers();
   if (!h.get("next-action")) return;
   redirect(`/o/${ctx.org.slug}/settings/billing?readonly=${module}`);
@@ -63,4 +67,13 @@ export async function guardWrites(
 
 export function moduleLabel(key: string): string {
   return modules[key as ModuleKey]?.label ?? key;
+}
+
+/** The read-only modules by name; one used in part says what still works in it. */
+export function readOnlyLabels(billing: OrgBilling): string[] {
+  return billing.readOnly.map((m) =>
+    billing.entitlement.partly.includes(m)
+      ? `${moduleLabel(m)} (apart from connecting marketplaces and bringing in orders)`
+      : moduleLabel(m),
+  );
 }

@@ -3873,7 +3873,7 @@ test("a Google-only user can set a password and then sign in with it", async ({ 
   await expect(page).toHaveURL(/\/onboarding/);
 });
 
-test("billing: a plan through Checkout, an add-on removed makes only its module read-only, then cancelled", async ({
+test("billing: a plan through Checkout, an add-on removed makes only its module read-only, cancelled, then review requests on their own", async ({
   page,
 }) => {
   await signIn(page, owner.email, owner.password);
@@ -3954,6 +3954,36 @@ test("billing: a plan through Checkout, an add-on removed makes only its module 
   await expect(banner).toContainText("Accounting");
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Transactions" })).toBeVisible();
+
+  // Review requests on its own: requests work, and so do Commerce's connections and orders.
+  await sidebar.getByRole("link", { name: "Plan and billing", exact: true }).click();
+  await page.getByText("Amazon review requests on their own").click();
+  await expect(page.getByText(/Total \$9 a month/)).toBeVisible();
+  await page.getByRole("button", { name: "Continue to payment" }).click();
+  await expect(page.getByRole("heading", { name: "Stripe test checkout" })).toBeVisible();
+  await page.getByRole("button", { name: "Pay" }).click();
+  await expect(page.getByRole("heading", { name: "Review requests only" })).toBeVisible();
+  await expect(
+    page.getByText(/with your marketplaces connected and their orders brought in/),
+  ).toBeVisible();
+  await expect(banner).toContainText(
+    "Commerce (apart from connecting marketplaces and bringing in orders)",
+  );
+  await page.getByRole("link", { name: "Automatic requests", exact: true }).first().click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Automatic requests are on")).toBeVisible();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Noon UAE/ }).click();
+  await page.getByRole("switch", { name: "Use Noon UAE" }).click();
+  await expect(page.getByText("Switched off", { exact: true })).toBeVisible();
+  await page.getByRole("switch", { name: "Use Noon UAE" }).click();
+  await expect(page.getByRole("switch", { name: "Use Noon UAE" })).toBeChecked();
+  // The rest of Commerce stays read-only, and says what the plan does include.
+  await page.getByRole("link", { name: "Settlements", exact: true }).click();
+  await page.getByRole("button", { name: "Bring in settlements" }).click();
+  await expect(page).toHaveURL(/settings\/billing\?readonly=commerce/);
+  await expect(page.getByText("Commerce is read-only.")).toBeVisible();
+  await expect(page.getByText(/the rest of it needs Seller/)).toBeVisible();
 
   // Back to early access for anything after this test.
   await withOwnerDb((db) => db.query("update billing_accounts set starts_on = null"));

@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   BILLING_ADD_ONS,
   BILLING_PACKAGES,
+  CONNECTION_AREA,
   catalogProblems,
   entitledModules,
   firstChargeOn,
+  mayChange,
   parseLookupKey,
   priceLookupKey,
   readOnlyModules,
@@ -25,6 +27,7 @@ describe("billing catalogue", () => {
     expect(BILLING_PACKAGES.books.monthly).toBe("9.00");
     expect(BILLING_PACKAGES.seller.monthly).toBe("19.00");
     expect(BILLING_PACKAGES.seller_plus.monthly).toBe("29.00");
+    expect(BILLING_PACKAGES.reviews_only.monthly).toBe("9.00");
     expect(BILLING_ADD_ONS.stock.monthly).toBe("8.00");
     expect(BILLING_ADD_ONS.reviews.monthly).toBe("5.00");
     for (const item of [...Object.values(BILLING_PACKAGES), ...Object.values(BILLING_ADD_ONS)]) {
@@ -53,6 +56,8 @@ describe("billing catalogue", () => {
     expect(priceLookupKey("seller_plus", "year")).toBe("seller_plus_year");
     expect(parseLookupKey("seller_plus_year")).toEqual({ key: "seller_plus", interval: "year" });
     expect(parseLookupKey("seller_month")).toEqual({ key: "seller", interval: "month" });
+    expect(parseLookupKey("reviews_only_year")).toEqual({ key: "reviews_only", interval: "year" });
+    expect(parseLookupKey("reviews_month")).toEqual({ key: "reviews", interval: "month" });
     expect(parseLookupKey("gold_month")).toBeNull();
   });
 
@@ -121,6 +126,45 @@ describe("entitlements", () => {
     const after = entitledModules({ status: "active", items: ["seller", "reviews"] }, billing);
     expect(readOnlyModules(enabled, after)).toEqual(["inventory"]);
     expect(after.modules).toEqual(expect.arrayContaining(["accounting", "commerce", "reviews"]));
+  });
+});
+
+describe("review requests on their own", () => {
+  const enabled = ["accounting", "banking", "commerce", "reviews", "entity"] as const;
+  const only = entitledModules({ status: "active", items: ["reviews_only"] }, billing);
+
+  it("unlocks Review requests, and Commerce only in part", () => {
+    expect(only).toMatchObject({ mode: "subscribed", modules: ["reviews"], partly: ["commerce"] });
+    expect(readOnlyModules(enabled, only)).toEqual(["accounting", "banking", "commerce", "entity"]);
+  });
+
+  it("lets the company connect marketplaces and bring in orders, and nothing else in Commerce", () => {
+    const ctx = { entitlement: only, readOnly: readOnlyModules(enabled, only) };
+    expect(mayChange(ctx, "reviews")).toBe(true);
+    expect(mayChange(ctx, "commerce", CONNECTION_AREA)).toBe(true);
+    expect(mayChange(ctx, "commerce")).toBe(false);
+    expect(mayChange(ctx, "accounting", CONNECTION_AREA)).toBe(false);
+  });
+
+  it("uses nothing in part on a plan that has Commerce in full", () => {
+    const seller = entitledModules({ status: "active", items: ["seller", "reviews"] }, billing);
+    expect(seller.partly).toEqual([]);
+    expect(entitledModules(null, { now, billingStartsOn: null }).partly).toEqual([]);
+    const lapsed = entitledModules({ status: "canceled", items: ["reviews_only"] }, billing);
+    expect(lapsed).toMatchObject({ mode: "lapsed", modules: [], partly: [] });
+  });
+
+  it("keeps Review requests working when a company moves down from Seller", () => {
+    const before = entitledModules({ status: "active", items: ["seller", "reviews"] }, billing);
+    expect(readOnlyModules(enabled, before)).toEqual([]);
+    expect(only.modules).toContain("reviews");
+  });
+
+  it("can't take add-ons", () => {
+    expect(
+      selectionProblem({ package: "reviews_only", addOns: ["stock"], interval: "month" }),
+    ).toMatch("can't be added to Review requests only");
+    expect(selectionTotal({ package: "reviews_only", addOns: [], interval: "year" })).toBe("90.00");
   });
 });
 

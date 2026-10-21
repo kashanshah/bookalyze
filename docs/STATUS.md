@@ -1133,7 +1133,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     **Sellers** `/sellers` and `/sellers/<country>` (US, Canada, Mexico, UAE, Saudi Arabia,
     Egypt) from `content/countries.ts`.
   - **Features**; **Pricing** (Books $9, Seller $19, Seller Plus $29 a company a month, yearly is
-    ten months; add-ons on Seller: Stock $8, Review requests $5; local prices for the pegged AED
+    ten months; Review requests only $9 in its own card; add-ons on Seller: Stock $8, Review
+    requests $5; local prices for the pegged AED
     and SAR; "Free during early access"; the independence rule in the FAQ) from
     `content/pricing.ts`.
   - **Contact** `/contact`: name, email, company, topic (`?topic=` preselects), message; a server
@@ -1221,9 +1222,19 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 ### Billing: packages, add-ons and read-only modules (Stripe, test mode)
 
 - **Prices** (core `billing/`, GROWTH-PLAN §2): Books $9 (Accounting, Banking, Entity &
-  compliance), Seller $19 (+ Commerce), Seller Plus $29 (+ Inventory, Review requests, Analytics);
+  compliance), Seller $19 (+ Commerce), Seller Plus $29 (+ Inventory, Review requests, Analytics),
+  **Review requests only** $9 (`reviews_only`: Review requests, with Commerce used only in part);
   add-ons on Seller: Stock $8 (Inventory, Analytics), Review requests $5. Yearly is ten months.
-  `catalogProblems()` checks every package and add-on gives each module what it `requires`.
+  `catalogProblems()` checks every package and add-on gives each module what it `requires`; a
+  module a package uses in part (`partly`) counts for what needs it.
+- **Using a module in part** (`partly`, `Entitlement.partly`, `mayChange`): Review requests only
+  keeps Commerce read-only except its connections (`CONNECTION_AREA`): connecting, testing and
+  disconnecting marketplaces, adding and switching channels, who ships, and bringing in orders
+  (the actions in `commerce/actions.ts` that pass `CONNECTION_AREA` to `adminContext` /
+  `getCommerceContext`). Settlements, payouts, Noon reports, WFS stock, Channel profit, invoices,
+  listing watch and the books stay read-only. The banner and Plan and billing say "Commerce
+  (apart from connecting marketplaces and bringing in orders)". Migration `0083_reviews_only_plan`
+  adds the item key.
 - **Entitlements** (`entitledModules`): before `BILLING_STARTS_ON` (or with none set) everything
   is free (`early_access`). Then a **30-day free trial** (`TRIAL_DAYS`, `trialEndsOn`): every
   module, whatever plan was chosen, from the later of billing starting and the company being
@@ -1242,7 +1253,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   naming the read-only modules. `getOrgContext` carries `billing` (entitlement, read-only list,
   rows).
 - **Settings → Plan and billing** (`/settings/billing`, owners choose): early-access note,
-  monthly/yearly, the three packages (suggested from what's switched on), add-ons on Seller, the
+  monthly/yearly, the four packages (suggested from what's switched on), add-ons on Seller, the
   total, **Continue to payment** (Stripe Checkout; during early access with a start date, a trial
   until that day so nothing is charged before it), the current plan with status and renewal,
   **Manage billing** (Stripe's customer portal: card, invoices, change, cancel), invoices from
