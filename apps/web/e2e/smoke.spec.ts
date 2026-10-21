@@ -3657,8 +3657,10 @@ test("the privacy policy is public and linked from sign-in", async ({ browser })
 test("the terms of service are public and linked from sign-up", async ({ browser }) => {
   const page = await browser.newPage();
   await page.goto("/sign-up");
-  await expect(page.getByText("By creating an account you agree to the")).toBeVisible();
-  await page.getByRole("link", { name: "Terms of service" }).click();
+  const agreement = page.getByText("By creating an account you agree to the");
+  await expect(agreement).toBeVisible();
+  // The footer links the terms too; this is the one in the sentence under the form.
+  await agreement.getByRole("link", { name: "Terms of service" }).click();
   await expect(page).toHaveURL(/\/terms$/);
   await expect(page.getByRole("heading", { name: "Terms of service", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Not professional advice" })).toBeVisible();

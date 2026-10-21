@@ -16,6 +16,9 @@ every page is static except the contact form's server action, which needs one se
   element's own style is the finished state, which is what reduced motion shows). Charts play when
   scrolled into view (`in-view.tsx`, `on-view-*`). The money-flow infographic is `flow.tsx`.
   Never put real company data or screenshots of real books here.
+- **Header and footer links** come from `@bookalyze/core` (`site/`), shared with the app's public
+  pages (terms, privacy, sign-in) so they look like the same place. Change a link there, not in
+  `components/header.tsx` or `footer.tsx`.
 - **Content lives in `src/content/`**, as typed data the pages render:
   - `marketplaces.ts`: Amazon, Walmart, Noon, eBay (where, how it connects, what comes in, FAQ,
     guides). Update it when a connection gains a country or feature.

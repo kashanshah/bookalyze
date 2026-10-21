@@ -5,6 +5,8 @@ import type { NextConfig } from "next";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.bookalyze.com";
 
 const nextConfig: NextConfig = {
+  // The header and footer links come from @bookalyze/core, shared with the app's public pages.
+  transpilePackages: ["@bookalyze/core"],
   poweredByHeader: false,
   async redirects() {
     return [
