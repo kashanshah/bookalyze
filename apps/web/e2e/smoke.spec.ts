@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { alibabaReceiptPdf } from "./alibaba-receipt-pdf";
@@ -3693,6 +3693,132 @@ test("an invited teammate can sign up and join", async ({ page }) => {
   // Members can't change settings.
   await page.getByRole("link", { name: "Features", exact: true }).click();
   await expect(page.getByText("Only owners and admins can change features.")).toBeVisible();
+});
+
+test("support: a ticket from Help, the desk's reply and note, a reply by email, and the website's enquiries", async ({
+  page,
+  request,
+}) => {
+  // A member opens a ticket from Help & support.
+  await signIn(page, teammate.email, teammate.password);
+  await page.getByRole("link", { name: "Help & support", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Help & support" })).toBeVisible();
+  await page.getByRole("button", { name: "Send to support" }).click();
+  await expect(page.getByText("Choose what it's about.")).toBeVisible();
+  await choose(page.locator("#support-topic"), "Help with my account");
+  await page.locator("#support-subject").fill(`Payout not matching ${run}`);
+  await page
+    .locator("#support-message")
+    .fill("My Amazon.ae payout doesn't match the deposit in my CAD account.");
+  await page.getByRole("button", { name: "Send to support" }).click();
+  await expect(page.getByRole("heading", { name: `Payout not matching ${run}` })).toBeVisible();
+  await expect(page.getByText("Waiting on us")).toBeVisible();
+  const ticketUrl = page.url();
+  // The desk is emailed, with the ticket's reply address.
+  await expect
+    .poll(async () =>
+      (await readFile(".dev-mail.log", "utf8")).includes(`] Payout not matching ${run}`),
+    )
+    .toBe(true);
+  // Members aren't the support desk.
+  const desk = await page.goto("/admin/support");
+  expect(desk?.status()).toBe(404);
+
+  // The desk (a platform admin) adds a note and replies.
+  await signOut(page);
+  await signIn(page, owner.email, owner.password);
+  await page.goto("/admin/support");
+  await page.getByRole("link", { name: new RegExp(`Payout not matching ${run}`) }).click();
+  await expect(page.getByText("Needs a reply").first()).toBeVisible();
+  await page.locator("#desk-internal").click();
+  await page
+    .locator("#desk-reply")
+    .fill("AED settlement into a CAD account: an exchange difference.");
+  await page.getByRole("button", { name: "Add note" }).click();
+  await expect(page.getByText("Note added")).toBeVisible();
+  await page.locator("#desk-internal").click();
+  await page
+    .locator("#desk-reply")
+    .fill(
+      "Open the settlement and choose Match at this rate; the difference posts as an exchange loss.",
+    );
+  await page.getByRole("button", { name: "Send reply" }).click();
+  await expect(page.getByText("Reply sent")).toBeVisible();
+  await expect(page.getByText("Waiting on the customer").first()).toBeVisible();
+  await expect(latestLink(teammate.email, "/help/")).resolves.toContain("/help/");
+
+  // The member sees the reply, not the note, and Home asks them to answer.
+  await signOut(page);
+  await signIn(page, teammate.email, teammate.password);
+  await expect(page.getByText("1 support reply is waiting for you")).toBeVisible();
+  await page.goto(ticketUrl);
+  await expect(page.getByText("Match at this rate", { exact: false })).toBeVisible();
+  await expect(page.getByText("an exchange difference")).toHaveCount(0);
+  await expect(page.getByText("Waiting on you")).toBeVisible();
+
+  // They answer by email: the signed webhook adds the new part, without the quoted history.
+  const token = await withOwnerDb(async (db) => {
+    const result = await db.query<{ token: string }>(
+      "select token from support_tickets where subject = $1",
+      [`Payout not matching ${run}`],
+    );
+    return result.rows[0]?.token ?? "";
+  });
+  const event = JSON.stringify({
+    type: "email.received",
+    data: {
+      email_id: `e2e-${run}`,
+      created_at: new Date().toISOString(),
+      from: `${teammate.name} <${teammate.email}>`,
+      to: [`support-${token}@in.e2e.test`],
+      subject: `Re: Payout not matching ${run}`,
+      text: "That worked, thank you!\n\nOn Tue, Oct 21, 2026 Bookalyze <support@in.e2e.test> wrote:\n> Open the settlement",
+    },
+  });
+  const id = `msg_${run}`;
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const key = Buffer.from("ZTJlLXdlYmhvb2stc2VjcmV0LTAwMDAwMDAwMDAwMA==", "base64");
+  const signature = createHmac("sha256", key)
+    .update(`${id}.${timestamp}.${event}`)
+    .digest("base64");
+  const send = () =>
+    request.post("/api/inbound/email", {
+      headers: { "svix-id": id, "svix-timestamp": timestamp, "svix-signature": `v1,${signature}` },
+      data: event,
+    });
+  expect(await (await send()).json()).toEqual({ result: "replied" });
+  // The same webhook again adds nothing.
+  expect(await (await send()).json()).toEqual({ result: "ignored" });
+  await page.reload();
+  await expect(page.getByText("That worked, thank you!")).toBeVisible();
+  await expect(page.getByText("by email")).toBeVisible();
+  await expect(page.getByText("Waiting on us")).toBeVisible();
+  await page.getByRole("button", { name: "Mark as solved" }).click();
+  await expect(page.getByText("Marked as solved")).toBeVisible();
+
+  // The website's contact form: refused without the shared secret, a ticket with it.
+  const enquiry = {
+    name: "Wendy Website",
+    email: `wendy+${run}@example.com`,
+    company: "Desert Goods",
+    topic: "coverage",
+    message: "Do you support Amazon.eg? We sell there and on Noon Egypt.",
+  };
+  expect((await request.post("/api/support/intake", { data: enquiry })).status()).toBe(401);
+  const created = await request.post("/api/support/intake", {
+    headers: { authorization: "Bearer e2e-support-intake-secret-0000000000000000" },
+    data: enquiry,
+  });
+  expect(created.status()).toBe(200);
+  expect((await created.json()).ticket).toMatch(/^T-\d{4,}$/);
+  await signOut(page);
+  await signIn(page, owner.email, owner.password);
+  await page.goto("/admin/support");
+  const website = page.getByRole("link", { name: /Do you support Amazon\.eg\?/ });
+  await expect(website).toContainText("Website");
+  await website.click();
+  await expect(page.getByText("Company: Desert Goods")).toBeVisible();
+  await expect(page.getByText("Website enquiry (no company)")).toBeVisible();
 });
 
 test("a Google-only user can set a password and then sign in with it", async ({ page }) => {

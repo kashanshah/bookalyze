@@ -9,4 +9,5 @@ export * from "./inventory";
 export * from "./organization";
 export * from "./reconciliation";
 export * from "./reference";
+export * from "./support";
 export * from "./tax";

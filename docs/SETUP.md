@@ -171,6 +171,19 @@ either way. Signing in with Google using an existing account's email links the t
 2. **API Keys → Create** (sending access) → `RESEND_API_KEY`.
 3. `EMAIL_FROM="Bookalyze <no-reply@bookalyze.com>"`.
 
+## Support tickets
+
+- **The desk** is the emails in `PLATFORM_ADMIN_EMAILS`: they open `/admin/support` (a 404 for
+  everyone else) and get an email for each new ticket and customer reply.
+- **Replies by email** need the receiving domain already used for invoice requests
+  (`INBOUND_EMAIL_DOMAIN` and `RESEND_WEBHOOK_SECRET`). Ticket emails then carry a
+  `support-<token>@INBOUND_EMAIL_DOMAIN` reply-to, and the same webhook adds the replies.
+  Without them, ticket emails have no reply-to and people answer in the app.
+- **The website's contact form** (`/contact` on bookalyze.com) makes tickets when both projects
+  share a secret: `openssl rand -hex 32`, then set it as `SUPPORT_INTAKE_SECRET` on the app's
+  Vercel project and on `bookalyze-site` (with `SUPPORT_INTAKE_URL=https://app.bookalyze.com/api/support/intake`
+  on the site). Until then the site emails `CONTACT_TO` as before.
+
 ## AWS S3 (receipts and documents)
 
 Files are uploaded by the browser straight to a private S3 bucket using short-lived signed links,
