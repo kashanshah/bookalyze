@@ -181,6 +181,11 @@
               <xsl:with-param name="urls" select="$all[not(contains(substring-after(substring-after(s:loc, '://'), '/'), '/'))]"/>
             </xsl:call-template>
             <xsl:call-template name="section">
+              <xsl:with-param name="title">Features</xsl:with-param>
+              <xsl:with-param name="hint">One page for each part of Bookalyze, and what it does.</xsl:with-param>
+              <xsl:with-param name="urls" select="$all[starts-with(substring-after(substring-after(s:loc, '://'), '/'), 'features/')]"/>
+            </xsl:call-template>
+            <xsl:call-template name="section">
               <xsl:with-param name="title">Marketplaces</xsl:with-param>
               <xsl:with-param name="hint">One page for each marketplace Bookalyze connects to.</xsl:with-param>
               <xsl:with-param name="urls" select="$all[starts-with(substring-after(substring-after(s:loc, '://'), '/'), 'marketplaces/')]"/>

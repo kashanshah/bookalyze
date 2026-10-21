@@ -38,6 +38,8 @@ export const SITE_FOOTER_COLUMNS: readonly { title: string; links: readonly Site
     links: [
       { label: "Marketplaces", on: "site", path: "/marketplaces" },
       { label: "Features", on: "site", path: "/features" },
+      { label: "Review requests", on: "site", path: "/features/review-requests" },
+      { label: "Amazon invoices", on: "site", path: "/features/amazon-invoices" },
       { label: "Pricing", on: "site", path: "/pricing" },
       START_FREE,
       SIGN_IN,
