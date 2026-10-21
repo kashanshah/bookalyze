@@ -117,13 +117,24 @@ const reportDay = (days) => {
   return `${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}${d.getUTCFullYear()}`;
 };
 const SETTLEMENT_DATES = [reportDay(2), reportDay(16)];
-const SETTLEMENT_CSV = [
-  "Period Start Date,Period End Date,Total Payout,Currency,Transaction Key,Transaction Posted Timestamp,Transaction Type,Purchase Order #,Purchase Order line #,Amount,Amount Type,Ship Qty,Partner Item Id,Fulfillment Type,Ship to City,Ship to Zipcode",
-  "10/01/2026,10/14/2026,52.07,CAD,T-1,10/05/2026,Sale,108800000001,1,39.98,Product Price,2,WMT-MAPLE-MUG,Seller Fulfilled,Toronto,M0M 0M0",
-  "10/01/2026,10/14/2026,52.07,CAD,T-1,10/05/2026,Sale,108800000001,1,-6.00,Commission on Product,2,WMT-MAPLE-MUG,Seller Fulfilled,Toronto,M0M 0M0",
-  "10/01/2026,10/14/2026,52.07,CAD,T-2,10/09/2026,Sale,108800000003,1,19.99,Product Price,1,WMT-MAPLE-MUG,WFS,Toronto,M0M 0M0",
-  "10/01/2026,10/14/2026,52.07,CAD,T-2,10/09/2026,Sale,108800000003,1,-1.90,Walmart Fulfillment Services Fee,1,WMT-MAPLE-MUG,WFS,Toronto,M0M 0M0",
-].join("\n");
+/** A settlement's file: its two weeks end two days before the report date (synthetic rows). */
+const settlementCsv = (date) => {
+  const day = (back) => {
+    const d = new Date(
+      Date.UTC(Number(date.slice(4)), Number(date.slice(0, 2)) - 1, Number(date.slice(2, 4))) -
+        back * 86_400_000,
+    );
+    return `${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())}/${d.getUTCFullYear()}`;
+  };
+  const [from, to, sold, shipped] = [day(15), day(2), day(12), day(8)];
+  return [
+    "Period Start Date,Period End Date,Total Payout,Currency,Transaction Key,Transaction Posted Timestamp,Transaction Type,Purchase Order #,Purchase Order line #,Amount,Amount Type,Ship Qty,Partner Item Id,Fulfillment Type,Ship to City,Ship to Zipcode",
+    `${from},${to},52.07,CAD,T-1,${sold},Sale,108800000001,1,39.98,Product Price,2,WMT-MAPLE-MUG,Seller Fulfilled,Toronto,M0M 0M0`,
+    `${from},${to},52.07,CAD,T-1,${sold},Sale,108800000001,1,-6.00,Commission on Product,2,WMT-MAPLE-MUG,Seller Fulfilled,Toronto,M0M 0M0`,
+    `${from},${to},52.07,CAD,T-2,${shipped},Sale,108800000003,1,19.99,Product Price,1,WMT-MAPLE-MUG,WFS,Toronto,M0M 0M0`,
+    `${from},${to},52.07,CAD,T-2,${shipped},Sale,108800000003,1,-1.90,Walmart Fulfillment Services Fee,1,WMT-MAPLE-MUG,WFS,Toronto,M0M 0M0`,
+  ].join("\n");
+};
 
 /** A one-file zip, deflated, as Walmart sends its report files. */
 function zipOf(name, text) {
@@ -278,7 +289,7 @@ createServer((req, res) => {
         );
       }
       res.writeHead(200, { "Content-Type": "application/octet-stream" });
-      return res.end(zipOf(`${date}.csv`, SETTLEMENT_CSV));
+      return res.end(zipOf(`${date}.csv`, settlementCsv(date)));
     }
 
     return walmartError(res, 404, "CONTENT_NOT_FOUND.GMP_GATEWAY_API", "Not found");

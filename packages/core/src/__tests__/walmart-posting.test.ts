@@ -3,6 +3,7 @@ import {
   buildWalmartEntry,
   emptyWalmartGroups,
   walmartLayout,
+  walmartProfitTotals,
   walmartRowGroup,
   walmartSettlementProblem,
   walmartSettlementTotals,
@@ -140,5 +141,25 @@ describe("buildWalmartEntry", () => {
     expect(buildWalmartEntry({ groups: emptyWalmartGroups(), accounts: { balance: "B" } })).toEqual(
       { ok: false, error: "This settlement has nothing to post." },
     );
+  });
+});
+
+describe("walmartProfitTotals", () => {
+  it("puts WFS fees with the fees and labels with other, converted", () => {
+    const groups = {
+      ...emptyWalmartGroups(),
+      sales: 100_0000n,
+      fees: -15_0000n,
+      fulfilment: -4_0000n,
+      shipping: -2_0000n,
+      tax: 1_0000n,
+    };
+    const totals = walmartProfitTotals(groups, (u) => u * 2n);
+    expect(totals).toMatchObject({
+      sales: 200_0000n,
+      fees: -38_0000n,
+      other: -4_0000n,
+      tax: 2_0000n,
+    });
   });
 });

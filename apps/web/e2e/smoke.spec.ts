@@ -2869,6 +2869,17 @@ test("walmart: choose how Walmart posts, post a settlement and match its payout 
   await settlement.getByRole("button", { name: /^Click again to take Walmart Canada, / }).click();
   await expect(page.getByText(/^Walmart Canada, .* is out of your books$/)).toBeVisible();
   await expect(settlement.getByText("Ready to post")).toBeVisible();
+
+  // Channel profit counts both settlements on Walmart Canada, read from their rows.
+  const from = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const to = new Date().toISOString().slice(0, 10);
+  const slug = new URL(page.url()).pathname.split("/")[2];
+  await page.goto(`/o/${slug}/commerce/profit?from=${from}&to=${to}`);
+  await expect(
+    page.getByRole("columnheader", { name: /Walmart Canada.*2 Walmart settlements/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("row", { name: /^Sales/ })).toContainText("$119.94");
+  await expect(page.getByRole("row", { name: /^Paid out/ })).toContainText("$104.14");
 });
 
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
