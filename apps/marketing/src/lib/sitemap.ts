@@ -1,4 +1,5 @@
 import { COUNTRIES } from "../content/countries";
+import { FEATURES } from "../content/features";
 import { GUIDES } from "../content/guides";
 import { MARKETPLACES } from "../content/marketplaces";
 import { SITE_URL } from "./site";
@@ -10,6 +11,7 @@ export function sitemapEntries(base = SITE_URL): SitemapEntry[] {
   const pages: { path: string; priority: number }[] = [
     { path: "", priority: 1 },
     { path: "/features", priority: 0.8 },
+    ...FEATURES.map((f) => ({ path: `/features/${f.slug}`, priority: 0.7 })),
     { path: "/pricing", priority: 0.8 },
     { path: "/marketplaces", priority: 0.8 },
     ...MARKETPLACES.map((m) => ({ path: `/marketplaces/${m.slug}`, priority: 0.8 })),
