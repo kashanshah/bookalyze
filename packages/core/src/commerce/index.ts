@@ -1,4 +1,6 @@
+export * from "./ads";
 export * from "./amazon";
+export * from "./amazon-ads";
 export * from "./brand";
 export * from "./ebay";
 export * from "./ebay-api";

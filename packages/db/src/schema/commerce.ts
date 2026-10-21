@@ -1413,3 +1413,136 @@ export const walmartDepositDismissals = pgTable(
     tenantIsolationPolicy("walmart_deposit_dismissals", t.organizationId),
   ],
 );
+
+/** Kinds of ads, across marketplaces (core `AD_TYPES`). */
+export const AD_TYPES = [
+  "sponsored_products",
+  "sponsored_brands",
+  "sponsored_display",
+  "promoted_listings",
+  "other",
+] as const;
+export const AD_SOURCES = ["amazon_ads", "upload"] as const;
+
+/**
+ * What a channel's ads cost and what they sold, per day, campaign and SKU, from any marketplace's
+ * ads reports (docs/ADS.md). Analytics only: nothing here posts to the books. `sku` is null for
+ * ads with no per-SKU spend (Sponsored Brands). A sync replaces a channel's rows of one source and
+ * ad type for the days it fetched, so a report's late changes win.
+ */
+export const adMetrics = pgTable(
+  "ad_metrics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    /** The ads account it came from; null for an upload. */
+    connectionId: uuid("connection_id"),
+    source: text("source", { enum: AD_SOURCES }).notNull(),
+    /** The ads account at the source, e.g. Amazon's profile ID. */
+    accountRef: text("account_ref").notNull().default(""),
+    country: char("country", { length: 2 }),
+    /** The day of the spend, in the ads account's time zone. */
+    date: date("date").notNull(),
+    adType: text("ad_type", { enum: AD_TYPES }).notNull(),
+    campaignId: text("campaign_id").notNull().default(""),
+    campaignName: text("campaign_name"),
+    /** The seller SKU advertised; null when the ad type has no per-SKU spend. */
+    sku: text("sku"),
+    /** The marketplace's listing ID: ASIN, Noon SKU, eBay item ID. */
+    listingRef: text("listing_ref"),
+    currency: char("currency", { length: 3 }).notNull(),
+    spend: numeric("spend", { precision: 20, scale: 4 }).notNull(),
+    /** Main-currency units per unit of `currency`, and the spend in it; null until a rate exists. */
+    fxRate: numeric("fx_rate", { precision: 20, scale: 10 }),
+    spendBase: numeric("spend_base", { precision: 20, scale: 4 }),
+    impressions: integer("impressions").notNull().default(0),
+    clicks: integer("clicks").notNull().default(0),
+    attributedSales: numeric("attributed_sales", { precision: 20, scale: 4 })
+      .notNull()
+      .default("0"),
+    attributedOrders: integer("attributed_orders").notNull().default(0),
+    attributedUnits: integer("attributed_units").notNull().default(0),
+    /** "7d", "14d", "30d", or "" when the source doesn't say. */
+    attributionWindow: text("attribution_window").notNull().default(""),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("ad_metrics_row_key")
+      .on(t.channelId, t.source, t.adType, t.date, t.campaignId, t.sku)
+      .nullsNotDistinct(),
+    index("ad_metrics_org_date_idx").on(t.organizationId, t.date),
+    index("ad_metrics_channel_sku_idx").on(t.organizationId, t.channelId, t.sku),
+    foreignKey({
+      name: "ad_metrics_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "ad_metrics_connection_fk",
+      columns: [t.organizationId, t.connectionId],
+      foreignColumns: [connections.organizationId, connections.id],
+    }),
+    check("ad_metrics_source_valid", sql`${t.source} in ('amazon_ads', 'upload')`),
+    check(
+      "ad_metrics_ad_type_valid",
+      sql`${t.adType} in ('sponsored_products', 'sponsored_brands', 'sponsored_display', 'promoted_listings', 'other')`,
+    ),
+    check(
+      "ad_metrics_counts_valid",
+      sql`${t.impressions} >= 0 and ${t.clicks} >= 0 and ${t.attributedOrders} >= 0 and ${t.attributedUnits} >= 0`,
+    ),
+    tenantIsolationPolicy("ad_metrics", t.organizationId),
+  ],
+);
+
+export const AD_REPORT_STATUSES = ["pending", "done", "failed"] as const;
+
+/**
+ * An ads report asked of a marketplace and not yet in (Amazon's reports are made in the
+ * background), or done or failed. A channel's ads are in through its latest done request's
+ * `dateTo`.
+ */
+export const adReportRequests = pgTable(
+  "ad_report_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    connectionId: uuid("connection_id").notNull(),
+    channelId: uuid("channel_id").notNull(),
+    /** The ads account, e.g. Amazon's profile ID. */
+    accountRef: text("account_ref").notNull(),
+    adType: text("ad_type", { enum: AD_TYPES }).notNull(),
+    dateFrom: date("date_from").notNull(),
+    dateTo: date("date_to").notNull(),
+    /** The marketplace's report ID. */
+    reportId: text("report_id").notNull(),
+    status: text("status", { enum: AD_REPORT_STATUSES }).notNull().default("pending"),
+    /** The marketplace's reason, when it failed. */
+    error: text("error"),
+    rows: integer("rows"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("ad_report_requests_org_id_key").on(t.organizationId, t.id),
+    index("ad_report_requests_channel_idx").on(t.organizationId, t.channelId, t.adType),
+    foreignKey({
+      name: "ad_report_requests_connection_fk",
+      columns: [t.organizationId, t.connectionId],
+      foreignColumns: [connections.organizationId, connections.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "ad_report_requests_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    check("ad_report_requests_status_valid", sql`${t.status} in ('pending', 'done', 'failed')`),
+    check("ad_report_requests_dates_valid", sql`${t.dateFrom} <= ${t.dateTo}`),
+    tenantIsolationPolicy("ad_report_requests", t.organizationId),
+  ],
+);
