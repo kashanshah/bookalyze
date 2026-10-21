@@ -2544,6 +2544,23 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   bank over what the payments on it say they were (`paidRate`).
 - **Purchase orders list** by order date, newest first (then the latest number), not by number.
 
+### Noon's period summary, and the stock check by product
+
+- **Upload a ledger file** reads Noon's newer **FBN ledger summary for a period** (one row per
+  warehouse and SKU: `opening_stock` … `closing_stock`, no date column): it asks for the first
+  and last day chosen on Noon, and saves each row as the period (`noon_stock_days.from_date` →
+  `date`; migration 0078). core `parseNoonPeriodSummary`, `isNoonPeriodSummaryHeader`.
+- **Noon's numbers checked** compares the summary with the detailed ledger **by product** on
+  each channel (in units of it, through `product_skus`), so one product under two SKU spellings
+  still matches; a SKU linked to no product is matched as itself. Noon's own SKU (all a period
+  report has) is turned into the seller's through Noon's transactions. A period row is checked
+  against the ledger added up over its days. The count is products, not days ("disagree on 3
+  products"). "At Noon" uses the same SKU matching. core `noonLedgerMismatches` (key/label,
+  `from`); db `noonLedgerCheck`.
+- **Noon's summaries in** lists each day or period brought in, with **Remove** (click twice):
+  db `noonStockUploads`, `removeNoonStockUpload`; web `removeNoonSummaryAction` (audited
+  `noon_stock.removed`). Tests: core and db `noon-stock.test.ts`, e2e Noon test.
+
 ### Your stake: the entries behind it
 
 - Each year's **Put in** and **Took out** on Your stake (and the All years total) opens

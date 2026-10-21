@@ -7,6 +7,7 @@ import {
   importNoonStockDays,
   inventoryChannels,
   ledgerChannels,
+  removeNoonStockUpload,
 } from "@bookalyze/db";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -135,6 +136,7 @@ export async function uploadLedgerAction(slug: string, input: unknown): Promise<
 const units = z.number().int().min(-10_000_000).max(10_000_000);
 const stockDaySchema = z.object({
   date: day,
+  fromDate: day.nullable().optional(),
   location: z.string().max(40),
   sku: z.string().min(1).max(200),
   nfsku: z.string().max(50).nullable(),
@@ -165,4 +167,27 @@ export async function uploadNoonSummaryAction(slug: string, input: unknown): Pro
   });
   revalidatePath(`/o/${slug}/inventory`, "layout");
   return { ok: true, added: saved };
+}
+
+/** Removes one day's Noon summary, or one period report's (it can be uploaded again). */
+export async function removeNoonSummaryAction(slug: string, input: unknown): Promise<Result> {
+  const ctx = await getInventoryContext(slug, FEATURE);
+  const parsed = z.object({ date: day, fromDate: day.nullable() }).safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Choose a summary to remove." };
+  const { date, fromDate } = parsed.data;
+  const removed = await inOrg(ctx, async (tx) => {
+    const n = await removeNoonStockUpload(tx, { date, fromDate });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "noon_stock.removed",
+      entityType: "organization",
+      entityId: ctx.org.id,
+      before: { date, fromDate, rows: n },
+    });
+    return n;
+  });
+  if (!removed) return { ok: false, message: "That summary is already gone." };
+  revalidatePath(`/o/${slug}/inventory`, "layout");
+  return { ok: true, added: removed };
 }

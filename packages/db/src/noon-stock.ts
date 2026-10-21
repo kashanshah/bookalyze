@@ -1,5 +1,5 @@
 import { type NoonLedgerMismatch, type NoonStockDay, noonLedgerMismatches } from "@bookalyze/core";
-import { sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { noonStockDays } from "./schema/inventory";
 
@@ -22,6 +22,7 @@ export async function importNoonStockDays(
         chunk.map((r) => ({
           organizationId: input.orgId,
           date: r.date,
+          fromDate: r.fromDate ?? null,
           location: r.location,
           sku: r.sku,
           nfsku: r.nfsku,
@@ -40,6 +41,7 @@ export async function importNoonStockDays(
           noonStockDays.condition,
         ],
         set: {
+          fromDate: sql`excluded.from_date`,
           nfsku: sql`excluded.nfsku`,
           opening: sql`excluded.opening`,
           closing: sql`excluded.closing`,
@@ -70,7 +72,21 @@ const dayChannels = sql`
     having count(*) = 1),
   days as (
     select d.*, coalesce(loc.channel_id, (select channel_id from only_noon)) as channel_id
-    from noon_stock_days d left join loc on loc.location = d.location)`;
+    from noon_stock_days d left join loc on loc.location = d.location),
+  alias as (
+    -- Noon's own SKU (a period report has only that) to the seller's, from Noon's transactions.
+    select distinct on (t.channel_id, t.sku) t.channel_id, t.sku as noon_sku, t.partner_sku
+    from noon_transactions t
+    where t.sku is not null and t.partner_sku is not null
+    order by t.channel_id, t.sku, t.transaction_date desc),
+  day_skus as (
+    -- Each summary row under the seller's SKU: its own when it's linked, else its alias's.
+    select d.*, case
+        when exists (select 1 from product_skus p where p.channel_id = d.channel_id and p.sku = d.sku)
+          then d.sku
+        else coalesce(a.partner_sku, d.sku)
+      end as seller_sku
+    from days d left join alias a on a.channel_id = d.channel_id and a.noon_sku = d.sku)`;
 
 export type NoonStockLevel = {
   productId: string;
@@ -94,8 +110,8 @@ export async function noonStockByProduct(
     select ps.product_id,
       coalesce(sum(case when d.condition = 'sellable' then d.closing * ps.units end), 0)::int as sellable,
       coalesce(sum(case when d.condition <> 'sellable' then d.closing * ps.units end), 0)::int as other
-    from days d
-    join product_skus ps on ps.channel_id = d.channel_id and ps.sku = d.sku
+    from day_skus d
+    join product_skus ps on ps.channel_id = d.channel_id and ps.sku = d.seller_sku
     where d.date = ${date}::date
     group by ps.product_id`);
   return {
@@ -123,29 +139,49 @@ export type NoonLedgerCheck = {
 };
 
 /**
- * Days where Noon's summary and its detailed ledger move a SKU by different amounts. Only days
- * both cover are checked: the summary's, up to the day every Noon channel's ledger is in through.
+ * Where Noon's summary and its detailed ledger move a product by different amounts, on each
+ * channel: each day the summary covers (or each period a period report covers), up to the day
+ * every Noon channel's ledger is in through. Matched by product (in units of it), so the same
+ * product under two SKU spellings still matches; a SKU linked to no product is matched as itself.
  */
 export async function noonLedgerCheck(tx: Transaction): Promise<NoonLedgerCheck> {
   const bounds = await tx.execute<{ from: string | null; to: string | null }>(sql`
-    select (select min(date) from noon_stock_days)::text as "from",
+    select (select min(coalesce(from_date, date)) from noon_stock_days)::text as "from",
       least((select max(date) from noon_stock_days),
         (select min(c.ledger_synced_through) from sales_channels c where c.kind = 'noon' and c.is_active))::text as "to"`);
   const from = bounds.rows[0]?.from ?? null;
   const to = bounds.rows[0]?.to ?? null;
   if (!from || !to || to < from) return { from, to: null, mismatches: [] };
-  const summary = await tx.execute<{ date: string; sku: string; change: number }>(sql`
-    select d.date::text as date, d.sku, sum(d.closing - d.opening)::int as change
-    from noon_stock_days d
-    where d.date between ${from}::date and ${to}::date
-    group by d.date, d.sku`);
-  const ledger = await tx.execute<{ date: string; sku: string; quantity: number }>(sql`
-    select e.event_date::text as date, e.sku, sum(e.quantity)::int as quantity
+  // One product per SKU (a bundle's first), in units of it.
+  const links = sql`links as (
+    select distinct on (ps.channel_id, ps.sku) ps.channel_id, ps.sku, ps.product_id, ps.units, p.name
+    from product_skus ps join products p on p.id = ps.product_id
+    order by ps.channel_id, ps.sku, ps.units)`;
+  const summary = await tx.execute<{
+    date: string;
+    from: string | null;
+    key: string;
+    label: string;
+    change: number;
+  }>(sql`${dayChannels}, ${links}
+    select d.date::text as date, d.from_date::text as "from",
+      coalesce(d.channel_id::text, '') || '|' || coalesce(l.product_id::text, d.seller_sku) as key,
+      coalesce(l.name, d.seller_sku) as label,
+      sum((d.closing - d.opening) * coalesce(l.units, 1))::int as change
+    from day_skus d
+    left join links l on l.channel_id = d.channel_id and l.sku = d.seller_sku
+    where d.date <= ${to}::date
+    group by 1, 2, 3, 4`);
+  const ledger = await tx.execute<{ date: string; key: string; quantity: number }>(sql`
+    with ${links}
+    select e.event_date::text as date,
+      e.channel_id::text || '|' || coalesce(l.product_id::text, e.sku) as key,
+      sum(e.quantity * coalesce(l.units, 1))::int as quantity
     from inventory_ledger_events e
     join sales_channels c on c.id = e.channel_id and c.kind = 'noon'
+    left join links l on l.channel_id = e.channel_id and l.sku = e.sku
     where e.event_date between ${from}::date and ${to}::date
-      and e.sku in (select distinct sku from noon_stock_days)
-    group by e.event_date, e.sku`);
+    group by 1, 2`);
   return {
     from,
     to,
@@ -154,4 +190,45 @@ export async function noonLedgerCheck(tx: Transaction): Promise<NoonLedgerCheck>
       ledger.rows.map((r) => ({ ...r, quantity: Number(r.quantity) })),
     ),
   };
+}
+
+export type NoonStockUpload = {
+  /** The day, or a period report's last day. */
+  date: string;
+  /** A period report's first day; null for one day. */
+  fromDate: string | null;
+  rows: number;
+};
+
+/** The summaries in: each day, or each period a period report covers, newest first. */
+export async function noonStockUploads(tx: Transaction): Promise<NoonStockUpload[]> {
+  const rows = await tx
+    .select({
+      date: noonStockDays.date,
+      fromDate: noonStockDays.fromDate,
+      rows: sql<number>`count(*)::int`,
+    })
+    .from(noonStockDays)
+    .groupBy(noonStockDays.date, noonStockDays.fromDate)
+    .orderBy(sql`${noonStockDays.date} desc`, sql`${noonStockDays.fromDate} desc nulls first`);
+  return rows.map((r) => ({ ...r, rows: Number(r.rows) }));
+}
+
+/** Removes one day's summary, or one period report's; returns how many rows went. */
+export async function removeNoonStockUpload(
+  tx: Transaction,
+  input: { date: string; fromDate: string | null },
+): Promise<number> {
+  const gone = await tx
+    .delete(noonStockDays)
+    .where(
+      and(
+        eq(noonStockDays.date, input.date),
+        input.fromDate
+          ? eq(noonStockDays.fromDate, input.fromDate)
+          : isNull(noonStockDays.fromDate),
+      ),
+    )
+    .returning({ id: noonStockDays.id });
+  return gone.length;
 }
