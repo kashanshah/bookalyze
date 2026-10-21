@@ -31,6 +31,7 @@ const REVIEWED_DIRECT_USE = [
   "app/api/ebay/account-deletion/route.ts", // organization, to find who connected the eBay user; the rest in withOrg()
   "server/reviews.ts", // review_request_orgs() for the hourly job; the rest in withOrg()
   "server/inbound-email.ts", // invoice_inbox_org() to find the company of a forwarded email; the rest in withOrg()
+  "server/billing-webhook.ts", // billing_org_for_customer() to find the company of a Stripe customer; the rest in withBillingWriter()
 ];
 
 const webSrc = fileURLToPath(new URL("../../../../apps/web/src", import.meta.url));
@@ -43,10 +44,13 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-/** getDb() calls that aren't the first argument of withOrg(). */
+/**
+ * getDb() calls that aren't the first argument of withOrg() or withBillingWriter() (both switch
+ * to the app_runtime role, so row-level security applies).
+ */
 function directUses(source: string): number {
   return [...source.matchAll(/getDb\(\)/g)].filter(
-    (m) => !/withOrg\(\s*$/.test(source.slice(0, m.index)),
+    (m) => !/(withOrg|withBillingWriter)\(\s*$/.test(source.slice(0, m.index)),
   ).length;
 }
 

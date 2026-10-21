@@ -1138,6 +1138,49 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   terms' wording, then retire `apps/landing/` (`docs/SETUP.md` → Public site).
 - Tests: e2e "the terms of service are public and linked from sign-up".
 
+### Billing: packages, add-ons and read-only modules (Stripe, test mode)
+
+- **Prices** (core `billing/`, GROWTH-PLAN §2): Books $9 (Accounting, Banking, Entity &
+  compliance), Seller $19 (+ Commerce), Seller Plus $29 (+ Inventory, Review requests, Analytics);
+  add-ons on Seller: Stock $8 (Inventory, Analytics), Review requests $5. Yearly is ten months.
+  `catalogProblems()` checks every package and add-on gives each module what it `requires`.
+- **Entitlements** (`entitledModules`): before `BILLING_STARTS_ON` (or with none set) everything
+  is free (`early_access`). After: the subscription's modules while `active`/`trialing`; for
+  `BILLING_GRACE_DAYS` (7) after the first failed payment (`grace`); otherwise none. A module
+  switched on but not paid for is **read-only** (`readOnlyModules`): it opens, nothing in it can
+  change, nothing is deleted. Each module is its own line, so removing an add-on affects only its
+  module (the independence rule; core and e2e tests).
+- **Enforced** in the module contexts (`getAccountingContext`, `getBankingContext`,
+  `getCommerceContext`, `getReviewsContext`, `getInventoryContext`, `getEntityContext`) by
+  `guardWrites`: a server action (a request with `Next-Action`) on a read-only module is sent to
+  Plan and billing with `?readonly=<module>`, which explains it. The org layout shows a banner
+  naming the read-only modules. `getOrgContext` carries `billing` (entitlement, read-only list,
+  rows).
+- **Settings → Plan and billing** (`/settings/billing`, owners choose): early-access note,
+  monthly/yearly, the three packages (suggested from what's switched on), add-ons on Seller, the
+  total, **Continue to payment** (Stripe Checkout; during early access with a start date, a trial
+  until that day so nothing is charged before it), the current plan with status and renewal,
+  **Manage billing** (Stripe's customer portal: card, invoices, change, cancel), invoices from
+  Stripe, a failed-payment banner.
+- **Stripe** (web `server/stripe.ts`, REST, no SDK): prices by lookup key (`seller_month`…),
+  customers, Checkout, portal, subscriptions, invoices, webhook signature check. A live key is
+  ignored unless `STRIPE_LIVE=true`. **Webhook** `/api/stripe/webhook` (`server/billing-webhook.ts`):
+  `checkout.session.completed` (reads the subscription), `customer.subscription.*` (applies it;
+  an older event than the last applied changes nothing), `invoice.payment_failed` / `invoice.paid`
+  (grace starts / ends). The company is found by its customer (security-definer
+  `billing_org_for_customer`), checked against the metadata. Audited `billing.*`.
+- **Schema** (migration `0081_billing`): `billing_accounts` (customer, per-company `starts_on`),
+  `subscriptions` (status, interval, period end, cancel at period end, payment failed, Stripe's
+  time), `subscription_items` (item key, Stripe item and price). Members read them; writes need
+  `withBillingWriter()` (db `client.ts`, `app.billing_writer`), used only by the webhook and by
+  Checkout recording the customer, so nobody can give their company a plan from the app.
+- **Not yet:** the daily jobs (automatic posting, review requests, syncs) still run for read-only
+  modules; seats or usage pricing; coupons; Stripe Tax; local-currency prices.
+- Tests: core `billing.test.ts` (prices, requires, totals, lookup keys, entitlements, grace,
+  independence); db `billing.test.ts` (writes refused outside the writer, stale events, grace
+  from the first failure, isolation); e2e "billing: a plan through Checkout…" against
+  `e2e/stripe-mock.mjs` (Checkout, portal, webhooks signed with a test-only secret).
+
 ### Pagination on every paged list
 
 - One component (`components/ui/pagination.tsx`) on Transactions, Orders, Settlements and Review

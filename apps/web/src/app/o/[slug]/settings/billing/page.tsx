@@ -112,8 +112,14 @@ export default async function BillingPage({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="grid gap-1">
               <h2 className="font-semibold">
-                {state.items.map((i) => billingItem(i.itemKey)?.name ?? i.itemKey).join(" + ") ||
-                  "Your plan"}
+                {[...state.items]
+                  .sort(
+                    (a, b) =>
+                      Number(billingItem(a.itemKey)?.kind === "add_on") -
+                      Number(billingItem(b.itemKey)?.kind === "add_on"),
+                  )
+                  .map((i) => billingItem(i.itemKey)?.name ?? i.itemKey)
+                  .join(" + ") || "Your plan"}
               </h2>
               <p className="text-muted-foreground text-sm">
                 Paid {subscription.interval === "year" ? "yearly" : "monthly"}
