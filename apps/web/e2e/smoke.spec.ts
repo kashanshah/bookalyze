@@ -3866,6 +3866,44 @@ test("support: a ticket from Help, the desk's reply and note, a reply by email, 
   await expect(page.getByText("Website enquiry (no company)")).toBeVisible();
 });
 
+test("growth: where a new account came from is kept, and only admins see the Growth page", async ({
+  page,
+  browser,
+}) => {
+  const newcomer = { name: "Nadia Newcomer", email: `newcomer+${run}@example.com` };
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Team members", exact: true }).click();
+  await page.locator("#invite-email").fill(newcomer.email);
+  await page.getByRole("button", { name: "Send invite" }).click();
+  await expect(page.getByText(`Invitation sent to ${newcomer.email}`)).toBeVisible();
+  const inviteUrl = await latestLink(newcomer.email, "accept-invitation");
+
+  // They first arrive from a newsletter, then sign up from the invitation.
+  const visitor = await browser.newContext();
+  const theirs = await visitor.newPage();
+  await theirs.goto(`/sign-in?utm_source=newsletter-${run}&utm_campaign=october`);
+  await expect
+    .poll(async () => (await visitor.cookies()).some((c) => c.name === "bkz_src"))
+    .toBe(true);
+  await theirs.goto(inviteUrl);
+  await theirs.getByRole("link", { name: "Create account" }).click();
+  await theirs.locator("#name").fill(newcomer.name);
+  await theirs.locator("#password").fill("a-newcomers-password");
+  await theirs.getByRole("button", { name: "Create account" }).click();
+  await expect(theirs.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  // Members don't see Growth.
+  await verifyEmail(theirs, newcomer.email);
+  expect((await theirs.goto("/admin/growth"))?.status()).toBe(404);
+  await visitor.close();
+
+  // The platform admin sees them, under the newsletter, and isn't counted themselves.
+  await page.goto("/admin/growth?days=7");
+  await expect(page.getByRole("heading", { name: "Growth" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign-up funnel" })).toBeVisible();
+  const row = page.getByRole("row", { name: new RegExp(`newsletter-${run}`) });
+  await expect(row.getByRole("cell").nth(1)).toHaveText("1");
+});
+
 test("a Google-only user can set a password and then sign in with it", async ({ page }) => {
   test.setTimeout(60_000);
   // A real Google round-trip needs live OAuth credentials, so simulate a Google-only account:

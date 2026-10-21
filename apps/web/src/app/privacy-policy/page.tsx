@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 /** Where privacy questions and deletion requests go. */
 const CONTACT = "privacy@bookalyze.com";
-const UPDATED = "October 13, 2026";
+const UPDATED = "October 21, 2026";
 
 const sections: LegalSection[] = [
   {
@@ -97,7 +97,10 @@ const sections: LegalSection[] = [
       <>
         <p>We use these providers to run Bookalyze, each only for its part of the service:</p>
         <ul>
-          <li>Vercel: hosting the app, and anonymous page-view counts (no tracking cookies).</li>
+          <li>
+            Vercel: hosting the app and the website, and anonymous counts of page views and of steps
+            such as signing up (no cookies of their own).
+          </li>
           <li>Neon: the database.</li>
           <li>Amazon Web Services: storing receipts and documents.</li>
           <li>Resend: sending email.</li>
@@ -124,10 +127,15 @@ const sections: LegalSection[] = [
   {
     title: "Cookies",
     body: (
-      <p>
-        We use only the cookies needed to keep you signed in and secure. There are no advertising or
-        tracking cookies.
-      </p>
+      <>
+        <p>
+          We use the cookies needed to keep you signed in and secure, and one more:{" "}
+          <code>bkz_src</code> remembers, for 90 days, which campaign link, ad or website first
+          brought you to bookalyze.com. If you create an account, we keep that with it, so we can
+          tell which of our marketing works. It holds no personal details, and we don't share it.
+        </p>
+        <p>There are no advertising cookies, and no one else's tracking cookies.</p>
+      </>
     ),
   },
   {

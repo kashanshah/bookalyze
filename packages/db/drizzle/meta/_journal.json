@@ -617,6 +617,13 @@
       "when": 1792621237152,
       "tag": "0087_channel_sku_gtin",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1792621943429,
+      "tag": "0088_signup_sources",
+      "breakpoints": true
     }
   ]
 }

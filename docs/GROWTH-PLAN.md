@@ -386,6 +386,10 @@ reconcile).
 - [ ] Send one message through the preview's contact form once `RESEND_API_KEY` is set for
       Preview, and check it reaches `CONTACT_TO` with the visitor as reply-to.
 
+- [ ] Legal review: the `bkz_src` source cookie (Admin → Growth). The privacy policy names it;
+      for visitors in the EU and the UK, ask whether it needs a consent banner (or turn it off
+      for them).
+
 ## 8. Decisions made overnight (2026-10-21 → 22)
 
 Made without the owner, to keep going; each fits the docs and is easy to change.

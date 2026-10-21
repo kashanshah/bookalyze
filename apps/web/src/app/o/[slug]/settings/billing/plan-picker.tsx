@@ -7,6 +7,7 @@ import {
   type PackageKey,
   selectionTotal,
 } from "@bookalyze/core";
+import { track } from "@vercel/analytics";
 import { ArrowLeft, Check, CreditCard } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -152,6 +153,7 @@ export function PlanPicker({
                 toast.error(result.message);
                 return;
               }
+              track("Plan chosen", { plan: pkg, interval });
               if ("url" in result) window.location.assign(result.url);
               else if (publishableKey) setClientSecret(result.clientSecret);
               else toast.error("The card form isn't set up. Reload the page and try again.");

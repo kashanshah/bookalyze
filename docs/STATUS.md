@@ -1308,6 +1308,28 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   from the first failure, isolation); e2e "billing: a plan through Checkout…" against
   `e2e/stripe-mock.mjs` (Checkout, portal, webhooks signed with a test-only secret).
 
+### Growth: sign-up analytics (admin)
+
+- **Where an account came from** (core `growth/`): the site (`apps/marketing/src/components/growth.tsx`)
+  and the app's sign-in and sign-up pages (`components/growth/source-cookie.tsx`) keep the first
+  source in the first-party cookie `bkz_src` on bookalyze.com for 90 days: `utm_source` (or `ref`,
+  or `google`/`bing`/`facebook` from an ad click id), `utm_medium`, `utm_campaign`, the referring
+  site (never our own) and the landing page. First touch wins, except that a direct visit gives
+  way to the first visit with a source (`shouldReplace`). Better Auth's `user.create.after` hook
+  saves it in `signup_sources` (migration `0088_signup_sources`, one row per user, not tenant
+  data). The app may only insert there (RLS, no read policy); a failure never stops a sign-up.
+- **Admin → Growth** (`/admin/growth`, platform admins only, like the support desk): for the last
+  7 or 30 days, 90 days or 12 months, the people who signed up and how far each got with the first
+  company they own: confirmed email, set up a company, gave a card, then in the trial, paying,
+  payment failed, or cancelled (or cancelling); and the same by source. It reads totals through
+  security-definer `platform_funnel()` and `platform_signup_sources()`, which never return a
+  person or a company, and leave out `PLATFORM_ADMIN_EMAILS`.
+- **Vercel Analytics events** (custom events need Vercel Pro; otherwise they're ignored):
+  `Start free` on the site (any link to `/sign-up`, with the page and header/footer/page),
+  `Sign up` (email form), `Plan chosen` (plan, interval) and `Card given` (back from Checkout).
+- The privacy policy's Cookies section names `bkz_src`. In the EU and the UK a cookie like it
+  usually needs consent; that's for the owner's legal review (GROWTH-PLAN §7).
+
 ### Pagination on every paged list
 
 - One component (`components/ui/pagination.tsx`) on Transactions, Orders, Settlements and Review
