@@ -1,4 +1,5 @@
 import { noonMarketplace, parseNoonLedger, parseNoonStockSummary } from "@bookalyze/core";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
 import { addNoonChannel } from "../commerce";
@@ -6,10 +7,12 @@ import { createProduct, linkSku } from "../inventory";
 import { importNoonLedger } from "../inventory-ledger";
 import {
   importNoonStockDays,
+  importNoonStockWindow,
   noonLedgerCheck,
   noonStockByProduct,
   noonStockUploads,
   removeNoonStockUpload,
+  rewindNoonSummarySync,
 } from "../noon-stock";
 import * as schema from "../schema";
 
@@ -166,5 +169,73 @@ describe("Noon's FBN ledger summary", () => {
     expect(
       await scoped((tx) => removeNoonStockUpload(tx, { date: "2026-09-03", fromDate: null })),
     ).toBe(0);
+  });
+
+  it("saves a window Noon's API sent as one dated row per SKU as that window", async () => {
+    const row = {
+      location: "DXB01",
+      sku: "MUG-1",
+      nfsku: null,
+      condition: "sellable",
+      opening: 10,
+      closing: 9,
+      movements: {},
+    };
+    // Saved before as one day (Noon dates the window's rows the month's last day).
+    await scoped((tx) =>
+      importNoonStockDays(tx, { orgId, rows: [{ ...row, date: "2026-09-30" }] }),
+    );
+    await scoped((tx) =>
+      importNoonStockWindow(tx, {
+        orgId,
+        rows: [{ ...row, date: "2026-09-30" }],
+        window: { from: "2026-09-02", to: "2026-09-03" },
+      }),
+    );
+    expect(await scoped((tx) => noonStockUploads(tx))).toEqual([
+      { date: "2026-09-03", fromDate: "2026-09-02", rows: 1 },
+    ]);
+    // Daily rows stay daily.
+    await scoped((tx) =>
+      importNoonStockWindow(tx, {
+        orgId,
+        rows: [
+          { ...row, date: "2026-09-05" },
+          { ...row, date: "2026-09-06" },
+        ],
+        window: { from: "2026-09-05", to: "2026-09-06" },
+      }),
+    );
+    expect((await scoped((tx) => noonStockUploads(tx))).map((u) => [u.fromDate, u.date])).toEqual([
+      [null, "2026-09-06"],
+      [null, "2026-09-05"],
+      ["2026-09-02", "2026-09-03"],
+    ]);
+  });
+
+  it("rewinds the summary sync so removed days come in again", async () => {
+    const [noon] = await owner.db
+      .insert(schema.connections)
+      .values({
+        organizationId: orgId,
+        provider: "noon",
+        name: "Noon",
+        settings: {
+          summary: { through: "2026-09-30", pending: null, refreshedAt: "2026-10-01T00:00:00Z" },
+          transactions: { through: "2026-09-30" },
+        },
+      })
+      .returning({ id: schema.connections.id });
+    expect(await scoped((tx) => rewindNoonSummarySync(tx, "2026-09-02"))).toBe(1);
+    // Already before it: nothing to do.
+    expect(await scoped((tx) => rewindNoonSummarySync(tx, "2026-09-20"))).toBe(0);
+    const [row] = await owner.db
+      .select({ settings: schema.connections.settings })
+      .from(schema.connections)
+      .where(eq(schema.connections.id, noon?.id ?? ""));
+    expect(row?.settings).toMatchObject({
+      summary: { through: "2026-09-01", refreshedAt: null },
+      transactions: { through: "2026-09-30" },
+    });
   });
 });

@@ -1,6 +1,8 @@
 import { type NoonLedgerMismatch, type NoonStockDay, noonLedgerMismatches } from "@bookalyze/core";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
+import { noonSyncState, saveNoonSyncState } from "./noon-transactions";
+import { connections } from "./schema/banking";
 import { noonStockDays } from "./schema/inventory";
 
 /**
@@ -53,6 +55,37 @@ export async function importNoonStockDays(
     saved += rows.length;
   }
   return { saved };
+}
+
+/**
+ * Saves one window of Noon's summary as brought in from its API. Asked for a window of several
+ * days, Noon sends one row per warehouse and SKU for the whole window, dated a single day (the
+ * month's last, even for a month not over yet): those rows are saved as the window itself
+ * (`fromDate` → `date`), replacing any saved under that single day before. Daily rows (several
+ * days in the file) are saved as they are.
+ */
+export async function importNoonStockWindow(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    rows: readonly NoonStockDay[];
+    window: { from: string; to: string };
+  },
+): Promise<{ saved: number }> {
+  const dates = new Set(input.rows.map((r) => r.date));
+  const [label] = dates;
+  if (dates.size !== 1 || !label || input.window.from >= input.window.to) {
+    return importNoonStockDays(tx, input);
+  }
+  if (label !== input.window.to) {
+    await tx
+      .delete(noonStockDays)
+      .where(and(eq(noonStockDays.date, label), isNull(noonStockDays.fromDate)));
+  }
+  return importNoonStockDays(tx, {
+    orgId: input.orgId,
+    rows: input.rows.map((r) => ({ ...r, date: input.window.to, fromDate: input.window.from })),
+  });
 }
 
 /**
@@ -231,4 +264,27 @@ export async function removeNoonStockUpload(
     )
     .returning({ id: noonStockDays.id });
   return gone.length;
+}
+
+/**
+ * Has Noon's summary brought in again from `from` on: each Noon connection's summary sync goes
+ * back to the day before (and its refresh is due), so the next "Bring in" fetches those days.
+ * Used after a summary is removed. Returns how many connections were rewound.
+ */
+export async function rewindNoonSummarySync(tx: Transaction, from: string): Promise<number> {
+  const rows = await tx
+    .select({ id: connections.id, settings: connections.settings })
+    .from(connections)
+    .where(eq(connections.provider, "noon"));
+  const d = new Date(`${from}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  const before = d.toISOString().slice(0, 10);
+  let n = 0;
+  for (const c of rows) {
+    const state = noonSyncState((c.settings ?? {}) as Record<string, unknown>, "summary");
+    if (!state.through || state.through <= before) continue;
+    await saveNoonSyncState(tx, c.id, { ...state, through: before, refreshedAt: null }, "summary");
+    n++;
+  }
+  return n;
 }
