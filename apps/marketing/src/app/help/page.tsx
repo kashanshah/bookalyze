@@ -6,7 +6,7 @@ import { ButtonLink } from "@/components/button";
 import { GuideLinks } from "@/components/guide-links";
 import { GuideSearch } from "@/components/guide-search";
 import { Section, SectionHeading } from "@/components/section";
-import { CATEGORIES, guideSummaries, guidesIn } from "@/content/guides";
+import { CATEGORIES, guideSummaries, guidesIn, POPULAR_GUIDES } from "@/content/guides";
 import { CONTACT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -15,18 +15,6 @@ export const metadata: Metadata = {
     "Search the Bookalyze guides, find the most asked questions, or contact a person for help.",
   alternates: { canonical: "/help" },
 };
-
-/** The guides people need most, first. */
-const POPULAR = [
-  "how-bookalyze-works",
-  "connect-amazon",
-  "how-payouts-post",
-  "match-payouts",
-  "connect-wise",
-  "automatic-review-requests",
-  "buyer-invoices",
-  "channel-profit",
-] as const;
 
 export default function HelpPage() {
   const categories = CATEGORIES.filter((c) => guidesIn(c.id).length);
@@ -48,7 +36,7 @@ export default function HelpPage() {
 
       <Section tint className="grid gap-10">
         <SectionHeading align="start" title="Popular guides" />
-        <GuideLinks slugs={POPULAR} className="lg:grid-cols-2" />
+        <GuideLinks slugs={POPULAR_GUIDES} className="lg:grid-cols-2" />
       </Section>
 
       <Section className="grid gap-10">

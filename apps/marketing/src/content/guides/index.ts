@@ -1,5 +1,16 @@
+import { ACCOUNTING_GUIDES } from "./accounting";
+import { BANKING_GUIDES } from "./banking";
+import { COMPANY_GUIDES } from "./company";
 import { CONNECTION_GUIDES } from "./connections";
+import { INVENTORY_GUIDES } from "./inventory";
+import { INVOICE_GUIDES } from "./invoices";
+import { LISTING_GUIDES } from "./listings";
+import { MARKETPLACE_GUIDES } from "./marketplaces";
+import { PAYOUT_GUIDES } from "./payouts";
+import { PLAYBOOK_GUIDES } from "./playbooks";
+import { REPORT_GUIDES } from "./reports";
 import { REVIEW_GUIDES } from "./reviews";
+import { START_GUIDES } from "./start";
 import type { CategoryId, Guide } from "./types";
 
 export type { Block, CategoryId, Guide } from "./types";
@@ -52,11 +63,37 @@ export const CATEGORIES: readonly { id: CategoryId; title: string; lead: string 
 ];
 
 /** Every guide, grouped by category in the order above. */
-export const GUIDES: readonly Guide[] = [...CONNECTION_GUIDES, ...REVIEW_GUIDES].sort(
+export const GUIDES: readonly Guide[] = [
+  ...START_GUIDES,
+  ...CONNECTION_GUIDES,
+  ...MARKETPLACE_GUIDES,
+  ...PAYOUT_GUIDES,
+  ...BANKING_GUIDES,
+  ...INVOICE_GUIDES,
+  ...REVIEW_GUIDES,
+  ...LISTING_GUIDES,
+  ...ACCOUNTING_GUIDES,
+  ...INVENTORY_GUIDES,
+  ...REPORT_GUIDES,
+  ...COMPANY_GUIDES,
+  ...PLAYBOOK_GUIDES,
+].sort(
   (a, b) =>
     CATEGORIES.findIndex((c) => c.id === a.category) -
     CATEGORIES.findIndex((c) => c.id === b.category),
 );
+
+/** The guides people need most, first (Help's "Popular guides"). */
+export const POPULAR_GUIDES: readonly string[] = [
+  "how-bookalyze-works",
+  "connect-amazon",
+  "how-payouts-post",
+  "match-payouts",
+  "connect-wise",
+  "automatic-review-requests",
+  "buyer-invoices",
+  "channel-profit",
+];
 
 export function guide(slug: string): Guide | undefined {
   return GUIDES.find((g) => g.slug === slug);
