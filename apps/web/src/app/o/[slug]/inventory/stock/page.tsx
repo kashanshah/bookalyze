@@ -14,6 +14,9 @@ export const metadata: Metadata = { title: "Stock" };
 /** Product, In the books, Amazon, Noon, At hand (room for its buttons), Difference. */
 const GRID =
   "lg:grid-cols-[minmax(0,2.4fr)_repeat(3,minmax(0,1fr))_minmax(0,1.4fr)_minmax(0,0.9fr)]";
+/** The same with Walmart (WFS) after Noon, for companies with WFS stock. */
+const GRID_WFS =
+  "lg:grid-cols-[minmax(0,2.4fr)_repeat(4,minmax(0,1fr))_minmax(0,1.4fr)_minmax(0,0.9fr)]";
 
 const MONTH = (m: string, locale: string) =>
   new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(
@@ -34,18 +37,22 @@ export default async function StockPage({ params }: { params: Promise<{ slug: st
       expected: t.expected + r.expected,
       amazon: t.amazon + (r.amazon?.total ?? 0),
       noon: t.noon + (r.noon?.total ?? 0),
+      walmart: t.walmart + (r.walmart?.total ?? 0),
       atHand: t.atHand + (r.atHand?.quantity ?? 0),
       difference: t.difference + r.difference,
     }),
-    { expected: 0, amazon: 0, noon: 0, atHand: 0, difference: 0 },
+    { expected: 0, amazon: 0, noon: 0, walmart: 0, atHand: 0, difference: 0 },
   );
+  // Walmart's column only for companies whose WFS stock has come in.
+  const wfs = Boolean(overview.walmartAt) || overview.rows.some((r) => r.walmart);
+  const grid = wfs ? GRID_WFS : GRID;
 
   return (
     <div className="grid gap-6">
       <PageHeader
         eyebrow="Inventory"
         title="Stock"
-        description="Every product in one place: what your books say you own, against what Amazon and Noon hold and what you counted at hand. A difference is stock the books have that nobody holds (or the other way round)."
+        description="Every product in one place: what your books say you own, against what Amazon, Noon and Walmart hold and what you counted at hand. A difference is stock the books have that nobody holds (or the other way round)."
       />
 
       <div className="grid gap-1 text-muted-foreground text-sm">
@@ -73,6 +80,12 @@ export default async function StockPage({ params }: { params: Promise<{ slug: st
           </Link>
           ).
         </p>
+        {wfs && overview.walmartAt ? (
+          <p>
+            Walmart: what WFS held as of {formatDate(overview.walmartAt.slice(0, 10), locale)}{" "}
+            (Bring in WFS stock on each Walmart channel's page).
+          </p>
+        ) : null}
         {notPosted.length ? (
           <p>
             In the books takes off what sold in {notPosted.map((m) => MONTH(m, locale)).join(", ")},
@@ -98,12 +111,13 @@ export default async function StockPage({ params }: { params: Promise<{ slug: st
       ) : (
         <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
           <div
-            className={`hidden ${GRID} gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider lg:grid`}
+            className={`hidden ${grid} gap-4 border-b bg-muted/30 px-5 py-2.5 font-medium text-muted-foreground text-xs uppercase tracking-wider lg:grid`}
           >
             <span>Product</span>
             <span className="text-end">In the books</span>
             <span className="text-end">Amazon</span>
             <span className="text-end">Noon</span>
+            {wfs ? <span className="text-end">Walmart</span> : null}
             <span className="text-end">At hand</span>
             <span className="text-end">Difference</span>
           </div>
@@ -114,17 +128,26 @@ export default async function StockPage({ params }: { params: Promise<{ slug: st
                 className="fade-in-0 animate-in fill-mode-both"
                 style={{ animationDelay: `${Math.min(i, 12) * 20}ms` }}
               >
-                <StockRow row={row} slug={slug} locale={locale} today={today} n={n} />
+                <StockRow
+                  row={row}
+                  slug={slug}
+                  locale={locale}
+                  today={today}
+                  n={n}
+                  grid={grid}
+                  wfs={wfs}
+                />
               </li>
             ))}
           </ul>
           <div
-            className={`grid grid-cols-2 gap-x-4 gap-y-1 border-t bg-muted/30 px-5 py-3 font-medium text-sm ${GRID}`}
+            className={`grid grid-cols-2 gap-x-4 gap-y-1 border-t bg-muted/30 px-5 py-3 font-medium text-sm ${grid}`}
           >
             <span className="col-span-2 lg:col-span-1">All products</span>
             <Cell label="In the books" value={n.format(totals.expected)} />
             <Cell label="Amazon" value={n.format(totals.amazon)} />
             <Cell label="Noon" value={n.format(totals.noon)} />
+            {wfs ? <Cell label="Walmart" value={n.format(totals.walmart)} /> : null}
             <Cell label="At hand" value={n.format(totals.atHand)} />
             <Cell label="Difference" value={signed(totals.difference, n)} />
           </div>
@@ -157,12 +180,16 @@ function StockRow({
   locale,
   today,
   n,
+  grid,
+  wfs,
 }: {
   row: StockOverviewRow;
   slug: string;
   locale: string;
   today: string;
   n: Intl.NumberFormat;
+  grid: string;
+  wfs: boolean;
 }) {
   const amazon = row.amazon;
   const amazonHint = amazon
@@ -180,7 +207,7 @@ function StockRow({
       ? `${n.format(row.inLots)} in lots ${row.notPosted > 0 ? "−" : "+"} ${n.format(Math.abs(row.notPosted))} unposted`
       : undefined;
   return (
-    <div className={`grid grid-cols-2 items-start gap-x-4 gap-y-1.5 px-5 py-3.5 text-sm ${GRID}`}>
+    <div className={`grid grid-cols-2 items-start gap-x-4 gap-y-1.5 px-5 py-3.5 text-sm ${grid}`}>
       <div className="col-span-2 min-w-0 lg:col-span-1">
         <p className="line-clamp-2 font-medium" title={row.productName}>
           {row.productName}
@@ -200,6 +227,13 @@ function StockRow({
         value={row.noon ? n.format(row.noon.total) : "—"}
         hint={row.noon?.other ? `${n.format(row.noon.other)} not sellable` : undefined}
       />
+      {wfs ? (
+        <Cell
+          label="Walmart"
+          value={row.walmart ? n.format(row.walmart.total) : "—"}
+          hint={row.walmart?.held ? `${n.format(row.walmart.held)} held` : undefined}
+        />
+      ) : null}
       <span className="flex items-start justify-between gap-2 lg:justify-end">
         <span className="text-muted-foreground text-xs lg:hidden">At hand</span>
         <span className="flex items-start gap-1">
@@ -239,8 +273,8 @@ function StockRow({
             variant={Math.abs(row.difference) <= 2 ? "outline" : "warning"}
             title={
               row.difference > 0
-                ? "The books have more than Amazon, Noon and your count hold"
-                : "Amazon, Noon and your count hold more than the books have"
+                ? "The books have more than the marketplaces and your count hold"
+                : "The marketplaces and your count hold more than the books have"
             }
           >
             {signed(row.difference, n)}

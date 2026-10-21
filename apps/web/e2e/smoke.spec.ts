@@ -2882,6 +2882,36 @@ test("walmart: choose how Walmart posts, post a settlement and match its payout 
   await expect(page.getByRole("row", { name: /^Paid out/ })).toContainText("$104.14");
 });
 
+test("walmart: bring in what WFS holds, see it on the channel, on Products and on Stock", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Walmart Canada/ }).click();
+  const wfs = page.getByRole("region", { name: "Stock at WFS" });
+  await expect(wfs.getByText("Not brought in yet.")).toBeVisible();
+  await wfs.getByRole("button", { name: "Bring in WFS stock" }).click();
+  await expect(page.getByText("2 SKUs at WFS")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("39 units in Walmart's warehouses.")).toBeVisible();
+  await expect(wfs).toContainText(/Sellable\s*35/);
+  await expect(wfs).toContainText(/Held\s*4/);
+
+  // The tote isn't linked to a product yet: Products offers it, with what WFS holds.
+  const slug = new URL(page.url()).pathname.split("/")[2];
+  await page.goto(`/o/${slug}/inventory/products`);
+  await expect(page.getByRole("listitem", { name: "WMT-SPARE-TOTE" })).toContainText(
+    "No orders yet · 5 at WFS",
+  );
+
+  // The mug is: Stock counts what WFS holds in its own Walmart column.
+  await page.goto(`/o/${slug}/inventory/stock`);
+  await expect(page.getByText(/Walmart: what WFS held as of/)).toBeVisible();
+  const mug = page.getByRole("listitem").filter({ hasText: "Maple leaf ceramic mug" });
+  await expect(mug).toContainText("34");
+  await expect(mug).toContainText("4 held");
+});
+
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
   const keyFile = async (path: string) => ({
     name: "noon_credentials.json",

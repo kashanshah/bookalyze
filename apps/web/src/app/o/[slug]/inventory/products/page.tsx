@@ -91,6 +91,7 @@ export default async function ProductsPage({
             title: r.title,
             orders: r.orders,
             fulfillable: r.fulfillable,
+            heldBy: r.channelKind === "walmart" ? "WFS" : "Amazon",
           }))}
           total={unlinked.total}
           products={linkable.map((p) => ({ id: p.id, name: p.name }))}

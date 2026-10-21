@@ -9,9 +9,15 @@ import { products, stockCounts } from "./schema/inventory";
  * Stock in one place (phase 5): per product, what the books say you own (units left in the
  * lots, less what sold in months cost of goods sold hasn't posted yet, plus what came back or
  * turned up in them), against what each place holds: Amazon's FBA inventory (sellable,
- * reserved, inbound, unsellable, being looked for), Noon's FBN summary, and your own latest
+ * reserved, inbound, unsellable, being looked for), Noon's FBN summary, what Walmart
+ * Fulfillment Services holds (sellable and held), and your own latest
  * count at hand. Run inside `withOrg()`.
  */
+
+/** A channel SKU's stock is Walmart's (WFS), or everyone else's (Amazon's FBA). */
+const walmartSku = sql`exists (select 1 from sales_channels sc
+  where sc.id = cs.channel_id and sc.kind = 'walmart')`;
+const amazonSku = sql`not ${walmartSku}`;
 
 const cancelled = sql.raw(ORDER_STATUS_GROUPS.cancelled.map((s) => `'${s}'`).join(", "));
 
@@ -34,6 +40,8 @@ export type StockOverviewRow = {
     total: number;
   } | null;
   noon: { sellable: number; other: number; total: number } | null;
+  /** What Walmart Fulfillment Services holds: sellable, and on hand but held. */
+  walmart: { sellable: number; held: number; total: number } | null;
   atHand: { quantity: number; countedOn: string; notes: string | null; id: string } | null;
   /** Expected less everything counted somewhere (+: the books say more than is anywhere). */
   difference: number;
@@ -43,6 +51,8 @@ export type StockOverview = {
   rows: StockOverviewRow[];
   /** When Amazon's FBA inventory was last brought in (null: never). */
   amazonAt: string | null;
+  /** When WFS stock was last brought in (null: never). */
+  walmartAt: string | null;
   /** The day of Noon's latest FBN summary (null: none uploaded). */
   noonDay: string | null;
   /** The months not posted yet that "not posted" counts, oldest first. */
@@ -84,6 +94,8 @@ export async function stockOverview(
     inbound: number | null;
     unsellable: number | null;
     researching: number | null;
+    wfs_sellable: number | null;
+    wfs_held: number | null;
   }>(sql`
     select p.id as product_id, p.name as product_name, p.sku as product_sku,
       coalesce((select sum(l.quantity - coalesce((select sum(c.quantity) from lot_consumptions c
@@ -105,19 +117,25 @@ export async function stockOverview(
           and ${notPostedOrder}) as months,
       (select sum(cs.fulfillable * ps.units) from product_skus ps
         join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku
-        where ps.product_id = p.id and cs.fulfillable is not null)::int as sellable,
+        where ps.product_id = p.id and cs.fulfillable is not null and ${amazonSku})::int as sellable,
       (select sum(coalesce(cs.reserved, 0) * ps.units) from product_skus ps
         join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku
-        where ps.product_id = p.id and cs.fulfillable is not null)::int as reserved,
+        where ps.product_id = p.id and cs.fulfillable is not null and ${amazonSku})::int as reserved,
       (select sum(coalesce(cs.inbound, 0) * ps.units) from product_skus ps
         join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku
-        where ps.product_id = p.id and cs.fulfillable is not null)::int as inbound,
+        where ps.product_id = p.id and cs.fulfillable is not null and ${amazonSku})::int as inbound,
       (select sum(coalesce(cs.unfulfillable, 0) * ps.units) from product_skus ps
         join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku
-        where ps.product_id = p.id and cs.fulfillable is not null)::int as unsellable,
+        where ps.product_id = p.id and cs.fulfillable is not null and ${amazonSku})::int as unsellable,
       (select sum(coalesce(cs.researching, 0) * ps.units) from product_skus ps
         join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku
-        where ps.product_id = p.id and cs.fulfillable is not null)::int as researching
+        where ps.product_id = p.id and cs.fulfillable is not null and ${amazonSku})::int as researching,
+      (select sum(cs.fulfillable * ps.units) from product_skus ps
+        join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku
+        where ps.product_id = p.id and cs.fulfillable is not null and ${walmartSku})::int as wfs_sellable,
+      (select sum(coalesce(cs.reserved, 0) * ps.units) from product_skus ps
+        join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku
+        where ps.product_id = p.id and cs.fulfillable is not null and ${walmartSku})::int as wfs_held
     from products p
     where not p.is_archived
       and (exists (select 1 from inventory_lots l where l.product_id = p.id)
@@ -143,7 +161,14 @@ export async function stockOverview(
 
   const [amazonAt] = await tx
     .execute<{ at: string | null }>(
-      sql`select max(seen_at)::text as at from channel_skus where fulfillable is not null`,
+      sql`select max(seen_at)::text as at from channel_skus cs
+        where fulfillable is not null and ${amazonSku}`,
+    )
+    .then((r) => r.rows);
+  const [walmartAt] = await tx
+    .execute<{ at: string | null }>(
+      sql`select max(seen_at)::text as at from channel_skus cs
+        where fulfillable is not null and ${walmartSku}`,
     )
     .then((r) => r.rows);
 
@@ -182,7 +207,19 @@ export async function stockOverview(
     const atHand = count
       ? { id: count.id, quantity: count.quantity, countedOn: count.countedOn, notes: count.notes }
       : null;
-    const counted = (amazon?.total ?? 0) + (noonRow?.total ?? 0) + (atHand?.quantity ?? 0);
+    const walmart =
+      r.wfs_sellable === null
+        ? null
+        : {
+            sellable: Number(r.wfs_sellable),
+            held: Number(r.wfs_held ?? 0),
+            total: Number(r.wfs_sellable) + Number(r.wfs_held ?? 0),
+          };
+    const counted =
+      (amazon?.total ?? 0) +
+      (noonRow?.total ?? 0) +
+      (walmart?.total ?? 0) +
+      (atHand?.quantity ?? 0);
     return {
       productId: r.product_id,
       productName: r.product_name,
@@ -192,6 +229,7 @@ export async function stockOverview(
       expected,
       amazon,
       noon: noonRow,
+      walmart,
       atHand,
       difference: expected - counted,
     };
@@ -199,6 +237,7 @@ export async function stockOverview(
   return {
     rows: result,
     amazonAt: amazonAt?.at ?? null,
+    walmartAt: walmartAt?.at ?? null,
     noonDay: noon.date,
     monthsNotPosted: [...months].sort(),
   };

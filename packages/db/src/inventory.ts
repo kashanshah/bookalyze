@@ -394,8 +394,10 @@ export type UnlinkedSku = {
   units: number;
   /** Null for a SKU the marketplace lists that hasn't been ordered yet. */
   lastOrderedAt: Date | null;
-  /** Units the marketplace holds that can be sold (FBA), when its SKUs were last brought in. */
+  /** Units the marketplace holds that can be sold (FBA, WFS), when its SKUs were last brought in. */
   fulfillable: number | null;
+  /** The channel's marketplace (amazon, walmart…), to say whose warehouse holds them. */
+  channelKind: string;
 };
 
 /**
@@ -434,7 +436,7 @@ export async function unlinkedSkus(
       from seen s
       full outer join ${channelSkus} l on l.channel_id = s.channel_id and l.sku = s.sku
     )
-    select c.*, sc.name as channel_name
+    select c.*, sc.name as channel_name, sc.kind as channel_kind
     from candidates c
     join ${salesChannels} sc on sc.id = c.channel_id
     where (c.orders > 0 or c.held > 0)
@@ -451,6 +453,7 @@ export async function unlinkedSkus(
   const rows = await tx.execute<{
     channel_id: string;
     channel_name: string;
+    channel_kind: string;
     sku: string;
     title: string | null;
     orders: number;
@@ -473,6 +476,7 @@ export async function unlinkedSkus(
       units: Number(r.units),
       lastOrderedAt: r.last_ordered_at ? new Date(r.last_ordered_at) : null,
       fulfillable: r.fulfillable === null ? null : Number(r.fulfillable),
+      channelKind: r.channel_kind,
     })),
     total: Number(count.rows[0]?.total ?? 0),
   };

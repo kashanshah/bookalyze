@@ -1,9 +1,9 @@
-import type { AmazonOrder, AmazonOrderItem } from "@bookalyze/core";
+import { type AmazonOrder, type AmazonOrderItem, walmartMarketplace } from "@bookalyze/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import { addOpeningStock, postCogs } from "../cogs";
-import { saveAmazonChannels, saveOrderItems, upsertOrders } from "../commerce";
+import { addWalmartChannel, saveAmazonChannels, saveOrderItems, upsertOrders } from "../commerce";
 import { createProduct, linkSku, saveChannelSkus } from "../inventory";
 import { importLedgerEvents } from "../inventory-ledger";
 import { createDefaultChart } from "../ledger";
@@ -220,5 +220,37 @@ describe("stock in one place", () => {
     await scoped((tx) => removeStockCount(tx, { productId: mugId, countId: latest.id }));
     const third = await scoped((tx) => stockOverview(tx, { timezone: where.timezone }));
     expect(third.rows[0]).toMatchObject({ atHand: { quantity: 3 }, difference: -2 });
+  });
+
+  it("counts what WFS holds in Walmart's column, not Amazon's", async () => {
+    const ca = walmartMarketplace("walmart-ca");
+    if (!ca) throw new Error("Walmart Canada is missing.");
+    await scoped(async (tx) => {
+      const { channel } = await addWalmartChannel(tx, {
+        orgId,
+        marketplace: ca,
+        fulfilment: "marketplace",
+      });
+      await linkSku(tx, {
+        orgId,
+        userId: null,
+        productId: mugId,
+        channelId: channel.id,
+        sku: "WMT-MUG",
+        units: 1,
+      });
+      await saveChannelSkus(tx, {
+        orgId,
+        channelId: channel.id,
+        skus: [{ sku: "WMT-MUG", asin: null, title: null, fulfillable: 2, reserved: 1 }],
+      });
+    });
+    const overview = await scoped((tx) => stockOverview(tx, { timezone: where.timezone }));
+    expect(overview.walmartAt).not.toBeNull();
+    expect(overview.rows[0]).toMatchObject({
+      amazon: { total: 5 },
+      walmart: { sellable: 2, held: 1, total: 3 },
+      difference: -5,
+    });
   });
 });

@@ -17,8 +17,10 @@ export type UnlinkedSkuView = {
   sku: string;
   title: string | null;
   orders: number;
-  /** Units Amazon holds that can be sold, if its SKUs were brought in. */
+  /** Units the marketplace holds that can be sold, if its SKUs were brought in. */
   fulfillable: number | null;
+  /** Whose warehouse holds them: "Amazon" (FBA) or "WFS" (Walmart). */
+  heldBy: string;
 };
 
 export function UnlinkedSkus({
@@ -97,7 +99,7 @@ function UnlinkedRow({
         </p>
         <p className="text-muted-foreground text-xs">
           {row.orders ? `${row.orders} ${row.orders === 1 ? "order" : "orders"}` : "No orders yet"}
-          {row.fulfillable !== null ? ` · ${row.fulfillable} at Amazon` : ""}
+          {row.fulfillable !== null ? ` · ${row.fulfillable} at ${row.heldBy}` : ""}
         </p>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">

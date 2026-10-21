@@ -309,7 +309,9 @@ export async function stockComparison(tx: Transaction): Promise<StockComparison[
         from inventory_lots l where l.product_id = p.id), 0)::int as in_lots,
       (select sum(cs.fulfillable * ps.units) from product_skus ps
         join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku
-        where ps.product_id = p.id and cs.fulfillable is not null)::int as at_amazon
+        where ps.product_id = p.id and cs.fulfillable is not null
+          and not exists (select 1 from sales_channels sc
+            where sc.id = cs.channel_id and sc.kind = 'walmart'))::int as at_amazon
     from products p
     where not p.is_archived
       and (exists (select 1 from inventory_lots l where l.product_id = p.id)
