@@ -175,8 +175,6 @@ export default async function ProductsPage({
                 <div className="col-span-3 row-start-2 min-w-0 md:col-span-1 md:row-start-auto">
                   {p.skus.length ? (
                     <SkuBadges
-                      // Measured once per set of SKUs: a link or a change of units refits the row.
-                      key={p.skus.map((s) => `${s.id}:${s.units}:${s.bundleWith.length}`).join()}
                       label={p.name}
                       items={p.skus.map((s) => (
                         <Badge
