@@ -198,3 +198,54 @@ export async function deleteAttachment(tx: Transaction, id: string): Promise<str
     .returning({ storageKey: attachments.storageKey });
   return row?.storageKey ?? null;
 }
+
+/**
+ * Saves a file that arrived by email as ready (its bytes are already stored). Returns null when
+ * the same email's file was saved before, as a webhook can be delivered twice.
+ */
+export async function createEmailAttachment(
+  tx: Transaction,
+  input: {
+    id: string;
+    orgId: string;
+    storageKey: string;
+    fileName: string;
+    contentType: string;
+    sizeBytes: number;
+    emailFrom: string | null;
+    emailSubject: string | null;
+    emailRef: string;
+  },
+): Promise<AttachmentRow | null> {
+  const [row] = await tx
+    .insert(attachments)
+    .values({
+      id: input.id,
+      organizationId: input.orgId,
+      storageKey: input.storageKey,
+      fileName: input.fileName,
+      contentType: input.contentType,
+      sizeBytes: input.sizeBytes,
+      status: "ready",
+      source: "email",
+      emailFrom: input.emailFrom?.slice(0, 300) ?? null,
+      emailSubject: input.emailSubject?.slice(0, 300) ?? null,
+      emailRef: input.emailRef,
+    })
+    .onConflictDoNothing({
+      target: [attachments.organizationId, attachments.emailRef],
+      where: sql`${attachments.emailRef} is not null`,
+    })
+    .returning();
+  return row ?? null;
+}
+
+/** Whether this email's file is already saved (checked before downloading it again). */
+export async function hasEmailAttachment(tx: Transaction, emailRef: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: attachments.id })
+    .from(attachments)
+    .where(eq(attachments.emailRef, emailRef))
+    .limit(1);
+  return Boolean(row);
+}

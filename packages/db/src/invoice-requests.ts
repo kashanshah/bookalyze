@@ -214,3 +214,8 @@ export async function markOrderInvoiceSent(
     .set({ sentAt: input.at ?? new Date(), sentBy: input.userId })
     .where(eq(orderInvoices.id, input.id));
 }
+
+/** Notes that a file came in on the receipts address. */
+export async function noteInboxReceipt(tx: Transaction, at: Date) {
+  await tx.update(invoiceInboxes).set({ lastReceiptAt: at });
+}

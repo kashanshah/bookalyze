@@ -818,6 +818,16 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   attention shows "N buyers are waiting for an invoice". The order page shows the request, with
   Answered / Dismiss for one handled elsewhere. The PDF uses standard fonts, so a name
   outside Latin-1 is left off the file (the dialog still shows what was typed).
+- **Receipts by email** (migration `0077_receipts_by_email`): the same inbox token also gives
+  `receipts-<token>@INBOUND_EMAIL_DOMAIN`, shown on Accounting → Receipts with a Copy button.
+  For an email to it, the webhook lists its files with Resend's Attachments API
+  (`GET /emails/receiving/{id}/attachments`, a one-hour `download_url` each), keeps PDFs and
+  images the receipts inbox takes (up to 20 MB, 10 per email, not small inline logos), stores
+  them and saves them as ready, unattached attachments with `source = 'email'`, `email_from`,
+  `email_subject` and `email_ref` (`<email id>:<file id>`, unique per company, so a repeated
+  webhook saves nothing twice). An email with no usable file is kept by its subject (Gmail's
+  confirmation code). Inbox cards show the sender and subject, and the Attach dialog offers a
+  one-click search for the sender's name (core `senderName`).
 - **Registered or not:** a registration only counts when it's active, with the company's own
   country's authority, and has a number (or a TRN / GST number is saved under registration
   numbers): `invoiceRegistration`. Otherwise the PDF is an "Invoice" (فاتورة), with "Not
@@ -2721,7 +2731,7 @@ Pick from the top. Each item is roughly one PR. Tick items here as they land.
 2. [x] **File uploads (S3), attachments and the receipts inbox.** Done in slice 4. Still to
    come:
    - Suggested matches (date, amount, vendor) and OCR.
-   - Forwarding receipts by email.
+   - Forwarding receipts by email. **Done:** `receipts-<token>@INBOUND_EMAIL_DOMAIN`, see Receipts.
    - A daily clean-up of `pending` attachments that were never completed (harmless meanwhile).
 3. [x] **Transactions screen.** Done in slice 3. Still to come: a receipt count once
    attachments exist, bulk review and bulk categorize, and transfers between different

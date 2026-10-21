@@ -9,6 +9,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
@@ -36,10 +37,20 @@ export const attachments = pgTable(
     /** "pending" until the browser's upload is confirmed, then "ready". */
     status: text("status", { enum: ATTACHMENT_STATUSES }).notNull().default("pending"),
     uploadedBy: uuid("uploaded_by").references(() => user.id, { onDelete: "set null" }),
+    /** "upload" from the app, or "email" when forwarded to the company's receipts address. */
+    source: text("source").notNull().default("upload"),
+    /** For a forwarded file: who sent the email, its subject, and Resend's ids (no repeats). */
+    emailFrom: text("email_from"),
+    emailSubject: text("email_subject"),
+    emailRef: text("email_ref"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     unique("attachments_org_id_key").on(t.organizationId, t.id),
+    uniqueIndex("attachments_email_ref_key")
+      .on(t.organizationId, t.emailRef)
+      .where(sql`${t.emailRef} is not null`),
+    check("attachments_source_valid", sql`${t.source} in ('upload', 'email')`),
     unique("attachments_storage_key_key").on(t.storageKey),
     index("attachments_org_created_idx").on(t.organizationId, t.createdAt),
     check("attachments_size_positive", sql`${t.sizeBytes} > 0`),
