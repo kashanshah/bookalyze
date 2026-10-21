@@ -3,13 +3,14 @@
 import {
   FULFILMENT_MODES,
   type FulfilmentMode,
+  type ReportPreview,
   WALMART_FULFILMENT,
   WALMART_MARKETPLACES,
   WALMART_SCOPE_AREAS,
   type WalmartAccess,
   type WalmartScopeArea,
 } from "@bookalyze/core";
-import { CircleAlert, KeyRound, PlugZap, Plus, RefreshCw, Unplug } from "lucide-react";
+import { CircleAlert, FileSearch, KeyRound, PlugZap, Plus, RefreshCw, Unplug } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -29,10 +30,12 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import {
   addWalmartChannelAction,
+  checkWalmartSettlementAction,
   connectWalmartAction,
   disconnectWalmartAction,
   setChannelFulfilmentAction,
   testWalmartAction,
+  walmartSettlementDatesAction,
 } from "../actions";
 import type { ExistingChannel } from "./ebay";
 
@@ -357,6 +360,10 @@ export function WalmartAccount({
         </dl>
       ) : null}
 
+      {live && canManage ? (
+        <SettlementCheck slug={slug} locale={locale} channelId={channel.id} />
+      ) : null}
+
       <Dialog open={connecting} onOpenChange={setConnecting}>
         <DialogContent>
           {connecting ? (
@@ -473,5 +480,127 @@ function ConnectWalmartForm({
         </Button>
       </DialogFooter>
     </form>
+  );
+}
+
+/**
+ * Walmart's settlement reports for this country: which dates there are, and one report checked
+ * end to end (downloaded, its columns and rows counted). Nothing is kept: it shows what the next
+ * step will read.
+ */
+function SettlementCheck({
+  slug,
+  locale,
+  channelId,
+}: {
+  slug: string;
+  locale: string;
+  channelId: string;
+}) {
+  const [dates, setDates] = useState<string[] | null>(null);
+  const [date, setDate] = useState("");
+  const [result, setResult] = useState<{ date: string; preview: ReportPreview } | null>(null);
+  const [busy, setBusy] = useState<"list" | "check" | null>(null);
+  const [pending, start] = useTransition();
+  const day = (iso: string) =>
+    new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(
+      new Date(`${iso}T00:00:00Z`),
+    );
+  const list = () =>
+    start(async () => {
+      setBusy("list");
+      const found = await walmartSettlementDatesAction(slug, channelId);
+      setBusy(null);
+      if (!found.ok) return void toast.error(found.message);
+      setDates(found.dates);
+      setDate(found.dates[0] ?? "");
+      setResult(null);
+      if (!found.dates.length) toast.info("Walmart has no settlement reports for this account yet");
+    });
+  const check = () =>
+    start(async () => {
+      setBusy("check");
+      const checked = await checkWalmartSettlementAction(slug, { channelId, date });
+      setBusy(null);
+      if (!checked.ok) return void toast.error(checked.message);
+      setResult({ date: checked.date, preview: checked.preview });
+    });
+  return (
+    <section
+      aria-labelledby={`walmart-settlements-${channelId}`}
+      className="grid gap-3 rounded-xl border bg-background/60 p-4"
+    >
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1 basis-60">
+          <h3 id={`walmart-settlements-${channelId}`} className="font-medium text-sm">
+            Settlement reports
+          </h3>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Walmart makes one report per payout, with every sale, refund, fee and adjustment. Check
+            one to see what it holds; nothing is saved yet.
+          </p>
+        </div>
+        {dates === null ? (
+          <Button variant="outline" size="sm" onClick={list} disabled={pending}>
+            {busy === "list" ? <Spinner /> : <FileSearch />}
+            Look for settlement reports
+          </Button>
+        ) : null}
+      </div>
+      {dates?.length ? (
+        <div className="flex flex-wrap items-end gap-2">
+          <Field
+            label="Settlement date"
+            htmlFor={`walmart-settlement-${channelId}`}
+            hint={`${dates.length === 1 ? "1 report" : `${dates.length} reports`} at Walmart`}
+            className="min-w-0 flex-1 basis-48"
+          >
+            <Combobox
+              id={`walmart-settlement-${channelId}`}
+              value={date}
+              onChange={(v) => {
+                setDate(v);
+                setResult(null);
+              }}
+              options={dates.map((d) => ({ value: d, label: day(d) }))}
+            />
+          </Field>
+          <Button variant="outline" onClick={check} disabled={pending || !date}>
+            {busy === "check" ? <Spinner /> : <FileSearch />}
+            Check this report
+          </Button>
+        </div>
+      ) : null}
+      {result ? (
+        <div className="fade-in-0 grid animate-in gap-2">
+          <p className="text-sm">
+            <span className="font-medium">{day(result.date)}:</span>{" "}
+            {[
+              result.preview.kind.toUpperCase(),
+              `${result.preview.columns.length} columns`,
+              result.preview.rows !== null
+                ? `${result.preview.rows} ${result.preview.rows === 1 ? "row" : "rows"}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+          <ul
+            aria-label="Columns in Walmart's settlement report"
+            className="flex flex-wrap gap-1.5"
+          >
+            {result.preview.columns.map((c, i) => (
+              <li
+                // biome-ignore lint/suspicious/noArrayIndexKey: a report can repeat a column name
+                key={`${i}-${c}`}
+                className="rounded-md border bg-card px-2 py-0.5 font-mono text-muted-foreground text-xs"
+              >
+                {c}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
   );
 }

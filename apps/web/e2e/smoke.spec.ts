@@ -2747,6 +2747,26 @@ test("walmart: bring in Walmart Canada's orders, shipped by the seller and by WF
   await expect(page.getByText("Synthetic Buyer")).toHaveCount(0);
 });
 
+test("walmart: look for Walmart Canada's settlement reports and check one, keeping nothing", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Walmart Canada/ }).click();
+  const reports = page.getByRole("region", { name: "Settlement reports" });
+  await reports.getByRole("button", { name: "Look for settlement reports" }).click();
+  await expect(reports.getByText("2 reports at Walmart")).toBeVisible();
+  // The newest is chosen; its zipped file is opened and only its shape is shown.
+  await reports.getByRole("button", { name: "Check this report" }).click();
+  await expect(reports.getByText(/CSV · 14 columns · 4 rows/)).toBeVisible({ timeout: 15_000 });
+  const columns = reports.getByRole("list", { name: "Columns in Walmart's settlement report" });
+  await expect(columns.getByText("Purchase Order #", { exact: true })).toBeVisible();
+  await expect(columns.getByText("Amount Type", { exact: true })).toBeVisible();
+  // Nothing from the report's rows is shown.
+  await expect(reports.getByText("WMT-MAPLE-MUG")).toHaveCount(0);
+});
+
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
   const keyFile = async (path: string) => ({
     name: "noon_credentials.json",
