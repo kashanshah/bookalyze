@@ -6,11 +6,12 @@ Requirements: Node 22, pnpm 10 (`corepack enable`), Docker (or any Postgres 16).
 
 ```bash
 pnpm install                    # also installs the pre-commit hook (Biome on staged files)
-cp .env.example .env            # then fill in BETTER_AUTH_SECRET (openssl rand -base64 32)
-# Optional: put overrides (e.g. Neon connection strings) in a root .env.local; it wins over .env.
+cp apps/web/.env.example apps/web/.env   # then fill in BETTER_AUTH_SECRET (openssl rand -base64 32)
+# Optional: put overrides (e.g. Neon connection strings) in apps/web/.env.local; it wins over .env.
+# The public site has its own: cp apps/marketing/.env.example apps/marketing/.env.local
 ```
 
-For local Postgres via Docker, set these in `.env`:
+For local Postgres via Docker, set these in `apps/web/.env`:
 
 ```bash
 DATABASE_URL=postgres://bookalyze_app:bookalyze_app@localhost:5432/bookalyze
@@ -87,8 +88,8 @@ available yet; eBay sites still work for linking SKUs.
 
 1. Import the GitHub repository. Set **Root Directory** to `apps/web` (framework: Next.js). Vercel
    detects the pnpm workspace automatically.
-2. Add the environment variables from `.env.example` for Production (and Preview, pointing at a Neon
-   preview branch). Don't set `EMAIL_DEV_LOG` in production.
+2. Add the environment variables from `apps/web/.env.example` for Production (and Preview,
+   pointing at a Neon preview branch). Don't set `EMAIL_DEV_LOG` in production.
 3. Production waits for its database migrations (below, **Deploys**): Vercel builds `main` as
    usual, and puts a build live once the "Bookalyze: migrations" check passes.
 4. Add the domain `app.bookalyze.com` under Project → Domains.
@@ -96,6 +97,7 @@ available yet; eBay sites still work for linking SKUs.
 ## Public site (bookalyze.com)
 
 The marketing site is `apps/marketing`, a second Vercel project from the same repository.
+All of the site's variables, with local values, are in `apps/marketing/.env.example`.
 Optional: `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SITE_URL`. The contact form (`/contact`) needs:
 
 | Variable | Default | |
@@ -186,7 +188,7 @@ Test mode until the owner decides otherwise. Nothing is gated before `BILLING_ST
    - Authorized JavaScript origins: `http://localhost:3000`, `https://app.bookalyze.com`
    - Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google`,
      `https://app.bookalyze.com/api/auth/callback/google`
-3. Put the client ID and secret in `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (locally in `.env`,
+3. Put the client ID and secret in `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (locally in `apps/web/.env`,
    in Vercel for production). The "Continue with Google" button appears automatically.
 4. For Vercel previews, set `OAUTH_PROXY_PRODUCTION_URL=https://app.bookalyze.com` in the Preview
    environment. Google only allows exact redirect URLs, so previews route the callback through
@@ -265,8 +267,8 @@ and opened the same way. Nothing in the bucket is public. Locally you can skip S
    - `InvalidAccessKeyId`: the key was deleted or mistyped.
 
    A CORS error instead of a 403 means step 2 is missing.
-4. **Add the settings** to Vercel (Production and Preview) and, if you want S3 locally, to your
-   root `.env.local`:
+4. **Add the settings** to Vercel (Production and Preview) and, if you want S3 locally, to
+   `apps/web/.env.local`:
    ```bash
    AWS_REGION=ca-central-1
    AWS_S3_BUCKET=bookalyze-files-prod

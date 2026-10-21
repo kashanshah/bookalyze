@@ -1,9 +1,10 @@
 import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 
-// One set of env files for the whole monorepo. Earlier sources win (dotenv never overrides):
-// variables already set in the shell, then the repo-root .env.local, then the repo-root .env,
-// then a package-local .env if present.
-config({ path: fileURLToPath(new URL("../../../.env.local", import.meta.url)), quiet: true });
-config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)), quiet: true });
+// The app's env files. Earlier sources win (dotenv never overrides): variables already set in the
+// shell, then apps/web/.env.local and apps/web/.env, then the repo-root .env.local and .env (older
+// setups), then a package-local .env if present.
+for (const file of ["apps/web/.env.local", "apps/web/.env", ".env.local", ".env"]) {
+  config({ path: fileURLToPath(new URL(`../../../${file}`, import.meta.url)), quiet: true });
+}
 config({ quiet: true });
