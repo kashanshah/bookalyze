@@ -1,6 +1,7 @@
 import {
   BUYER_CLAIMS,
   type BuyerClaim,
+  CONNECTION_AREA,
   can,
   DEFAULT_PAGE_SIZE,
   fiscalYearFor,
@@ -67,7 +68,9 @@ export default async function OrdersPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const ctx = await getCommerceContext(slug);
+  // Connection screens: a connection action re-renders this page in its own request, so it
+  // passes the same area (Review requests only may use it).
+  const ctx = await getCommerceContext(slug, CONNECTION_AREA);
   const reviewsOn = can(ctx.plan, ctx.enabledModules, "reviews.manual");
   const { locale, timezone } = ctx.profile;
   const today = nowIn(timezone).date;
