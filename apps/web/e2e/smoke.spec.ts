@@ -2022,7 +2022,7 @@ test("ads: connect Amazon Ads, bring in ad spend, and see each product's profit 
   ).toBeVisible();
   await expect(channel.getByText("Sponsored Brands", { exact: true })).toBeVisible();
   await expect(channel.getByText(/Advertising in your books/)).toBeVisible();
-  await expect(page.getByText("Products losing money")).toBeVisible();
+  await expect(page.getByText("Products losing money", { exact: true })).toBeVisible();
   await expect(page.getByText("Ads with no sales").first()).toBeVisible();
 
   // The details a click away.
