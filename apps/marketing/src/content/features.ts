@@ -28,6 +28,7 @@ export type FeaturePicture =
   | "lots"
   | "reorder"
   | "profit"
+  | "products"
   | "transactions"
   | "companies";
 
@@ -440,7 +441,7 @@ export const FEATURES: readonly Feature[] = [
     intro:
       "Plenty of Amazon sellers grow sales and lose money doing it. A product's price has to cover the marketplace's fees, refunds, the landed cost of the unit and the ads that sold it, and no one screen shows all four. Bookalyze brings your Amazon Ads spend in every day, per product, and sets it against what each product really earned, so you see which products make money, which lose it, and exactly how far each one's ads can go before they stop paying.",
     module: "commerce",
-    picture: "profit",
+    picture: "products",
     sections: [
       {
         title: "The real profit of every product",

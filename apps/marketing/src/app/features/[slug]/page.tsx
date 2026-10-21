@@ -12,6 +12,7 @@ import {
   CompaniesPreview,
   InvoicePreview,
   LotsPreview,
+  ProductProfitPreview,
   ProfitWaterfall,
   ReorderChart,
   ReviewsPreview,
@@ -30,6 +31,7 @@ const PICTURES: Record<FeaturePicture, () => React.ReactNode> = {
   lots: LotsPreview,
   reorder: ReorderChart,
   profit: ProfitWaterfall,
+  products: ProductProfitPreview,
   transactions: TransactionsPreview,
   companies: CompaniesPreview,
 };

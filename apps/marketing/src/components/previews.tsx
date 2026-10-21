@@ -70,7 +70,7 @@ function Pill({
   tone,
   children,
 }: {
-  tone: "success" | "primary" | "muted" | "warning";
+  tone: "success" | "primary" | "muted" | "warning" | "destructive";
   children: string;
 }) {
   return (
@@ -81,6 +81,7 @@ function Pill({
         tone === "primary" && "bg-accent text-accent-foreground",
         tone === "muted" && "bg-muted text-muted-foreground",
         tone === "warning" && "bg-warning/15 text-foreground",
+        tone === "destructive" && "bg-destructive/12 text-destructive",
       )}
     >
       {tone === "success" ? <Check className="size-3" /> : null}
@@ -512,6 +513,97 @@ export function LotsPreview() {
         </ul>
         <p className="rounded-lg bg-accent px-3 py-2 text-accent-foreground text-sm">
           Each sale takes the oldest stock's cost, freight and duties included.
+        </p>
+      </div>
+    </Frame>
+  );
+}
+
+const PRODUCTS = [
+  {
+    name: "Ceramic mug, 2-pack",
+    acos: 58,
+    breakEven: 31,
+    profit: "−$214.60",
+    verdict: "Ads eat the profit",
+    tone: "destructive",
+  },
+  {
+    name: "Fridge magnets, 12",
+    acos: 41,
+    breakEven: 27,
+    profit: "$96.15",
+    verdict: "Ads cost more than they earn",
+    tone: "warning",
+  },
+  {
+    name: "Bamboo board, large",
+    acos: 22,
+    breakEven: 38,
+    profit: "$812.40",
+    verdict: "Healthy",
+    tone: "success",
+  },
+] as const;
+
+/** Profit by product: each product's ACOS against its break-even, and its profit after ads. */
+export function ProductProfitPreview() {
+  return (
+    <Frame>
+      <div className="grid gap-4 p-4 sm:p-6">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-muted-foreground text-xs">
+              Channel profit · By product · Amazon.com
+            </p>
+            <p className="font-semibold">Profit after ads</p>
+          </div>
+          <span className="shrink-0 text-end text-muted-foreground text-xs">
+            <span className="block whitespace-nowrap font-semibold text-destructive text-sm">
+              1 losing money
+            </span>
+            this month
+          </span>
+        </div>
+        <InView className="grid gap-4">
+          {PRODUCTS.map((p, i) => (
+            <div key={p.name} className="grid gap-1.5">
+              <div className="flex items-baseline justify-between gap-3 text-sm">
+                <span className="truncate font-medium">{p.name}</span>
+                <span
+                  className={cn(
+                    "font-semibold tabular-nums",
+                    p.tone === "destructive" ? "text-destructive" : "text-success",
+                  )}
+                >
+                  {p.profit}
+                </span>
+              </div>
+              {/* ACOS against the break-even mark: past the mark, each ad sale loses money. */}
+              <div className="relative h-2.5 rounded-full bg-muted">
+                <div
+                  className={cn(
+                    "on-view-grow-x h-full rounded-full",
+                    p.acos > p.breakEven ? "bg-destructive/70" : "bg-primary",
+                  )}
+                  style={{ width: `${p.acos}%`, ...timing(0.2 + i * 0.15) }}
+                />
+                <span
+                  className="absolute -top-1 h-4.5 w-0.5 rounded-full bg-foreground/70"
+                  style={{ insetInlineStart: `${p.breakEven}%` }}
+                />
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground text-xs">
+                <span className="tabular-nums">
+                  ACOS {p.acos}% · break-even {p.breakEven}%
+                </span>
+                <Pill tone={p.tone}>{p.verdict}</Pill>
+              </div>
+            </div>
+          ))}
+        </InView>
+        <p className="rounded-lg bg-accent px-3 py-2 text-accent-foreground text-sm">
+          After fees, landed cost and each product's own ads. The mark is its break-even ACOS.
         </p>
       </div>
     </Frame>
