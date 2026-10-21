@@ -1,7 +1,7 @@
 import type { LedgerEvent, ReportReturn } from "@bookalyze/core";
-import { and, eq, gte, inArray, like, notLike, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, like, ne, notLike, or, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
-import { salesChannels } from "./schema/commerce";
+import { channelSkus, salesChannels } from "./schema/commerce";
 import { inventoryLedgerEvents } from "./schema/inventory";
 
 /**
@@ -221,7 +221,8 @@ export async function importNoonLedger(
 }
 
 /**
- * Each channel whose warehouse stock has a ledger (Amazon marketplaces, Noon countries): in
+ * Each channel whose warehouse stock has a ledger (Amazon marketplaces, Noon countries, Walmart
+ * countries WFS ships): in
  * through, a report waiting, rows brought in.
  */
 export async function ledgerChannels(tx: Transaction) {
@@ -238,7 +239,13 @@ export async function ledgerChannels(tx: Transaction) {
       events: sql<number>`(select count(*) from inventory_ledger_events e where e.channel_id = "sales_channels"."id")::int`,
     })
     .from(salesChannels)
-    .where(inArray(salesChannels.kind, ["amazon", "noon"]))
+    .where(
+      or(
+        inArray(salesChannels.kind, ["amazon", "noon"]),
+        // Walmart's WFS log, for countries WFS ships.
+        and(eq(salesChannels.kind, "walmart"), ne(salesChannels.fulfilment, "seller")),
+      ),
+    )
     .orderBy(salesChannels.name);
   return channels.map((c) => ({ ...c, events: Number(c.events) }));
 }
@@ -313,7 +320,7 @@ export async function stockComparison(tx: Transaction): Promise<StockComparison[
           and not exists (select 1 from sales_channels sc
             where sc.id = cs.channel_id and sc.kind = 'walmart'))::int as at_amazon
     from products p
-    where not p.is_archived
+    where not p.is_archived and p.tracks_stock
       and (exists (select 1 from inventory_lots l where l.product_id = p.id)
         or exists (select 1 from product_skus ps join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku where ps.product_id = p.id)
         or exists (select 1 from product_skus ps join sales_channels c on c.id = ps.channel_id and c.kind = 'noon'
@@ -325,4 +332,24 @@ export async function stockComparison(tx: Transaction): Promise<StockComparison[
     inLots: Number(r.in_lots),
     atAmazon: r.at_amazon === null ? null : Number(r.at_amazon),
   }));
+}
+
+/** A Walmart channel's SKUs at WFS (as last brought in), with the GTIN once it's known. */
+export async function wfsSkus(tx: Transaction, channelId: string) {
+  return tx
+    .select({ sku: channelSkus.sku, gtin: channelSkus.gtin })
+    .from(channelSkus)
+    .where(and(eq(channelSkus.channelId, channelId), isNotNull(channelSkus.fulfillable)))
+    .orderBy(channelSkus.sku);
+}
+
+/** Remembers Walmart's GTIN for a channel's SKU. */
+export async function saveChannelSkuGtin(
+  tx: Transaction,
+  input: { channelId: string; sku: string; gtin: string },
+) {
+  await tx
+    .update(channelSkus)
+    .set({ gtin: input.gtin })
+    .where(and(eq(channelSkus.channelId, input.channelId), eq(channelSkus.sku, input.sku)));
 }

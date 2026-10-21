@@ -2935,6 +2935,18 @@ test("walmart: bring in what WFS holds, see it on the channel, on Products and o
   const mug = page.getByRole("listitem").filter({ hasText: "Maple leaf ceramic mug" });
   await expect(mug).toContainText("34");
   await expect(mug).toContainText("4 held");
+
+  // WFS's inventory log comes in with the other ledgers: a return and a damaged unit count,
+  // a hold Bookalyze doesn't read yet is listed as not counted.
+  await page.goto(`/o/${slug}/inventory/movements`);
+  await page.getByRole("button", { name: /^Bring in from .*Walmart$/ }).click();
+  await expect(page.getByText(/movements? brought in|Ledger up to date/)).toBeVisible({
+    timeout: 60_000,
+  });
+  const card = page.locator("div.rounded-2xl").filter({ hasText: /^Walmart Canada/ });
+  await expect(card).toContainText("5 movements");
+  const notCounted = page.getByRole("region", { name: "Movements not counted yet" });
+  await expect(notCounted).toContainText("Quality Hold");
 });
 
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
@@ -3539,7 +3551,13 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   await dialog.getByLabel("For orders dated from").fill("2026-09-01");
   await dialog.getByRole("button", { name: "Put them in the books" }).click();
   await expect(page.getByText(/Purchase orders are in the books from that date/)).toBeVisible();
-  await expect(setting).toContainText("In your books for orders from September 1, 2026.");
+  // On, nothing needs doing: the card goes, and "How purchases post" in the header explains it.
+  await expect(setting).toHaveCount(0);
+  await page.getByRole("button", { name: "How purchases post" }).click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "In your books for orders from September 1, 2026.",
+  );
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
 
   await page.getByRole("link", { name: /Maple Glassworks/ }).click();
   const deposits = page.getByRole("region", { name: "Supplier deposits for this order" });

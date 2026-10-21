@@ -18,6 +18,7 @@ import { syncChannelLedger } from "@/server/amazon-ledger";
 import { audit } from "@/server/audit";
 import { getInventoryContext } from "@/server/inventory";
 import { syncNoonLedger } from "@/server/noon-ledger";
+import { syncWalmartChannelLedger } from "@/server/walmart-ledger";
 
 const FEATURE = "inventory.cogs";
 type Result =
@@ -25,8 +26,9 @@ type Result =
   | { ok: false; message: string };
 
 /**
- * Brings in each active Amazon marketplace's FBA inventory ledger from Amazon, and Noon's FBN
- * ledger (all its countries at once) from Noon, up to yesterday.
+ * Brings in each active Amazon marketplace's FBA inventory ledger from Amazon, Noon's FBN
+ * ledger (all its countries at once) from Noon, and each WFS country's inventory log from
+ * Walmart, up to yesterday.
  */
 export async function syncLedgerAction(slug: string): Promise<Result> {
   const ctx = await getInventoryContext(slug, FEATURE);
@@ -62,6 +64,21 @@ export async function syncLedgerAction(slug: string): Promise<Result> {
     );
     added += r.added;
     waiting ||= r.waiting;
+    error ??= r.error;
+  }
+  for (const channel of all.filter((c) => c.kind === "walmart")) {
+    if (Date.now() >= deadline) {
+      waiting = true;
+      break;
+    }
+    const r = await syncWalmartChannelLedger(
+      { orgId: ctx.org.id, userId: ctx.session.user.id },
+      channel.id,
+      nowIn(ctx.profile.timezone).date,
+      deadline,
+    );
+    added += r.added;
+    waiting ||= r.more;
     error ??= r.error;
   }
   revalidatePath(`/o/${slug}/inventory`, "layout");

@@ -1,5 +1,5 @@
 {
-  "id": "3c5cbeea-b2bf-46c8-a030-b910924f211a",
+  "id": "e6d829a7-3add-4078-8a97-6994c2b8050c",
   "prevId": "e64e66dd-efb2-450e-a546-5a2fdb617b78",
   "version": "7",
   "dialect": "postgresql",
@@ -10718,86 +10718,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.signup_sources": {
-      "name": "signup_sources",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "medium": {
-          "name": "medium",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "campaign": {
-          "name": "campaign",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "referrer": {
-          "name": "referrer",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "landing": {
-          "name": "landing",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "signup_sources_user_id_user_id_fk": {
-          "name": "signup_sources_user_id_user_id_fk",
-          "tableFrom": "signup_sources",
-          "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "signup_sources_insert": {
-          "name": "signup_sources_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": [
-            "public"
-          ],
-          "withCheck": "true"
-        }
-      },
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.import_batches": {
       "name": "import_batches",
       "schema": "",
@@ -12231,6 +12151,20 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": false
+        },
+        "tracks_stock": {
+          "name": "tracks_stock",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "in_stock": {
+          "name": "in_stock",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         },
         "is_archived": {
           "name": "is_archived",

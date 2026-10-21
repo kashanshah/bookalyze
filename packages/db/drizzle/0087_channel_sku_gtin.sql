@@ -1,0 +1,1 @@
+ALTER TABLE "channel_skus" ADD COLUMN "gtin" text;

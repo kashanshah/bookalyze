@@ -14,12 +14,14 @@ import {
   walmartSettlementsToPost,
   withOrg,
 } from "@bookalyze/db";
+import { nowIn } from "@/lib/dates";
 import { audit } from "./audit";
 import { openWalmartCredentials } from "./commerce";
 import { suggestRate } from "./fx";
 import { logError, logWarn } from "./log";
 import { WalmartError } from "./walmart";
 import { bringInWfsStock } from "./walmart-inventory";
+import { syncWalmartChannelLedger } from "./walmart-ledger";
 import { bringInWalmartSettlements } from "./walmart-settlements";
 
 /** WFS stock comes in again once it's this old (a little under a day, so each run takes it). */
@@ -36,6 +38,8 @@ export type WalmartDailyResult = {
   failed: number;
   /** SKUs whose WFS stock came in. */
   wfsSkus: number;
+  /** Movements from WFS's inventory log. */
+  wfsMovements: number;
 };
 
 /**
@@ -54,6 +58,7 @@ export async function runWalmartDaily(budgetMs: number): Promise<WalmartDailyRes
     matched: 0,
     failed: 0,
     wfsSkus: 0,
+    wfsMovements: 0,
   };
   const orgs = await getDb().select({ id: schema.organization.id }).from(schema.organization);
   for (const org of orgs) {
@@ -74,6 +79,8 @@ export async function runWalmartDaily(budgetMs: number): Promise<WalmartDailyRes
           secret: string;
           /** WFS holds its stock and it wasn't brought in today. */
           wfs: boolean;
+          /** WFS ships it: its inventory log comes in too. */
+          wfsChannel: boolean;
         }[] = [];
         for (const channel of await listWalmartChannels(tx)) {
           const marketplace = walmartMarketplace(channel.marketplaceId ?? "");
@@ -88,6 +95,7 @@ export async function runWalmartDaily(budgetMs: number): Promise<WalmartDailyRes
             wfs:
               channel.fulfilment !== "seller" &&
               (!channel.skusSyncedAt || Date.now() - channel.skusSyncedAt.getTime() > WFS_EVERY_MS),
+            wfsChannel: channel.fulfilment !== "seller",
           });
         }
         const settings = await getWalmartSettings(tx);
@@ -97,6 +105,7 @@ export async function runWalmartDaily(budgetMs: number): Promise<WalmartDailyRes
       if (!setup) continue;
       result.companies++;
       const { profile } = setup;
+      const today = nowIn(profile.timezone).date;
 
       const until = Math.min(deadline, Date.now() + PER_COMPANY_MS);
       for (const c of setup.live) {
@@ -123,6 +132,13 @@ export async function runWalmartDaily(budgetMs: number): Promise<WalmartDailyRes
               until,
             );
             result.wfsSkus += stock.skus;
+          }
+          if (c.wfsChannel && Date.now() < until) {
+            // Returns and losses at WFS, up to yesterday (Stock movements, cost of goods sold).
+            const log = await syncWalmartChannelLedger(ctx, c.channelId, today, until);
+            result.wfsMovements += log.added;
+            if (log.error)
+              logWarn("walmart.daily_ledger_failed", { orgId: org.id, error: log.error });
           }
         } catch (error) {
           if (!(error instanceof WalmartError)) throw error;

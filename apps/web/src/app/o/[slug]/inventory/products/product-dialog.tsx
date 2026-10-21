@@ -18,8 +18,10 @@ import {
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   linkSkuAction,
@@ -44,6 +46,8 @@ export type EditableProduct = {
   sku: string | null;
   notes: string | null;
   unitWeight: string | null;
+  tracksStock: boolean;
+  inStock: boolean;
   isArchived: boolean;
   skus: LinkedSkuView[];
 };
@@ -95,6 +99,8 @@ function ProductForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
   const [archiving, startArchive] = useTransition();
+  const [tracksStock, setTracksStock] = useState(product?.tracksStock ?? true);
+  const [inStock, setInStock] = useState(product?.inStock ?? true);
 
   return (
     <form
@@ -111,6 +117,8 @@ function ProductForm({
               sku: text("sku"),
               notes: text("notes"),
               unitWeight: text("unitWeight"),
+              tracksStock,
+              inStock,
             },
             product?.id,
           );
@@ -178,6 +186,36 @@ function ProductForm({
             aria-invalid={Boolean(errors.unitWeight)}
           />
         </Field>
+        <div className="grid gap-3 rounded-xl border p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <Label htmlFor="product-tracks-stock">Count its stock</Label>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {tracksStock
+                  ? "Stock lots, cost of goods sold, the stock and reorder pages count it."
+                  : "Made to order: its costs go in your books as you pay them, and it's only in or out of stock."}
+              </p>
+            </div>
+            <Switch
+              id="product-tracks-stock"
+              checked={tracksStock}
+              onCheckedChange={setTracksStock}
+            />
+          </div>
+          {tracksStock ? null : (
+            <div className="flex items-start justify-between gap-3 border-t pt-3">
+              <div className="min-w-0">
+                <Label htmlFor="product-in-stock">In stock</Label>
+                <p className="text-muted-foreground text-xs leading-relaxed">
+                  {inStock
+                    ? "You can make it: orders can come in."
+                    : "Out of stock: you can't make it for now."}
+                </p>
+              </div>
+              <Switch id="product-in-stock" checked={inStock} onCheckedChange={setInStock} />
+            </div>
+          )}
+        </div>
         <Field label="Notes (optional)" htmlFor="product-notes" error={errors.notes}>
           <Textarea
             id="product-notes"
