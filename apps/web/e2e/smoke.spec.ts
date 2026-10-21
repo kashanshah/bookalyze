@@ -2421,14 +2421,16 @@ test("ebay: choose how eBay posts, post a month and match a payout to its deposi
 test("ebay: upload Seller Hub's transaction report; days eBay's API brought in keep its rows", async ({
   page,
 }) => {
+  // The run's "now", the same one eBay's stand-in dates its rows from (playwright.config.ts).
+  const NOW = Number(process.env.E2E_NOW ?? Date.now());
   const day = (n: number) =>
     new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
       timeZone: "UTC",
-    }).format(new Date(Date.now() - n * 86_400_000));
-  const old = new Date(Date.now() - 200 * 86_400_000);
+    }).format(new Date(NOW - n * 86_400_000));
+  const old = new Date(NOW - 200 * 86_400_000);
   const oldMonth = new Intl.DateTimeFormat("en-CA", {
     month: "long",
     year: "numeric",

@@ -35,7 +35,9 @@ const send = (res, status, body, headers = {}) => {
 
 // Orders on two sites, a few days old: eBay US's shipped mug (a SKU linked to a product), and
 // eBay Canada's order to ship and a cancelled one. No real buyers: synthetic names and places.
-const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString();
+// The run's "now" (playwright.config.ts), so the tests' dates match these.
+const NOW = Number(process.env.E2E_NOW ?? Date.now());
+const daysAgo = (n) => new Date(NOW - n * 86_400_000).toISOString();
 const money = (value, currency) => ({ value, currency });
 const ebayOrder = ({ id, site, currency, days, status, cancelled, sku, title, qty, price }) => ({
   orderId: id,
@@ -172,7 +174,7 @@ const TRANSACTIONS = [
 
 // The 10th of the month before last, at noon UTC: a finished month to post.
 const monthBeforeLast = (() => {
-  const d = new Date();
+  const d = new Date(NOW);
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 2, 10, 12)).toISOString();
 })();
 // A sale with no order in (its order is older than what came in): on the site in its currency.
