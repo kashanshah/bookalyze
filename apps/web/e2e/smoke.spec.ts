@@ -3064,6 +3064,8 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await page.getByRole("button", { name: "Add Noon's stock" }).click();
   await expect(page.getByText("Noon's stock added")).toBeVisible();
   await expect(mugAtNoon).toContainText(/At Noon\s*25\s*\+2 not sellable/);
+  // The next upload shows the same toast: let this one close first.
+  await toastsGone(page);
 
   // Noon's newer report covers dates you choose, which the file doesn't say: they're asked for.
   await page.getByLabel("Inventory ledger file").setInputFiles({
