@@ -95,8 +95,16 @@ available yet; eBay sites still work for linking SKUs.
 
 ## Public site (bookalyze.com)
 
-The marketing site is `apps/marketing`, a second Vercel project from the same repository. It
-needs no environment variables (optional: `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SITE_URL`).
+The marketing site is `apps/marketing`, a second Vercel project from the same repository.
+Optional: `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SITE_URL`. The contact form (`/contact`) needs:
+
+| Variable | Default | |
+|---|---|---|
+| `RESEND_API_KEY` | none | A **sending-only** Resend key for bookalyze.com (Resend → API Keys → Create → Sending access). Set it for Production and Preview. Without it, the form says email isn't set up |
+| `CONTACT_TO` | `hello@bookalyze.com` | Where messages go |
+| `CONTACT_FROM` | `Bookalyze website <website@bookalyze.com>` | The sender; its domain must be verified in Resend |
+| `SUPPORT_INTAKE_URL` | none | `https://app.bookalyze.com/api/support/intake`: messages become support tickets in the app |
+| `SUPPORT_INTAKE_SECRET` | none | The same value as the app's `SUPPORT_INTAKE_SECRET` (`openssl rand -hex 32`). Without both, or when the app can't be reached, the form emails `CONTACT_TO` |
 
 1. Vercel → Add New → Project → import the same repository. **Root Directory** `apps/marketing`
    (framework: Next.js). Name it e.g. `bookalyze-site`.

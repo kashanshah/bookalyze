@@ -12,6 +12,7 @@ Cursor, Copilot…).
   - Product plan, roadmap and decision log: [`docs/PLAN.md`](PLAN.md), the "why" and long-term "what".
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
+  - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
 _Last updated: 2026-10-21, phase 4e slice 5: WFS stock, what Walmart Fulfillment Services holds,
 on each WFS channel and on Stock in its own column._
@@ -1113,30 +1114,52 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 
 ### The public site (bookalyze.com)
 
-- **`apps/marketing`**, its own Next.js app and Vercel project (no database, no secrets, every
-  page static). Pages: **Home** (led by the marketplace connections: Amazon, eBay, Noon, then
-  payout → posted → matched → profit, the rest of the product, multi-company, safety, FAQ),
-  **Features** (marketplaces, accounting, banking, stock, profit and reorder, reviews and
-  listings, companies) and **Pricing** (free during early access, everything included).
-  "Start free" and "Sign in" go to the app (`NEXT_PUBLIC_APP_URL`).
+- **`apps/marketing`**, its own Next.js app and Vercel project (no database; every page static
+  except the contact form's server action). Marketplaces are always named in the order Amazon,
+  Walmart, Noon, eBay. Pages:
+  - **Home**: "Accounting built for Amazon, Walmart and Noon sellers", the six countries, three
+    highlights (automatic review requests, Wise bank sync, buyer invoices in seconds), "Are you
+    really making money?" (the profit waterfall), pains → answers (`content/pains.ts`, each
+    linking a guide), the money flow (Amazon, Walmart, Noon, eBay in), marketplaces, a section
+    per highlight (`ReviewsPreview`, `WisePreview`, `InvoicePreview`), countries, features,
+    multi-company, safety, FAQ.
+  - **Marketplaces** `/marketplaces` and `/marketplaces/<slug>` from `content/marketplaces.ts`;
+    **Sellers** `/sellers` and `/sellers/<country>` (US, Canada, Mexico, UAE, Saudi Arabia,
+    Egypt) from `content/countries.ts`.
+  - **Features**; **Pricing** (Books $9, Seller $19, Seller Plus $29 a company a month, yearly is
+    ten months; add-ons on Seller: Stock $8, Review requests $5; local prices for the pegged AED
+    and SAR; "Free during early access"; the independence rule in the FAQ) from
+    `content/pricing.ts`.
+  - **Contact** `/contact`: name, email, company, topic (`?topic=` preselects), message; a server
+    action makes a support ticket in the app (`SUPPORT_INTAKE_URL` + `SUPPORT_INTAKE_SECRET`, the
+    app's `/api/support/intake`), or, when that isn't set up or fails, sends it with Resend's REST
+    API (reply-to the visitor) to `CONTACT_TO`. Honeypot,
+    3-second minimum, 5 per address per 10 minutes. Development without `RESEND_API_KEY` logs and
+    succeeds; production without it says email isn't set up.
+  - **Guides** `/guides` (categories, search with `?q=`) and `/guides/<slug>` (breadcrumb, "On
+    this page", blocks, related, "Was this helpful? Contact us"): 60 guides in 11 categories in
+    `content/guides/` (getting started, marketplaces, payouts, banking, invoices, reviews and
+    listings, accounting, stock and cost of goods, reports, your company, worked examples), each
+    with where, steps, "What you should see" checks and "Not yet". **Help** `/help`: search,
+    popular guides, categories, "Still stuck?" → contact form, or a ticket in the app (`APP_URL/help`).
+  - Header: Marketplaces, Features, Pricing, Guides, Help. Footer: Product, Resources, Sellers in,
+    Company. The sitemap lists every page and guide.
 - **Pictures of the app** are drawn in code with the app's tokens (`previews.tsx`), made-up
   companies and amounts, so they follow light and dark mode and hold no real data. They move
-  like short GIFs: payouts flip to Matched, transactions get approved, review requests go out,
-  the oldest stock lot sells down, the company switcher moves (CSS loops, `anim-*` utilities in
-  `globals.css`). Charts draw when scrolled into view (`InView`, `on-view-*`): the Channel profit
-  waterfall and the reorder chart. The **money flow** infographic (`flow.tsx`: Amazon, eBay and
-  Noon into Bookalyze, out to books, bank and profit) is an SVG with moving dots, a tall version
-  for phones. With reduced motion every picture shows its finished state.
-- **Legal pages stay in the app**, one copy each: `/privacy-policy` and the new `/terms`
+  like short GIFs (CSS loops, `anim-*` utilities in `globals.css`). Charts draw when scrolled into
+  view (`InView`, `on-view-*`). The **money flow** infographic (`flow.tsx`) is an SVG with moving
+  dots, a tall version for phones. With reduced motion every picture shows its finished state.
+- **Legal pages stay in the app**, one copy each: `/privacy-policy` and `/terms`
   (`components/legal-page.tsx` shared by both). The site's `/terms`, `/privacy` and
   `/privacy-policy` redirect there. Sign-up says "By creating an account you agree to the Terms
   of service and Privacy policy"; the auth pages' footer links both.
 - Brand tokens copied into `apps/marketing/src/app/globals.css`; dark mode follows the device.
   Checked at 390px and in dark mode. CI builds it (`pnpm --filter @bookalyze/marketing build`).
 - **Launch (owner):** a Vercel project for `apps/marketing` with bookalyze.com, `SIGNUP_MODE=open`
-  on the app, a `hello@bookalyze.com` mailbox (the site's and the terms' contact), review of the
-  terms' wording, then retire `apps/landing/` (`docs/SETUP.md` → Public site).
-- Tests: e2e "the terms of service are public and linked from sign-up".
+  on the app, a `hello@bookalyze.com` mailbox, a sending-only `RESEND_API_KEY` for the contact
+  form, review of the terms' wording, then retire `apps/landing/` (`docs/SETUP.md` → Public site).
+- Tests: marketing `guides.test.ts` (unique slugs, every guide linked from the site or another
+  guide exists); e2e "the terms of service are public and linked from sign-up".
 
 ### Pagination on every paged list
 

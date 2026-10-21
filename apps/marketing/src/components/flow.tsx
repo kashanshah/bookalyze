@@ -94,8 +94,9 @@ function Hub({ cx, cy, r }: { cx: number; cy: number; r: number }) {
 
 const SOURCES = [
   { title: "Amazon", sub: "Settlements, fees, refunds" },
-  { title: "eBay", sub: "Orders, fees, payouts" },
+  { title: "Walmart", sub: "Settlements, WFS stock" },
   { title: "Noon", sub: "Transactions, FBN stock" },
+  { title: "eBay", sub: "Orders, fees, payouts" },
 ] as const;
 
 const RESULTS = [
@@ -105,18 +106,20 @@ const RESULTS = [
 ] as const;
 
 function Wide() {
-  const ys = [36, 158, 280];
+  // Four sources on the left, three results on the right.
+  const ins = [12, 104, 196, 288];
+  const outs = [36, 158, 280];
   return (
     <svg viewBox="0 0 1000 380" className="hidden h-auto w-full md:block" aria-hidden="true">
-      {ys.map((y, i) => (
+      {ins.map((y, i) => (
         <Wire
           key={`in-${y}`}
           id={`flow-in-${i}`}
           d={`M232 ${y + 32} C 340 ${y + 32}, 350 190, 432 190`}
-          delay={i * 0.4}
+          delay={i * 0.3}
         />
       ))}
-      {ys.map((y, i) => (
+      {outs.map((y, i) => (
         <Wire
           key={`out-${y}`}
           id={`flow-out-${i}`}
@@ -125,13 +128,13 @@ function Wide() {
         />
       ))}
       {SOURCES.map((s, i) => (
-        <Box key={s.title} node={{ x: 32, y: ys[i] ?? 0, w: 200, h: 64, ...s }} />
+        <Box key={s.title} node={{ x: 32, y: ins[i] ?? 0, w: 200, h: 64, ...s }} />
       ))}
       <Hub cx={500} cy={190} r={62} />
       {RESULTS.map((s, i) => (
         <Box
           key={s.title}
-          node={{ x: 768, y: ys[i] ?? 0, w: 200, h: 64, title: s.title, sub: s.sub }}
+          node={{ x: 768, y: outs[i] ?? 0, w: 200, h: 64, title: s.title, sub: s.sub }}
           accent
         />
       ))}
@@ -140,18 +143,20 @@ function Wide() {
 }
 
 function Tall() {
-  const xs = [4, 124, 244];
+  // Four narrow sources along the top, three results along the bottom.
+  const ins = [0, 92, 184, 276];
+  const outs = [4, 124, 244];
   return (
     <svg viewBox="0 0 360 640" className="h-auto w-full md:hidden" aria-hidden="true">
-      {xs.map((x, i) => (
+      {ins.map((x, i) => (
         <Wire
           key={`in-${x}`}
           id={`flow-tin-${i}`}
-          d={`M${x + 56} 76 C ${x + 56} 170, 180 160, 180 254`}
-          delay={i * 0.4}
+          d={`M${x + 42} 76 C ${x + 42} 170, 180 160, 180 254`}
+          delay={i * 0.3}
         />
       ))}
-      {xs.map((x, i) => (
+      {outs.map((x, i) => (
         <Wire
           key={`out-${x}`}
           id={`flow-tout-${i}`}
@@ -162,7 +167,7 @@ function Tall() {
       {SOURCES.map((s, i) => (
         <Box
           key={s.title}
-          node={{ x: xs[i] ?? 0, y: 12, w: 112, h: 64, title: s.title, sub: "" }}
+          node={{ x: ins[i] ?? 0, y: 12, w: 84, h: 64, title: s.title, sub: "" }}
         />
       ))}
       <Hub cx={180} cy={320} r={56} />
@@ -170,7 +175,7 @@ function Tall() {
         <Box
           key={s.title}
           node={{
-            x: xs[i] ?? 0,
+            x: outs[i] ?? 0,
             y: 564,
             w: 112,
             h: 64,
@@ -192,8 +197,8 @@ export function MoneyFlow() {
         <Tall />
       </div>
       <figcaption className="sr-only">
-        Amazon, eBay and Noon send their money to Bookalyze, which posts it to your books, matches
-        it to your bank deposits and works out your profit.
+        Amazon, Walmart, Noon and eBay send their money to Bookalyze, which posts it to your books,
+        matches it to your bank deposits and works out your profit.
       </figcaption>
     </figure>
   );
