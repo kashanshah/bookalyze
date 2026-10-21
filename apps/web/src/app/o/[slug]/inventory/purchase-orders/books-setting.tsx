@@ -21,8 +21,10 @@ import { savePurchaseSettingsAction } from "./actions";
 
 /**
  * Whether purchase orders are in the books, and from when. Off, supplier payments go to
- * Inventory as they're categorised. On, an order's payments wait on Supplier deposits and each
- * delivery moves its landed cost into Inventory.
+ * Inventory as they're categorised, and a card offers to put them in the books (a step to take).
+ * On, an order's payments wait on Supplier deposits and each delivery moves its landed cost into
+ * Inventory; nothing needs doing, so it's a quiet "How purchases post" button in the header that
+ * opens the same explanation (and, for admins, the date).
  */
 export function PurchaseBooksSetting({
   slug,
@@ -62,79 +64,48 @@ export function PurchaseBooksSetting({
       router.refresh();
     });
 
-  return (
-    <section
-      aria-label="Purchases in your books"
-      className="fade-in-0 flex animate-in flex-wrap items-center gap-3 rounded-2xl border bg-card px-4 py-3 text-sm shadow-xs"
-    >
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        {postFrom ? <BookCheck className="size-4" /> : <BookOpen className="size-4" />}
-      </span>
-      <p className="min-w-[14rem] flex-1">
-        {postFrom ? (
-          <>
-            <span className="font-medium">
-              In your books for orders from {formatDate(postFrom, locale, "long")}.
-            </span>{" "}
-            <span className="text-muted-foreground">
-              Payments wait on Supplier deposits; each delivery moves its cost into Inventory.
+  const openDialog = () => {
+    setDate(postFrom ?? suggested);
+    setError(null);
+    setOpen(true);
+  };
+  const dialog = (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {postFrom ? "How purchases post" : "Put purchases in the books"}
+          </DialogTitle>
+          <DialogDescription>
+            {postFrom
+              ? `In your books for orders from ${formatDate(postFrom, locale, "long")}. Your stock is valued at what it really cost, even when you pay in parts, in another currency, or before the goods arrive.`
+              : "Your stock is then valued at what it really cost, even when you pay in parts, in another currency, or before the goods arrive."}
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="grid gap-2 text-sm">
+          <li className="flex gap-2">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
+            <span>
+              Payments on an order go to <strong>Supplier deposits</strong>: paid, but not in stock
+              yet.
             </span>
-          </>
-        ) : (
-          <>
-            <span className="font-medium">Purchases aren't in your books yet.</span>{" "}
-            <span className="text-muted-foreground">
-              Supplier payments go to Inventory as you categorise them.
+          </li>
+          <li className="flex gap-2">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
+            <span>
+              Each delivery moves its landed cost (the order price, freight, duty…) from there into{" "}
+              <strong>Inventory</strong>.
             </span>
-          </>
-        )}
-      </p>
-      {canManage ? (
-        <Button
-          variant={postFrom ? "ghost" : "outline"}
-          size="sm"
-          onClick={() => {
-            setDate(postFrom ?? suggested);
-            setError(null);
-            setOpen(true);
-          }}
-        >
-          {postFrom ? "Change" : "Put purchases in the books"}
-        </Button>
-      ) : null}
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Put purchases in the books</DialogTitle>
-            <DialogDescription>
-              Your stock is then valued at what it really cost, even when you pay in parts, in
-              another currency, or before the goods arrive.
-            </DialogDescription>
-          </DialogHeader>
-          <ul className="grid gap-2 text-sm">
-            <li className="flex gap-2">
-              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-              <span>
-                Payments on an order go to <strong>Supplier deposits</strong>: paid, but not in
-                stock yet.
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-              <span>
-                Each delivery moves its landed cost (the order price, freight, duty…) from there
-                into <strong>Inventory</strong>.
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-              <span>
-                When everything has arrived, what's left (exchange rates that moved, a cost that
-                changed) is settled as an exchange gain or loss.
-              </span>
-            </li>
-          </ul>
+          </li>
+          <li className="flex gap-2">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
+            <span>
+              When everything has arrived, what's left (exchange rates that moved, a cost that
+              changed) is settled as an exchange gain or loss.
+            </span>
+          </li>
+        </ul>
+        {canManage ? (
           <form
             id={formId}
             onSubmit={(e) => {
@@ -156,17 +127,54 @@ export function PurchaseBooksSetting({
               />
             </Field>
           </form>
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
+        ) : null}
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+            {canManage ? "Cancel" : "Close"}
+          </Button>
+          {canManage ? (
             <Button type="submit" form={formId} disabled={pending}>
               {pending ? <Spinner /> : null}
               {postFrom ? "Save" : "Put them in the books"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  if (postFrom) {
+    return (
+      <>
+        <Button variant="ghost" onClick={openDialog}>
+          <BookCheck />
+          How purchases post
+        </Button>
+        {dialog}
+      </>
+    );
+  }
+
+  return (
+    <section
+      aria-label="Purchases in your books"
+      className="fade-in-0 flex animate-in flex-wrap items-center gap-3 rounded-2xl border bg-card px-4 py-3 text-sm shadow-xs"
+    >
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <BookOpen className="size-4" />
+      </span>
+      <p className="min-w-[14rem] flex-1">
+        <span className="font-medium">Purchases aren't in your books yet.</span>{" "}
+        <span className="text-muted-foreground">
+          Supplier payments go to Inventory as you categorise them.
+        </span>
+      </p>
+      {canManage ? (
+        <Button variant="outline" size="sm" onClick={openDialog}>
+          Put purchases in the books
+        </Button>
+      ) : null}
+      {dialog}
     </section>
   );
 }
