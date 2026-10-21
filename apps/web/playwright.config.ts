@@ -1,6 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const port = Number(process.env.PORT ?? 3000);
+// One "now" for the whole run, shared with the stand-ins (they inherit the environment) and the
+// tests, so "4 days ago" is the same day everywhere even when a run crosses midnight UTC.
+process.env.E2E_NOW ??= String(Date.now());
 
 export default defineConfig({
   testDir: "./e2e",
