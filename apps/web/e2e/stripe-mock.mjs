@@ -15,6 +15,8 @@ const WEBHOOK_URL =
 const PRICES = Object.entries({
   books: [900, 9000],
   seller: [1900, 19000],
+  seller_reviews: [2400, 24000],
+  seller_stock: [2700, 27000],
   seller_plus: [2900, 29000],
   reviews_only: [900, 9000],
   stock: [800, 8000],
@@ -176,13 +178,24 @@ createServer(async (req, res) => {
       sub.status === "trialing"
         ? `<form method="post" action="/portal/${match[1]}/end-trial?return=${back}"><button>End trial</button></form>`
         : "";
+    // Switching plan (one item: Stripe's portal switches its price), as for any package.
+    const interval = sub.items[0]?.price.interval ?? "month";
+    const switches = PRICES.filter(
+      (p) => p.interval === interval && !sub.items.some((i) => i.price.id === p.id),
+    )
+      .filter((p) => !/^(stock|reviews)_/.test(p.lookup_key))
+      .map(
+        (p) =>
+          `<form method="post" action="/portal/${match[1]}/switch?price=${p.id}&return=${back}"><button>Switch to ${p.lookup_key}</button></form>`,
+      )
+      .join("");
     return page(
       res,
       "Stripe test portal",
-      `${removes}${endTrial}<form method="post" action="/portal/${match[1]}/cancel?return=${back}"><button>Cancel subscription</button></form>`,
+      `${sub.items.length === 1 ? switches : removes}${endTrial}<form method="post" action="/portal/${match[1]}/cancel?return=${back}"><button>Cancel subscription</button></form>`,
     );
   }
-  match = /^\/portal\/([\w]+)\/(remove|cancel|end-trial)$/.exec(path);
+  match = /^\/portal\/([\w]+)\/(remove|cancel|end-trial|switch)$/.exec(path);
   if (match && req.method === "POST") {
     const sub = [...subscriptions.values()].find(
       (s) => s.customer === match[1] && s.status !== "canceled",
@@ -191,6 +204,10 @@ createServer(async (req, res) => {
     if (!sub) return redirect(res, back);
     if (match[2] === "remove") {
       sub.items = sub.items.filter((item) => item.id !== url.searchParams.get("item"));
+      await sendEvent("customer.subscription.updated", subscriptionObject(sub));
+    } else if (match[2] === "switch") {
+      const price = PRICES.find((p) => p.id === url.searchParams.get("price"));
+      if (price) sub.items = [{ id: sub.items[0]?.id ?? next("si"), price }];
       await sendEvent("customer.subscription.updated", subscriptionObject(sub));
     } else if (match[2] === "end-trial") {
       sub.status = "active";

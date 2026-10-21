@@ -1,12 +1,12 @@
 import { MODULE_KEYS, type ModuleKey, modules } from "../modules/registry";
-import { formatDecimal, parseDecimal } from "../money";
 
 /**
- * Billing: packages of linked modules plus add-ons, per company per month or year (yearly is ten
- * months). Prices in USD (docs/GROWTH-PLAN.md §2; the site's `content/pricing.ts` shows the same).
+ * Billing: packages of linked modules, one per subscription, per company per month or year (yearly
+ * is ten months). Prices in USD (docs/GROWTH-PLAN.md §2; the site's `content/pricing.ts` shows the
+ * same). One item per subscription, so Stripe's customer portal can switch between packages.
  *
- * The independence rule: each module is paid for on its own line, so losing one (an add-on
- * removed, a package changed) makes only that module read-only. Nothing is ever deleted.
+ * The independence rule: moving to a package without a module makes only that module read-only;
+ * the others keep working. Nothing is ever deleted.
  *
  * Review requests only is the one package that uses a module in part (`partly`): it connects
  * marketplaces and brings in orders through Commerce, and the rest of Commerce stays read-only.
@@ -14,9 +14,16 @@ import { formatDecimal, parseDecimal } from "../money";
 
 export type BillingInterval = "month" | "year";
 
-export type PackageKey = "books" | "seller" | "seller_plus" | "reviews_only";
-export type AddOnKey = "stock" | "reviews";
-export type BillingItemKey = PackageKey | AddOnKey;
+export type PackageKey =
+  | "books"
+  | "seller"
+  | "seller_reviews"
+  | "seller_stock"
+  | "seller_plus"
+  | "reviews_only";
+/** Add-ons once sold on Seller (now packages); a subscription that still has one keeps it. */
+export type LegacyAddOnKey = "stock" | "reviews";
+export type BillingItemKey = PackageKey | LegacyAddOnKey;
 
 export type BillingItem = {
   key: BillingItemKey;
@@ -27,8 +34,6 @@ export type BillingItem = {
   yearly: string;
   /** What it unlocks. */
   modules: readonly ModuleKey[];
-  /** Add-ons: the packages they can be added to. */
-  addTo?: readonly PackageKey[];
   /**
    * Modules it uses only in part: connecting marketplaces and bringing in their orders
    * (`CONNECTION_AREA`). Everything else in them stays read-only.
@@ -60,6 +65,22 @@ export const BILLING_PACKAGES: Record<PackageKey, BillingItem> = {
     yearly: "190.00",
     modules: ["accounting", "banking", "entity", "commerce"],
   },
+  seller_reviews: {
+    key: "seller_reviews",
+    kind: "package",
+    name: "Seller + Reviews",
+    monthly: "24.00",
+    yearly: "240.00",
+    modules: ["accounting", "banking", "entity", "commerce", "reviews"],
+  },
+  seller_stock: {
+    key: "seller_stock",
+    kind: "package",
+    name: "Seller + Stock",
+    monthly: "27.00",
+    yearly: "270.00",
+    modules: ["accounting", "banking", "entity", "commerce", "inventory", "analytics"],
+  },
   seller_plus: {
     key: "seller_plus",
     kind: "package",
@@ -79,7 +100,11 @@ export const BILLING_PACKAGES: Record<PackageKey, BillingItem> = {
   },
 };
 
-export const BILLING_ADD_ONS: Record<AddOnKey, BillingItem> = {
+/**
+ * No longer sold (Seller + Reviews and Seller + Stock replaced them): only so a subscription from
+ * before keeps the modules it pays for.
+ */
+export const LEGACY_ADD_ONS: Record<LegacyAddOnKey, BillingItem> = {
   stock: {
     key: "stock",
     kind: "add_on",
@@ -87,7 +112,6 @@ export const BILLING_ADD_ONS: Record<AddOnKey, BillingItem> = {
     monthly: "8.00",
     yearly: "80.00",
     modules: ["inventory", "analytics"],
-    addTo: ["seller"],
   },
   reviews: {
     key: "reviews",
@@ -96,15 +120,13 @@ export const BILLING_ADD_ONS: Record<AddOnKey, BillingItem> = {
     monthly: "5.00",
     yearly: "50.00",
     modules: ["reviews"],
-    addTo: ["seller"],
   },
 };
 
 export const PACKAGE_KEYS = Object.keys(BILLING_PACKAGES) as PackageKey[];
-export const ADD_ON_KEYS = Object.keys(BILLING_ADD_ONS) as AddOnKey[];
 
 export function billingItem(key: string): BillingItem | null {
-  return BILLING_PACKAGES[key as PackageKey] ?? BILLING_ADD_ONS[key as AddOnKey] ?? null;
+  return BILLING_PACKAGES[key as PackageKey] ?? LEGACY_ADD_ONS[key as LegacyAddOnKey] ?? null;
 }
 
 /** Stripe price lookup key for an item and interval, e.g. "seller_plus_year". */
@@ -116,17 +138,15 @@ export function priceLookupKey(key: BillingItemKey, interval: BillingInterval): 
 export function parseLookupKey(
   lookupKey: string | null | undefined,
 ): { key: BillingItemKey; interval: BillingInterval } | null {
-  const match = /^(books|seller_plus|seller|stock|reviews_only|reviews)_(month|year)$/.exec(
-    lookupKey ?? "",
-  );
+  const match =
+    /^(books|seller_plus|seller_reviews|seller_stock|seller|stock|reviews_only|reviews)_(month|year)$/.exec(
+      lookupKey ?? "",
+    );
   if (!match) return null;
   return { key: match[1] as BillingItemKey, interval: match[2] as BillingInterval };
 }
 
-/**
- * Catalogue problems: an item that unlocks a module without the modules it needs (counting the
- * packages an add-on goes on), or an add-on that adds nothing. Empty when consistent.
- */
+/** Catalogue problems: a package that unlocks a module without the modules it needs. */
 export function catalogProblems(): string[] {
   const problems: string[] = [];
   // A module used in part counts as there for what needs it; its own needs aren't checked, since
@@ -144,47 +164,19 @@ export function catalogProblems(): string[] {
     }
   };
   for (const p of Object.values(BILLING_PACKAGES)) check(p.name, p.modules, p.partly);
-  for (const a of Object.values(BILLING_ADD_ONS)) {
-    for (const base of a.addTo ?? []) {
-      const have = [...new Set([...BILLING_PACKAGES[base].modules, ...a.modules])];
-      check(`${BILLING_PACKAGES[base].name} + ${a.name}`, have);
-      if (a.modules.every((m) => BILLING_PACKAGES[base].modules.includes(m))) {
-        problems.push(`${a.name} adds nothing to ${BILLING_PACKAGES[base].name}`);
-      }
-    }
-  }
   return problems;
 }
 
-/** A choice: one package and any add-ons it takes. */
+/** A choice: one package, monthly or yearly. */
 export type BillingSelection = {
   package: PackageKey;
-  addOns: readonly AddOnKey[];
   interval: BillingInterval;
 };
 
-/** Why a selection can't be bought, or null. */
-export function selectionProblem(selection: BillingSelection): string | null {
-  for (const a of selection.addOns) {
-    const addOn = BILLING_ADD_ONS[a];
-    if (!addOn?.addTo?.includes(selection.package)) {
-      return `${addOn?.name ?? a} can't be added to ${BILLING_PACKAGES[selection.package].name}.`;
-    }
-  }
-  return null;
-}
-
 /** The selection's price per interval, USD. */
 export function selectionTotal(selection: BillingSelection): string {
-  const price = (item: BillingItem) => (selection.interval === "year" ? item.yearly : item.monthly);
-  const parts = [
-    price(BILLING_PACKAGES[selection.package]),
-    ...selection.addOns.map((a) => price(BILLING_ADD_ONS[a])),
-  ];
-  return formatDecimal(
-    parts.map((p) => parseDecimal(p, 2)).reduce((a, b) => a + b, 0n),
-    2,
-  );
+  const item = BILLING_PACKAGES[selection.package];
+  return selection.interval === "year" ? item.yearly : item.monthly;
 }
 
 /** Stripe's subscription states, plus none. */
@@ -387,17 +379,14 @@ export function mayChange(
   return area === CONNECTION_AREA && billing.entitlement.partly.includes(module);
 }
 
-/** The package and add-ons a company's switched-on modules suggest. */
-export function suggestedSelection(
-  enabled: readonly ModuleKey[],
-): Omit<BillingSelection, "interval"> {
+/** The package a company's switched-on modules suggest. */
+export function suggestedSelection(enabled: readonly ModuleKey[]): PackageKey {
   const commerce = enabled.includes("commerce");
   const stock = enabled.includes("inventory");
   const reviews = enabled.includes("reviews");
-  if (!commerce) return { package: "books", addOns: [] };
-  if (stock && reviews) return { package: "seller_plus", addOns: [] };
-  return {
-    package: "seller",
-    addOns: [...(stock ? (["stock"] as const) : []), ...(reviews ? (["reviews"] as const) : [])],
-  };
+  if (!commerce) return "books";
+  if (stock && reviews) return "seller_plus";
+  if (stock) return "seller_stock";
+  if (reviews) return "seller_reviews";
+  return "seller";
 }

@@ -87,13 +87,11 @@ test("owner signs up, verifies email and sets up a company with the wizard", asy
   // Leaving for the app first just comes back here: the company opens once a plan is chosen.
   await page.goto(page.url().replace("/start/", "/o/"));
   await expect(page).toHaveURL(/\/start\/maple-goods-/);
-  // Seller with both add-ons (the page notes Seller Plus would be cheaper).
-  await page.getByText("Everything in Books, plus Amazon, Walmart, Noon and eBay.").click();
-  for (const name of ["Stock", "Review requests"]) {
-    const box = page.getByRole("checkbox", { name: new RegExp(`^${name}`) });
-    if (!(await box.isChecked())) await box.check();
-  }
-  await expect(page.getByText(/Total \$32 a month/)).toBeVisible();
+  // Seller Plus: everything, one package (no add-ons, so the portal can switch plans).
+  await page
+    .getByText("Everything in Seller, plus stock, cost of goods and review requests.")
+    .click();
+  await expect(page.getByText(/Total \$29 a month/)).toBeVisible();
   await page.getByRole("button", { name: "Start 30 days free" }).click();
   await expect(page.getByRole("heading", { name: "Stripe test checkout" })).toBeVisible();
   await expect(page.getByText(/Card charged on \d{4}-\d{2}-\d{2}/)).toBeVisible();
@@ -3894,7 +3892,7 @@ test("a Google-only user can set a password and then sign in with it", async ({ 
   await expect(page).toHaveURL(/\/onboarding/);
 });
 
-test("billing: the plan chosen at sign-up, its trial ending, an add-on removed makes only its module read-only, cancelled, then review requests on their own", async ({
+test("billing: the plan chosen at sign-up, its trial ending, a switch to a smaller package makes only its module read-only, cancelled, then review requests on their own", async ({
   page,
 }) => {
   await signIn(page, owner.email, owner.password);
@@ -3903,9 +3901,7 @@ test("billing: the plan chosen at sign-up, its trial ending, an add-on removed m
   await sidebar.getByRole("link", { name: "Plan and billing", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Plan and billing" })).toBeVisible();
   // Chosen at sign-up: everything is open for 30 days, then the card is charged for the plan.
-  await expect(
-    page.getByRole("heading", { name: "Seller + Review requests + Stock" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Seller Plus" })).toBeVisible();
   await expect(page.getByText("Free trial: 30 days left")).toBeVisible();
   await expect(page.getByText("Free until the trial ends")).toBeVisible();
   await expect(page.getByText(/Your card is charged on .+ unless you cancel/)).toBeVisible();
@@ -3919,11 +3915,11 @@ test("billing: the plan chosen at sign-up, its trial ending, an add-on removed m
   await expect(page.getByText(/Free trial/)).toHaveCount(0);
   await expect(page.getByText(/Read-only, because they aren't in the plan/)).toHaveCount(0);
 
-  // Remove Stock in the customer portal: only Inventory turns read-only.
+  // Switch to Seller + Reviews in the customer portal: only Inventory turns read-only.
   await page.getByRole("button", { name: "Manage billing" }).click();
   await expect(page.getByRole("heading", { name: "Stripe test portal" })).toBeVisible();
-  await page.getByRole("button", { name: "Remove stock_month" }).click();
-  await expect(page.getByRole("heading", { name: "Seller + Review requests" })).toBeVisible();
+  await page.getByRole("button", { name: "Switch to seller_reviews_month" }).click();
+  await expect(page.getByRole("heading", { name: "Seller + Reviews" })).toBeVisible();
   const banner = page.getByText(/Read-only, because they aren't in the plan/).first();
   await expect(banner).toBeVisible();
   await expect(page.locator("main").getByText("Inventory", { exact: true }).first()).toBeVisible();

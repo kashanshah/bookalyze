@@ -1133,8 +1133,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     **Sellers** `/sellers` and `/sellers/<country>` (US, Canada, Mexico, UAE, Saudi Arabia,
     Egypt) from `content/countries.ts`.
   - **Features**; **Pricing** (Books $9, Seller $19, Seller Plus $29 a company a month, yearly is
-    ten months; Review requests only $9 in its own card; add-ons on Seller: Stock $8, Review
-    requests $5; local prices for the pegged AED
+    ten months; Review requests only $9 in its own card; Seller + Reviews $24 and Seller + Stock
+    $27 under "Seller, with just one extra"; local prices for the pegged AED
     and SAR; "Free during early access"; the independence rule in the FAQ) from
     `content/pricing.ts`.
   - **Contact** `/contact`: name, email, company, topic (`?topic=` preselects), message; a server
@@ -1222,14 +1222,18 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   e2e "support: a ticket from Help, the desk's reply and note, a reply by email, and the
   website's enquiries".
 
-### Billing: packages, add-ons and read-only modules (Stripe, test mode)
+### Billing: packages and read-only modules (Stripe, test mode)
 
 - **Prices** (core `billing/`, GROWTH-PLAN §2): Books $9 (Accounting, Banking, Entity &
   compliance), Seller $19 (+ Commerce), Seller Plus $29 (+ Inventory, Review requests, Analytics),
   **Review requests only** $9 (`reviews_only`: Review requests, with Commerce used only in part);
-  add-ons on Seller: Stock $8 (Inventory, Analytics), Review requests $5. Yearly is ten months.
-  `catalogProblems()` checks every package and add-on gives each module what it `requires`; a
-  module a package uses in part (`partly`) counts for what needs it.
+  Seller + Reviews $24 (`seller_reviews`), Seller + Stock $27 (`seller_stock`: + Inventory,
+  Analytics). Yearly is ten months. **No add-ons** (owner's decision, October 2026): one package
+  per subscription, because Stripe's customer portal can't switch a subscription with more than
+  one product; the old Stock and Review requests add-ons (`LEGACY_ADD_ONS`) are no longer sold and
+  only keep an older subscription's modules. Migration `0085_seller_packages` adds the keys.
+  `catalogProblems()` checks every package gives each module what it `requires`; a module a
+  package uses in part (`partly`) counts for what needs it.
 - **Card at sign-up** (owner's decision, October 2026): when Stripe is set up, a new company's
   last onboarding step is `/start/<slug>`: choose a plan (the plan picker) and give a card in
   Checkout (`payment_method_collection: always`). Onboarding writes `billing_accounts` with
@@ -1260,8 +1264,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   (`firstChargeOn`, Stripe's `trial_end`). No card is needed for the trial. After: the subscription's modules while `active`/`trialing`; for
   `BILLING_GRACE_DAYS` (7) after the first failed payment (`grace`); otherwise none. A module
   switched on but not paid for is **read-only** (`readOnlyModules`): it opens, nothing in it can
-  change, nothing is deleted. Each module is its own line, so removing an add-on affects only its
-  module (the independence rule; core and e2e tests).
+  change, nothing is deleted. Moving to a package without a module affects only that module (the
+  independence rule; core and e2e tests: Seller Plus → Seller + Reviews leaves only Inventory
+  read-only).
 - **Enforced** in the module contexts (`getAccountingContext`, `getBankingContext`,
   `getCommerceContext`, `getReviewsContext`, `getInventoryContext`, `getEntityContext`) by
   `guardWrites`: a server action (a request with `Next-Action`) on a read-only module is sent to
@@ -1269,7 +1274,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   naming the read-only modules. `getOrgContext` carries `billing` (entitlement, read-only list,
   rows).
 - **Settings → Plan and billing** (`/settings/billing`, owners choose): early-access note,
-  monthly/yearly, the four packages (suggested from what's switched on), add-ons on Seller, the
+  monthly/yearly, the six packages (suggested from what's switched on), the
   total, **Continue to payment** (Stripe Checkout; during early access with a start date, a trial
   until that day so nothing is charged before it), the current plan with status and renewal,
   **Manage billing** (Stripe's customer portal: card, invoices, change, cancel), invoices from

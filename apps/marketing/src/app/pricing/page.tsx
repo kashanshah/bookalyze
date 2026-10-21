@@ -34,11 +34,11 @@ const FAQ: Question[] = [
   },
   {
     q: "Can I buy only review requests?",
-    a: "Yes. Review requests only is $9 a month per company: connect your Amazon store, its orders come in, and you send Amazon's own review requests by hand, in bulk or automatically. It doesn't include the books or settlements. If you want those later, move to Seller with the Review requests add-on, or Seller Plus, and your requests carry on.",
+    a: "Yes. Review requests only is $9 a month per company: connect your Amazon store, its orders come in, and you send Amazon's own review requests by hand, in bulk or automatically. It doesn't include the books or settlements. If you want those later, move to Seller + Reviews or Seller Plus, and your requests carry on.",
   },
   {
-    q: "What happens if I drop a package or an add-on?",
-    a: "Only what you drop stops: the rest keeps working exactly as before. What you drop becomes read-only, never deleted: its numbers stay in your reports and exports, and everything comes back as it was if you add it again.",
+    q: "What happens if I move to a smaller package?",
+    a: "Only what the smaller package doesn't include stops: the rest keeps working exactly as before. You can switch plans any time in Plan and billing. What you drop becomes read-only, never deleted: its numbers stay in your reports and exports, and everything comes back as it was if you add it again.",
   },
   {
     q: "Is the price per company?",
@@ -79,7 +79,7 @@ export default function PricingPage() {
             as="h1"
             eyebrow="Pricing"
             title="One simple price per company. 30 days free."
-            lead="Packages of modules that work together, and small add-ons. Pay for what each business uses; drop something and the rest keeps working."
+            lead="Packages of modules that work together. Pay for what each business uses; move to a smaller package and the rest keeps working."
           />
         </div>
         <div className="fade-in-0 slide-in-from-bottom-6 animate-in fill-mode-both delay-150 duration-700">

@@ -1,14 +1,6 @@
 "use server";
 
-import {
-  ADD_ON_KEYS,
-  type BillingItemKey,
-  firstChargeOn,
-  PACKAGE_KEYS,
-  priceLookupKey,
-  selectionProblem,
-  signupTrialDays,
-} from "@bookalyze/core";
+import { firstChargeOn, PACKAGE_KEYS, priceLookupKey, signupTrialDays } from "@bookalyze/core";
 import { getDb, saveBillingCustomer, withBillingWriter } from "@bookalyze/db";
 import { z } from "zod";
 import { audit } from "@/server/audit";
@@ -27,7 +19,6 @@ export type BillingResult = { ok: true; url: string } | { ok: false; message: st
 
 const selection = z.object({
   package: z.enum(PACKAGE_KEYS as [string, ...string[]]),
-  addOns: z.array(z.enum(ADD_ON_KEYS as [string, ...string[]])).max(2),
   interval: z.enum(["month", "year"]),
 });
 
@@ -38,7 +29,7 @@ async function ownerContext(slug: string) {
   return { ctx, denied: null };
 }
 
-/** Starts Stripe Checkout for a package and add-ons; returns where to send the browser. */
+/** Starts Stripe Checkout for a package; returns where to send the browser. */
 export async function startCheckoutAction(slug: string, input: unknown): Promise<BillingResult> {
   const { ctx, denied } = await ownerContext(slug);
   if (denied) return { ok: false, message: denied };
@@ -46,18 +37,15 @@ export async function startCheckoutAction(slug: string, input: unknown): Promise
   if (!parsed.success) return { ok: false, message: "Choose a plan first." };
   const choice = parsed.data as {
     package: (typeof PACKAGE_KEYS)[number];
-    addOns: (typeof ADD_ON_KEYS)[number][];
     interval: "month" | "year";
   };
-  const problem = selectionProblem(choice);
-  if (problem) return { ok: false, message: problem };
   const active = ctx.billing.state.subscription;
   if (active && !["canceled", "incomplete_expired"].includes(active.status)) {
     return { ok: false, message: "You already have a plan. Use Manage billing to change it." };
   }
   try {
-    const keys: BillingItemKey[] = [choice.package, ...choice.addOns];
-    const lookups = keys.map((k) => priceLookupKey(k, choice.interval));
+    // One package per subscription, so Stripe's customer portal can switch between them.
+    const lookups = [priceLookupKey(choice.package, choice.interval)];
     const prices = await pricesByLookupKey(lookups);
     const missing = lookups.filter((l) => !prices.has(l));
     if (missing.length) {

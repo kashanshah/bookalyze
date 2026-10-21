@@ -1,6 +1,6 @@
-import { BILLING_ADD_ONS, BILLING_PACKAGES } from "@bookalyze/core";
+import { BILLING_PACKAGES } from "@bookalyze/core";
 import { describe, expect, it } from "vitest";
-import { ADD_ONS, PACKAGES, REVIEWS_ONLY } from "./pricing";
+import { PACKAGES, REVIEWS_ONLY, SELLER_EXTRAS } from "./pricing";
 
 /** The site's prices are the app's (packages/core billing), so they can't drift apart. */
 describe("pricing", () => {
@@ -14,9 +14,11 @@ describe("pricing", () => {
     }
   });
 
-  it("shows the app's add-on prices and Review requests only", () => {
-    for (const a of ADD_ONS) {
-      const item = BILLING_ADD_ONS[a.id];
+  it("shows the app's Seller-with-one-extra prices and Review requests only", () => {
+    const extras = { "seller-reviews": "seller_reviews", "seller-stock": "seller_stock" } as const;
+    for (const a of SELLER_EXTRAS) {
+      const item = BILLING_PACKAGES[extras[a.id]];
+      expect(a.name).toBe(item.name);
       expect([a.monthly, a.yearly]).toEqual([usd(item.monthly), usd(item.yearly)]);
     }
     const only = BILLING_PACKAGES.reviews_only;
