@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@vercel/analytics";
 import { Check } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -54,6 +55,7 @@ export function SignUpForm({
       );
       return;
     }
+    track("Sign up", { with: "email" });
     router.push(`/check-email?email=${encodeURIComponent(email)}`);
   }
 

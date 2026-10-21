@@ -1,5 +1,6 @@
 "use client";
 
+import { track } from "@vercel/analytics";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Spinner } from "@/components/ui/spinner";
@@ -8,6 +9,7 @@ import { Spinner } from "@/components/ui/spinner";
 export function WaitForStripe() {
   const router = useRouter();
   useEffect(() => {
+    track("Card given");
     const timer = setInterval(() => router.refresh(), 2000);
     return () => clearInterval(timer);
   }, [router]);

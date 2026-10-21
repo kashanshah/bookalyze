@@ -5,6 +5,7 @@ export * from "./commerce";
 export * from "./currency";
 export * from "./entity";
 export * from "./fiscal";
+export * from "./growth";
 export * from "./import";
 export * from "./inventory";
 export * from "./log-format";
