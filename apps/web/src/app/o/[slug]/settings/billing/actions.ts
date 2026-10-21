@@ -3,6 +3,7 @@
 import {
   ADD_ON_KEYS,
   type BillingItemKey,
+  firstChargeOn,
   PACKAGE_KEYS,
   priceLookupKey,
   selectionProblem,
@@ -80,12 +81,11 @@ export async function startCheckoutAction(slug: string, input: unknown): Promise
       });
     }
     const base = `${env().BETTER_AUTH_URL}/o/${slug}/settings/billing`;
-    // Chosen during early access: nothing is charged until billing starts.
-    const startsOn = ctx.billing.entitlement.billingStartsOn;
-    const trialEnd =
-      ctx.billing.entitlement.mode === "early_access" && startsOn
-        ? Math.floor(new Date(`${startsOn}T00:00:00Z`).getTime() / 1000)
-        : null;
+    // Chosen during early access or the free trial: nothing is charged until the trial is over.
+    const chargeOn = firstChargeOn(ctx.billing.entitlement, ctx.billing.companyCreatedOn);
+    const trialEnd = chargeOn
+      ? Math.floor(new Date(`${chargeOn}T00:00:00Z`).getTime() / 1000)
+      : null;
     const session = await createCheckoutSession({
       customerId,
       orgId: ctx.org.id,

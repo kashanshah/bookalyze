@@ -55,6 +55,7 @@ export const getOrgContext = cache(async (slug: string): Promise<OrgContext> => 
       id: schema.organization.id,
       name: schema.organization.name,
       slug: schema.organization.slug,
+      createdAt: schema.organization.createdAt,
       role: schema.member.role,
     })
     .from(schema.organization)
@@ -79,7 +80,9 @@ export const getOrgContext = cache(async (slug: string): Promise<OrgContext> => 
       return {
         profile: (await tx.select().from(schema.organizationProfiles).limit(1))[0] ?? null,
         enabledModules: enabled,
-        billing: await loadOrgBilling(tx, enabled),
+        billing: await loadOrgBilling(tx, enabled, {
+          createdOn: row.createdAt.toISOString().slice(0, 10),
+        }),
       };
     },
   );

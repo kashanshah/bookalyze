@@ -83,7 +83,7 @@ export function PricingTable() {
               </p>
               <p className="mt-2 inline-flex w-fit items-center gap-2 rounded-full bg-success/12 px-2.5 py-1 font-medium text-success text-xs">
                 <span className="size-1.5 rounded-full bg-success" />
-                Free during early access
+                Free during early access, then a 30-day free trial
               </p>
             </div>
             <div className="grid gap-3">

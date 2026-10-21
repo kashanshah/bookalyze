@@ -16,12 +16,15 @@ export type OrgBilling = {
   /** Switched on but not paid for: they open, and nothing in them can be changed. */
   readOnly: ModuleKey[];
   state: BillingState;
+  /** The day the company was created (ISO): a trial starts then if billing already had. */
+  companyCreatedOn: string;
 };
 
 /** What the company may use, from its subscription and when billing starts for it. */
 export async function loadOrgBilling(
   tx: Transaction,
   enabled: readonly ModuleKey[],
+  company: { createdOn: string },
   now = new Date(),
 ): Promise<OrgBilling> {
   const state = await getBilling(tx);
@@ -34,9 +37,14 @@ export async function loadOrgBilling(
           paymentFailedAt: state.subscription.paymentFailedAt,
         }
       : null,
-    { now, billingStartsOn },
+    { now, billingStartsOn, companyCreatedOn: company.createdOn },
   );
-  return { entitlement, readOnly: readOnlyModules(enabled, entitlement), state };
+  return {
+    entitlement,
+    readOnly: readOnlyModules(enabled, entitlement),
+    state,
+    companyCreatedOn: company.createdOn,
+  };
 }
 
 /**

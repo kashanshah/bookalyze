@@ -3908,6 +3908,18 @@ test("billing: a plan through Checkout, an add-on removed makes only its module 
     ),
   );
   await page.reload();
+  // The company was created today: billing starting means its 30-day trial, everything open.
+  await expect(page.getByText("Free trial: 30 days left")).toBeVisible();
+  await expect(page.getByText(/Read-only, because they aren't in the plan/)).toHaveCount(0);
+  // A company from long before: its trial is long over, and its plan decides.
+  await withOwnerDb((db) =>
+    db.query(
+      `update organization set created_at = '2025-06-01' where id in
+        (select organization_id from billing_accounts where stripe_customer_id like 'cus_e2e%')`,
+    ),
+  );
+  await page.reload();
+  await expect(page.getByText(/Free trial/)).toHaveCount(0);
   await expect(page.getByText(/Read-only, because they aren't in the plan/)).toHaveCount(0);
 
   // Remove Stock in the customer portal: only Inventory turns read-only.

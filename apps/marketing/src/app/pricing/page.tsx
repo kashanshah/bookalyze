@@ -29,6 +29,10 @@ const FAQ: Question[] = [
     a: "Not yet. We'll email you at least 30 days before it does, and nothing is charged unless you choose a plan.",
   },
   {
+    q: "Is there a free trial?",
+    a: "Yes. Once billing starts, every company gets 30 days of everything, with nothing held back and no card needed. New companies get it from the day they're created. Choose a plan before it ends to keep what you use; anything you don't keep turns read-only, and nothing is deleted.",
+  },
+  {
     q: "What happens if I drop a package or an add-on?",
     a: "Only what you drop stops: the rest keeps working exactly as before. What you drop becomes read-only, never deleted: its numbers stay in your reports and exports, and everything comes back as it was if you add it again.",
   },

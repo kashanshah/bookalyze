@@ -172,7 +172,9 @@ Test mode until the owner decides otherwise. Nothing is gated before `BILLING_ST
 4. **Settings → Billing → Customer portal**: let customers update payment methods, see invoices,
    cancel, and switch between the products above (so an add-on can be added or removed).
 5. `BILLING_STARTS_ON=YYYY-MM-DD` when billing should start; leave it unset for early access.
-   One company can start earlier (or later) with `billing_accounts.starts_on` (owner only, by SQL).
+   Every company then gets a 30-day free trial of everything (from that day, or from its creation
+   if later); nothing is charged before it ends. One company can start earlier (or later) with
+   `billing_accounts.starts_on` (owner only, by SQL).
 6. Tax on subscriptions (Stripe Tax or not) is the owner's call; nothing here turns it on.
 
 ## Google sign-in
