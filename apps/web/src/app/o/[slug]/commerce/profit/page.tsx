@@ -452,6 +452,7 @@ export default async function ChannelProfitPage({
 
   // Ad spend from the ads reports: each channel's in its column, all of them in the main currency
   // (the stored main-currency value, else that day's rate).
+  let adsUnconverted = 0;
   for (const a of ads) {
     const column = columnOf(a.channelId);
     if (column && column.currency === a.currency) {
@@ -465,7 +466,7 @@ export default async function ChannelProfitPage({
       }
       const rate = rates.get(cacheKey);
       if (rate) base += convertUnits(parseDecimal(u.spend), rate, decimals);
-      else costsUnconverted++;
+      else adsUnconverted++;
     }
     all.adSpend = (all.adSpend ?? 0n) + base;
   }
@@ -733,6 +734,13 @@ export default async function ChannelProfitPage({
             <AlertTriangle className="size-3.5 shrink-0" />
             Some costs are only in the {baseCurrency} total: there's no exchange rate into their
             channel's currency for the day yet.
+          </p>
+        ) : null}
+        {adsUnconverted ? (
+          <p className="flex items-center gap-1.5">
+            <AlertTriangle className="size-3.5 shrink-0" />
+            Some days' ad spend isn't in the {baseCurrency} total: there's no exchange rate for them
+            yet.
           </p>
         ) : null}
         {walmartProblems ? (
