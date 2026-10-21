@@ -13,8 +13,8 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-21, phase 4e slice 4a: Walmart's settlement reports listed and one
-checked (its columns and rows), keeping nothing, so the reader is built on the real columns._
+_Last updated: 2026-10-21, phase 4e slice 4b-1: Walmart settlements brought in and kept row by
+row as Walmart sent them (no buyer details), ready to be read into the books._
 
 ---
 
@@ -31,7 +31,7 @@ checked (its columns and rows), keeping nothing, so the reader is built on the r
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) slice 10 (a freight payment is its delivery's cost) and slice 11 (Amazon prices: each listing's price next to its cost, a change with Amazon's fees and the profit first) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off; what Noon holds beside your lots, and Noon's summary checking its ledger day by day) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: Kazomo's FBN transaction types checked against what Stock movements lists as not counted, then FBP stock (the seller's own warehouses). Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold), 4 (eBay money: the Finances API's rows by month, in Channel profit) 5 (payouts and posting: each site's month as one entry to an eBay balance account, payouts matched to bank deposits, in the daily job) and 6 (Seller Hub's transaction report upload, with the API's rows winning on days it has) done. Next: eBay's digital signatures for EU and UK sellers. See §3 "Phase 4d" |
-| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) 2 (connect Walmart: each country's seller account with its own API key) 3 (orders from the Orders API, the seller's and WFS's) and 4a (settlement reports listed, one checked without keeping anything) done. Next: the real columns from a check on a live account, then reading the reports into the books. See §3 "Phase 4e" |
+| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) 2 (connect Walmart: each country's seller account with its own API key) 3 (orders from the Orders API, the seller's and WFS's) 4a (settlement reports listed, one checked without keeping anything) and 4b-1 (settlements brought in and kept row by row) done. Next: the real columns from a check on a live account, then reading the kept rows into the books. See §3 "Phase 4e" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
@@ -1584,6 +1584,33 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   the check on the days both cover); e2e "noon: connect…" brings the ledger and its summary in
   from the mock (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema; the
   summary disagrees on one day last month), then uploads a summary file.
+
+### Phase 4e, slice 4b-1: Walmart settlements brought in, kept row by row
+
+- **Kept before they're read:** "Bring in from Walmart" on a Walmart channel's page (the
+  **Walmart settlements** card, with the Settlements part of Commerce on) downloads every
+  settlement report Walmart lists that isn't in yet, oldest first, within about 50 seconds (web
+  `server/walmart-settlements.ts`, action `bringInWalmartSettlementsAction`, audit
+  `walmart.settlements_brought_in`), and keeps each one's rows as Walmart sent them, by column
+  name. So when the columns' meaning is settled (slice 4b-2), the books are read from what's
+  kept, with nothing to download again.
+- **No buyer details:** core `readWalmartSettlement` (on `readCsvTable`) leaves out every column
+  whose name could say who or where a buyer is (ship-to, zip/postal code, city, county, customer
+  name/email/phone, buyer, address, recipient) and says which it dropped. It picks out the
+  period (Period Start/End Date), the payout (Total Payout / Total Payable / Net Payable) and its
+  currency when a column says what they are; amounts read as exact decimals (`walmartAmount`:
+  thousands commas, $, brackets for negatives), dates as ISO (`walmartDay`).
+- **Database** (migration `0079_walmart_settlements`): `walmart_settlements` (one per channel
+  and report date: period, currency, payout, row count, the columns kept) and
+  `walmart_settlement_rows` (each row's cells as JSON, in the report's order), both under RLS
+  and removed with their channel. Bringing a date in again replaces it whole (db
+  `saveWalmartSettlement`; also `listWalmartSettlements`, `walmartSettlementDatesIn`,
+  `walmartSettlementRowsOf`). Nothing posts to the books yet.
+- Tests: core `walmart-settlement-file.test.ts` (columns kept and dropped, period, payout,
+  currency, dates, amounts); db `walmart.test.ts` (saved by date, replaced, rows in order,
+  isolation); e2e "walmart: bring in Walmart Canada's settlements…" (two reports from the
+  stand-in, its rows without the ship-to city and postal code it sends, nothing new the second
+  time).
 
 ### Phase 4e, slice 4a: Walmart settlement reports, checked
 

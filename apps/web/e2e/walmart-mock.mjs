@@ -118,11 +118,11 @@ const reportDay = (days) => {
 };
 const SETTLEMENT_DATES = [reportDay(2), reportDay(16)];
 const SETTLEMENT_CSV = [
-  "Period Start Date,Period End Date,Total Payout,Currency,Transaction Key,Transaction Posted Timestamp,Transaction Type,Purchase Order #,Purchase Order line #,Amount,Amount Type,Ship Qty,Partner Item Id,Fulfillment Type",
-  "10/01/2026,10/14/2026,52.07,CAD,T-1,10/05/2026,Sale,108800000001,1,39.98,Product Price,2,WMT-MAPLE-MUG,Seller Fulfilled",
-  "10/01/2026,10/14/2026,52.07,CAD,T-1,10/05/2026,Sale,108800000001,1,-6.00,Commission on Product,2,WMT-MAPLE-MUG,Seller Fulfilled",
-  "10/01/2026,10/14/2026,52.07,CAD,T-2,10/09/2026,Sale,108800000003,1,19.99,Product Price,1,WMT-MAPLE-MUG,WFS",
-  "10/01/2026,10/14/2026,52.07,CAD,T-2,10/09/2026,Sale,108800000003,1,-1.90,Walmart Fulfillment Services Fee,1,WMT-MAPLE-MUG,WFS",
+  "Period Start Date,Period End Date,Total Payout,Currency,Transaction Key,Transaction Posted Timestamp,Transaction Type,Purchase Order #,Purchase Order line #,Amount,Amount Type,Ship Qty,Partner Item Id,Fulfillment Type,Ship to City,Ship to Zipcode",
+  "10/01/2026,10/14/2026,52.07,CAD,T-1,10/05/2026,Sale,108800000001,1,39.98,Product Price,2,WMT-MAPLE-MUG,Seller Fulfilled,Toronto,M0M 0M0",
+  "10/01/2026,10/14/2026,52.07,CAD,T-1,10/05/2026,Sale,108800000001,1,-6.00,Commission on Product,2,WMT-MAPLE-MUG,Seller Fulfilled,Toronto,M0M 0M0",
+  "10/01/2026,10/14/2026,52.07,CAD,T-2,10/09/2026,Sale,108800000003,1,19.99,Product Price,1,WMT-MAPLE-MUG,WFS,Toronto,M0M 0M0",
+  "10/01/2026,10/14/2026,52.07,CAD,T-2,10/09/2026,Sale,108800000003,1,-1.90,Walmart Fulfillment Services Fee,1,WMT-MAPLE-MUG,WFS,Toronto,M0M 0M0",
 ].join("\n");
 
 /** A one-file zip, deflated, as Walmart sends its report files. */

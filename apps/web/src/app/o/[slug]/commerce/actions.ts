@@ -93,6 +93,7 @@ import {
   WalmartError,
   walmartSettlementDates,
 } from "@/server/walmart";
+import { bringInWalmartSettlements } from "@/server/walmart-settlements";
 
 export type CommerceResult<T = object> =
   | ({ ok: true } & T)
@@ -1232,6 +1233,43 @@ export async function checkWalmartSettlementAction(
       rows: preview.rows,
     });
     return { ok: true, date: parsed.data.date, preview };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * Brings in the Walmart settlement reports not in yet for a country (admins), within about 50
+ * seconds; the button says when there's more to bring in.
+ */
+export async function bringInWalmartSettlementsAction(
+  slug: string,
+  channelId: string,
+): Promise<CommerceResult<{ added: number; available: number; more: boolean }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  try {
+    const key = await walmartKey(ctx, channelId);
+    if ("message" in key) return { ok: false, message: key.message ?? "Unknown channel." };
+    const result = await bringInWalmartSettlements(
+      { orgId: ctx.org.id, userId: ctx.session.user.id },
+      { channelId, market: key.marketplace.market, creds: key.creds },
+      Date.now() + 50_000,
+    );
+    if (result.added) {
+      await inOrg(ctx, (tx) =>
+        audit(tx, {
+          orgId: ctx.org.id,
+          actorUserId: ctx.session.user.id,
+          action: "walmart.settlements_brought_in",
+          entityType: "sales_channel",
+          entityId: channelId,
+          after: { added: result.added },
+        }),
+      );
+    }
+    revalidate(slug);
+    return { ok: true, ...result };
   } catch (error) {
     return failure(error);
   }

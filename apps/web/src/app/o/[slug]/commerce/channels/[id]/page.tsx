@@ -7,6 +7,7 @@ import {
   getNoonConnection,
   getWalmartConnection,
   listAmazonConnections,
+  listWalmartSettlements,
 } from "@bookalyze/db";
 import { ArrowLeft, ArrowRight, BookCheck, ListOrdered, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
@@ -22,7 +23,12 @@ import { AmazonAccount } from "../amazon";
 import { EbayAccount, EbayConnectNotice } from "../ebay";
 import { NoonAccount, type NoonConnectionView, NoonFulfilment } from "../noon";
 import { PLATFORMS } from "../platforms";
-import { WalmartAccount, type WalmartConnectionView, WalmartFulfilment } from "../walmart";
+import {
+  WalmartAccount,
+  type WalmartConnectionView,
+  WalmartFulfilment,
+  WalmartSettlements,
+} from "../walmart";
 import { ChannelSwitch, RemoveChannel } from "./channel-settings";
 
 export const metadata: Metadata = { title: "Channel" };
@@ -60,6 +66,8 @@ export default async function ChannelPage({
         channel.kind === "walmart"
           ? await getWalmartConnection(tx, channel.marketplaceId ?? "")
           : null,
+      walmartSettlements:
+        channel.kind === "walmart" ? await listWalmartSettlements(tx, channel.id) : [],
       blockers: channel.kind === "amazon" ? [] : await channelRemovalBlockers(tx, channel.id),
     };
   });
@@ -232,6 +240,24 @@ export default async function ChannelPage({
           canManage={canManage}
           channel={{ id: ch.id, name: ch.name }}
           connection={walmartView(data.walmart)}
+        />
+      ) : null}
+      {ch.kind === "walmart" && money ? (
+        <WalmartSettlements
+          slug={slug}
+          locale={locale}
+          channelId={ch.id}
+          canManage={canManage}
+          connected={Boolean(data.walmart && data.walmart.status !== "disconnected")}
+          settlements={data.walmartSettlements.map((s) => ({
+            id: s.id,
+            reportDate: s.reportDate,
+            periodFrom: s.periodFrom,
+            periodTo: s.periodTo,
+            currency: s.currency,
+            payout: s.payout,
+            rows: s.rows,
+          }))}
         />
       ) : null}
 

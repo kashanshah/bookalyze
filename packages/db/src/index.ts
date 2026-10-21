@@ -41,3 +41,4 @@ export * from "./tax";
 export * from "./transactions";
 export * from "./transfers";
 export * from "./vault";
+export * from "./walmart-settlements";

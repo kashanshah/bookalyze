@@ -29,3 +29,4 @@ export * from "./walmart";
 export * from "./walmart-api";
 export * from "./walmart-orders";
 export * from "./walmart-recon";
+export * from "./walmart-settlement-file";
