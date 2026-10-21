@@ -28,15 +28,16 @@ export default async function StartPage({
   const owner = ctx.role === "owner";
   const days = signupTrialDays(ctx.billing.state.account, ctx.billing.state.subscription);
   const locale = ctx.profile?.locale ?? "en-CA";
-  const chargeOn = new Intl.DateTimeFormat(locale, { dateStyle: "long", timeZone: "UTC" }).format(
-    new Date(Date.now() + days * 86_400_000),
-  );
+  const day = new Intl.DateTimeFormat(locale, { dateStyle: "long", timeZone: "UTC" });
+  const chargeOn = day.format(new Date(Date.now() + days * 86_400_000));
+  // The last free day, as Plan and billing shows it.
+  const lastFreeDay = day.format(new Date(Date.now() + (days - 1) * 86_400_000));
   const points = days
     ? [
         {
           icon: CalendarCheck,
           title: `${days} days free`,
-          body: `Everything is included until ${chargeOn}, whichever plan you choose.`,
+          body: `Everything is included until ${lastFreeDay}, whichever plan you choose.`,
         },
         {
           icon: CreditCard,
