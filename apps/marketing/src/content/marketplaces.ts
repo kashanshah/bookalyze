@@ -47,7 +47,7 @@ export const MARKETPLACES: readonly Marketplace[] = [
     steps: [
       {
         title: "Create your Selling Partner app",
-        body: "In Seller Central → Develop Apps, register a private app for your own account. Bookalyze lists the roles to tick: Finance and Accounting, Product Listing, Pricing, Amazon Fulfillment, Buyer Solicitation and, for invoices, Tax Invoicing.",
+        body: "In Seller Central → Apps and Services → Develop Apps, register a private app for your own account, with the roles for the features you'll use: orders, finances, review requests, invoices, FBA stock, listings and prices. The Connect Amazon guide has the full list.",
       },
       {
         title: "Paste three values",

@@ -262,6 +262,19 @@ Brief for its own session (fresh context):
 
 ## 6. The guides (knowledge base)
 
+**Written (2026-10-21):** `src/content/guides/connections.ts` (`connect-amazon`, `connect-walmart`,
+`connect-noon`, `connect-ebay`, `connect-wise`: how to obtain each key or token, step by step,
+with the Amazon role-per-feature table and troubleshooting) and `src/content/guides/reviews.ts`
+(`automatic-review-requests`, `review-requests`). Collect them in `guides/index.ts` with the
+rest. **Owner: automatic review requests are a headline feature**; give them a home section of
+their own and a place in the hero's highlights.
+
+**App follow-up (small, its own PR):** the Amazon connect dialog's role list
+(`apps/web/src/app/o/[slug]/commerce/channels/amazon.tsx`, step 2) names fewer roles than the
+features use. Align it with the guide's table: Inventory and Order Tracking, Finance and
+Accounting, Buyer Solicitation, Buyer Communication, Amazon Fulfillment, Product Listing,
+Pricing, Selling Partner Insights, Tax Invoicing (only if the profile has it); link the guide.
+
 Each guide: what it's for, **where** in the app, steps, what posts to the books (if anything),
 **what you should see** (checks a seller can tick: our "test cases"), limits ("Not yet"), related
 guides. Slugs already referenced by `content/marketplaces.ts` are marked ★.
