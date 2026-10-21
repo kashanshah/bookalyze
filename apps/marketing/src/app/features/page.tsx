@@ -1,4 +1,5 @@
 import {
+  ArrowRight,
   BookOpenCheck,
   Boxes,
   Building2,
@@ -21,6 +22,7 @@ import {
   TransactionsPreview,
 } from "@/components/previews";
 import { Checklist, Section, SectionHeading } from "@/components/section";
+import { FEATURES, type FeatureSlug, feature } from "@/content/features";
 import { MARKETPLACES } from "@/content/marketplaces";
 import { cn } from "@/lib/site";
 
@@ -39,11 +41,14 @@ type Group = {
   points: readonly string[];
   /** A moving picture of this part of the app. */
   picture: () => React.ReactNode;
+  /** Its feature pages (/features/<slug>). */
+  pages: readonly FeatureSlug[];
 };
 
 const GROUPS: Group[] = [
   {
     id: "accounting",
+    pages: ["bookkeeping"],
     picture: TransactionsPreview,
     icon: BookOpenCheck,
     title: "Accounting",
@@ -63,6 +68,7 @@ const GROUPS: Group[] = [
   },
   {
     id: "banking",
+    pages: ["bank-reconciliation"],
     picture: BankMatchPreview,
     icon: Landmark,
     title: "Banking",
@@ -78,6 +84,7 @@ const GROUPS: Group[] = [
   },
   {
     id: "inventory",
+    pages: ["stock-and-cost-of-goods"],
     picture: LotsPreview,
     icon: Boxes,
     title: "Stock and cost of goods sold",
@@ -95,6 +102,7 @@ const GROUPS: Group[] = [
   },
   {
     id: "reorder",
+    pages: ["reorder", "channel-profit"],
     picture: ReorderChart,
     icon: ChartNoAxesCombined,
     title: "Profit and reorder",
@@ -109,6 +117,7 @@ const GROUPS: Group[] = [
   },
   {
     id: "reviews",
+    pages: ["review-requests", "listing-watch"],
     picture: ReviewsPreview,
     icon: Star,
     title: "Reviews and listings",
@@ -122,6 +131,7 @@ const GROUPS: Group[] = [
   },
   {
     id: "companies",
+    pages: ["multi-company"],
     picture: CompaniesPreview,
     icon: Building2,
     title: "Every company you run",
@@ -168,6 +178,7 @@ export default function FeaturesPage() {
             title="Marketplaces"
             lead="The heart of Bookalyze: each marketplace's money, in your books and matched to your bank."
           />
+          <FeatureLinks slugs={["settlements-and-payouts", "amazon-invoices"]} />
           {MARKETPLACES.map((m) => (
             <div key={m.slug} className="grid gap-3">
               <h3 className="font-semibold text-lg">
@@ -199,15 +210,54 @@ export default function FeaturesPage() {
           <div className={cn("grid gap-8", i % 2 === 1 && "lg:order-last")}>
             <GroupHeading icon={g.icon} title={g.title} lead={g.lead} />
             <Checklist items={g.points} />
+            <FeatureLinks slugs={g.pages} />
           </div>
           <g.picture />
         </Section>
       ))}
 
+      <Section tint className="grid gap-12">
+        <SectionHeading eyebrow="In detail" title="Each feature, on its own page" />
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {FEATURES.map((f) => (
+            <li
+              key={f.slug}
+              className="group relative grid content-start gap-2 rounded-2xl border bg-card p-5 shadow-xs transition-shadow hover:shadow-md"
+            >
+              <p className="flex items-center justify-between gap-2 font-semibold">
+                <Link href={`/features/${f.slug}`} className="after:absolute after:inset-0">
+                  {f.name}
+                </Link>
+                <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary rtl:rotate-180" />
+              </p>
+              <p className="text-muted-foreground text-sm leading-6">{f.tagline}</p>
+            </li>
+          ))}
+        </ul>
+      </Section>
+
       <div className="pt-20 sm:pt-28">
         <ClosingCta />
       </div>
     </>
+  );
+}
+
+/** Links from a group to its feature pages. */
+function FeatureLinks({ slugs }: { slugs: readonly FeatureSlug[] }) {
+  return (
+    <p className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+      {slugs.map((slug) => (
+        <Link
+          key={slug}
+          href={`/features/${slug}`}
+          className="inline-flex items-center gap-1.5 font-medium text-primary underline-offset-4 hover:underline"
+        >
+          {feature(slug)?.name}
+          <ArrowRight className="size-3.5 rtl:rotate-180" />
+        </Link>
+      ))}
+    </p>
   );
 }
 

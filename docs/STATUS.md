@@ -1132,6 +1132,12 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   - **Marketplaces** `/marketplaces` and `/marketplaces/<slug>` from `content/marketplaces.ts`;
     **Sellers** `/sellers` and `/sellers/<country>` (US, Canada, Mexico, UAE, Saudi Arabia,
     Egypt) from `content/countries.ts`.
+  - **Feature pages** `/features/<slug>` (`content/features.ts`, ten: review requests, Amazon
+    invoices, settlements and payouts, banking, stock and cost of goods, reorder, channel profit,
+    listing watch, bookkeeping, every company): what it does, how it works, questions and guides;
+    "Included in" lists the packages whose modules include the feature, from core's
+    `BILLING_PACKAGES`, so plans and prices can't drift. Linked from Features, the footer (Review
+    requests, Amazon invoices) and the sitemap (its own Features section).
   - **Features**; **Pricing** (Books $9, Seller $19, Seller Plus $29 a company a month, yearly is
     ten months; Review requests only $9 in its own card; Seller + Reviews $24 and Seller + Stock
     $27 under "Seller, with just one extra"; local prices for the pegged AED
