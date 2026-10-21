@@ -9,7 +9,7 @@ done into STATUS.md (§2) in the same PR, as usual.
 |---|---|---|---|
 | A | Public site: positioning, Walmart, marketplace and country pages, Contact, Guides (knowledge base), Help centre | `apps/marketing` | **Done in code** (PR #167): every page and all 60 guides; the contact form waits on the owner's Resend key |
 | B | Pricing: packages of linked modules plus add-ons, monthly, on the site | `apps/marketing` (pricing page) | **Done in code** (PR #167): packages, add-ons, monthly/yearly, "Free during early access" |
-| C | Billing in the app: subscriptions per company, per module | `apps/web`, `packages/core`, `packages/db` | **In progress** on `claude/billing` (Stripe test mode and a stand-in) |
+| C | Billing in the app: subscriptions per company, per module | `apps/web`, `packages/core`, `packages/db` | **Done in code, test mode**: [PR #170](https://github.com/kashanshah/bookalyze/pull/170) (packages and add-ons, Stripe Checkout and portal, read-only modules); waits on the owner's Stripe set-up |
 | D | Help & support: support tickets in the app, email replies, the site's contact form feeding them | `apps/web`, `packages/db`, `apps/marketing` | **Done in code**: [PR #169](https://github.com/kashanshah/bookalyze/pull/169) (tickets, desk, email replies, intake); the site's form calls the intake from this PR |
 
 A and B are one PR (or two: site pages, then guides). C and D are separate PRs, and can run in
@@ -361,7 +361,12 @@ reconcile).
       API Keys → Create, permission **Sending access**, domain **bookalyze.com**; then Vercel →
       bookalyze-site → Settings → Environment Variables → `RESEND_API_KEY`, and redeploy.
 - [ ] Confirm `hello@bookalyze.com` receives mail.
-- [ ] Confirm the prices in §2; then Stripe (C).
+- [ ] Confirm the prices in §2; then Stripe (C, PR #170), in **test mode**: products and prices
+      with the lookup keys `books_month` … `reviews_year`, the webhook `/api/stripe/webhook` and
+      its secret, the customer portal (SETUP → Stripe). Decide `BILLING_STARTS_ON` and Stripe Tax.
+      Live keys and `STRIPE_LIVE=true` only when you decide billing goes live.
+- [ ] Migrations: PRs #169 and #170 both add `0081`; whichever merges second renumbers its own
+      (and merges the neighbouring lines in `env.ts`, `.env.example`, the sidebar and STATUS).
 - [ ] `SIGNUP_MODE=open` on the app's project when the site goes out with "Start free".
 - [ ] Read the guides (`/guides` on the PR #167 preview) for anything that doesn't match how you
       use the app, above all: the Gmail forwarding steps (`invoice-requests`), the Wise strong
@@ -400,6 +405,14 @@ Made without the owner, to keep going; each fits the docs and is easy to change.
   `SUPPORT_INTAKE_URL` and `SUPPORT_INTAKE_SECRET` are set, and falls back to emailing `CONTACT_TO`
   when they aren't or the app doesn't answer. Help's "Still stuck?" also offers "Open a ticket in
   the app" (`APP_URL/help`, live once the support PR merges).
+- **Billing (PR #170):** a per-company start date (`billing_accounts.starts_on`) can override
+  `BILLING_STARTS_ON`; a change in a read-only module sends the person to Plan and billing,
+  which explains it; a live Stripe key is ignored without `STRIPE_LIVE=true`; choosing a plan
+  during early access starts a trial until billing starts. Not yet: daily jobs still run for
+  read-only modules.
+- **Support (PR #169):** no files on tickets yet; the desk is the platform admins; website
+  visitors get no acknowledgement email; email replies from anyone but the requester or an agent
+  are dropped.
 - **A test for the content** (`apps/marketing/src/content/guides/guides.test.ts`, run by
   `pnpm test`): unique slugs, and every guide linked from a page, the content files or another
   guide exists, so a renamed guide can't leave a 404.
