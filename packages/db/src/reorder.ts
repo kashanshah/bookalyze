@@ -129,7 +129,8 @@ export async function reorderProducts(
           and not exists (select 1 from cogs_periods cp
             where cp.channel_id = o.channel_id and cp.month = ${month})), 0)::int as not_costed
     from products p
-    where not p.is_archived
+    -- Made to order (not counted in stock): nothing to reorder.
+    where not p.is_archived and p.tracks_stock
     order by lower(p.name)`);
   const onOrder = await unitsOnOrder(tx);
 

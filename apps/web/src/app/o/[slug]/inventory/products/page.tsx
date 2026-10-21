@@ -168,6 +168,15 @@ export default async function ProductsPage({
                         Archived
                       </Badge>
                     ) : null}
+                    {p.tracksStock ? null : (
+                      <Badge
+                        variant={p.inStock ? "outline" : "secondary"}
+                        className="shrink-0 font-normal"
+                        title="Made to order: not counted in stock"
+                      >
+                        {p.inStock ? "Made to order" : "Out of stock"}
+                      </Badge>
+                    )}
                   </p>
                   {p.sku ? (
                     <p className="truncate text-muted-foreground text-xs">Your SKU {p.sku}</p>
@@ -219,6 +228,8 @@ export default async function ProductsPage({
                       sku: p.sku,
                       notes: p.notes,
                       unitWeight: p.unitWeight,
+                      tracksStock: p.tracksStock,
+                      inStock: p.inStock,
                       isArchived: p.isArchived,
                       skus: p.skus,
                     }}

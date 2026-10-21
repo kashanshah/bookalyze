@@ -2846,6 +2846,17 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   The card stays while they aren't in the books (a step to take). Web
   `purchase-orders/books-setting.tsx`; e2e "purchase orders in the books".
 
+### Products made to order: not counted in stock
+
+- A product's **Count its stock** switch (Edit product). Off for something made to order (e.g.
+  custom-printed magnets), whose costs go in the books as they're paid: it's only **In stock**
+  or **Out of stock** (a second switch), shown on Products as "Made to order" / "Out of stock".
+- Not counted: cost of goods sold leaves its units, returns and adjustments out (so its sales
+  don't hold up a month for want of stock lots), and Stock, the stock comparison and Reorder
+  leave it out. `products.tracks_stock`, `products.in_stock` (migration `0086_made_to_order`,
+  both default true). db `cogs.ts`, `stock-overview.ts`, `inventory-ledger.ts`, `reorder.ts`;
+  web product dialog. Test: db `cogs.test.ts`.
+
 ### Noon's summary from its API, saved as the window it covers
 
 - Asked for a window of several days, Noon's API sends the FBN ledger summary as one row per

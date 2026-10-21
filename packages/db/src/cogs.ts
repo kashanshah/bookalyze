@@ -308,7 +308,10 @@ export async function channelsNotCosted(
   return rows.rows.map((r) => r.name);
 }
 
-/** Product units shipped on one marketplace in one month. */
+/**
+ * Product units shipped on one marketplace in one month. Products made to order (not counted in
+ * stock) are left out: their costs are booked as they're paid.
+ */
 async function unitsByProduct(
   tx: Transaction,
   input: { channelId: string; month: string; timezone: string },
@@ -318,6 +321,7 @@ async function unitsByProduct(
     from order_items oi
     join orders o on o.id = oi.order_id
     join product_skus ps on ps.channel_id = o.channel_id and ps.sku = oi.sku
+    join products pr on pr.id = ps.product_id and pr.tracks_stock
     where o.channel_id = ${input.channelId}
       and oi.quantity_shipped > 0 and o.status not in (${cancelled})
       and to_char(o.purchased_at at time zone ${input.timezone}, 'YYYY-MM') = ${input.month}
@@ -336,6 +340,7 @@ async function ledgerByProduct(
       coalesce(sum(e.quantity * ps.units) filter (where e.event_type = 'Adjustments'), 0)::int as adjusted
     from inventory_ledger_events e
     join product_skus ps on ps.channel_id = e.channel_id and ps.sku = e.sku
+    join products pr on pr.id = ps.product_id and pr.tracks_stock
     where e.channel_id = ${input.channelId}
       and e.event_type in ('CustomerReturns', 'Adjustments')
       and ${ledgerMonth} = ${input.month}

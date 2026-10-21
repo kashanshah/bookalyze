@@ -26,6 +26,10 @@ export type ProductInput = {
   notes: string | null;
   /** Weight of one, in any unit used for all products. Left as is when undefined. */
   unitWeight?: string | null;
+  /** Counted in stock (default); off for a product made to order. Left as is when undefined. */
+  tracksStock?: boolean;
+  /** Not counted in stock: whether it can be ordered now. Left as is when undefined. */
+  inStock?: boolean;
 };
 
 export type LinkedSku = {
@@ -44,6 +48,8 @@ export type ProductRow = {
   sku: string | null;
   notes: string | null;
   unitWeight: string | null;
+  tracksStock: boolean;
+  inStock: boolean;
   isArchived: boolean;
   createdAt: Date;
   skus: LinkedSku[];
@@ -150,6 +156,8 @@ const productColumns = {
   sku: products.sku,
   notes: products.notes,
   unitWeight: products.unitWeight,
+  tracksStock: products.tracksStock,
+  inStock: products.inStock,
   isArchived: products.isArchived,
   createdAt: products.createdAt,
 };
@@ -222,6 +230,8 @@ export async function createProduct(
         sku: input.sku,
         notes: input.notes,
         unitWeight: input.unitWeight ?? null,
+        tracksStock: input.tracksStock ?? true,
+        inStock: input.inStock ?? true,
         createdBy: input.userId,
       })
       .returning();
@@ -243,6 +253,8 @@ export async function updateProduct(tx: Transaction, input: ProductInput & { id:
         sku: input.sku,
         notes: input.notes,
         ...(input.unitWeight !== undefined ? { unitWeight: input.unitWeight } : {}),
+        ...(input.tracksStock !== undefined ? { tracksStock: input.tracksStock } : {}),
+        ...(input.inStock !== undefined ? { inStock: input.inStock } : {}),
         updatedAt: new Date(),
       })
       .where(eq(products.id, input.id))

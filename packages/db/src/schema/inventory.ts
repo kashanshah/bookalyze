@@ -47,6 +47,13 @@ export const products = pgTable(
     /** Reorder planner: the supplier's smallest order, and the units in a carton. */
     minimumOrder: integer("minimum_order"),
     casePack: integer("case_pack"),
+    /**
+     * Counted in stock (lots, cost of goods sold, the stock and reorder pages). Off for a product
+     * made to order (its costs are booked as they're paid): it's only in or out of stock.
+     */
+    tracksStock: boolean("tracks_stock").notNull().default(true),
+    /** A product not counted in stock: whether it can be ordered now. */
+    inStock: boolean("in_stock").notNull().default(true),
     isArchived: boolean("is_archived").notNull().default(false),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
