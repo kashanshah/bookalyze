@@ -19,7 +19,11 @@ import { openWalmartCredentials } from "./commerce";
 import { suggestRate } from "./fx";
 import { logError, logWarn } from "./log";
 import { WalmartError } from "./walmart";
+import { bringInWfsStock } from "./walmart-inventory";
 import { bringInWalmartSettlements } from "./walmart-settlements";
+
+/** WFS stock comes in again once it's this old (a little under a day, so each run takes it). */
+const WFS_EVERY_MS = 20 * 3_600_000;
 
 /** At most this long on one company's settlement downloads, so one big account can't stall the rest. */
 const PER_COMPANY_MS = 15_000;
@@ -30,18 +34,27 @@ export type WalmartDailyResult = {
   posted: number;
   matched: number;
   failed: number;
+  /** SKUs whose WFS stock came in. */
+  wfsSkus: number;
 };
 
 /**
  * The daily job's Walmart part: for each company on a plan with payouts, brings in the new
- * settlements of every connected Walmart channel, then, where "Post Walmart automatically" is on,
+ * settlements of every connected Walmart channel (and, for WFS channels, what WFS holds), then, where "Post Walmart automatically" is on,
  * posts each settlement ready (one that adds up to Walmart's payout) and matches a payout whose
  * one exact deposit is uncategorized or in the Walmart sales account, so nothing someone chose
  * on purpose is moved. Anything that can't be done waits on Walmart money for a person.
  */
 export async function runWalmartDaily(budgetMs: number): Promise<WalmartDailyResult> {
   const deadline = Date.now() + budgetMs;
-  const result: WalmartDailyResult = { companies: 0, added: 0, posted: 0, matched: 0, failed: 0 };
+  const result: WalmartDailyResult = {
+    companies: 0,
+    added: 0,
+    posted: 0,
+    matched: 0,
+    failed: 0,
+    wfsSkus: 0,
+  };
   const orgs = await getDb().select({ id: schema.organization.id }).from(schema.organization);
   for (const org of orgs) {
     if (Date.now() > deadline) break;
@@ -54,8 +67,14 @@ export async function runWalmartDaily(budgetMs: number): Promise<WalmartDailyRes
           .filter((m) => m.enabled && isModuleKey(m.moduleKey))
           .map((m) => m.moduleKey as ModuleKey);
         if (!can(getPlan(profile.planKey), enabled, "commerce.settlements")) return null;
-        const live: { channelId: string; market: string; connectionId: string; secret: string }[] =
-          [];
+        const live: {
+          channelId: string;
+          market: string;
+          connectionId: string;
+          secret: string;
+          /** WFS holds its stock and it wasn't brought in today. */
+          wfs: boolean;
+        }[] = [];
         for (const channel of await listWalmartChannels(tx)) {
           const marketplace = walmartMarketplace(channel.marketplaceId ?? "");
           if (!channel.isActive || !channel.connectionId || !marketplace) continue;
@@ -66,6 +85,9 @@ export async function runWalmartDaily(budgetMs: number): Promise<WalmartDailyRes
             market: marketplace.market,
             connectionId: connection.id,
             secret: connection.secret,
+            wfs:
+              channel.fulfilment !== "seller" &&
+              (!channel.skusSyncedAt || Date.now() - channel.skusSyncedAt.getTime() > WFS_EVERY_MS),
           });
         }
         const settings = await getWalmartSettings(tx);
@@ -90,6 +112,18 @@ export async function runWalmartDaily(budgetMs: number): Promise<WalmartDailyRes
             until,
           );
           result.added += brought.added;
+          if (c.wfs && Date.now() < until) {
+            const stock = await bringInWfsStock(
+              ctx,
+              {
+                channelId: c.channelId,
+                market: c.market,
+                creds: openWalmartCredentials(org.id, c.connectionId, c.secret),
+              },
+              until,
+            );
+            result.wfsSkus += stock.skus;
+          }
         } catch (error) {
           if (!(error instanceof WalmartError)) throw error;
           logWarn(

@@ -12,6 +12,7 @@ import {
 } from "@bookalyze/core";
 import {
   ArrowRight,
+  Boxes,
   CircleAlert,
   Download,
   FileSearch,
@@ -43,6 +44,7 @@ import { cn } from "@/lib/utils";
 import {
   addWalmartChannelAction,
   bringInWalmartSettlementsAction,
+  bringInWfsStockAction,
   checkWalmartSettlementAction,
   connectWalmartAction,
   disconnectWalmartAction,
@@ -733,6 +735,106 @@ export function WalmartSettlements({
           {connected
             ? "No settlements brought in yet."
             : "Connect this country's Walmart account to bring its settlements in."}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * What Walmart Fulfillment Services holds for a WFS channel: SKUs, sellable and held units as last
+ * brought in, with "Bring in WFS stock" (admins, when connected). Stock shows it beside your lots.
+ */
+export function WalmartWfsStock({
+  slug,
+  locale,
+  channelId,
+  canManage,
+  connected,
+  broughtInAt,
+  stock,
+  stockHref,
+}: {
+  slug: string;
+  locale: string;
+  channelId: string;
+  canManage: boolean;
+  connected: boolean;
+  broughtInAt: string | null;
+  stock: { skus: number; sellable: number; held: number } | null;
+  stockHref: string | null;
+}) {
+  const [pending, start] = useTransition();
+  const n = new Intl.NumberFormat(locale);
+  const plural = (count: number, one: string, many = `${one}s`) =>
+    `${n.format(count)} ${count === 1 ? one : many}`;
+  const bringIn = () =>
+    start(async () => {
+      const result = await bringInWfsStockAction(slug, channelId);
+      if (!result.ok) return void toast.error(result.message);
+      toast.success(`${plural(result.skus, "SKU")} at WFS`, {
+        description: `${plural(result.units, "unit")} in Walmart's warehouses.`,
+      });
+    });
+  const when = broughtInAt
+    ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(
+        new Date(broughtInAt),
+      )
+    : null;
+  return (
+    <section
+      aria-labelledby={`walmart-wfs-${channelId}`}
+      className="fade-in-0 grid animate-in gap-4 rounded-2xl border bg-card px-5 py-5 shadow-xs"
+    >
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1 basis-60">
+          <h2 id={`walmart-wfs-${channelId}`} className="font-semibold">
+            Stock at WFS
+          </h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            What Walmart Fulfillment Services holds for you, SKU by SKU: what can be sold now, and
+            what's on hand but held (for orders, being checked, or unsellable). It comes in every
+            day, and Stock shows it beside your lots once each SKU is linked to a product.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {stockHref && stock?.skus ? (
+            <Button asChild variant="ghost">
+              <Link href={stockHref}>
+                Stock
+                <ArrowRight className="rtl:rotate-180" />
+              </Link>
+            </Button>
+          ) : null}
+          {canManage && connected ? (
+            <Button variant="outline" onClick={bringIn} disabled={pending}>
+              {pending ? <Spinner /> : <Boxes />}
+              Bring in WFS stock
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {stock?.skus ? (
+        <dl className="grid grid-cols-3 gap-3 rounded-xl border px-4 py-3 text-sm">
+          <div>
+            <dt className="text-muted-foreground text-xs">SKUs</dt>
+            <dd className="font-medium tabular-nums">{n.format(stock.skus)}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground text-xs">Sellable</dt>
+            <dd className="font-medium tabular-nums">{n.format(stock.sellable)}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground text-xs">Held</dt>
+            <dd className="font-medium tabular-nums">{n.format(stock.held)}</dd>
+          </div>
+          {when ? <p className="col-span-3 text-muted-foreground text-xs">As of {when}</p> : null}
+        </dl>
+      ) : (
+        <p className="rounded-xl border border-dashed px-4 py-6 text-center text-muted-foreground text-sm">
+          {connected
+            ? "Not brought in yet."
+            : "Connect this country's Walmart account to bring its WFS stock in."}
         </p>
       )}
     </section>

@@ -93,6 +93,7 @@ import {
   WalmartError,
   walmartSettlementDates,
 } from "@/server/walmart";
+import { bringInWfsStock } from "@/server/walmart-inventory";
 import { bringInWalmartSettlements } from "@/server/walmart-settlements";
 
 export type CommerceResult<T = object> =
@@ -1233,6 +1234,42 @@ export async function checkWalmartSettlementAction(
       rows: preview.rows,
     });
     return { ok: true, date: parsed.data.date, preview };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * Brings in what Walmart Fulfillment Services holds for a Walmart channel (admins): every SKU's
+ * sellable and held units, shown on Stock beside your lots.
+ */
+export async function bringInWfsStockAction(
+  slug: string,
+  channelId: string,
+): Promise<CommerceResult<{ skus: number; units: number }>> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  try {
+    const key = await walmartKey(ctx, channelId);
+    if ("message" in key) return { ok: false, message: key.message ?? "Unknown channel." };
+    const result = await bringInWfsStock(
+      { orgId: ctx.org.id, userId: ctx.session.user.id },
+      { channelId, market: key.marketplace.market, creds: key.creds },
+      Date.now() + 50_000,
+    );
+    await inOrg(ctx, (tx) =>
+      audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "walmart.wfs_stock_brought_in",
+        entityType: "sales_channel",
+        entityId: channelId,
+        after: result,
+      }),
+    );
+    revalidate(slug);
+    revalidatePath(`/o/${slug}/inventory`, "layout");
+    return { ok: true, ...result };
   } catch (error) {
     return failure(error);
   }

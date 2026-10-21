@@ -8,7 +8,9 @@ import {
   getWalmartConnection,
   listAmazonConnections,
   listWalmartSettlements,
+  schema,
 } from "@bookalyze/db";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { ArrowLeft, ArrowRight, BookCheck, ListOrdered, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -28,6 +30,7 @@ import {
   type WalmartConnectionView,
   WalmartFulfilment,
   WalmartSettlements,
+  WalmartWfsStock,
 } from "../walmart";
 import { ChannelSwitch, RemoveChannel } from "./channel-settings";
 
@@ -68,6 +71,25 @@ export default async function ChannelPage({
           : null,
       walmartSettlements:
         channel.kind === "walmart" ? await listWalmartSettlements(tx, channel.id) : [],
+      // What WFS holds for the channel, as last brought in.
+      wfs:
+        channel.kind === "walmart"
+          ? (
+              await tx
+                .select({
+                  skus: sql<number>`count(*)::int`,
+                  sellable: sql<number>`coalesce(sum(${schema.channelSkus.fulfillable}), 0)::int`,
+                  held: sql<number>`coalesce(sum(${schema.channelSkus.reserved}), 0)::int`,
+                })
+                .from(schema.channelSkus)
+                .where(
+                  and(
+                    eq(schema.channelSkus.channelId, channel.id),
+                    isNotNull(schema.channelSkus.fulfillable),
+                  ),
+                )
+            )[0]
+          : undefined,
       blockers: channel.kind === "amazon" ? [] : await channelRemovalBlockers(tx, channel.id),
     };
   });
@@ -240,6 +262,22 @@ export default async function ChannelPage({
           canManage={canManage}
           channel={{ id: ch.id, name: ch.name }}
           connection={walmartView(data.walmart)}
+        />
+      ) : null}
+      {ch.kind === "walmart" && ch.fulfilment !== "seller" ? (
+        <WalmartWfsStock
+          slug={slug}
+          locale={locale}
+          channelId={ch.id}
+          canManage={canManage}
+          connected={Boolean(data.walmart && data.walmart.status !== "disconnected")}
+          broughtInAt={ch.skusSyncedAt?.toISOString() ?? null}
+          stock={data.wfs ?? null}
+          stockHref={
+            can(ctx.plan, ctx.enabledModules, "inventory.cogs")
+              ? `/o/${slug}/inventory/stock`
+              : null
+          }
         />
       ) : null}
       {ch.kind === "walmart" && money ? (

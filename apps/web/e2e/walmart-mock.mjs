@@ -275,6 +275,29 @@ createServer((req, res) => {
       return send(res, 200, ordersPage(url));
     }
 
+    // What WFS holds: the linked mug, and a tote not linked to any product (synthetic SKUs).
+    if (url.pathname === "/v3/fulfillment/inventory" && req.method === "GET") {
+      if (KEYS[id].scopes.inventory === "no_access") {
+        return walmartError(res, 403, "FORBIDDEN.GMP_GATEWAY_API", "No access to inventory");
+      }
+      const offset = Number(url.searchParams.get("offset") ?? "0");
+      const limit = Number(url.searchParams.get("limit") ?? "10");
+      const inventory = [
+        {
+          sku: "WMT-MAPLE-MUG",
+          shipNodes: [{ shipNodeType: "WFSFulfilled", availToSellQty: 30, onHandQty: 34 }],
+        },
+        {
+          sku: "WMT-SPARE-TOTE",
+          shipNodes: [{ shipNodeType: "WFSFulfilled", availToSellQty: 5, onHandQty: 5 }],
+        },
+      ];
+      return send(res, 200, {
+        headers: { totalCount: inventory.length, limit, offset },
+        payload: { inventory: inventory.slice(offset, offset + limit) },
+      });
+    }
+
     if (url.pathname === "/v3/report/reconreport/availableReconFiles" && req.method === "GET") {
       return send(res, 200, { availableApReportDates: SETTLEMENT_DATES });
     }
