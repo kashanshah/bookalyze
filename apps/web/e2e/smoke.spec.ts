@@ -2258,11 +2258,15 @@ test("ebay: bring in eBay orders, each on its own site, and open one", async ({ 
   await page.goto(page.url().split("?")[0] ?? page.url());
   await page.getByLabel("Search orders").fill("11-00003-00003");
   await page.keyboard.press("Enter");
+  // The unfiltered list can show these too: wait for the search itself, or it lands late and
+  // puts its words back into the box over the next search.
+  await expect(page).toHaveURL(/q=11-00003-00003/);
   await expect(rows.getByText("Cancelled").first()).toBeVisible();
   await expect(rows.getByText(/eBay Canada/).first()).toBeVisible();
 
   await page.getByLabel("Search orders").fill("11-00001-00001");
   await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/q=11-00001-00001/);
   await rows
     .getByRole("link", { name: /11-00001-00001/ })
     .first()
