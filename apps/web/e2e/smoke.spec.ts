@@ -1016,6 +1016,8 @@ test("banking: connect Wise, flag and merge duplicates, merge by hand, transfers
   await expect(coffee).toHaveCount(1);
 
   // A statement file from any bank: columns matched once, flagged duplicates, nothing twice.
+  // (The first "Transaction added" may still be up: wait, so the next one is the only one.)
+  await toastsGone(page);
   await page.getByRole("button", { name: "Add expense" }).click();
   await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
   await page.locator("#tx-memo").fill("Team lunch");
