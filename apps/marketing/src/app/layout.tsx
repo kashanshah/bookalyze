@@ -8,12 +8,12 @@ import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const DESCRIPTION =
-  "Bookkeeping that connects to Amazon, eBay and Noon: settlements posted, payouts matched to your bank, stock and profit per product, for every company you run. Free during early access.";
+  "Accounting built for Amazon, Walmart and Noon sellers (and eBay): every settlement posted, every payout matched to your bank, cost of goods and profit per channel, for every company you run. Free during early access.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Bookalyze · Accounting for Amazon, eBay and Noon sellers",
+    default: "Bookalyze · Accounting for Amazon, Walmart and Noon sellers",
     template: "%s · Bookalyze",
   },
   description: DESCRIPTION,
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     type: "website",
     siteName: "Bookalyze",
     url: "/",
-    title: "Bookalyze · Your marketplaces, straight into your books",
+    title: "Bookalyze · Accounting built for Amazon, Walmart and Noon sellers",
     description: DESCRIPTION,
   },
   twitter: { card: "summary_large_image" },

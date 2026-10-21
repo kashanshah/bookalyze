@@ -114,7 +114,7 @@ async function accessToken(creds: AmazonCredentials): Promise<string> {
 }
 
 const FORBIDDEN =
-  "Amazon refused the request. Check the app is authorized for this seller account and region, and has the roles it needs (Selling Partner Insights, Inventory and Order Tracking, Buyer Communication).";
+  "Amazon refused the request. Check the app is authorized for this seller account and region, and has the role this feature needs (each role, and what it's for, is listed under Add a channel → Amazon in Commerce → Channels).";
 /** Amazon requires this shape on every call. A bare client name is refused with 403. */
 const USER_AGENT = "Bookalyze/1.0 (Language=TypeScript; Platform=Node.js)";
 const PARTICIPATIONS_DENIED =

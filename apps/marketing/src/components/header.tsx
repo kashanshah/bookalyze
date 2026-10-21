@@ -9,9 +9,11 @@ import { Brand } from "./brand";
 import { ButtonLink } from "./button";
 
 const NAV = [
-  { label: "Marketplaces", href: "/#marketplaces" },
+  { label: "Marketplaces", href: "/marketplaces" },
   { label: "Features", href: "/features" },
   { label: "Pricing", href: "/pricing" },
+  { label: "Guides", href: "/guides" },
+  { label: "Help", href: "/help" },
 ] as const;
 
 export function Header() {
@@ -46,7 +48,9 @@ export function Header() {
             <Link
               key={item.href}
               href={item.href}
-              aria-current={pathname === item.href ? "page" : undefined}
+              aria-current={
+                pathname === item.href || pathname.startsWith(`${item.href}/`) ? "page" : undefined
+              }
               className="rounded-md px-3 py-2 text-muted-foreground text-sm transition-colors hover:text-foreground aria-[current=page]:text-foreground"
             >
               {item.label}

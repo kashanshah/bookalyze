@@ -1,5 +1,5 @@
 {
-  "id": "64fb5daf-ab6d-43ee-b53b-ff97a2dc2e7e",
+  "id": "d8fa6125-61f2-4fa1-8110-08eaca738cb0",
   "prevId": "c9d291b5-0763-44e6-a2ba-3c2ca67d97cc",
   "version": "7",
   "dialect": "postgresql",
@@ -3240,384 +3240,6 @@
         }
       },
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.billing_accounts": {
-      "name": "billing_accounts",
-      "schema": "",
-      "columns": {
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "stripe_customer_id": {
-          "name": "stripe_customer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "starts_on": {
-          "name": "starts_on",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "billing_accounts_customer_key": {
-          "name": "billing_accounts_customer_key",
-          "columns": [
-            {
-              "expression": "stripe_customer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "billing_accounts_organization_id_organization_id_fk": {
-          "name": "billing_accounts_organization_id_organization_id_fk",
-          "tableFrom": "billing_accounts",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "billing_accounts_read": {
-          "name": "billing_accounts_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "public"
-          ],
-          "using": "\"billing_accounts\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid"
-        },
-        "billing_accounts_insert": {
-          "name": "billing_accounts_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": [
-            "public"
-          ],
-          "withCheck": "\"billing_accounts\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'"
-        },
-        "billing_accounts_update": {
-          "name": "billing_accounts_update",
-          "as": "PERMISSIVE",
-          "for": "UPDATE",
-          "to": [
-            "public"
-          ],
-          "using": "\"billing_accounts\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'",
-          "withCheck": "\"billing_accounts\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'"
-        },
-        "billing_accounts_delete": {
-          "name": "billing_accounts_delete",
-          "as": "PERMISSIVE",
-          "for": "DELETE",
-          "to": [
-            "public"
-          ],
-          "using": "\"billing_accounts\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'"
-        }
-      },
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.subscription_items": {
-      "name": "subscription_items",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "item_key": {
-          "name": "item_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "stripe_item_id": {
-          "name": "stripe_item_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "stripe_price_id": {
-          "name": "stripe_price_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "subscription_items_key": {
-          "name": "subscription_items_key",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "item_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "subscription_items_subscription_fk": {
-          "name": "subscription_items_subscription_fk",
-          "tableFrom": "subscription_items",
-          "tableTo": "subscriptions",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "organization_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "subscription_items_read": {
-          "name": "subscription_items_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "public"
-          ],
-          "using": "\"subscription_items\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid"
-        },
-        "subscription_items_insert": {
-          "name": "subscription_items_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": [
-            "public"
-          ],
-          "withCheck": "\"subscription_items\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'"
-        },
-        "subscription_items_update": {
-          "name": "subscription_items_update",
-          "as": "PERMISSIVE",
-          "for": "UPDATE",
-          "to": [
-            "public"
-          ],
-          "using": "\"subscription_items\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'",
-          "withCheck": "\"subscription_items\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'"
-        },
-        "subscription_items_delete": {
-          "name": "subscription_items_delete",
-          "as": "PERMISSIVE",
-          "for": "DELETE",
-          "to": [
-            "public"
-          ],
-          "using": "\"subscription_items\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'"
-        }
-      },
-      "checkConstraints": {
-        "subscription_items_key_valid": {
-          "name": "subscription_items_key_valid",
-          "value": "\"subscription_items\".\"item_key\" in ('books', 'seller', 'seller_plus', 'stock', 'reviews')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.subscriptions": {
-      "name": "subscriptions",
-      "schema": "",
-      "columns": {
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "stripe_subscription_id": {
-          "name": "stripe_subscription_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "interval": {
-          "name": "interval",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "current_period_end": {
-          "name": "current_period_end",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancel_at_period_end": {
-          "name": "cancel_at_period_end",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "payment_failed_at": {
-          "name": "payment_failed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "stripe_updated_at": {
-          "name": "stripe_updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "subscriptions_stripe_key": {
-          "name": "subscriptions_stripe_key",
-          "columns": [
-            {
-              "expression": "stripe_subscription_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "subscriptions_organization_id_organization_id_fk": {
-          "name": "subscriptions_organization_id_organization_id_fk",
-          "tableFrom": "subscriptions",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "subscriptions_read": {
-          "name": "subscriptions_read",
-          "as": "PERMISSIVE",
-          "for": "SELECT",
-          "to": [
-            "public"
-          ],
-          "using": "\"subscriptions\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid"
-        },
-        "subscriptions_insert": {
-          "name": "subscriptions_insert",
-          "as": "PERMISSIVE",
-          "for": "INSERT",
-          "to": [
-            "public"
-          ],
-          "withCheck": "\"subscriptions\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'"
-        },
-        "subscriptions_update": {
-          "name": "subscriptions_update",
-          "as": "PERMISSIVE",
-          "for": "UPDATE",
-          "to": [
-            "public"
-          ],
-          "using": "\"subscriptions\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'",
-          "withCheck": "\"subscriptions\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'"
-        },
-        "subscriptions_delete": {
-          "name": "subscriptions_delete",
-          "as": "PERMISSIVE",
-          "for": "DELETE",
-          "to": [
-            "public"
-          ],
-          "using": "\"subscriptions\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and current_setting('app.billing_writer', true) = 'on'"
-        }
-      },
-      "checkConstraints": {
-        "subscriptions_interval_valid": {
-          "name": "subscriptions_interval_valid",
-          "value": "\"subscriptions\".\"interval\" in ('month', 'year')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.channel_cost_accounts": {
@@ -14840,6 +14462,470 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.support_messages": {
+      "name": "support_messages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "ticket_id": {
+          "name": "ticket_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "author_user_id": {
+          "name": "author_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "author_email": {
+          "name": "author_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "author_name": {
+          "name": "author_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "from_support": {
+          "name": "from_support",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "internal": {
+          "name": "internal",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "via": {
+          "name": "via",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'app'"
+        },
+        "email_ref": {
+          "name": "email_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "support_messages_ticket_idx": {
+          "name": "support_messages_ticket_idx",
+          "columns": [
+            {
+              "expression": "ticket_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_messages_email_ref_key": {
+          "name": "support_messages_email_ref_key",
+          "columns": [
+            {
+              "expression": "email_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "support_messages_ticket_id_support_tickets_id_fk": {
+          "name": "support_messages_ticket_id_support_tickets_id_fk",
+          "tableFrom": "support_messages",
+          "tableTo": "support_tickets",
+          "columnsFrom": [
+            "ticket_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "support_messages_organization_id_organization_id_fk": {
+          "name": "support_messages_organization_id_organization_id_fk",
+          "tableFrom": "support_messages",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "support_messages_author_user_id_user_id_fk": {
+          "name": "support_messages_author_user_id_user_id_fk",
+          "tableFrom": "support_messages",
+          "tableTo": "user",
+          "columnsFrom": [
+            "author_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "support_messages_visibility": {
+          "name": "support_messages_visibility",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "((\"support_messages\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and not \"support_messages\".\"internal\") or current_setting('app.support_desk', true) = 'on')",
+          "withCheck": "((\"support_messages\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid and not \"support_messages\".\"internal\") or current_setting('app.support_desk', true) = 'on')"
+        }
+      },
+      "checkConstraints": {
+        "support_messages_body_length": {
+          "name": "support_messages_body_length",
+          "value": "length(trim(\"support_messages\".\"body\")) between 1 and 20000"
+        },
+        "support_messages_via_valid": {
+          "name": "support_messages_via_valid",
+          "value": "\"support_messages\".\"via\" in ('app', 'email', 'website')"
+        },
+        "support_messages_internal_from_support": {
+          "name": "support_messages_internal_from_support",
+          "value": "not \"support_messages\".\"internal\" or \"support_messages\".\"from_support\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.support_tickets": {
+      "name": "support_tickets",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "number": {
+          "name": "number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "nextval('support_ticket_number_seq')"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requester_user_id": {
+          "name": "requester_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requester_email": {
+          "name": "requester_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requester_name": {
+          "name": "requester_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "topic": {
+          "name": "topic",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'question'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'waiting_on_us'"
+        },
+        "priority": {
+          "name": "priority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'normal'"
+        },
+        "assigned_to": {
+          "name": "assigned_to",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'app'"
+        },
+        "page": {
+          "name": "page",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_message_at": {
+          "name": "last_message_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "support_tickets_number_key": {
+          "name": "support_tickets_number_key",
+          "columns": [
+            {
+              "expression": "number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_tickets_token_key": {
+          "name": "support_tickets_token_key",
+          "columns": [
+            {
+              "expression": "token",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_tickets_org_idx": {
+          "name": "support_tickets_org_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_message_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "support_tickets_status_idx": {
+          "name": "support_tickets_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_message_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "support_tickets_organization_id_organization_id_fk": {
+          "name": "support_tickets_organization_id_organization_id_fk",
+          "tableFrom": "support_tickets",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "support_tickets_requester_user_id_user_id_fk": {
+          "name": "support_tickets_requester_user_id_user_id_fk",
+          "tableFrom": "support_tickets",
+          "tableTo": "user",
+          "columnsFrom": [
+            "requester_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "support_tickets_assigned_to_user_id_fk": {
+          "name": "support_tickets_assigned_to_user_id_fk",
+          "tableFrom": "support_tickets",
+          "tableTo": "user",
+          "columnsFrom": [
+            "assigned_to"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "support_tickets_visibility": {
+          "name": "support_tickets_visibility",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "(\"support_tickets\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid or current_setting('app.support_desk', true) = 'on')",
+          "withCheck": "(\"support_tickets\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid or current_setting('app.support_desk', true) = 'on')"
+        }
+      },
+      "checkConstraints": {
+        "support_tickets_status_valid": {
+          "name": "support_tickets_status_valid",
+          "value": "\"support_tickets\".\"status\" in ('open', 'waiting_on_you', 'waiting_on_us', 'solved', 'closed')"
+        },
+        "support_tickets_priority_valid": {
+          "name": "support_tickets_priority_valid",
+          "value": "\"support_tickets\".\"priority\" in ('low', 'normal', 'high', 'urgent')"
+        },
+        "support_tickets_topic_valid": {
+          "name": "support_tickets_topic_valid",
+          "value": "\"support_tickets\".\"topic\" in ('question', 'help', 'billing', 'bug', 'coverage', 'other')"
+        },
+        "support_tickets_source_valid": {
+          "name": "support_tickets_source_valid",
+          "value": "\"support_tickets\".\"source\" in ('app', 'website')"
+        },
+        "support_tickets_token_valid": {
+          "name": "support_tickets_token_valid",
+          "value": "\"support_tickets\".\"token\" ~ '^[a-z0-9]{20,64}$'"
+        },
+        "support_tickets_subject_length": {
+          "name": "support_tickets_subject_length",
+          "value": "length(trim(\"support_tickets\".\"subject\")) between 1 and 200"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.tax_rates": {
       "name": "tax_rates",
       "schema": "",
@@ -15139,7 +15225,18 @@
   },
   "enums": {},
   "schemas": {},
-  "sequences": {},
+  "sequences": {
+    "public.support_ticket_number_seq": {
+      "name": "support_ticket_number_seq",
+      "schema": "public",
+      "increment": "1",
+      "startWith": "1",
+      "minValue": "1",
+      "maxValue": "9223372036854775807",
+      "cache": "1",
+      "cycle": false
+    }
+  },
   "roles": {},
   "policies": {},
   "views": {},

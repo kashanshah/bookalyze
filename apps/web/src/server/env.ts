@@ -82,6 +82,11 @@ const schema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
     .optional(),
+  /**
+   * Shared with the public site: its contact form sends enquiries to /api/support/intake with
+   * this as a bearer token. Without it the endpoint is switched off.
+   */
+  SUPPORT_INTAKE_SECRET: z.string().min(32).optional(),
   /** "s3", or "local" to keep files on disk (development and CI only). */
   STORAGE_DRIVER: z.enum(["s3", "local", ""]).optional(),
 });

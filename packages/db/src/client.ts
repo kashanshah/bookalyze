@@ -76,6 +76,25 @@ export async function withOrg<T>(
 }
 
 /**
+ * Runs `fn` as the support desk: row-level security still applies (app_runtime), and the
+ * support tables' policies show every company's tickets and the internal notes. No other tenant
+ * table opens. Callers must have checked the person is a platform admin, or be the website
+ * intake or the inbound email webhook, which check their own secrets.
+ */
+export async function withSupportDesk<T>(
+  db: Database,
+  ctx: { userId?: string | null },
+  fn: (tx: Transaction) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('role', 'app_runtime', true), set_config('app.support_desk', 'on', true), set_config('app.user_id', ${ctx.userId ?? ""}, true)`,
+    );
+    return fn(tx);
+  });
+}
+
+/**
  * Like `withOrg()`, and allowed to write the billing tables. Only for Stripe's webhook and for
  * recording the customer Checkout made: billing rows are never written from a person's request.
  */

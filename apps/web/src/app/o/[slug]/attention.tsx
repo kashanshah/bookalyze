@@ -13,6 +13,7 @@ import {
   cogsMonthsToPost,
   countNeedsAccount,
   countOpenDuplicates,
+  countSupportRepliesWaiting,
   ebayPayoutsWithOneDeposit,
   ebayPostingMonths,
   fxRateOn,
@@ -46,6 +47,7 @@ import {
   FileText,
   Inbox,
   Landmark,
+  LifeBuoy,
   Link2,
   ListChecks,
   Package,
@@ -338,6 +340,19 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
         tone: "warning",
       });
     }
+  }
+
+  // Support tickets the desk answered, waiting on the company.
+  const replies = await countSupportRepliesWaiting(tx);
+  if (replies) {
+    items.push({
+      key: "support-replies",
+      icon: LifeBuoy,
+      title: `${replies} support ${plural(replies, "reply is", "replies are")} waiting for you`,
+      hint: "Answer, or mark the ticket solved if that sorted it.",
+      href: `${base}/help`,
+      tone: "primary",
+    });
   }
 
   const vat = await vatThresholdItem(tx, ctx, today);
