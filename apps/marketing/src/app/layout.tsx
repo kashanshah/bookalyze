@@ -48,7 +48,13 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    // data-scroll-behavior: Next.js turns smooth scrolling off while it moves to the top of a new
+    // page; without it, opening a page from another glides down to a later section.
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      className={`${GeistSans.variable} ${GeistMono.variable}`}
+    >
       <body className="flex min-h-dvh flex-col">
         <a
           href="#main"
