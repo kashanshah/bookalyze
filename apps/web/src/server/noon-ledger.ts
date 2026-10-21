@@ -14,7 +14,7 @@ import {
   getDb,
   getNoonConnection,
   importNoonLedger,
-  importNoonStockDays,
+  importNoonStockWindow,
   type NoonSyncKey,
   type NoonTransactionsSync,
   noonSyncState,
@@ -62,7 +62,9 @@ type LedgerExport = {
   /** "FBN ledger", "FBN ledger summary": for messages. */
   label: string;
   /** Reads one window's file; null when it isn't in a layout this page reads. */
-  read: (text: string) => ((tx: Transaction, window: { to: string }) => Promise<Saved>) | null;
+  read: (
+    text: string,
+  ) => ((tx: Transaction, window: { from: string; to: string }) => Promise<Saved>) | null;
 };
 
 type ExportRun = Omit<NoonLedgerResult, "summary">;
@@ -116,8 +118,12 @@ export async function syncNoonLedger(
         ? parseNoonStockSummary(text)
         : ({ ok: true, rows: [], from: null, to: null, skipped: 0 } as const);
       if (!parsed.ok) return null;
-      return async (tx) => {
-        const saved = await importNoonStockDays(tx, { orgId: ctx.orgId, rows: parsed.rows });
+      return async (tx, window) => {
+        const saved = await importNoonStockWindow(tx, {
+          orgId: ctx.orgId,
+          rows: parsed.rows,
+          window,
+        });
         return {
           added: saved.saved,
           countriesMissing: [],

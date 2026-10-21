@@ -2668,6 +2668,17 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   bank over what the payments on it say they were (`paidRate`).
 - **Purchase orders list** by order date, newest first (then the latest number), not by number.
 
+### Noon's summary from its API, saved as the window it covers
+
+- Asked for a window of several days, Noon's API sends the FBN ledger summary as one row per
+  warehouse and SKU for the whole window, dated a single day (the month's last, even mid-month).
+  These were saved as that one day, so the check compared a month against a day. db
+  `importNoonStockWindow` saves them as the window (`from_date` → `date`), replacing rows saved
+  under the single day; daily rows stay daily. Used by the summary sync (`server/noon-ledger.ts`).
+- **Remove** on a summary also rewinds the summary sync to the day before it (db
+  `rewindNoonSummarySync`), so the next "Bring in" fetches those days again, now as windows.
+  Tests: db `noon-stock.test.ts`.
+
 ### Noon's period summary, and the stock check by product
 
 - **Upload a ledger file** reads Noon's newer **FBN ledger summary for a period** (one row per

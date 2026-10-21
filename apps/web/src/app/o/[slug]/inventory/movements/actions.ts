@@ -8,6 +8,7 @@ import {
   inventoryChannels,
   ledgerChannels,
   removeNoonStockUpload,
+  rewindNoonSummarySync,
 } from "@bookalyze/db";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -177,6 +178,9 @@ export async function removeNoonSummaryAction(slug: string, input: unknown): Pro
   const { date, fromDate } = parsed.data;
   const removed = await inOrg(ctx, async (tx) => {
     const n = await removeNoonStockUpload(tx, { date, fromDate });
+    // Brought in from Noon's API: the next "Bring in" fetches these days again (from the
+    // period's first day, or the start of the month a single day is in).
+    if (n) await rewindNoonSummarySync(tx, fromDate ?? `${date.slice(0, 7)}-01`);
     await audit(tx, {
       orgId: ctx.org.id,
       actorUserId: ctx.session.user.id,
