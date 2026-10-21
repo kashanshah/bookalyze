@@ -168,7 +168,9 @@ Test mode until the owner decides otherwise. Nothing is gated before `BILLING_ST
    `seller_plus_year`, `reviews_only_month`, `reviews_only_year`. There are no add-ons: one
    package per subscription, so the customer portal can switch plans.
 2. **Developers → API keys**: the test secret key (`sk_test_…`) → `STRIPE_SECRET_KEY`. A live key
-   is ignored unless `STRIPE_LIVE=true`.
+   is ignored unless `STRIPE_LIVE=true`. The publishable key of the same mode (`pk_test_…` or
+   `pk_live_…`) → `STRIPE_PUBLISHABLE_KEY`, so the card form shows on our own page (Stripe's
+   embedded Checkout). Without it, or with the other mode's key, people pay on Stripe's page.
 3. **Developers → Webhooks → Add endpoint** `https://app.bookalyze.com/api/stripe/webhook` with
    events `checkout.session.completed`, `customer.subscription.created`,
    `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`,

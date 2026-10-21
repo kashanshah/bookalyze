@@ -11,7 +11,12 @@ import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
 import { moduleLabel, readOnlyLabels } from "@/server/billing";
 import { getOrgContext } from "@/server/org";
-import { listInvoices, type StripeInvoice, stripeConfigured } from "@/server/stripe";
+import {
+  listInvoices,
+  type StripeInvoice,
+  stripeConfigured,
+  stripePublishableKey,
+} from "@/server/stripe";
 import { PlanPicker } from "./plan-picker";
 import { PortalButton } from "./portal-button";
 
@@ -198,6 +203,7 @@ export default async function BillingPage({
             slug={slug}
             suggested={suggestedSelection(ctx.enabledModules)}
             canBuy={owner && configured}
+            publishableKey={stripePublishableKey()}
           />
         </section>
       )}

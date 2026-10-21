@@ -73,6 +73,11 @@ const schema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
+  /**
+   * Publishable key ("pk_…") of the same mode as STRIPE_SECRET_KEY: the card form then shows on
+   * our page. Without it (or with a mismatch), the plan step sends people to Stripe's own page.
+   */
+  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
   /** Signing secret of the Stripe webhook pointing at /api/stripe/webhook ("whsec_…"). */
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   /** Stripe's API base URL. Tests point it at a stand-in; leave unset in production. */

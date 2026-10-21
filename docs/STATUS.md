@@ -1287,7 +1287,11 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   Stripe, a failed-payment banner.
 - **Stripe** (web `server/stripe.ts`, REST, no SDK): prices by lookup key (`seller_month`…),
   customers, Checkout, portal, subscriptions, invoices, webhook signature check. A live key is
-  ignored unless `STRIPE_LIVE=true`. **Webhook** `/api/stripe/webhook` (`server/billing-webhook.ts`):
+  ignored unless `STRIPE_LIVE=true`. **The card form is on our page** (embedded Checkout,
+  `ui_mode: embedded`, that one call pinned to API `2025-03-31.basil` with Stripe.js `basil`
+  loaded from js.stripe.com by `embedded-checkout.tsx`) when `STRIPE_PUBLISHABLE_KEY` is set and
+  pairs with the secret key's mode (`stripeKeysPair`); otherwise, and with the e2e stand-in
+  (`STRIPE_API_URL`), Checkout is Stripe's hosted page. Both return to `?checkout=done`. **Webhook** `/api/stripe/webhook` (`server/billing-webhook.ts`):
   `checkout.session.completed` (reads the subscription), `customer.subscription.*` (applies it;
   an older event than the last applied changes nothing), `invoice.payment_failed` / `invoice.paid`
   (grace starts / ends). The company is found by its customer (security-definer

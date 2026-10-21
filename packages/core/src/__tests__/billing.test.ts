@@ -12,6 +12,7 @@ import {
   readOnlyModules,
   selectionTotal,
   signupTrialDays,
+  stripeKeysPair,
   suggestedSelection,
   TRIAL_DAYS,
   trialDaysLeft,
@@ -290,5 +291,18 @@ describe("days free for a plan chosen at sign-up", () => {
     expect(signupTrialDays({ cardRequired: true, trialDays: 0 }, null)).toBe(0);
     expect(signupTrialDays({ cardRequired: false, trialDays: 0 }, null)).toBe(0);
     expect(signupTrialDays(null, null)).toBe(0);
+  });
+});
+
+describe("stripeKeysPair", () => {
+  it("pairs test with test and live with live", () => {
+    expect(stripeKeysPair("sk_test_abc", "pk_test_xyz")).toBe(true);
+    expect(stripeKeysPair("rk_live_abc", "pk_live_xyz")).toBe(true);
+  });
+  it("refuses a mismatch or anything that isn't a key", () => {
+    expect(stripeKeysPair("sk_live_abc", "pk_test_xyz")).toBe(false);
+    expect(stripeKeysPair("sk_test_abc", "pk_live_xyz")).toBe(false);
+    expect(stripeKeysPair("sk_test_abc", "sk_test_abc")).toBe(false);
+    expect(stripeKeysPair("", "")).toBe(false);
   });
 });

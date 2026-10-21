@@ -390,3 +390,14 @@ export function suggestedSelection(enabled: readonly ModuleKey[]): PackageKey {
   if (reviews) return "seller_reviews";
   return "seller";
 }
+
+/**
+ * Whether a publishable key belongs with a secret (or restricted) key: both test or both live.
+ * A mismatch would show a payment form that can't load the session, so the app uses Stripe's
+ * own page instead.
+ */
+export function stripeKeysPair(secretKey: string, publishableKey: string): boolean {
+  const secret = /^(?:sk|rk)_(test|live)_/.exec(secretKey)?.[1];
+  const publishable = /^pk_(test|live)_/.exec(publishableKey)?.[1];
+  return Boolean(secret) && secret === publishable;
+}
