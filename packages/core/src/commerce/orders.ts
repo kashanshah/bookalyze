@@ -179,16 +179,29 @@ export const ORDER_SYNC_OVERLAP_MS = 60 * 60 * 1000;
 const ORDER_SYNC_LAG_MS = 3 * 60 * 1000;
 
 /**
+ * eBay only answers for orders created within two years of the moment it's asked ("Start date
+ * must be within '2' years from present date"), so its queries start no further back than two
+ * years less two days.
+ */
+export const EBAY_ORDERS_KEPT_DAYS = 2 * 365 - 2;
+
+/**
  * The window of the next orders query: everything updated since the last sync (less an hour),
- * or since the start date on the first one, up to a few minutes ago.
+ * or since the start date on the first one, up to a few minutes ago. With `keptDays`, it starts
+ * no earlier than that many days before now, whatever the start date: a marketplace that only
+ * keeps orders so long refuses a query reaching further back.
  */
 export function orderSyncWindow(input: {
   /** First day to bring in (YYYY-MM-DD), chosen when orders were switched on. */
   from: string;
   syncedThrough: Date | null;
   now: Date;
+  keptDays?: number;
 }): { after: string; before: string } {
-  const start = new Date(`${input.from}T00:00:00Z`).getTime();
+  const chosen = new Date(`${input.from}T00:00:00Z`).getTime();
+  const start = input.keptDays
+    ? Math.max(chosen, input.now.getTime() - input.keptDays * 86_400_000)
+    : chosen;
   const after = input.syncedThrough
     ? Math.max(start, input.syncedThrough.getTime() - ORDER_SYNC_OVERLAP_MS)
     : start;

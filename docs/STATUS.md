@@ -1806,6 +1806,13 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   older copy ignored, start date, cost of goods sold, isolation); e2e "ebay: bring in eBay
   orders…" (the mock's `/sell/fulfillment/v1/order`: a shipped eBay US order with a linked SKU, an
   eBay Canada order to ship and a cancelled one).
+- **Two years, from now:** eBay refuses an orders query whose start is more than two years
+  before the moment it's asked ("Start date must be within '2' years from present date"). A
+  start date chosen exactly two years back (the earliest the Orders screen allows, and what
+  "Bring theirs in too" gives a new site) is already past that by a few hours, and moves further
+  past every day a long first sync runs. So eBay's queries start no earlier than two years less
+  two days before now (core `EBAY_ORDERS_KEPT_DAYS`, `orderSyncWindow`'s `keptDays`); older
+  orders aren't at eBay any more anyway.
 
 ### Phase 4d, slice 2: Connect eBay
 
