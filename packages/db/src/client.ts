@@ -93,3 +93,20 @@ export async function withSupportDesk<T>(
     return fn(tx);
   });
 }
+
+/**
+ * Like `withOrg()`, and allowed to write the billing tables. Only for Stripe's webhook and for
+ * recording the customer Checkout made: billing rows are never written from a person's request.
+ */
+export async function withBillingWriter<T>(
+  db: Database,
+  ctx: { orgId: string },
+  fn: (tx: Transaction) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('role', 'app_runtime', true), set_config('app.org_id', ${ctx.orgId}, true), set_config('app.billing_writer', 'on', true)`,
+    );
+    return fn(tx);
+  });
+}

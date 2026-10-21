@@ -11,6 +11,7 @@ import { getDb, schema, withOrg } from "@bookalyze/db";
 import { and, asc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import { loadOrgBilling, type OrgBilling } from "./billing";
 import { requireSession } from "./session";
 
 export type OrgRole = "owner" | "admin" | "member";
@@ -25,6 +26,8 @@ export type OrgContext = {
   plan: Plan;
   enabledModules: ModuleKey[];
   activeModules: ModuleKey[];
+  /** The plan and what's paid for; modules switched on but not paid for are read-only. */
+  billing: OrgBilling;
 };
 
 export async function listUserOrgs(userId: string) {
@@ -66,18 +69,21 @@ export const getOrgContext = cache(async (slug: string): Promise<OrgContext> => 
     .limit(1);
   if (!row) notFound();
 
-  const { profile, modules } = await withOrg(
+  const { profile, enabledModules, billing } = await withOrg(
     getDb(),
     { orgId: row.id, userId: session.user.id },
-    async (tx) => ({
-      profile: (await tx.select().from(schema.organizationProfiles).limit(1))[0] ?? null,
-      modules: await tx.select().from(schema.organizationModules),
-    }),
+    async (tx) => {
+      const enabled = (await tx.select().from(schema.organizationModules))
+        .filter((m) => m.enabled && isModuleKey(m.moduleKey))
+        .map((m) => m.moduleKey as ModuleKey);
+      return {
+        profile: (await tx.select().from(schema.organizationProfiles).limit(1))[0] ?? null,
+        enabledModules: enabled,
+        billing: await loadOrgBilling(tx, enabled),
+      };
+    },
   );
 
-  const enabledModules = modules
-    .filter((m) => m.enabled && isModuleKey(m.moduleKey))
-    .map((m) => m.moduleKey as ModuleKey);
   const plan = getPlan(profile?.planKey);
   return {
     session,
@@ -87,6 +93,7 @@ export const getOrgContext = cache(async (slug: string): Promise<OrgContext> => 
     plan,
     enabledModules,
     activeModules: activeModules(plan, enabledModules),
+    billing,
   };
 });
 
