@@ -207,11 +207,13 @@ export function skuProfit(
   const adSales = parseDecimal(input.adSales);
   const units = BigInt(input.units);
 
+  // Rounded to the currency first, so before ads, spend and after ads always add up.
   const net =
     options.keepRate === null
       ? null
-      : divRound(sales * parseDecimal(options.keepRate, 10), 10n ** 10n);
-  const cost = input.unitCost === null ? null : parseDecimal(input.unitCost) * units;
+      : roundUnits(divRound(sales * parseDecimal(options.keepRate, 10), 10n ** 10n), decimals);
+  const cost =
+    input.unitCost === null ? null : roundUnits(parseDecimal(input.unitCost) * units, decimals);
   const before = net === null || cost === null ? null : net - cost;
   const after = before === null ? null : before - spend;
   const perUnit = (v: bigint | null) =>
@@ -372,4 +374,99 @@ export function channelAdSummary(
     wasted: formatDecimal(wasted),
     costMissing,
   };
+}
+
+export const PRODUCT_PROFIT_COLUMNS = [
+  "Channel",
+  "Currency",
+  "SKU",
+  "Product",
+  "Verdict",
+  "Units",
+  "Orders",
+  "Sales",
+  "Average price",
+  "Net before ads",
+  "Product cost",
+  "Profit before ads",
+  "Profit before ads per unit",
+  "Ad spend",
+  "Ad sales",
+  "Ad orders",
+  "Clicks",
+  "Impressions",
+  "ACOS %",
+  "TACOS %",
+  "Break-even ACOS %",
+  "ROAS",
+  "Cost per click",
+  "Break-even cost per click",
+  "Conversion %",
+  "Organic share %",
+  "Profit after ads",
+  "Profit after ads per unit",
+  "Margin after ads %",
+] as const;
+
+/**
+ * Profit by product as CSV rows (without the file's header lines): one row per SKU, then each
+ * channel's ad spend tied to no product. Amounts in the channel's currency.
+ */
+export function productProfitCsvRows(
+  channels: readonly {
+    name: string;
+    currency: string;
+    rows: readonly SkuProfit[];
+    unallocated: { spend: string; sales: string };
+  }[],
+  amount: (value: string | null, currency: string) => string,
+): string[][] {
+  const pct = (v: number | null) => (v === null ? "" : v.toFixed(1));
+  const out: string[][] = [];
+  for (const c of channels) {
+    for (const r of c.rows) {
+      out.push([
+        c.name,
+        c.currency,
+        r.sku,
+        r.label ?? "",
+        AD_VERDICT_LABELS[r.verdict].label,
+        String(r.units),
+        String(r.orders),
+        amount(r.sales, c.currency),
+        amount(r.averagePrice, c.currency),
+        amount(r.netBeforeAds, c.currency),
+        amount(r.productCost, c.currency),
+        amount(r.profitBeforeAds, c.currency),
+        amount(r.profitBeforeAdsPerUnit, c.currency),
+        amount(r.adSpend, c.currency),
+        amount(r.adSales, c.currency),
+        String(r.adOrders),
+        String(r.clicks),
+        String(r.impressions),
+        pct(r.acos),
+        pct(r.tacos),
+        pct(r.breakEvenAcos),
+        r.roas === null ? "" : r.roas.toFixed(2),
+        amount(r.cpc, c.currency),
+        amount(r.breakEvenCpc, c.currency),
+        pct(r.conversion),
+        pct(r.organicShare),
+        amount(r.profitAfterAds, c.currency),
+        amount(r.profitAfterAdsPerUnit, c.currency),
+        pct(r.marginAfterAds),
+      ]);
+    }
+    if (parseDecimal(c.unallocated.spend) !== 0n) {
+      const row = PRODUCT_PROFIT_COLUMNS.map(() => "");
+      row[0] = c.name;
+      row[1] = c.currency;
+      row[3] = "Sponsored Brands and other ads not tied to one product";
+      row[13] = amount(c.unallocated.spend, c.currency);
+      row[14] = amount(c.unallocated.sales, c.currency);
+      row[26] = amount(formatDecimal(-parseDecimal(c.unallocated.spend)), c.currency);
+      out.push(row);
+    }
+  }
+  return out;
 }

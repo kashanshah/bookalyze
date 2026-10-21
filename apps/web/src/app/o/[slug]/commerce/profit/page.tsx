@@ -17,6 +17,7 @@ import {
   walmartProfitTotals,
 } from "@bookalyze/core";
 import {
+  adMetricsForProfit,
   channelCostsForProfit,
   cogsForProfit,
   ebayMonths,
@@ -28,7 +29,7 @@ import {
   walmartPostingList,
 } from "@bookalyze/db";
 import { eq } from "drizzle-orm";
-import { AlertTriangle, ChartColumn, Settings2 } from "lucide-react";
+import { AlertTriangle, ChartColumn, PackageSearch, Settings2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -72,6 +73,8 @@ type Column = {
   /** Costs counted against no channel (All channels only), and each category's part. */
   shared?: bigint;
   sharedDetail?: Map<string, bigint>;
+  /** Ad spend from the ads reports (analytics, not in profit: the books' advertising is). */
+  adSpend?: bigint;
 };
 
 const plural = (n: number, one: string, many = `${one}s`) =>
@@ -123,6 +126,18 @@ const ROWS: { key: string; label: string; kind?: "subtotal" | "total" | "muted";
     },
     { key: "profit", label: "Profit", kind: "total" },
     { key: "margin", label: "Margin (profit over net sales)", kind: "muted" },
+    {
+      key: "adSpend",
+      label: "Ad spend in the ads reports",
+      kind: "muted",
+      hint: "Each day's spend from Amazon Ads, for comparison: profit above counts the advertising in your books, so it isn't counted twice. See By product",
+    },
+    {
+      key: "tacos",
+      label: "TACOS (ad spend over sales)",
+      kind: "muted",
+      hint: "Ad spend from the ads reports over all sales, from ads or not",
+    },
     { key: "tax", label: "Sales tax (passed through)", kind: "muted" },
     { key: "reserve", label: "Held back and released", kind: "muted" },
     { key: "payout", label: "Paid out", kind: "subtotal" },
@@ -145,44 +160,52 @@ export default async function ChannelProfitPage({
     today,
     fiscalConfigOf(ctx.profile),
   );
-  const { rows, noon, ebay, ebayRates, walmart, feeTaxRecoverable, channelStates, costs, cogs } =
-    await inOrg(ctx, async (tx) => {
-      // Tax on fees recoverable: its account is an asset or liability (input tax), not the fees.
-      const feeTax = (await getSettlementAccounts(tx)).feeTax;
-      const [account] = feeTax
-        ? await tx
-            .select({ type: schema.accounts.type })
-            .from(schema.accounts)
-            .where(eq(schema.accounts.id, feeTax))
-        : [];
-      return {
-        rows: await settlementsForProfit(tx, { from, to, timezone }),
-        noon: await noonMonthsForProfit(tx, { from, to }),
-        ebay: await ebayMonths(tx, { from, to }),
-        ebayRates: await ebayPostedRates(tx),
-        // Each Walmart settlement in the period its last day falls in, as Amazon's.
-        walmart: (await walmartPostingList(tx)).filter(
-          (s) => s.totals && s.date >= from && s.date <= to,
-        ),
-        costs: await channelCostsForProfit(tx, { from, to }),
-        cogs: await cogsForProfit(tx, { from, to }),
-        feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
-        // A channel switched off, or whose account was disconnected, still shows what it earned.
-        channelStates: await tx
-          .select({
-            id: schema.salesChannels.id,
-            name: schema.salesChannels.name,
-            currency: schema.salesChannels.currency,
-            isActive: schema.salesChannels.isActive,
-            connection: schema.connections.status,
-          })
-          .from(schema.salesChannels)
-          .leftJoin(
-            schema.connections,
-            eq(schema.connections.id, schema.salesChannels.connectionId),
-          ),
-      };
-    });
+  const {
+    rows,
+    noon,
+    ebay,
+    ebayRates,
+    walmart,
+    feeTaxRecoverable,
+    channelStates,
+    costs,
+    cogs,
+    ads,
+  } = await inOrg(ctx, async (tx) => {
+    // Tax on fees recoverable: its account is an asset or liability (input tax), not the fees.
+    const feeTax = (await getSettlementAccounts(tx)).feeTax;
+    const [account] = feeTax
+      ? await tx
+          .select({ type: schema.accounts.type })
+          .from(schema.accounts)
+          .where(eq(schema.accounts.id, feeTax))
+      : [];
+    return {
+      rows: await settlementsForProfit(tx, { from, to, timezone }),
+      noon: await noonMonthsForProfit(tx, { from, to }),
+      ebay: await ebayMonths(tx, { from, to }),
+      ebayRates: await ebayPostedRates(tx),
+      // Each Walmart settlement in the period its last day falls in, as Amazon's.
+      walmart: (await walmartPostingList(tx)).filter(
+        (s) => s.totals && s.date >= from && s.date <= to,
+      ),
+      costs: await channelCostsForProfit(tx, { from, to }),
+      cogs: await cogsForProfit(tx, { from, to }),
+      ads: await adMetricsForProfit(tx, { from, to }),
+      feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
+      // A channel switched off, or whose account was disconnected, still shows what it earned.
+      channelStates: await tx
+        .select({
+          id: schema.salesChannels.id,
+          name: schema.salesChannels.name,
+          currency: schema.salesChannels.currency,
+          isActive: schema.salesChannels.isActive,
+          connection: schema.connections.status,
+        })
+        .from(schema.salesChannels)
+        .leftJoin(schema.connections, eq(schema.connections.id, schema.salesChannels.connectionId)),
+    };
+  });
 
   // One column per channel, in its own currency; plus all of them in the main currency.
   const columns = new Map<string, Column>();
@@ -427,6 +450,26 @@ export default async function ChannelProfitPage({
     addOwn(column, c.label, inColumn);
   }
 
+  // Ad spend from the ads reports: each channel's in its column, all of them in the main currency
+  // (the stored main-currency value, else that day's rate).
+  for (const a of ads) {
+    const column = columnOf(a.channelId);
+    if (column && column.currency === a.currency) {
+      column.adSpend = (column.adSpend ?? 0n) + parseDecimal(a.total.spend);
+    }
+    let base = parseDecimal(a.total.spendBase);
+    for (const u of a.total.unconverted) {
+      const cacheKey = `${a.currency}:${u.date}`;
+      if (!rates.has(cacheKey)) {
+        rates.set(cacheKey, (await suggestRate(baseCurrency, a.currency, u.date))?.rate ?? null);
+      }
+      const rate = rates.get(cacheKey);
+      if (rate) base += convertUnits(parseDecimal(u.spend), rate, decimals);
+      else costsUnconverted++;
+    }
+    all.adSpend = (all.adSpend ?? 0n) + base;
+  }
+
   const channels = [...columns.values()].sort((a, b) => a.label.localeCompare(b.label));
   const shared = costs.some((c) => c.channelId === null);
   const showAll =
@@ -469,12 +512,21 @@ export default async function ChannelProfitPage({
         shared: formatDecimal(-(c.shared ?? 0n)),
         profit: formatDecimal(profitUnits),
         margin: sales > 0n ? Number((profitUnits * 10_000n) / sales) / 100 : null,
+        adSpend: c.adSpend === undefined ? null : formatDecimal(-c.adSpend),
+        tacos:
+          c.adSpend !== undefined && c.totals.sales > 0n
+            ? Number((c.adSpend * 10_000n) / c.totals.sales) / 100
+            : null,
       },
     };
   });
   const anyWriteOffs = results.some(({ column }) => (column.writeOffs ?? 0n) !== 0n);
+  const anyAds = ads.length > 0;
   const shownRows = ROWS.filter(
-    (row) => (row.key !== "writeOffs" || anyWriteOffs) && (row.key !== "shared" || shared),
+    (row) =>
+      (row.key !== "writeOffs" || anyWriteOffs) &&
+      (row.key !== "shared" || shared) &&
+      ((row.key !== "adSpend" && row.key !== "tacos") || anyAds),
   );
 
   /** What makes up a costs cell, by category (its hint). */
@@ -493,6 +545,14 @@ export default async function ChannelProfitPage({
     }
     if (noPayouts && (key === "payout" || key === "reserve")) {
       return <span title="eBay's payouts aren't brought in yet">—</span>;
+    }
+    if (key === "tacos") {
+      return profit.tacos === null
+        ? "—"
+        : `${profit.tacos.toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
+    }
+    if (key === "adSpend") {
+      return <Amount value={profit.adSpend} currency={currency} locale={locale} />;
     }
     if (key === "margin") {
       return profit.margin === null
@@ -520,12 +580,22 @@ export default async function ChannelProfitPage({
         title="Channel profit"
         description="What each marketplace earned you: sales less refunds, promotions, the marketplace's fees and advertising, from Amazon's and Walmart's settlements and Noon's and eBay's transactions; then what the products cost and your own costs from your books."
         actions={
-          <Button asChild variant="ghost">
-            <Link href={`/o/${slug}/commerce/profit/costs`}>
-              <Settings2 />
-              Your own costs
-            </Link>
-          </Button>
+          <>
+            <Button asChild variant="outline">
+              <Link
+                href={`/o/${slug}/commerce/profit/products?${new URLSearchParams({ from, to })}`}
+              >
+                <PackageSearch />
+                By product
+              </Link>
+            </Button>
+            <Button asChild variant="ghost">
+              <Link href={`/o/${slug}/commerce/profit/costs`}>
+                <Settings2 />
+                Your own costs
+              </Link>
+            </Button>
+          </>
         }
       />
       <RangeControls from={from} to={to} presets={presets} />
@@ -535,7 +605,8 @@ export default async function ChannelProfitPage({
       ebay.length ||
       walmart.length ||
       costs.length ||
-      cogs.length ? (
+      cogs.length ||
+      ads.length ? (
         <div className="overflow-x-auto rounded-2xl border bg-card shadow-xs">
           <table className="w-full min-w-[32rem] text-sm">
             <thead>

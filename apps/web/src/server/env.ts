@@ -62,6 +62,17 @@ const schema = z.object({
   EBAY_AUTH_URL: z.url().optional(),
   EBAY_API_URL: z.url().optional(),
   EBAY_APIZ_URL: z.url().optional(),
+  /**
+   * Bookalyze's own Amazon Ads API app: a Login with Amazon security profile approved for the
+   * Ads API (one app; each company connects its own ads accounts by consent). Without these two,
+   * Connect Amazon Ads is unavailable. See docs/SETUP.md → Amazon Ads.
+   */
+  AMAZON_ADS_CLIENT_ID: z.string().optional(),
+  AMAZON_ADS_CLIENT_SECRET: z.string().optional(),
+  /** Amazon's consent page, token URL and Ads API base URL. Tests point them at a stand-in. */
+  AMAZON_ADS_AUTH_URL: z.url().optional(),
+  AMAZON_ADS_TOKEN_URL: z.url().optional(),
+  AMAZON_ADS_API_URL: z.url().optional(),
   /** Secret Vercel Cron sends as a bearer token to scheduled routes (e.g. the daily FX sync). */
   CRON_SECRET: z.string().min(16).optional(),
   /**

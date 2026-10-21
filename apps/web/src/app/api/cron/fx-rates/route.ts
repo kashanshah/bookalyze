@@ -1,3 +1,4 @@
+import { runAmazonAdsJob } from "@/server/amazon-ads-sync";
 import { syncAllLedgers } from "@/server/amazon-ledger";
 import { syncAllSettlements } from "@/server/amazon-settlements";
 import { syncAllConnections } from "@/server/banking";
@@ -17,7 +18,8 @@ import { runWalmartDaily } from "@/server/walmart-daily";
  * foreign-currency bank lines find their rate. Then it brings in new Amazon settlement reports and
  * posts them (with their deposits) where automatic posting is on, brings in each marketplace's FBA
  * inventory ledger (returns, losses), brings in Noon's transactions and posts its finished months
- * (with their payouts) where that's switched on, does the same for eBay and Walmart, and last it
+ * (with their payouts) where that's switched on, does the same for eBay and Walmart, asks Amazon
+ * Ads for each channel's latest ad spend (collected by the order job once ready), and last it
  * emails compliance reminders. Amazon orders have their own job (/api/cron/orders).
  */
 export const maxDuration = 300;
@@ -41,6 +43,9 @@ export async function GET(request: Request) {
   const noon = await jobStep("daily", "noon", () => runNoonDaily(60_000));
   const ebay = await jobStep("daily", "ebay", () => runEbayDaily(40_000));
   const walmart = await jobStep("daily", "walmart", () => runWalmartDaily(30_000));
+  const ads = await jobStep("daily", "amazon_ads", () =>
+    runAmazonAdsJob(30_000, { requestNew: true }),
+  );
   const compliance = await jobStep("daily", "compliance", () => sendComplianceReminders());
   logInfo("job.daily", {
     ms: Date.now() - started,
@@ -52,6 +57,7 @@ export async function GET(request: Request) {
     noon,
     ebay,
     walmart,
+    ads,
     compliance,
   });
   return Response.json({
@@ -63,6 +69,7 @@ export async function GET(request: Request) {
     noon,
     ebay,
     walmart,
+    ads,
     compliance,
   });
 }

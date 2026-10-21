@@ -10,10 +10,12 @@ import {
   keepRate,
   mergeAdRows,
   nextAmazonAdsWindow,
+  PRODUCT_PROFIT_COLUMNS,
   parseAmazonAdsProfiles,
   parseAmazonAdsReport,
   parseAmazonAdsReportStatus,
   parseAmazonAdsTokens,
+  productProfitCsvRows,
   type SkuPeriodInput,
   skuProfit,
   sortSkuProfits,
@@ -358,5 +360,37 @@ describe("Amazon Ads API", () => {
     expect(
       nextAmazonAdsWindow({ today: "2026-10-22", doneThrough: "2026-10-21", doneOn: "2026-10-22" }),
     ).toBeNull();
+  });
+});
+
+describe("productProfitCsvRows", () => {
+  it("writes one row per SKU and one for spend tied to no product", () => {
+    const rows = productProfitCsvRows(
+      [
+        {
+          name: "Amazon.ca",
+          currency: "CAD",
+          rows: [
+            skuProfit(sku({ adSpend: "10", adSales: "64.99" }), {
+              keepRate: "0.6",
+              currency: "CAD",
+            }),
+          ],
+          unallocated: { spend: "7", sales: "0" },
+        },
+      ],
+      (v) => v ?? "",
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.slice(0, 5)).toEqual([
+      "Amazon.ca",
+      "CAD",
+      "BOARD-TI",
+      "Titanium cutting board",
+      "Healthy",
+    ]);
+    expect(rows[1]?.[13]).toBe("7");
+    expect(rows[1]?.[26]).toBe("-7.0000");
+    expect(rows[0]).toHaveLength(PRODUCT_PROFIT_COLUMNS.length);
   });
 });
