@@ -2838,6 +2838,14 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   bank over what the payments on it say they were (`paidRate`).
 - **Purchase orders list** by order date, newest first (then the latest number), not by number.
 
+### Purchase orders: "How purchases post" instead of a banner
+
+- Once purchases are in the books there's nothing to do, so the list no longer shows a card for
+  it: a ghost **How purchases post** button in the header opens the explanation ("In your books
+  for orders from …", deposits, deliveries into Inventory, settling), with the date for admins.
+  The card stays while they aren't in the books (a step to take). Web
+  `purchase-orders/books-setting.tsx`; e2e "purchase orders in the books".
+
 ### Noon's summary from its API, saved as the window it covers
 
 - Asked for a window of several days, Noon's API sends the FBN ledger summary as one row per

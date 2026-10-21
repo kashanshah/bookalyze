@@ -3539,7 +3539,13 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   await dialog.getByLabel("For orders dated from").fill("2026-09-01");
   await dialog.getByRole("button", { name: "Put them in the books" }).click();
   await expect(page.getByText(/Purchase orders are in the books from that date/)).toBeVisible();
-  await expect(setting).toContainText("In your books for orders from September 1, 2026.");
+  // On, nothing needs doing: the card goes, and "How purchases post" in the header explains it.
+  await expect(setting).toHaveCount(0);
+  await page.getByRole("button", { name: "How purchases post" }).click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "In your books for orders from September 1, 2026.",
+  );
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
 
   await page.getByRole("link", { name: /Maple Glassworks/ }).click();
   const deposits = page.getByRole("region", { name: "Supplier deposits for this order" });
