@@ -1,5 +1,5 @@
 import { formatDecimal, parseDecimal } from "../money";
-import type { SettlementEntryLine } from "./settlements";
+import { emptyGroupTotals, type GroupTotals, type SettlementEntryLine } from "./settlements";
 import { walmartAmount } from "./walmart-settlement-file";
 
 /**
@@ -267,4 +267,23 @@ export function readWalmartTotals(t: WalmartStoredTotals | null): WalmartSettlem
     paidOut: parseDecimal(t.paidOut),
     unreadable: t.unreadable,
   };
+}
+
+/**
+ * A settlement's groups in Channel profit's (Amazon's settlement groups): WFS fees count with the
+ * marketplace's fees, shipping labels with other. What Walmart paid out is then the net plus
+ * sales tax, as on Amazon's settlements.
+ */
+export function walmartProfitTotals(
+  groups: Record<WalmartGroup, bigint>,
+  convert: (units: bigint) => bigint = (u) => u,
+  into: GroupTotals = emptyGroupTotals(),
+): GroupTotals {
+  into.sales += convert(groups.sales);
+  into.refunds += convert(groups.refunds);
+  into.fees += convert(groups.fees + groups.fulfilment);
+  into.advertising += convert(groups.advertising);
+  into.tax += convert(groups.tax);
+  into.other += convert(groups.shipping + groups.other);
+  return into;
 }

@@ -14,6 +14,7 @@ import {
   noonProfitTotals,
   parseDecimal,
   SETTLEMENT_GROUPS,
+  walmartProfitTotals,
 } from "@bookalyze/core";
 import {
   channelCostsForProfit,
@@ -24,6 +25,7 @@ import {
   noonMonthsForProfit,
   schema,
   settlementsForProfit,
+  walmartPostingList,
 } from "@bookalyze/db";
 import { eq } from "drizzle-orm";
 import { AlertTriangle, ChartColumn, Settings2 } from "lucide-react";
@@ -57,6 +59,8 @@ type Column = {
   transactions: number;
   /** eBay's money rows. */
   ebayRows?: number;
+  /** Walmart's settlements. */
+  walmartSettlements?: number;
   /** eBay's payouts aren't in yet: what was paid out isn't known. */
   noPayouts?: boolean;
   /** From the books, in the column's currency (positive: a cost). */
@@ -79,6 +83,7 @@ const countOf = (c: Column) =>
     c.settlements ? plural(c.settlements, "settlement") : null,
     c.transactions ? plural(c.transactions, "Noon transaction") : null,
     c.ebayRows ? plural(c.ebayRows, "eBay transaction") : null,
+    c.walmartSettlements ? plural(c.walmartSettlements, "Walmart settlement") : null,
   ]
     .filter(Boolean)
     .join(" · ") || "Nothing yet";
@@ -140,7 +145,7 @@ export default async function ChannelProfitPage({
     today,
     fiscalConfigOf(ctx.profile),
   );
-  const { rows, noon, ebay, ebayRates, feeTaxRecoverable, channelStates, costs, cogs } =
+  const { rows, noon, ebay, ebayRates, walmart, feeTaxRecoverable, channelStates, costs, cogs } =
     await inOrg(ctx, async (tx) => {
       // Tax on fees recoverable: its account is an asset or liability (input tax), not the fees.
       const feeTax = (await getSettlementAccounts(tx)).feeTax;
@@ -155,6 +160,10 @@ export default async function ChannelProfitPage({
         noon: await noonMonthsForProfit(tx, { from, to }),
         ebay: await ebayMonths(tx, { from, to }),
         ebayRates: await ebayPostedRates(tx),
+        // Each Walmart settlement in the period its last day falls in, as Amazon's.
+        walmart: (await walmartPostingList(tx)).filter(
+          (s) => s.totals && s.date >= from && s.date <= to,
+        ),
         costs: await channelCostsForProfit(tx, { from, to }),
         cogs: await cogsForProfit(tx, { from, to }),
         feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
@@ -302,6 +311,46 @@ export default async function ChannelProfitPage({
     );
     all.ebayRows = (all.ebayRows ?? 0) + m.rows;
     all.noPayouts = true;
+  }
+  // Walmart: each settlement read from its rows (at the rate it posted at, else its last day's).
+  // One that doesn't add up to Walmart's payout still counts, with a note below.
+  let walmartProblems = 0;
+  for (const s of walmart) {
+    if (!s.totals) continue;
+    const key = `walmart:${s.channelId}:${s.currency}`;
+    const column = columns.get(key) ?? {
+      key,
+      channelId: s.channelId,
+      label: s.channelName,
+      currency: s.currency,
+      totals: emptyGroupTotals(),
+      settlements: 0,
+      transactions: 0,
+      walmartSettlements: 0,
+    };
+    walmartProfitTotals(s.totals.groups, undefined, column.totals);
+    column.walmartSettlements = (column.walmartSettlements ?? 0) + 1;
+    columns.set(key, column);
+    if (s.problem) walmartProblems++;
+    let rate: string | null = s.currency === baseCurrency ? "1" : (s.posted?.rate ?? null);
+    if (!rate) {
+      const cacheKey = `${s.currency}:${s.date}`;
+      if (!rates.has(cacheKey)) {
+        rates.set(cacheKey, (await suggestRate(baseCurrency, s.currency, s.date))?.rate ?? null);
+      }
+      rate = rates.get(cacheKey) ?? null;
+    }
+    if (!rate) {
+      unconverted++;
+      continue;
+    }
+    const r = rate;
+    walmartProfitTotals(
+      s.totals.groups,
+      (units) => (s.currency === baseCurrency ? units : convertUnits(units, r, decimals)),
+      all.totals,
+    );
+    all.walmartSettlements = (all.walmartSettlements ?? 0) + 1;
   }
   // Costs from the books, kept in the main currency: each channel's in its column (at its rate
   // on the day), all of them, shared ones too, under All channels.
@@ -469,7 +518,7 @@ export default async function ChannelProfitPage({
       <PageHeader
         eyebrow="Commerce"
         title="Channel profit"
-        description="What each marketplace earned you: sales less refunds, promotions, the marketplace's fees and advertising, from Amazon's settlements and Noon's and eBay's transactions; then what the products cost and your own costs from your books."
+        description="What each marketplace earned you: sales less refunds, promotions, the marketplace's fees and advertising, from Amazon's and Walmart's settlements and Noon's and eBay's transactions; then what the products cost and your own costs from your books."
         actions={
           <Button asChild variant="ghost">
             <Link href={`/o/${slug}/commerce/profit/costs`}>
@@ -481,7 +530,12 @@ export default async function ChannelProfitPage({
       />
       <RangeControls from={from} to={to} presets={presets} />
 
-      {rows.length || noon.length || ebay.length || costs.length || cogs.length ? (
+      {rows.length ||
+      noon.length ||
+      ebay.length ||
+      walmart.length ||
+      costs.length ||
+      cogs.length ? (
         <div className="overflow-x-auto rounded-2xl border bg-card shadow-xs">
           <table className="w-full min-w-[32rem] text-sm">
             <thead>
@@ -588,6 +642,8 @@ export default async function ChannelProfitPage({
           count each entry dated in it (entries the marketplaces' own rows already count are left
           out). Channels switched off or disconnected still show what they earned before. eBay's
           rows count on their own day; its payouts aren't in yet, so what eBay paid out shows as —.
+          Each Walmart settlement counts in the period its last day falls in, read row by row from
+          Walmart's report (WFS fees with the marketplace's fees, shipping labels with other).
           {feeTaxRecoverable
             ? " Tax on Amazon's fees posts to a recoverable tax account, so it isn't counted as a cost."
             : ""}
@@ -606,6 +662,22 @@ export default async function ChannelProfitPage({
             <AlertTriangle className="size-3.5 shrink-0" />
             Some costs are only in the {baseCurrency} total: there's no exchange rate into their
             channel's currency for the day yet.
+          </p>
+        ) : null}
+        {walmartProblems ? (
+          <p className="flex items-center gap-1.5">
+            <AlertTriangle className="size-3.5 shrink-0" />
+            {walmartProblems === 1
+              ? "1 Walmart settlement's rows don't"
+              : `${walmartProblems} Walmart settlements' rows don't`}{" "}
+            add up to what Walmart paid out: see why on{" "}
+            <Link
+              href={`/o/${slug}/commerce/walmart`}
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              Walmart money
+            </Link>
+            .
           </p>
         ) : null}
         {unbalanced ? (
