@@ -94,7 +94,7 @@ export async function reorderProducts(
     from order_items oi
     join orders o on o.id = oi.order_id
     join product_skus ps on ps.channel_id = o.channel_id and ps.sku = oi.sku
-    where o.status not in (${cancelled})
+    where o.status not in (${cancelled}) and exists (select 1 from sales_channels sx where sx.id = o.channel_id and sx.ships_from_stock)
       and ${day} >= ${from}::date and ${day} < ${input.today}::date
     group by 1, 2`);
 
@@ -125,6 +125,7 @@ export async function reorderProducts(
         join orders o on o.channel_id = ps.channel_id
         join order_items oi on oi.order_id = o.id and oi.sku = ps.sku
         where ps.product_id = p.id and oi.quantity_shipped > 0 and o.status not in (${cancelled})
+          and exists (select 1 from sales_channels sx where sx.id = o.channel_id and sx.ships_from_stock)
           and ${month} >= ${start}
           and not exists (select 1 from cogs_periods cp
             where cp.channel_id = o.channel_id and cp.month = ${month})), 0)::int as not_costed

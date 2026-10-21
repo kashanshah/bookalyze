@@ -47,6 +47,7 @@ import {
   schema,
   setChannelActive,
   setChannelFulfilment,
+  setChannelShipsFromStock,
   setConnectionSecret,
   startOrderSync,
   VaultError,
@@ -310,6 +311,34 @@ export async function setChannelActiveAction(
         orgId: ctx.org.id,
         actorUserId: ctx.session.user.id,
         action: isActive ? "channel.switched_on" : "channel.switched_off",
+        entityType: "sales_channel",
+        entityId: channelId,
+      });
+    }
+    return updated;
+  });
+  if (!row) return { ok: false, message: "This channel no longer exists." };
+  revalidate(slug);
+  return { ok: true };
+}
+
+/** Whether a channel's orders go out of your stock (off: dropship, left out of stock). */
+export async function setChannelShipsFromStockAction(
+  slug: string,
+  channelId: string,
+  shipsFromStock: boolean,
+): Promise<CommerceResult> {
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
+  if (denied) return denied;
+  if (!z.string().uuid().safeParse(channelId).success)
+    return { ok: false, message: "Unknown channel." };
+  const row = await inOrg(ctx, async (tx) => {
+    const updated = await setChannelShipsFromStock(tx, channelId, shipsFromStock);
+    if (updated) {
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: shipsFromStock ? "channel.ships_from_stock" : "channel.dropship",
         entityType: "sales_channel",
         entityId: channelId,
       });

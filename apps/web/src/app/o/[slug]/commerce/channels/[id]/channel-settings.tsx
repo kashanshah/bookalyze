@@ -16,7 +16,11 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { removeChannelAction, setChannelActiveAction } from "../../actions";
+import {
+  removeChannelAction,
+  setChannelActiveAction,
+  setChannelShipsFromStockAction,
+} from "../../actions";
 
 /** Switches a channel on or off; switched-off channels keep their history. */
 export function ChannelSwitch({
@@ -54,6 +58,54 @@ export function ChannelSwitch({
             if (!result.ok) return void toast.error(result.message);
             toast.success(on ? "Switched on" : "Switched off", {
               description: on ? undefined : "It keeps its history.",
+            });
+          })
+        }
+      />
+    </div>
+  );
+}
+
+/** Whether its orders go out of your stock; off for a dropship channel (a partner ships). */
+export function StockSwitch({
+  slug,
+  channel,
+  canManage,
+}: {
+  slug: string;
+  channel: { id: string; shipsFromStock: boolean };
+  canManage: boolean;
+}) {
+  const [pending, start] = useTransition();
+  const [on, setOn] = useState(channel.shipsFromStock);
+  const id = `stock-${channel.id}`;
+  return (
+    <div className="flex items-start gap-3">
+      <div className="min-w-0 flex-1">
+        <label htmlFor={id} className="font-medium text-sm">
+          Ships from your stock
+        </label>
+        <p className="text-muted-foreground text-xs leading-relaxed">
+          {on
+            ? "Its orders take units out of your stock lots, at cost, in cost of goods sold."
+            : "Dropship: a partner ships its orders and you pay as you go, so cost of goods sold, Stock and Reorder leave them out."}
+        </p>
+      </div>
+      {pending ? <Spinner className="mt-0.5 text-muted-foreground" /> : null}
+      <Switch
+        id={id}
+        checked={on}
+        disabled={!canManage || pending}
+        aria-label="Ships from your stock"
+        onCheckedChange={(next) =>
+          start(async () => {
+            const result = await setChannelShipsFromStockAction(slug, channel.id, next);
+            if (!result.ok) return void toast.error(result.message);
+            setOn(next);
+            toast.success(next ? "Ships from your stock" : "Dropship", {
+              description: next
+                ? "Its orders count in cost of goods sold."
+                : "Its orders are left out of cost of goods sold and stock.",
             });
           })
         }

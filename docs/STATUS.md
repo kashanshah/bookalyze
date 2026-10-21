@@ -2957,6 +2957,16 @@ Analytics only, for profit: no keywords, search terms, placements, bids or budge
   The card stays while they aren't in the books (a step to take). Web
   `purchase-orders/books-setting.tsx`; e2e "purchase orders in the books".
 
+### Dropship channels: "Ships from your stock"
+
+- A channel page's **Ships from your stock** switch (on by default). Off for a dropship channel
+  (a partner ships its orders and is paid as you go, like Kazomo CA's eBay sites): cost of goods
+  sold leaves its months out (`salesByMonth`, its ledger moves, `channelsNotCosted`), and Stock
+  and Reorder don't count its orders as taking stock. Months already posted stay listed.
+  `sales_channels.ships_from_stock` (migration `0090_dropship_channels`, default true). db
+  `setChannelShipsFromStock`; web `setChannelShipsFromStockAction` (audited
+  `channel.dropship` / `channel.ships_from_stock`), `StockSwitch`. Test: db `cogs.test.ts`.
+
 ### eBay: a site added later gets its money rows
 
 - eBay money rows go to the site of their order (`placeEbayTransactionsByOrder`). That ran only

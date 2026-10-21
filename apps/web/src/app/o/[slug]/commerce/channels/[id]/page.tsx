@@ -43,7 +43,7 @@ import {
   WalmartSettlements,
   WalmartWfsStock,
 } from "../walmart";
-import { ChannelSwitch, RemoveChannel } from "./channel-settings";
+import { ChannelSwitch, RemoveChannel, StockSwitch } from "./channel-settings";
 
 export const metadata: Metadata = { title: "Channel" };
 
@@ -179,6 +179,11 @@ export default async function ChannelPage({
               ? "Switched on, its orders come in by themselves. Switched off, it keeps everything brought in so far."
               : "Switch it off if you stop selling there. It keeps everything brought in so far."
           }
+        />
+        <StockSwitch
+          slug={slug}
+          canManage={canManage}
+          channel={{ id: ch.id, shipsFromStock: ch.shipsFromStock }}
         />
         {ch.kind === "noon" ? (
           <div className="max-w-sm">
