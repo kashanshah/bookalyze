@@ -5,7 +5,12 @@ import { createDb, type Transaction, withOrg } from "../client";
 import { addOpeningStock, postCogs } from "../cogs";
 import { addWalmartChannel, saveAmazonChannels, saveOrderItems, upsertOrders } from "../commerce";
 import { createProduct, linkSku, saveChannelSkus } from "../inventory";
-import { importLedgerEvents } from "../inventory-ledger";
+import {
+  importLedgerEvents,
+  ledgerChannels,
+  saveChannelSkuGtin,
+  wfsSkus,
+} from "../inventory-ledger";
 import { createDefaultChart } from "../ledger";
 import * as schema from "../schema";
 import { addStockCount, removeStockCount, stockOverview } from "../stock-overview";
@@ -252,5 +257,19 @@ describe("stock in one place", () => {
       walmart: { sellable: 2, held: 1, total: 3 },
       difference: -5,
     });
+  });
+
+  it("lists a WFS country's log with the ledgers, and remembers each SKU's GTIN", async () => {
+    const channels = await scoped((tx) => ledgerChannels(tx));
+    const walmart = channels.find((c) => c.kind === "walmart");
+    expect(walmart).toMatchObject({ name: "Walmart Canada", through: null, events: 0 });
+    const channelId = walmart?.id ?? "";
+    expect(await scoped((tx) => wfsSkus(tx, channelId))).toEqual([{ sku: "WMT-MUG", gtin: null }]);
+    await scoped((tx) =>
+      saveChannelSkuGtin(tx, { channelId, sku: "WMT-MUG", gtin: "00012345678905" }),
+    );
+    expect(await scoped((tx) => wfsSkus(tx, channelId))).toEqual([
+      { sku: "WMT-MUG", gtin: "00012345678905" },
+    ]);
   });
 });
