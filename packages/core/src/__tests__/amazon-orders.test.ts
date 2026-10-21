@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  EBAY_ORDERS_KEPT_DAYS,
   orderStatusLabel,
   orderSyncWindow,
   parseOrderItemsPage,
@@ -112,6 +113,24 @@ describe("parseOrderItemsPage", () => {
 
 describe("orderSyncWindow", () => {
   const now = new Date("2026-10-05T12:00:00Z");
+  it("starts no further back than the marketplace keeps orders (eBay: two years)", () => {
+    // Chosen exactly two calendar years back: eBay refuses that by a few hours, so start later.
+    const ebay = orderSyncWindow({
+      from: "2024-10-05",
+      syncedThrough: null,
+      now,
+      keptDays: EBAY_ORDERS_KEPT_DAYS,
+    });
+    expect(ebay.after).toBe("2024-10-07T12:00:00.000Z");
+    expect(now.getTime() - new Date(ebay.after).getTime()).toBeLessThan(2 * 365 * 86_400_000);
+    // A later start date stands; without a limit, the chosen date stands too.
+    expect(
+      orderSyncWindow({ from: "2026-01-01", syncedThrough: null, now, keptDays: 728 }).after,
+    ).toBe("2026-01-01T00:00:00.000Z");
+    expect(orderSyncWindow({ from: "2024-10-05", syncedThrough: null, now }).after).toBe(
+      "2024-10-05T00:00:00.000Z",
+    );
+  });
   it("starts at the chosen date the first time", () => {
     expect(orderSyncWindow({ from: "2026-07-01", syncedThrough: null, now })).toEqual({
       after: "2026-07-01T00:00:00.000Z",

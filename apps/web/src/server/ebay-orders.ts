@@ -1,5 +1,10 @@
 import "server-only";
-import { ebayOrdersQuery, orderSyncWindow, parseEbayOrdersPage } from "@bookalyze/core";
+import {
+  EBAY_ORDERS_KEPT_DAYS,
+  ebayOrdersQuery,
+  orderSyncWindow,
+  parseEbayOrdersPage,
+} from "@bookalyze/core";
 import {
   type getChannelForSync,
   getDb,
@@ -54,7 +59,12 @@ export async function syncEbayChannelOrders(
   try {
     const { refreshToken } = openEbayCredentials(ctx.orgId, connection.id, connection.secret);
     // The same window on every page of a run, and on the run that carries it on.
-    const window = orderSyncWindow({ from, syncedThrough, now: new Date() });
+    const window = orderSyncWindow({
+      from,
+      syncedThrough,
+      now: new Date(),
+      keptDays: EBAY_ORDERS_KEPT_DAYS,
+    });
     const before = windowEnd?.toISOString() ?? window.before;
     const end = new Date(before);
     const by = syncedThrough ? "lastmodifieddate" : "creationdate";
