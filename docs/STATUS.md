@@ -1150,7 +1150,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     with where, steps, "What you should see" checks and "Not yet". **Help** `/help`: search,
     popular guides, categories, "Still stuck?" → contact form, or a ticket in the app (`APP_URL/help`).
   - Header: Marketplaces, Features, Pricing, Guides, Help. Footer: Product, Resources, Sellers in,
-    Company. The sitemap lists every page and guide.
+    Company. The sitemap lists every page and guide. It's served by `src/app/sitemap.xml/route.ts`
+    (built from `src/lib/sitemap.ts`, static) with a stylesheet line, so browsers show it as a
+    branded page grouped by section (`public/sitemap.xsl`, light and dark); crawlers read the XML.
+    Browsers that drop XSLT just show the plain XML.
   - **One header and footer for every public page:** the links, tagline and trademarks line live
     in core `site/` (`SITE_NAV`, `SITE_FOOTER_COLUMNS`, `siteHref`: relative on its own side,
     absolute from the other). The site's `Header`/`Footer` and the app's `SiteHeader`/`SiteFooter`
