@@ -1224,7 +1224,12 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   add-ons on Seller: Stock $8 (Inventory, Analytics), Review requests $5. Yearly is ten months.
   `catalogProblems()` checks every package and add-on gives each module what it `requires`.
 - **Entitlements** (`entitledModules`): before `BILLING_STARTS_ON` (or with none set) everything
-  is free (`early_access`). After: the subscription's modules while `active`/`trialing`; for
+  is free (`early_access`). Then a **30-day free trial** (`TRIAL_DAYS`, `trialEndsOn`): every
+  module, whatever plan was chosen, from the later of billing starting and the company being
+  created, so existing companies get it when billing starts and new ones on sign-up. Plan and
+  billing shows the days left; the org layout reminds owners in the trial's last week; a plan
+  chosen in early access or the trial isn't charged before the day after it ends
+  (`firstChargeOn`, Stripe's `trial_end`). No card is needed for the trial. After: the subscription's modules while `active`/`trialing`; for
   `BILLING_GRACE_DAYS` (7) after the first failed payment (`grace`); otherwise none. A module
   switched on but not paid for is **read-only** (`readOnlyModules`): it opens, nothing in it can
   change, nothing is deleted. Each module is its own line, so removing an add-on affects only its

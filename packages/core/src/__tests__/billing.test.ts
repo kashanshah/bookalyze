@@ -4,16 +4,21 @@ import {
   BILLING_PACKAGES,
   catalogProblems,
   entitledModules,
+  firstChargeOn,
   parseLookupKey,
   priceLookupKey,
   readOnlyModules,
   selectionProblem,
   selectionTotal,
   suggestedSelection,
+  TRIAL_DAYS,
+  trialDaysLeft,
+  trialEndsOn,
 } from "../billing";
 
 const now = new Date("2026-12-10T12:00:00Z");
-const billing = { now, billingStartsOn: "2026-12-01" };
+// Billing started long enough ago that the 30-day trial is over.
+const billing = { now, billingStartsOn: "2026-10-01" };
 
 describe("billing catalogue", () => {
   it("has the prices from the plan, yearly as ten months", () => {
@@ -92,7 +97,7 @@ describe("entitlements", () => {
       entitledModules({ status: "past_due", items: ["books"], paymentFailedAt: failed }, billing)
         .mode,
     ).toBe("grace");
-    const later = { now: new Date("2026-12-14T00:00:00Z"), billingStartsOn: "2026-12-01" };
+    const later = { now: new Date("2026-12-14T00:00:00Z"), billingStartsOn: "2026-10-01" };
     expect(
       entitledModules({ status: "past_due", items: ["books"], paymentFailedAt: failed }, later),
     ).toMatchObject({ mode: "lapsed", modules: [] });
@@ -116,5 +121,83 @@ describe("entitlements", () => {
     const after = entitledModules({ status: "active", items: ["seller", "reviews"] }, billing);
     expect(readOnlyModules(enabled, after)).toEqual(["inventory"]);
     expect(after.modules).toEqual(expect.arrayContaining(["accounting", "commerce", "reviews"]));
+  });
+});
+
+describe("the free trial", () => {
+  it("lasts 30 days from billing starting, or from the company's creation if later", () => {
+    expect(TRIAL_DAYS).toBe(30);
+    expect(trialEndsOn("2026-12-01", "2026-06-01")).toBe("2026-12-30");
+    expect(trialEndsOn("2026-12-01", "2027-02-10")).toBe("2027-03-11");
+  });
+
+  it("unlocks every module with no plan, and with a smaller one", () => {
+    const during = { now: new Date("2026-12-30T23:00:00Z"), billingStartsOn: "2026-12-01" };
+    const none = entitledModules(null, during);
+    expect(none.mode).toBe("trial");
+    expect(none.modules).toContain("inventory");
+    expect(none.trialEndsOn).toBe("2026-12-30");
+    expect(entitledModules({ status: "active", items: ["books"] }, during).modules).toContain(
+      "reviews",
+    );
+  });
+
+  it("ends the day after its last day, then the plan decides", () => {
+    const after = { now: new Date("2026-12-31T00:00:00Z"), billingStartsOn: "2026-12-01" };
+    expect(entitledModules(null, after)).toMatchObject({ mode: "none", modules: [] });
+    expect(entitledModules({ status: "active", items: ["books"] }, after).mode).toBe("subscribed");
+  });
+
+  it("starts on sign-up for a company created after billing began", () => {
+    const opts = {
+      now: new Date("2027-02-20T12:00:00Z"),
+      billingStartsOn: "2026-12-01",
+      companyCreatedOn: "2027-02-10",
+    };
+    expect(entitledModules(null, opts)).toMatchObject({ mode: "trial", trialEndsOn: "2027-03-11" });
+  });
+
+  it("isn't counted during early access", () => {
+    const early = entitledModules(null, { now, billingStartsOn: "2027-01-01" });
+    expect(early).toMatchObject({ mode: "early_access", trialEndsOn: null });
+  });
+});
+
+describe("the first charge", () => {
+  it("waits for the trial's end, in early access and during the trial", () => {
+    expect(
+      firstChargeOn(
+        { mode: "early_access", billingStartsOn: "2027-01-01", trialEndsOn: null },
+        "2026-06-01",
+      ),
+    ).toBe("2027-01-31");
+    expect(
+      firstChargeOn(
+        { mode: "trial", billingStartsOn: "2026-12-01", trialEndsOn: "2026-12-30" },
+        "2026-06-01",
+      ),
+    ).toBe("2026-12-31");
+    expect(
+      firstChargeOn(
+        { mode: "early_access", billingStartsOn: null, trialEndsOn: null },
+        "2026-06-01",
+      ),
+    ).toBeNull();
+    expect(
+      firstChargeOn(
+        { mode: "none", billingStartsOn: "2026-10-01", trialEndsOn: "2026-10-30" },
+        "2026-06-01",
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("days left in the trial", () => {
+  it("counts today and stops at zero", () => {
+    const at = new Date("2026-12-28T18:00:00Z");
+    expect(trialDaysLeft("2026-12-30", at)).toBe(3);
+    expect(trialDaysLeft("2026-12-28", at)).toBe(1);
+    expect(trialDaysLeft("2026-12-27", at)).toBe(0);
+    expect(trialDaysLeft(null, at)).toBe(0);
   });
 });

@@ -176,42 +176,96 @@ export type SubscriptionSnapshot = {
 /** Days after a failed payment that everything keeps working. */
 export const BILLING_GRACE_DAYS = 7;
 
+/** Days every company has everything free once billing applies to it. */
+export const TRIAL_DAYS = 30;
+
 export type Entitlement = {
-  /** early_access: free until billing starts. grace: a payment failed, still working. */
-  mode: "early_access" | "subscribed" | "grace" | "lapsed" | "none";
+  /**
+   * early_access: free until billing starts. trial: the 30 days of everything, from the later
+   * of billing starting and the company being created. grace: a payment failed, still working.
+   */
+  mode: "early_access" | "trial" | "subscribed" | "grace" | "lapsed" | "none";
   modules: ModuleKey[];
   /** When early access ends (ISO date), when known. */
   billingStartsOn: string | null;
+  /** The trial's last day (ISO date), once billing has started for the company. */
+  trialEndsOn: string | null;
 };
+
+const addDaysIso = (iso: string, days: number) =>
+  new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * The trial's last day: TRIAL_DAYS from the later of the day billing starts and the day the
+ * company was created, so existing companies get it when billing starts and new ones on sign-up.
+ */
+export function trialEndsOn(billingStartsOn: string, companyCreatedOn: string): string {
+  const start = companyCreatedOn > billingStartsOn ? companyCreatedOn : billingStartsOn;
+  return addDaysIso(start, TRIAL_DAYS - 1);
+}
 
 /**
  * What a company may use. Before billing starts (no date, or a date still ahead) everything is
- * free. After that: the modules on an active subscription; while a payment has failed, the
+ * free. Then TRIAL_DAYS of everything (`trialEndsOn`). After that: the modules on an active
+ * subscription; while a payment has failed, the
  * same for BILLING_GRACE_DAYS; otherwise none (they turn read-only, never deleted).
  */
 export function entitledModules(
   subscription: SubscriptionSnapshot | null,
-  options: { now: Date; billingStartsOn: string | null },
+  options: { now: Date; billingStartsOn: string | null; companyCreatedOn?: string | null },
 ): Entitlement {
   const { now, billingStartsOn } = options;
   const today = now.toISOString().slice(0, 10);
   if (!billingStartsOn || today < billingStartsOn) {
-    return { mode: "early_access", modules: [...MODULE_KEYS], billingStartsOn };
+    return {
+      mode: "early_access",
+      modules: [...MODULE_KEYS],
+      billingStartsOn,
+      trialEndsOn: null,
+    };
   }
-  if (!subscription) return { mode: "none", modules: [], billingStartsOn };
+  const trialEnd = trialEndsOn(billingStartsOn, options.companyCreatedOn ?? billingStartsOn);
+  const base = { billingStartsOn, trialEndsOn: trialEnd };
+  // The trial is unrestricted: every module, whatever plan was chosen meanwhile.
+  if (today <= trialEnd) return { mode: "trial", modules: [...MODULE_KEYS], ...base };
+  if (!subscription) return { mode: "none", modules: [], ...base };
   const unlocked = [
     ...new Set(subscription.items.flatMap((key) => billingItem(key)?.modules ?? [])),
   ];
   const ordered = MODULE_KEYS.filter((m) => unlocked.includes(m));
   if (subscription.status === "active" || subscription.status === "trialing") {
-    return { mode: "subscribed", modules: ordered, billingStartsOn };
+    return { mode: "subscribed", modules: ordered, ...base };
   }
   if (subscription.status === "past_due") {
     const failed = subscription.paymentFailedAt ?? now;
     const graceEnds = failed.getTime() + BILLING_GRACE_DAYS * 86_400_000;
-    if (now.getTime() < graceEnds) return { mode: "grace", modules: ordered, billingStartsOn };
+    if (now.getTime() < graceEnds) return { mode: "grace", modules: ordered, ...base };
   }
-  return { mode: "lapsed", modules: [], billingStartsOn };
+  return { mode: "lapsed", modules: [], ...base };
+}
+
+/** Days left in the trial, counting today; 0 when it's over or not started. */
+export function trialDaysLeft(trialEnd: string | null, now = new Date()): number {
+  if (!trialEnd) return 0;
+  const today = Date.parse(`${now.toISOString().slice(0, 10)}T00:00:00Z`);
+  return Math.max(0, Math.round((Date.parse(`${trialEnd}T00:00:00Z`) - today) / 86_400_000) + 1);
+}
+
+/**
+ * The first day a plan chosen now may be charged (ISO date), or null to charge straight away:
+ * the day after the trial, whether we're still in early access or already in the trial.
+ */
+export function firstChargeOn(
+  entitlement: Pick<Entitlement, "mode" | "billingStartsOn" | "trialEndsOn">,
+  companyCreatedOn: string,
+): string | null {
+  if (entitlement.mode === "trial" && entitlement.trialEndsOn) {
+    return addDaysIso(entitlement.trialEndsOn, 1);
+  }
+  if (entitlement.mode === "early_access" && entitlement.billingStartsOn) {
+    return addDaysIso(trialEndsOn(entitlement.billingStartsOn, companyCreatedOn), 1);
+  }
+  return null;
 }
 
 /** Modules switched on but not paid for: they open read-only. */

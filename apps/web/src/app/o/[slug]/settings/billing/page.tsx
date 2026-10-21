@@ -1,4 +1,10 @@
-import { billingItem, suggestedSelection } from "@bookalyze/core";
+import {
+  billingItem,
+  firstChargeOn,
+  suggestedSelection,
+  TRIAL_DAYS,
+  trialDaysLeft,
+} from "@bookalyze/core";
 import { CircleAlert, Gift, Lock, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/shell/page-header";
@@ -16,7 +22,7 @@ const STATUS: Record<
   { label: string; variant: "success" | "warning" | "destructive" | "secondary" }
 > = {
   active: { label: "Active", variant: "success" },
-  trialing: { label: "Free until billing starts", variant: "success" },
+  trialing: { label: "Free until the trial ends", variant: "success" },
   past_due: { label: "Payment failed", variant: "destructive" },
   unpaid: { label: "Unpaid", variant: "destructive" },
   canceled: { label: "Cancelled", variant: "secondary" },
@@ -42,9 +48,11 @@ export default async function BillingPage({
   const current = subscription && !["canceled", "incomplete_expired"].includes(subscription.status);
   const locale = ctx.profile?.locale ?? "en-CA";
   const day = new Intl.DateTimeFormat(locale, { dateStyle: "long", timeZone: "UTC" });
-  const startsOn = entitlement.billingStartsOn
-    ? day.format(new Date(`${entitlement.billingStartsOn}T00:00:00Z`))
-    : null;
+  const isoDay = (iso: string | null) => (iso ? day.format(new Date(`${iso}T00:00:00Z`)) : null);
+  const startsOn = isoDay(entitlement.billingStartsOn);
+  const trialEnds = isoDay(entitlement.trialEndsOn);
+  const chargeOn = isoDay(firstChargeOn(entitlement, ctx.billing.companyCreatedOn));
+  const daysLeft = trialDaysLeft(entitlement.trialEndsOn);
   let invoices: StripeInvoice[] = [];
   if (configured && owner && state.account) {
     invoices = await listInvoices(state.account.stripeCustomerId).catch(() => []);
@@ -83,9 +91,27 @@ export default async function BillingPage({
           <div className="grid gap-1">
             <h2 className="font-semibold">Free during early access</h2>
             <p className="text-muted-foreground text-sm">
-              {startsOn
-                ? `Everything is included until ${startsOn}. You can choose a plan now; nothing is charged before then.`
-                : "Everything is included, and nothing is charged. We'll tell you well before billing starts."}
+              {startsOn && chargeOn
+                ? `Everything is included until ${startsOn}, then for a ${TRIAL_DAYS}-day free trial. You can choose a plan now; nothing is charged before ${chargeOn}.`
+                : `Everything is included, and nothing is charged. When billing starts, every company gets a ${TRIAL_DAYS}-day free trial with everything first, and we'll tell you well before.`}
+            </p>
+          </div>
+        </section>
+      ) : null}
+
+      {entitlement.mode === "trial" && trialEnds ? (
+        <section className="flex items-start gap-3 rounded-2xl border bg-card p-5 shadow-xs">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Gift className="size-4.5" />
+          </span>
+          <div className="grid gap-1">
+            <h2 className="font-semibold">
+              Free trial: {daysLeft} {daysLeft === 1 ? "day" : "days"} left
+            </h2>
+            <p className="text-muted-foreground text-sm">
+              Everything is included, with nothing held back, until {trialEnds}. Choose a plan any
+              time to keep what you use; nothing is charged before {chargeOn}. No card is needed for
+              the trial.
             </p>
           </div>
         </section>
