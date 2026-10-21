@@ -38,6 +38,7 @@ export * from "./reviews";
 export * from "./rules";
 export * as schema from "./schema";
 export * from "./settlements";
+export * from "./sku-pnl";
 export * from "./stock-overview";
 export * from "./stock-removals";
 export * from "./support";

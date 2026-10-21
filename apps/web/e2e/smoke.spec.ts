@@ -2043,6 +2043,55 @@ test("ads: connect Amazon Ads, bring in ad spend, and see each product's profit 
   await expect(page.getByRole("link", { name: "By product" })).toBeVisible();
 });
 
+test("sku profit and loss: each product's lines from its settlement, one product's waterfall, and the CSV", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Channel profit", exact: true }).click();
+  await page.getByRole("link", { name: "By product" }).click();
+  await page.getByRole("link", { name: "Profit and loss, line by line" }).click();
+  await expect(page.getByRole("heading", { name: "Profit and loss by product" })).toBeVisible();
+  const day = (n: number) =>
+    new Date(Number(process.env.E2E_NOW ?? Date.now()) - n * 86_400_000).toISOString().slice(0, 10);
+  await page.goto(`${page.url().split("?")[0]}?from=${day(59)}&to=${day(0)}`);
+
+  // Every product, worst first, with how much of it is the marketplace's own figures.
+  const mug = page.getByRole("link", { name: /MAPLE-MUG/ }).first();
+  await expect(mug).toBeVisible();
+  await expect(page.getByText("Actual", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Fees and refunds" })).toBeVisible();
+
+  // Sponsored Brands shared by ad sales, as a choice.
+  await page.getByRole("link", { name: "Shared by ad sales" }).click();
+  await expect(page).toHaveURL(/brands=shared/);
+  await expect(page.getByRole("link", { name: "Shared by ad sales" })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+
+  // One product: the waterfall from sales to profit, then each channel in its own currency.
+  await page
+    .getByRole("link", { name: /MAPLE-MUG/ })
+    .first()
+    .click();
+  await expect(page.getByRole("heading", { name: "From sales to profit" })).toBeVisible();
+  await expect(page.getByText("Referral and commission").first()).toBeVisible();
+  await expect(page.getByText("Fulfilment fees").first()).toBeVisible();
+  await expect(page.getByText("Refunds").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "By channel" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: /Amazon\.ca/ })).toBeVisible();
+
+  // The same as a CSV: every channel in the main currency, then each in its own.
+  const csv = await page.request.get(
+    (await page.getByRole("link", { name: "Download CSV" }).getAttribute("href")) ?? "",
+  );
+  const text = await csv.text();
+  expect(text).toContain("Referral and commission");
+  expect(text).toContain("All channels");
+  expect(text).toContain("MAPLE-MUG");
+  expect(text).toContain("Actual %");
+});
+
 test("amounts recorded in CAD on a USD account are flagged and corrected from Wise", async ({
   page,
 }) => {

@@ -120,9 +120,14 @@ export const EBAY_GROUPS = {
 export type EbayGroup = keyof typeof EBAY_GROUPS;
 
 /** Charges that are advertising (Promoted Listings and the like). */
-const ADVERTISING = /AD_FEE|PROMOTED|ADVERTIS/i;
+export const EBAY_ADVERTISING_FEE = /AD_FEE|PROMOTED|ADVERTIS/i;
 /** Money moved in or out of the eBay balance, not earned or spent. */
-const TRANSFERS = new Set(["TRANSFER", "WITHDRAWAL", "LOAN_REPAYMENT", "PURCHASE"]);
+export const EBAY_TRANSFER_TYPES = new Set([
+  "TRANSFER",
+  "WITHDRAWAL",
+  "LOAN_REPAYMENT",
+  "PURCHASE",
+]);
 
 /** A month's rows of one type, summed (units in the decimal strings). */
 export type EbaySum = {
@@ -149,7 +154,7 @@ export function ebayGroupTotals(sums: readonly EbaySum[]): {
     const amount = parseDecimal(s.amount);
     const fees = parseDecimal(s.fees);
     const type = s.transactionType.toUpperCase();
-    if (TRANSFERS.has(type)) {
+    if (EBAY_TRANSFER_TYPES.has(type)) {
       groups.transfers += amount;
       continue;
     }
@@ -162,7 +167,7 @@ export function ebayGroupTotals(sums: readonly EbaySum[]): {
     else if (type === "SHIPPING_LABEL") groups.shipping += base;
     else if (type === "CREDIT") groups.credits += base;
     else if (type === "NON_SALE_CHARGE") {
-      if (ADVERTISING.test(s.feeType ?? "")) groups.advertising += base;
+      if (EBAY_ADVERTISING_FEE.test(s.feeType ?? "")) groups.advertising += base;
       else groups.fees += base;
     } else groups.other += base;
   }

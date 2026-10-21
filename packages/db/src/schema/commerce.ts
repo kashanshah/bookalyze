@@ -410,6 +410,11 @@ export const settlements = pgTable(
      */
     postedFxRate: numeric("posted_fx_rate", { precision: 20, scale: 10 }),
     payoutBaseAmount: numeric("payout_base_amount", { precision: 20, scale: 4 }),
+    /**
+     * When its amounts by order and SKU (`settlement_sku_lines`) were last kept; null for one
+     * brought in before they were (bring it in again, or upload its flat file, to fill them).
+     */
+    skuDetailAt: timestamp("sku_detail_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
@@ -478,6 +483,44 @@ export const settlementLines = pgTable(
       foreignColumns: [settlements.organizationId, settlements.id],
     }).onDelete("cascade"),
     tenantIsolationPolicy("settlement_lines", t.organizationId),
+  ],
+);
+
+/**
+ * A settlement's amounts by order and SKU (and kind), from the flat file's `order-id`, `sku` and
+ * `quantity-purchased` columns: what each product's exact profit and loss reads (docs/ADS.md
+ * §6b). Rows with no order or SKU are the account's own fees (storage, subscription). Replaced
+ * whole each time the settlement is brought in or uploaded; never posts.
+ */
+export const settlementSkuLines = pgTable(
+  "settlement_sku_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    settlementId: uuid("settlement_id").notNull(),
+    /** Amazon's order ID; null for amounts not on an order. */
+    orderRef: text("order_ref"),
+    sku: text("sku"),
+    postedDate: date("posted_date"),
+    transactionType: text("transaction_type").notNull(),
+    amountType: text("amount_type").notNull(),
+    amountDescription: text("amount_description").notNull(),
+    amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
+    quantity: integer("quantity").notNull().default(0),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [
+    index("settlement_sku_lines_settlement_idx").on(t.organizationId, t.settlementId),
+    index("settlement_sku_lines_order_idx").on(t.organizationId, t.orderRef),
+    foreignKey({
+      name: "settlement_sku_lines_settlement_fk",
+      columns: [t.organizationId, t.settlementId],
+      foreignColumns: [settlements.organizationId, settlements.id],
+    }).onDelete("cascade"),
+    check("settlement_sku_lines_quantity_valid", sql`${t.quantity} >= 0 and ${t.count} >= 0`),
+    tenantIsolationPolicy("settlement_sku_lines", t.organizationId),
   ],
 );
 

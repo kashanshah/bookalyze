@@ -212,23 +212,36 @@ const SETTLEMENT_HEADER = [
   "amount-type",
   "amount-description",
   "amount",
+  "sku",
+  "quantity-purchased",
 ];
+/** Each order's SKU and units, on its rows: what the SKU profit and loss reads. */
+const SETTLEMENT_SKUS = {
+  "702-1000001-0000001": ["MAPLE-MUG", 2],
+  "702-1000004-0000004": ["BIRCH-COASTER", 1],
+};
 function settlementReport() {
   const day = (n) => daysAgo(n).replace("T", " ").replace("Z", " UTC");
-  const line = (type, order, amountType, description, amount) => [
-    "10000000001",
-    "",
-    "",
-    "",
-    "",
-    "",
-    type,
-    order,
-    "Amazon.ca",
-    amountType,
-    description,
-    amount,
-  ];
+  const line = (type, order, amountType, description, amount) => {
+    const [sku, units] = SETTLEMENT_SKUS[order] ?? ["", 0];
+    const quantity = type === "Order" && description === "Principal" ? String(units) : "";
+    return [
+      "10000000001",
+      "",
+      "",
+      "",
+      "",
+      "",
+      type,
+      order,
+      "Amazon.ca",
+      amountType,
+      description,
+      amount,
+      sku,
+      quantity,
+    ];
+  };
   return [
     SETTLEMENT_HEADER,
     ["10000000001", day(15), day(1), day(0), "26.03", "CAD"],

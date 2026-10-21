@@ -4,7 +4,10 @@ import {
   getDb,
   knownSettlementReports,
   markSettlementsSynced,
+  reportsWithoutSkuDetail,
   saveSettlement,
+  saveSettlementSkuLines,
+  settlementByExternalId,
   settlementChannel,
   settlementConnections,
   VaultError,
@@ -20,6 +23,9 @@ import { logError, logWarn } from "./log";
  * period (about every 14 days) on its own. Each run lists the reports since the last look and
  * downloads those not in yet. Amazon rations both calls tightly (about one listing a minute), so
  * a run stops when it's out of time or throttled and the next carries on. Nothing posts yet.
+ * A settlement already in without its amounts by order and SKU (brought in before they were
+ * kept) is downloaded again while Amazon still lists it, and only those are filled: the
+ * settlement and its place in the books stay as they are.
  */
 
 const HOUR = 3_600_000;
@@ -71,8 +77,16 @@ export async function syncConnectionSettlements(
   try {
     const creds = openAmazonCredentials(ctx.orgId, connection.id, connection.secret);
     const started = new Date();
+    const { known, refill } = await withOrg(db, ctx, async (tx) => ({
+      known: await knownSettlementReports(tx),
+      refill: await reportsWithoutSkuDetail(tx),
+    }));
+    // Settlements to fill by SKU go back as far as Amazon lists, not just since the last look.
     const since = new Date(
-      Math.max(started.getTime() - LOOKBACK_MS, synced ? synced.getTime() - OVERLAP_MS : 0),
+      Math.max(
+        started.getTime() - LOOKBACK_MS,
+        synced && !refill.size ? synced.getTime() - OVERLAP_MS : 0,
+      ),
     ).toISOString();
 
     // 1. Every settlement report since then (a page is 100: years of settlements).
@@ -98,9 +112,8 @@ export async function syncConnectionSettlements(
     if (!listed) return { ...result, more: true };
 
     // 2. Download the ones not in yet, oldest first.
-    const known = await withOrg(db, ctx, (tx) => knownSettlementReports(tx));
     const fresh = reports
-      .filter((r) => !known.has(r.reportId))
+      .filter((r) => !known.has(r.reportId) || refill.has(r.reportId))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     for (const report of fresh) {
       if (Date.now() >= deadline - 2_000) return { ...result, more: true };
@@ -130,6 +143,17 @@ export async function syncConnectionSettlements(
         continue;
       }
       await withOrg(db, ctx, async (tx) => {
+        const existing = await settlementByExternalId(tx, settlement.settlementId);
+        if (existing) {
+          await saveSettlementSkuLines(tx, {
+            orgId: ctx.orgId,
+            settlementId: existing.id,
+            lines: settlement.skuLines ?? [],
+            replace: true,
+            complete: true,
+          });
+          return;
+        }
         const channelId = await settlementChannel(tx, {
           connectionId: connection.id,
           marketplace: settlement.marketplace,

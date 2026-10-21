@@ -1782,6 +1782,53 @@ Analytics only, for profit: no keywords, search terms, placements, bids or budge
   marketing `markdown.test.ts`; e2e "ads: connect Amazon Ads, bring in ad spend, and see each
   product's profit after ads" with `e2e/amazon-ads-mock.mjs` (port 4016).
 
+### Advertising, slice 2: SKU profit and loss, exact
+
+Design: `docs/ADS.md` §6b. **Commerce → Channel profit → By product → Profit and loss, line by
+line** (`/commerce/profit/products/pnl`; one SKU at `…/pnl/[sku]`).
+
+- **Amazon settlements by SKU** (migration `0090_settlement_sku_lines`): `settlement_sku_lines`
+  (per settlement: order, SKU, kind, amount, units from `quantity-purchased`, first posted day;
+  no order and no SKU = the account's fees; RLS) and `settlements.sku_detail_at`. Core
+  `parseSettlementReport` also returns `skuLines`; db `saveSettlement` keeps them,
+  `saveSettlementSkuLines` (replace / complete) for uploads in parts
+  (`uploadSettlementSkuLinesAction`, 1,500 lines a call, after `uploadSettlementAction`).
+  **Refill**: the sync downloads again the reports of settlements without detail
+  (`reportsWithoutSkuDetail`; looks back the full 90 days while there are any) and fills only
+  their lines (`settlementByExternalId`): nothing in the books changes. Older ones: upload the
+  flat file again. Only the flat file and the API's report fill them; the date range transaction
+  report doesn't yet.
+- **Rows by SKU** (db `sku-pnl.ts`): `skuOrderLines` (period's order lines, the order's refund
+  shared by item price, returned units from `order_refunds`), `amazonSkuRows`,
+  `noonSkuMoneyRows` (partner SKU), `ebaySkuMoneyRows` (by order), `walmartSkuMoneyRows` (PO,
+  SKU and quantity columns by name, `walmartSkuColumns`; reports up to 45 days after the
+  period): amounts on the period's orders, or on no order the company has and dated in the
+  period. `postedUnitCosts` (lot consumptions of posted COGS months, per channel, month and
+  product), `adSpendByDay`, `fxRatesForDays` (each day's rate in one read; `server/fx.ts`
+  `dayRates` fetches Bank of Canada's for the range when a day has none).
+- **Core `commerce/sku-pnl.ts`**: `channelSkuPnl` (settled lines actual; unsettled at the SKU's
+  settled fee rates, else the channel's, else the keep rate; rows on an order with no SKU shared
+  by item price; account fees shared by units; COGS posted or next unit; ads, the last 14 days
+  estimated; Sponsored Brands own line or shared by ad sales; the books' ad charges only without
+  ads reports), `summarizeSkuPnl` / `totalSkuPnl` (per SKU in any currency through a converter;
+  profit, margin, per unit, TACOS, actual share), `skuWaterfall`, `splitUnits` (exact shares),
+  `skuPnlCsvRows`.
+- **Screens** (`server/sku-pnl.ts`): cards (profit, sales with units sold and returned, ad spend
+  and TACOS, x% actual), a table per SKU worst first with ≈ on estimated amounts, a channel
+  picker (All channels in the main currency at each amount's day's rate, or one channel in its
+  own), a Sponsored Brands choice (own line, shared by ad sales), notes for settlements without
+  detail, channels estimated by keep rate, ads not connected and amounts without a rate. One
+  SKU: a waterfall and By channel (each line per channel in its currency). Download CSV
+  (`/api/o/[slug]/commerce/sku-pnl`). By product links to it. Public guide
+  `sku-profit-and-loss`.
+- Tests: core `sku-pnl.test.ts` (SKU lines from the flat file, Amazon's kinds, settled and
+  estimated lines, keep rate, shares by item price and units, orders not in Bookalyze, posted and
+  next-unit COGS, ads and Sponsored Brands, the books' ads, property tests that lines add up to
+  profit and shares to the whole, Noon, eBay and Walmart readers, waterfall, CSV); db
+  `sku-pnl.test.ts` (lines kept and read by period, refill without changing the settlement, upload
+  in parts, isolation, refund shares, Noon by partner SKU, posted unit costs, day rates); e2e "sku
+  profit and loss" (the mock settlement now has `sku` and `quantity-purchased`).
+
 ### Phase 4c, slice 8: FBN stock (Noon's FBN inventory ledger)
 
 - **Same movements as Amazon's FBA ledger:** core `parseNoonLedger` reads Noon's
@@ -3416,20 +3463,16 @@ Built like Noon and eBay: channels first, then the account, orders, money and th
 ### Advertising: profit after ads (docs/ADS.md)
 1. [x] **The ad metrics store, Amazon Ads (Sponsored Products and Brands), Profit by product.**
    Done in slice 1.
-2. [ ] **SKU profit and loss, exact** (docs/ADS.md §6b; the main output): any date range, every
-   SKU or one, its waterfall (units sold and returned, gross sales, promotions, refunds, referral,
-   fulfilment, other fees, COGS, ads, profit, margin, per unit, TACOS) with each amount marked
-   actual or estimated; a drill-down per channel in its currency. Needs Amazon settlement amounts
-   kept by SKU (new table, parser change; refill by bringing settlements in again); Noon and
-   Walmart rows read by SKU; eBay through orders; COGS from lot consumptions. Works without
-   Amazon Ads.
+2. [x] **SKU profit and loss, exact** (docs/ADS.md §6b; the main output). Done in slice 2. Next:
+   confirm the readings on Kazomo's live data (Amazon.ca settlements refilled by SKU, Noon UAE,
+   Walmart's live report columns), then the date range transaction report's SKUs.
 3. [ ] **Noon**: first check Noon's "Reports this key can download" for an ads report; otherwise an
    upload of Ad Manager's CSV/XLSX export into `ad_metrics` (`source = 'upload'`), its SKUs matched
    to Noon channels' Partner SKUs.
 4. [ ] **eBay Promoted Listings** through the Marketing API (`ad_type = promoted_listings`).
 5. [ ] **Sponsored Display** (`sdAdvertisedProduct`, per SKU).
-6. [ ] Optional: Sponsored Brands allocated by each ASIN's share of its attributed sales
-   (`sbPurchasedProduct`), as a choice.
+6. [ ] Sponsored Brands shared by each ASIN's share of SB-attributed sales (`sbPurchasedProduct`).
+   The SKU profit and loss already shares it as a choice, by Sponsored Products ad sales.
 7. [ ] **Walmart Connect**, only once API access is confirmed.
 
 ### Phase 0 leftovers

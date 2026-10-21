@@ -631,6 +631,13 @@
       "when": 1792622344620,
       "tag": "0089_ad_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1792624202335,
+      "tag": "0090_settlement_sku_lines",
+      "breakpoints": true
     }
   ]
 }

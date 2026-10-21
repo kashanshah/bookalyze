@@ -92,3 +92,49 @@ export async function missingCadRates(
   }
   return missing;
 }
+
+/**
+ * `fxRateOn` for every day from `from` to `to` at once (each day's rate, or the latest of the
+ * week before it): main-currency units per one `quote`. Days with no rate are left out.
+ */
+export async function fxRatesForDays(
+  db: Db,
+  input: { base: string; quote: string; from: string; to: string },
+): Promise<Map<string, string>> {
+  const days: string[] = [];
+  for (let d = input.from; d <= input.to; d = daysBefore(d, -1)) days.push(d);
+  if (input.base === input.quote) return new Map(days.map((d) => [d, "1"]));
+  const fixed = crossRate(input.base, input.quote, () => null);
+  if (fixed) return new Map(days.map((d) => [d, fixed]));
+  const series = new Map<string, { date: string; rate: string }[]>();
+  for (const code of cadRatesNeeded(input.base, input.quote)) {
+    const rows = await db
+      .select({ rate: fxRates.rate, date: fxRates.date })
+      .from(fxRates)
+      .where(
+        and(
+          eq(fxRates.base, "CAD"),
+          eq(fxRates.quote, code),
+          gte(fxRates.date, daysBefore(input.from, 7)),
+          lte(fxRates.date, input.to),
+        ),
+      )
+      .orderBy(fxRates.date);
+    series.set(code, rows);
+  }
+  const out = new Map<string, string>();
+  for (const day of days) {
+    const floor = daysBefore(day, 7);
+    const rate = crossRate(input.base, input.quote, (code) => {
+      const rows = series.get(code) ?? [];
+      let found: string | null = null;
+      for (const r of rows) {
+        if (r.date > day) break;
+        if (r.date >= floor) found = r.rate;
+      }
+      return found;
+    });
+    if (rate) out.set(day, rate);
+  }
+  return out;
+}

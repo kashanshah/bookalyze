@@ -8,7 +8,9 @@ import { convertUnits, divideDecimals, formatDecimal, parseDecimal } from "../mo
  * The settlement report (flat file V2, tab-separated) has one summary row (settlement ID,
  * period, deposit date, total) and one row per amount. Columns are read by their header names,
  * so their order doesn't matter. Lines are summed by kind (transaction type, amount type,
- * description): that is what the books need, and it keeps thousands of rows to a few dozen.
+ * description): that is what the books need, and it keeps thousands of rows to a few dozen. The
+ * same rows are also summed by order and SKU (`skuLines`): what each product's exact
+ * profit and loss reads (docs/ADS.md §6b).
  */
 
 export const SETTLEMENT_REPORT_TYPE = "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2";
@@ -20,6 +22,22 @@ export type SettlementLine = {
   /** Signed: positive is money to the seller. */
   amount: string;
   /** How many rows were summed into it. */
+  count: number;
+};
+
+/** A settlement's amounts for one order and SKU (or none: account-level fees), by kind. */
+export type SettlementSkuLine = {
+  /** Amazon's order ID, or null for amounts not on an order (storage, subscription…). */
+  orderId: string | null;
+  sku: string | null;
+  /** The day of its first row (YYYY-MM-DD, UTC), or null when the rows have no date. */
+  postedDate: string | null;
+  transactionType: string;
+  amountType: string;
+  amountDescription: string;
+  amount: string;
+  /** Units on its rows ("quantity-purchased"), summed. */
+  quantity: number;
   count: number;
 };
 
@@ -36,6 +54,8 @@ export type Settlement = {
   /** e.g. "Amazon.ca", from the rows. */
   marketplace: string | null;
   lines: SettlementLine[];
+  /** The same amounts by order and SKU (empty from sources without them). */
+  skuLines?: SettlementSkuLine[];
   /** Orders the settlement covers. */
   orderCount: number;
   /** The lines add up to the total. */
@@ -55,6 +75,9 @@ const HEADERS = {
   amountType: "amount-type",
   amountDescription: "amount-description",
   amount: "amount",
+  sku: "sku",
+  quantity: "quantity-purchased",
+  posted: "posted-date",
 } as const;
 
 /**
@@ -129,6 +152,7 @@ export function parseSettlementReport(text: string): Settlement {
   const deposit = readSettlementDate(cell(summary, at.deposit));
 
   const sums = new Map<string, SettlementLine & { units: bigint }>();
+  const bySku = new Map<string, SettlementSkuLine & { units: bigint }>();
   const orders = new Set<string>();
   const marketplaces = new Map<string, number>();
   for (const row of rows.slice(1)) {
@@ -147,6 +171,26 @@ export function parseSettlementReport(text: string): Settlement {
     sums.set(key, sum);
     const order = cell(row, at.orderId);
     if (order) orders.add(order);
+    const sku = cell(row, at.sku).slice(0, 200) || null;
+    const orderId = order.slice(0, 100) || null;
+    const skuKey = `${orderId ?? ""}\u0000${sku ?? ""}\u0000${key}`;
+    const quantity = Number.parseInt(cell(row, at.quantity), 10);
+    const posted = readSettlementDate(cell(row, at.posted))?.slice(0, 10) ?? null;
+    const skuSum = bySku.get(skuKey) ?? {
+      ...line,
+      orderId,
+      sku,
+      postedDate: posted,
+      amount: "0",
+      quantity: 0,
+      count: 0,
+      units: 0n,
+    };
+    skuSum.units += parseDecimal(amount);
+    skuSum.count++;
+    if (Number.isFinite(quantity) && quantity > 0) skuSum.quantity += quantity;
+    if (posted && (!skuSum.postedDate || posted < skuSum.postedDate)) skuSum.postedDate = posted;
+    bySku.set(skuKey, skuSum);
     const place = cell(row, at.marketplace);
     if (place) marketplaces.set(place, (marketplaces.get(place) ?? 0) + 1);
   }
@@ -166,6 +210,10 @@ export function parseSettlementReport(text: string): Settlement {
     currency: cell(summary, at.currency).toUpperCase().slice(0, 3) || "",
     marketplace,
     lines,
+    skuLines: [...bySku.values()].map(({ units, ...l }) => ({
+      ...l,
+      amount: formatDecimal(units),
+    })),
     orderCount: orders.size,
     balanced: linesTotal === parseDecimal(total),
   };

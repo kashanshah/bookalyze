@@ -19,7 +19,9 @@ import {
   restoreDismissedDeposits,
   saveSettlement,
   saveSettlementSetup,
+  saveSettlementSkuLines,
   schema,
+  settlementByExternalId,
   settlementChannel,
   settlementsToPost,
   settlementsWithOneDeposit,
@@ -133,6 +135,70 @@ export async function uploadSettlementAction(
   });
   revalidatePath(`/o/${slug}/commerce/settlements`, "layout");
   return { ok: true, ...saved };
+}
+
+/** How many amounts by order and SKU one call sends (the browser splits a settlement's). */
+const SKU_LINES_PER_CALL = 1_500;
+const skuLinesSchema = z.object({
+  settlementId: z.string().trim().min(1).max(100),
+  /** The first part replaces what was kept; the last marks the settlement as complete. */
+  first: z.boolean(),
+  last: z.boolean(),
+  lines: z
+    .array(
+      z.object({
+        orderId: z.string().max(100).nullable(),
+        sku: z.string().max(200).nullable(),
+        postedDate: z.iso.date().nullable(),
+        transactionType: z.string().max(200),
+        amountType: z.string().max(200),
+        amountDescription: z.string().max(200),
+        amount,
+        quantity: z.number().int().min(0).max(1_000_000),
+        count: z.number().int().min(0),
+      }),
+    )
+    .max(SKU_LINES_PER_CALL),
+});
+
+/**
+ * Keeps an uploaded settlement's amounts by order and SKU (its flat file's `order-id`, `sku` and
+ * `quantity-purchased`), a part at a time: what each product's exact profit and loss reads.
+ * Uploading a settlement already in fills them without changing it.
+ */
+export async function uploadSettlementSkuLinesAction(
+  slug: string,
+  input: z.input<typeof skuLinesSchema>,
+): Promise<SettlementResult> {
+  const { ctx, allowed } = await settlementsContext(slug);
+  if (!allowed) return { ok: false, message: "Settlements aren't part of this company's plan." };
+  if (!isOrgAdmin(ctx))
+    return { ok: false, message: "Only owners and admins can add settlements." };
+  const parsed = skuLinesSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "That settlement's lines couldn't be read." };
+  const { settlementId, first, last, lines } = parsed.data;
+  return inOrg(ctx, async (tx) => {
+    const found = await settlementByExternalId(tx, settlementId);
+    if (!found) return { ok: false as const, message: "Add the settlement first." };
+    await saveSettlementSkuLines(tx, {
+      orgId: ctx.org.id,
+      settlementId: found.id,
+      lines,
+      replace: first,
+      complete: last,
+    });
+    if (last) {
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: "settlements.sku_detail_kept",
+        entityType: "settlement",
+        entityId: found.id,
+        after: { settlementId },
+      });
+    }
+    return { ok: true as const };
+  });
 }
 
 /**

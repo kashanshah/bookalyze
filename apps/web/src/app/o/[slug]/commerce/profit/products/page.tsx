@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   CircleDollarSign,
+  ListTree,
   Megaphone,
   PackageSearch,
   TrendingDown,
@@ -13,6 +14,7 @@ import { notFound } from "next/navigation";
 import { Amount } from "@/components/accounting/amount";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatDate, nowIn } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { getCommerceContext } from "@/server/commerce";
@@ -73,6 +75,14 @@ export default async function ProductProfitPage({
         eyebrow="Commerce"
         title="Profit by product"
         description="Each product's real profit after the marketplace's fees, what it cost you and its ads. The products losing money come first, with how much each can spend on ads before it stops paying."
+        actions={
+          <Button asChild variant="outline">
+            <Link href={`${base}/pnl${query({ channel: channelId })}`}>
+              <ListTree />
+              Profit and loss, line by line
+            </Link>
+          </Button>
+        }
       />
       <RangeControls from={from} to={to} presets={presets} csvHref={csvHref} />
 
