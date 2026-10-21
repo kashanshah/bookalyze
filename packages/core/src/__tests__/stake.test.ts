@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccountBalance } from "../accounting/reports";
-import { ownerDirections, stakeLine, yourStake } from "../accounting/stake";
+import { ownerDirections, stakeLine, stakeLines, yourStake } from "../accounting/stake";
 
 const acct = (
   id: string,
@@ -112,5 +112,25 @@ describe("your stake", () => {
     expect(stakeLine(ways.get("contrib"), "50.0000")).toEqual({ way: "in", amount: "-50.0000" });
     expect(stakeLine(ways.get("drawings"), "400.0000")).toEqual({ way: "out", amount: "400.0000" });
     expect(stakeLine(ways.get("empty"), "-20.0000")).toEqual({ way: "in", amount: "20.0000" });
+  });
+
+  it("counts an account at zero the way its lines net, so an entry and its reversal cancel", () => {
+    const ways = new Map<string, "in" | "out" | null>([
+      ["contrib", "in"],
+      ["empty", null],
+    ]);
+    const lines = stakeLines(
+      [
+        { accountId: "contrib", amount: "-500.0000" },
+        { accountId: "empty", amount: "-300.0000" },
+        { accountId: "empty", amount: "300.0000" },
+      ],
+      ways,
+    );
+    expect(lines.map((l) => [l.accountId, l.way, l.amount])).toEqual([
+      ["contrib", "in", "500.0000"],
+      ["empty", "out", "-300.0000"],
+      ["empty", "out", "300.0000"],
+    ]);
   });
 });

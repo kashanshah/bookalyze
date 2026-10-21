@@ -84,6 +84,27 @@ export function stakeLine(
   return { way, amount: formatDecimal(way === "in" ? -v : v) };
 }
 
+/**
+ * Lines on owner accounts read the way Your stake counts them: an account at zero on the day
+ * counts the way its lines here net (so an entry and its reversal don't count both ways).
+ */
+export function stakeLines<T extends { accountId: string; amount: string }>(
+  lines: readonly T[],
+  ways: Map<string, "in" | "out" | null>,
+): (Omit<T, "amount"> & { way: "in" | "out"; amount: string })[] {
+  const net = new Map<string, bigint>();
+  for (const l of lines) {
+    if (!ways.get(l.accountId)) {
+      net.set(l.accountId, (net.get(l.accountId) ?? 0n) + parseDecimal(l.amount));
+    }
+  }
+  return lines.map((l) => {
+    const n = net.get(l.accountId);
+    const way = ways.get(l.accountId) ?? (n === undefined ? null : n < 0n ? "in" : "out");
+    return { ...l, ...stakeLine(way, l.amount) };
+  });
+}
+
 export function yourStake(input: {
   /** Balances of every account up to the day (all time). */
   asOf: AccountBalance[];
