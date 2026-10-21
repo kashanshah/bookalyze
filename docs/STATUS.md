@@ -12,6 +12,7 @@ Cursor, Copilot…).
   - Product plan, roadmap and decision log: [`docs/PLAN.md`](PLAN.md), the "why" and long-term "what".
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
+  - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
 _Last updated: 2026-10-21, phase 4e slice 5: WFS stock, what Walmart Fulfillment Services holds,
 on each WFS channel and on Stock in its own column._
