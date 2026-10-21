@@ -16,6 +16,7 @@ const PRICES = Object.entries({
   books: [900, 9000],
   seller: [1900, 19000],
   seller_plus: [2900, 29000],
+  reviews_only: [900, 9000],
   stock: [800, 8000],
   reviews: [500, 5000],
 }).flatMap(([key, [month, year]]) => [

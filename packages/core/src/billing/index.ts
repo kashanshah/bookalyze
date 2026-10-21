@@ -7,11 +7,14 @@ import { formatDecimal, parseDecimal } from "../money";
  *
  * The independence rule: each module is paid for on its own line, so losing one (an add-on
  * removed, a package changed) makes only that module read-only. Nothing is ever deleted.
+ *
+ * Review requests only is the one package that uses a module in part (`partly`): it connects
+ * marketplaces and brings in orders through Commerce, and the rest of Commerce stays read-only.
  */
 
 export type BillingInterval = "month" | "year";
 
-export type PackageKey = "books" | "seller" | "seller_plus";
+export type PackageKey = "books" | "seller" | "seller_plus" | "reviews_only";
 export type AddOnKey = "stock" | "reviews";
 export type BillingItemKey = PackageKey | AddOnKey;
 
@@ -26,7 +29,19 @@ export type BillingItem = {
   modules: readonly ModuleKey[];
   /** Add-ons: the packages they can be added to. */
   addTo?: readonly PackageKey[];
+  /**
+   * Modules it uses only in part: connecting marketplaces and bringing in their orders
+   * (`CONNECTION_AREA`). Everything else in them stays read-only.
+   */
+  partly?: readonly ModuleKey[];
 };
+
+/**
+ * What a module used in part may still change: its marketplace connections, the channels they
+ * make and bringing in orders. Review requests needs these; settlements, payouts, Channel profit,
+ * invoices and the books stay read-only.
+ */
+export const CONNECTION_AREA = "connections" as const;
 
 export const BILLING_PACKAGES: Record<PackageKey, BillingItem> = {
   books: {
@@ -52,6 +67,15 @@ export const BILLING_PACKAGES: Record<PackageKey, BillingItem> = {
     monthly: "29.00",
     yearly: "290.00",
     modules: ["accounting", "banking", "entity", "commerce", "inventory", "reviews", "analytics"],
+  },
+  reviews_only: {
+    key: "reviews_only",
+    kind: "package",
+    name: "Review requests only",
+    monthly: "9.00",
+    yearly: "90.00",
+    modules: ["reviews"],
+    partly: ["commerce"],
   },
 };
 
@@ -92,7 +116,9 @@ export function priceLookupKey(key: BillingItemKey, interval: BillingInterval): 
 export function parseLookupKey(
   lookupKey: string | null | undefined,
 ): { key: BillingItemKey; interval: BillingInterval } | null {
-  const match = /^(books|seller_plus|seller|stock|reviews)_(month|year)$/.exec(lookupKey ?? "");
+  const match = /^(books|seller_plus|seller|stock|reviews_only|reviews)_(month|year)$/.exec(
+    lookupKey ?? "",
+  );
   if (!match) return null;
   return { key: match[1] as BillingItemKey, interval: match[2] as BillingInterval };
 }
@@ -103,14 +129,21 @@ export function parseLookupKey(
  */
 export function catalogProblems(): string[] {
   const problems: string[] = [];
-  const check = (name: string, have: readonly ModuleKey[]) => {
+  // A module used in part counts as there for what needs it; its own needs aren't checked, since
+  // only its connections are used.
+  const check = (name: string, have: readonly ModuleKey[], partly: readonly ModuleKey[] = []) => {
     for (const m of have) {
       for (const needed of modules[m].requires) {
-        if (!have.includes(needed)) problems.push(`${name}: ${m} needs ${needed}`);
+        if (!have.includes(needed) && !partly.includes(needed)) {
+          problems.push(`${name}: ${m} needs ${needed}`);
+        }
       }
     }
+    for (const m of partly) {
+      if (have.includes(m)) problems.push(`${name}: ${m} is both in full and in part`);
+    }
   };
-  for (const p of Object.values(BILLING_PACKAGES)) check(p.name, p.modules);
+  for (const p of Object.values(BILLING_PACKAGES)) check(p.name, p.modules, p.partly);
   for (const a of Object.values(BILLING_ADD_ONS)) {
     for (const base of a.addTo ?? []) {
       const have = [...new Set([...BILLING_PACKAGES[base].modules, ...a.modules])];
@@ -190,6 +223,11 @@ export type Entitlement = {
   billingStartsOn: string | null;
   /** The trial's last day (ISO date), once billing has started for the company. */
   trialEndsOn: string | null;
+  /**
+   * Modules used only in part (not in `modules`): read-only apart from their connections
+   * (`CONNECTION_AREA`).
+   */
+  partly: ModuleKey[];
 };
 
 const addDaysIso = (iso: string, days: number) =>
@@ -222,10 +260,11 @@ export function entitledModules(
       modules: [...MODULE_KEYS],
       billingStartsOn,
       trialEndsOn: null,
+      partly: [],
     };
   }
   const trialEnd = trialEndsOn(billingStartsOn, options.companyCreatedOn ?? billingStartsOn);
-  const base = { billingStartsOn, trialEndsOn: trialEnd };
+  const base = { billingStartsOn, trialEndsOn: trialEnd, partly: [] as ModuleKey[] };
   // The trial is unrestricted: every module, whatever plan was chosen meanwhile.
   if (today <= trialEnd) return { mode: "trial", modules: [...MODULE_KEYS], ...base };
   if (!subscription) return { mode: "none", modules: [], ...base };
@@ -233,13 +272,15 @@ export function entitledModules(
     ...new Set(subscription.items.flatMap((key) => billingItem(key)?.modules ?? [])),
   ];
   const ordered = MODULE_KEYS.filter((m) => unlocked.includes(m));
+  const inPart = new Set(subscription.items.flatMap((key) => billingItem(key)?.partly ?? []));
+  const partly = MODULE_KEYS.filter((m) => inPart.has(m) && !unlocked.includes(m));
   if (subscription.status === "active" || subscription.status === "trialing") {
-    return { mode: "subscribed", modules: ordered, ...base };
+    return { mode: "subscribed", modules: ordered, ...base, partly };
   }
   if (subscription.status === "past_due") {
     const failed = subscription.paymentFailedAt ?? now;
     const graceEnds = failed.getTime() + BILLING_GRACE_DAYS * 86_400_000;
-    if (now.getTime() < graceEnds) return { mode: "grace", modules: ordered, ...base };
+    if (now.getTime() < graceEnds) return { mode: "grace", modules: ordered, ...base, partly };
   }
   return { mode: "lapsed", modules: [], ...base };
 }
@@ -274,6 +315,19 @@ export function readOnlyModules(
   entitlement: Pick<Entitlement, "modules">,
 ): ModuleKey[] {
   return MODULE_KEYS.filter((m) => enabled.includes(m) && !entitlement.modules.includes(m));
+}
+
+/**
+ * Whether a change may be made in a module: always unless it's read-only, and in a module used
+ * only in part, just its connections (`area` = CONNECTION_AREA).
+ */
+export function mayChange(
+  billing: { readOnly: readonly ModuleKey[]; entitlement: Pick<Entitlement, "partly"> },
+  module: ModuleKey,
+  area?: typeof CONNECTION_AREA,
+): boolean {
+  if (!billing.readOnly.includes(module)) return true;
+  return area === CONNECTION_AREA && billing.entitlement.partly.includes(module);
 }
 
 /** The package and add-ons a company's switched-on modules suggest. */

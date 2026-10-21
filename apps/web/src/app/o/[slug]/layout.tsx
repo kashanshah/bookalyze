@@ -3,7 +3,7 @@ import { Gift, Lock } from "lucide-react";
 import Link from "next/link";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { Sidebar, SidebarContent } from "@/components/shell/sidebar";
-import { moduleLabel } from "@/server/billing";
+import { readOnlyLabels } from "@/server/billing";
 import { getOrgContext, listUserOrgs } from "@/server/org";
 
 export default async function OrgLayout({
@@ -56,10 +56,8 @@ export default async function OrgLayout({
               <Lock className="size-4 shrink-0" />
               <span className="flex-1">
                 Read-only, because they aren't in the plan:{" "}
-                <span className="font-medium">
-                  {ctx.billing.readOnly.map(moduleLabel).join(", ")}
-                </span>
-                . Nothing in them is deleted.
+                <span className="font-medium">{readOnlyLabels(ctx.billing).join(", ")}</span>.
+                Nothing in them is deleted.
               </span>
               <Link
                 href={`/o/${slug}/settings/billing`}

@@ -1,0 +1,2 @@
+ALTER TABLE "subscription_items" DROP CONSTRAINT "subscription_items_key_valid";--> statement-breakpoint
+ALTER TABLE "subscription_items" ADD CONSTRAINT "subscription_items_key_valid" CHECK ("subscription_items"."item_key" in ('books', 'seller', 'seller_plus', 'reviews_only', 'stock', 'reviews'));

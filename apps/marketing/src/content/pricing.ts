@@ -96,6 +96,23 @@ export const ADD_ONS: readonly AddOn[] = [
 ];
 
 /**
+ * Review requests on their own, for sellers who keep their books elsewhere (`reviews_only` in
+ * core): Amazon is connected and its orders come in, and nothing else in the app is included.
+ */
+export const REVIEWS_ONLY = {
+  name: "Review requests only",
+  monthly: 9,
+  yearly: 90,
+  forWhom: "For Amazon sellers who just want more reviews.",
+  includes: [
+    "Amazon's own Request a Review, by hand, hundreds at once or automatically",
+    "Rules for when to ask: days after delivery, skipping refunds, replacements and business orders",
+    "Connect your Amazon store and its orders come in on their own",
+    "Move to Seller or Seller Plus any time; your requests stay",
+  ],
+} as const;
+
+/**
  * Currencies pegged to the US dollar, so the local price is exact. Others (CAD, MXN, EGP) float:
  * the card's bank converts at its own rate, and we don't guess one here.
  */

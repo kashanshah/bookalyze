@@ -1,5 +1,5 @@
 import "server-only";
-import type { NoonCredentials, WalmartCredentials } from "@bookalyze/core";
+import type { CONNECTION_AREA, NoonCredentials, WalmartCredentials } from "@bookalyze/core";
 import { can } from "@bookalyze/core";
 import { connectionSecretContext, openSecret, sealSecret } from "@bookalyze/db";
 import { notFound } from "next/navigation";
@@ -10,11 +10,18 @@ import { getOrgContext, type OrgContext, type OrgProfile } from "./org";
 
 export type CommerceContext = OrgContext & { profile: OrgProfile };
 
-/** The context for Commerce pages and actions: the Commerce module must be on. */
-export async function getCommerceContext(slug: string): Promise<CommerceContext> {
+/**
+ * The context for Commerce pages and actions: the Commerce module must be on. Actions that
+ * connect marketplaces or bring in orders pass `area` "connections", which Review requests only
+ * may use while the rest of Commerce is read-only.
+ */
+export async function getCommerceContext(
+  slug: string,
+  area?: typeof CONNECTION_AREA,
+): Promise<CommerceContext> {
   const ctx = await getOrgContext(slug);
   if (!can(ctx.plan, ctx.enabledModules, "commerce.channels") || !ctx.profile) notFound();
-  await guardWrites(ctx, "commerce");
+  await guardWrites(ctx, "commerce", area);
   return ctx as CommerceContext;
 }
 

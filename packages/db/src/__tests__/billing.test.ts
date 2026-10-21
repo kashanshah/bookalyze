@@ -107,4 +107,13 @@ describe("billing", () => {
     const other = await read((tx) => getBilling(tx), otherOrgId);
     expect(other).toEqual({ account: null, subscription: null, items: [] });
   });
+
+  it("takes Review requests only, and refuses an item it doesn't know", async () => {
+    await write((tx) => applySubscription(tx, update("2026-12-10T10:00:00Z", ["reviews_only"])));
+    const billing = await read((tx) => getBilling(tx));
+    expect(billing.items.map((i) => i.itemKey)).toEqual(["reviews_only"]);
+    await expect(
+      write((tx) => applySubscription(tx, update("2026-12-11T10:00:00Z", ["gold"]))),
+    ).rejects.toThrow();
+  });
 });

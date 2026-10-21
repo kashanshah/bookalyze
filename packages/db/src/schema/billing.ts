@@ -43,6 +43,7 @@ export const SUBSCRIPTION_ITEM_KEYS = [
   "books",
   "seller",
   "seller_plus",
+  "reviews_only",
   "stock",
   "reviews",
 ] as const;
@@ -120,7 +121,7 @@ export const subscriptionItems = pgTable(
     uniqueIndex("subscription_items_key").on(t.organizationId, t.itemKey),
     check(
       "subscription_items_key_valid",
-      sql`${t.itemKey} in ('books', 'seller', 'seller_plus', 'stock', 'reviews')`,
+      sql`${t.itemKey} in ('books', 'seller', 'seller_plus', 'reviews_only', 'stock', 'reviews')`,
     ),
     ...billingPolicies("subscription_items", t.organizationId),
   ],

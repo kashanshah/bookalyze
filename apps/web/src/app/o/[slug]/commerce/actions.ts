@@ -3,6 +3,7 @@
 import {
   AMAZON_REGIONS,
   addDaysIso,
+  CONNECTION_AREA,
   ebayMarketplace,
   FULFILMENT_MODES,
   isAmazonRegion,
@@ -124,8 +125,9 @@ function failure(error: unknown): { ok: false; message: string } {
   throw error;
 }
 
-async function adminContext(slug: string) {
-  const ctx = await getCommerceContext(slug);
+/** Connection and order actions pass CONNECTION_AREA: Review requests only may use them. */
+async function adminContext(slug: string, area?: typeof CONNECTION_AREA) {
+  const ctx = await getCommerceContext(slug, area);
   return {
     ctx,
     denied: isOrgAdmin(ctx)
@@ -163,7 +165,7 @@ export async function connectAmazonAction(
 ): Promise<
   CommerceResult<{ channels: number; regionLabel: string; moved: boolean; connectionId: string }>
 > {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const parsed = connectSchema.safeParse(input);
   if (!parsed.success) {
@@ -257,7 +259,7 @@ export async function testAmazonAction(
   slug: string,
   connectionId: string,
 ): Promise<CommerceResult<{ marketplaces: number }>> {
-  const ctx = await getCommerceContext(slug);
+  const ctx = await getCommerceContext(slug, CONNECTION_AREA);
   if (!z.string().uuid().safeParse(connectionId).success) {
     return { ok: false, message: "Unknown connection." };
   }
@@ -297,7 +299,7 @@ export async function setChannelActiveAction(
   channelId: string,
   isActive: boolean,
 ): Promise<CommerceResult> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   if (!z.string().uuid().safeParse(channelId).success)
     return { ok: false, message: "Unknown channel." };
@@ -327,7 +329,7 @@ export async function removeChannelAction(
   slug: string,
   channelId: string,
 ): Promise<CommerceResult<{ name: string }>> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   if (!z.string().uuid().safeParse(channelId).success)
     return { ok: false, message: "Unknown channel." };
@@ -362,7 +364,7 @@ export async function addNoonChannelAction(
   slug: string,
   input: unknown,
 ): Promise<CommerceResult<{ name: string; created: boolean; channelId: string }>> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const parsed = noonChannelSchema.safeParse(input);
   if (!parsed.success) {
@@ -402,7 +404,7 @@ export async function addEbayChannelAction(
   slug: string,
   input: unknown,
 ): Promise<CommerceResult<{ name: string; created: boolean; channelId: string }>> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const parsed = z
     .object({
@@ -450,7 +452,7 @@ export async function addWalmartChannelAction(
   slug: string,
   input: unknown,
 ): Promise<CommerceResult<{ name: string; created: boolean; channelId: string }>> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const parsed = walmartChannelSchema.safeParse(input);
   if (!parsed.success) {
@@ -496,7 +498,7 @@ export async function startEbayConnectAction(
   slug: string,
   channelId: string,
 ): Promise<CommerceResult<{ url: string }>> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   if (!z.string().uuid().safeParse(channelId).success) {
     return { ok: false, message: "Unknown channel." };
@@ -523,7 +525,7 @@ export async function startEbayConnectAction(
 
 /** Asks eBay again with the saved sign-in: a fresh access token, and who the account is. */
 export async function testEbayAction(slug: string): Promise<CommerceResult<{ username: string }>> {
-  const ctx = await getCommerceContext(slug);
+  const ctx = await getCommerceContext(slug, CONNECTION_AREA);
   const connection = await inOrg(ctx, async (tx) => {
     const found = await getEbayConnection(tx);
     return found ? getConnection(tx, found.id) : null;
@@ -556,7 +558,7 @@ export async function testEbayAction(slug: string): Promise<CommerceResult<{ use
 
 /** Deletes the eBay sign-in. The eBay sites stay, with everything brought in. */
 export async function disconnectEbayAction(slug: string): Promise<CommerceResult> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const done = await inOrg(ctx, async (tx) => {
     const connection = await getEbayConnection(tx);
@@ -583,7 +585,7 @@ export async function setChannelFulfilmentAction(
   channelId: string,
   fulfilment: string,
 ): Promise<CommerceResult<{ label: string }>> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const parsed = z
     .object({ channelId: z.string().uuid(), fulfilment: z.enum(FULFILMENT_MODES) })
@@ -614,7 +616,7 @@ export async function disconnectAmazonAction(
   slug: string,
   connectionId: string,
 ): Promise<CommerceResult> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   if (!z.string().uuid().safeParse(connectionId).success) {
     return { ok: false, message: "Unknown connection." };
@@ -646,7 +648,7 @@ export async function startOrdersAction(
   slug: string,
   from: string,
 ): Promise<CommerceResult<{ channels: number }>> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const today = nowIn(ctx.profile.timezone).date;
   const earliest = `${Number(today.slice(0, 4)) - ORDERS_MAX_YEARS}${today.slice(4)}`;
@@ -688,7 +690,7 @@ export async function startOrdersAction(
 export async function includeOrderChannelsAction(
   slug: string,
 ): Promise<CommerceResult<{ channels: number; from: string }>> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const today = nowIn(ctx.profile.timezone).date;
   const earliest = `${Number(today.slice(0, 4)) - ORDERS_MAX_YEARS}${today.slice(4)}`;
@@ -725,7 +727,7 @@ export async function includeOrderChannelsAction(
  * again (a first sync of a busy account takes several calls: Amazon rations its answers).
  */
 export async function syncOrdersAction(slug: string): Promise<CommerceResult<OrderSyncResult>> {
-  const ctx = await getCommerceContext(slug);
+  const ctx = await getCommerceContext(slug, CONNECTION_AREA);
   const result = await syncOrgOrders(
     { orgId: ctx.org.id, userId: ctx.session.user.id },
     ORDER_SYNC_BUDGET_MS,
@@ -763,7 +765,7 @@ export async function connectNoonAction(
   slug: string,
   input: unknown,
 ): Promise<CommerceResult<{ reports: number; payoutsReport: boolean; replaced: boolean }>> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const parsed = z.object({ keyFile: z.string().max(20_000) }).safeParse(input);
   if (!parsed.success || !parsed.data.keyFile.trim()) {
@@ -835,7 +837,7 @@ export async function connectNoonAction(
 export async function testNoonAction(
   slug: string,
 ): Promise<CommerceResult<{ reports: number; payoutsReport: boolean }>> {
-  const ctx = await getCommerceContext(slug);
+  const ctx = await getCommerceContext(slug, CONNECTION_AREA);
   const connection = await inOrg(ctx, async (tx) => {
     const found = await getNoonConnection(tx);
     return found ? getConnection(tx, found.id) : null;
@@ -867,7 +869,7 @@ export async function testNoonAction(
 
 /** Forgets Noon's key; the Noon channels and everything brought in stay. */
 export async function disconnectNoonAction(slug: string): Promise<CommerceResult> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const done = await inOrg(ctx, async (tx) => {
     const connection = await getNoonConnection(tx);
@@ -1036,7 +1038,7 @@ export async function connectWalmartAction(
   slug: string,
   input: unknown,
 ): Promise<CommerceResult<{ replaced: boolean; missing: string[] }>> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const parsed = z
     .object({
@@ -1107,7 +1109,7 @@ export async function testWalmartAction(
   slug: string,
   channelId: string,
 ): Promise<CommerceResult<{ missing: string[] }>> {
-  const ctx = await getCommerceContext(slug);
+  const ctx = await getCommerceContext(slug, CONNECTION_AREA);
   const found = await walmartChannel(ctx, channelId);
   if (!found) return { ok: false, message: "Unknown channel." };
   const { marketplace } = found;
@@ -1144,7 +1146,7 @@ export async function disconnectWalmartAction(
   slug: string,
   channelId: string,
 ): Promise<CommerceResult> {
-  const { ctx, denied } = await adminContext(slug);
+  const { ctx, denied } = await adminContext(slug, CONNECTION_AREA);
   if (denied) return denied;
   const found = await walmartChannel(ctx, channelId);
   if (!found) return { ok: false, message: "Unknown channel." };

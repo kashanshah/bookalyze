@@ -9,7 +9,7 @@ import { CircleAlert, Gift, Lock, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
-import { moduleLabel } from "@/server/billing";
+import { moduleLabel, readOnlyLabels } from "@/server/billing";
 import { getOrgContext } from "@/server/org";
 import { listInvoices, type StripeInvoice, stripeConfigured } from "@/server/stripe";
 import { PlanPicker } from "./plan-picker";
@@ -71,9 +71,10 @@ export default async function BillingPage({
         <p className="fade-in-0 flex animate-in items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
           <Lock className="mt-0.5 size-4 shrink-0" />
           <span>
-            <span className="font-medium">{blocked} is read-only.</span> It isn't in this company's
-            plan, so nothing in it can be changed. Everything in it is kept; choose a plan that
-            includes it to carry on.
+            <span className="font-medium">{blocked} is read-only.</span>{" "}
+            {entitlement.partly.includes(readonly as never)
+              ? "This company's plan connects its marketplaces and brings in their orders, for review requests; the rest of it needs Seller. Everything in it is kept."
+              : "It isn't in this company's plan, so nothing in it can be changed. Everything in it is kept; choose a plan that includes it to carry on."}
           </span>
         </p>
       ) : null}
@@ -128,7 +129,7 @@ export default async function BillingPage({
       {readOnly.length && !blocked ? (
         <p className="flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
           <Lock className="mt-0.5 size-4 shrink-0" />
-          Read-only, because they aren't in the plan: {readOnly.map(moduleLabel).join(", ")}.
+          Read-only, because they aren't in the plan: {readOnlyLabels(ctx.billing).join(", ")}.
           Nothing in them is deleted.
         </p>
       ) : null}
@@ -164,6 +165,9 @@ export default async function BillingPage({
               .filter((m) => m !== "analytics")
               .map(moduleLabel)
               .join(", ")}
+            {entitlement.partly.length
+              ? ", with your marketplaces connected and their orders brought in"
+              : ""}
             .
           </p>
           {owner && configured ? (
