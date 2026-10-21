@@ -14,6 +14,12 @@ import {
   setChannelFulfilment,
 } from "../commerce";
 import * as schema from "../schema";
+import {
+  listWalmartSettlements,
+  saveWalmartSettlement,
+  walmartSettlementDatesIn,
+  walmartSettlementRowsOf,
+} from "../walmart-settlements";
 
 const ownerUrl =
   process.env.TEST_DATABASE_URL_MIGRATOR ??
@@ -169,5 +175,63 @@ describe("Walmart channels", () => {
     expect((await scoped((tx) => getWalmartConnection(tx, "walmart-mx")))?.status).toBe(
       "disconnected",
     );
+  });
+});
+
+describe("Walmart settlements", () => {
+  const file = (payout: string, rows: Record<string, string>[]) => ({
+    columns: ["Period Start Date", "Amount", "Amount Type"],
+    dropped: ["Ship to City"],
+    rows,
+    periodFrom: "2026-10-01",
+    periodTo: "2026-10-14",
+    payout,
+    currency: "CAD",
+  });
+
+  it("keeps a report's rows by date, and bringing the date in again replaces it", async () => {
+    const [channel] = (await scoped((tx) => listWalmartChannels(tx))).filter(
+      (c) => c.marketplaceId === "walmart-ca",
+    );
+    const channelId = channel?.id ?? "";
+    const first = await scoped((tx) =>
+      saveWalmartSettlement(tx, {
+        orgId,
+        channelId,
+        reportDate: "2026-10-15",
+        file: file("33.98", [
+          { Amount: "39.98", "Amount Type": "Product Price" },
+          { Amount: "-6.00", "Amount Type": "Commission on Product" },
+        ]),
+      }),
+    );
+    const again = await scoped((tx) =>
+      saveWalmartSettlement(tx, {
+        orgId,
+        channelId,
+        reportDate: "2026-10-15",
+        file: file("39.98", [{ Amount: "39.98", "Amount Type": "Product Price" }]),
+      }),
+    );
+    expect(again).toBe(first);
+    const list = await scoped((tx) => listWalmartSettlements(tx, channelId));
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({
+      reportDate: "2026-10-15",
+      periodFrom: "2026-10-01",
+      periodTo: "2026-10-14",
+      currency: "CAD",
+      payout: "39.9800",
+      rows: 1,
+      columns: ["Period Start Date", "Amount", "Amount Type"],
+    });
+    expect(await scoped((tx) => walmartSettlementRowsOf(tx, first))).toEqual([
+      { line: 1, data: { Amount: "39.98", "Amount Type": "Product Price" } },
+    ]);
+    expect(await scoped((tx) => walmartSettlementDatesIn(tx, channelId))).toEqual(
+      new Set(["2026-10-15"]),
+    );
+    // Another company sees none of it.
+    expect(await scoped((tx) => listWalmartSettlements(tx, channelId), otherOrgId)).toEqual([]);
   });
 });

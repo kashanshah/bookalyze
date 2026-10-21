@@ -1253,3 +1253,67 @@ export const channelCostAccounts = pgTable(
     tenantIsolationPolicy("channel_cost_accounts", t.organizationId),
   ],
 );
+
+/**
+ * A Walmart settlement (reconciliation) report brought in for a Walmart channel, one per report
+ * date. Its rows are kept as Walmart sent them (`walmart_settlement_rows`), without the columns
+ * that could identify a buyer, so they can be read into the books once each column's meaning is
+ * known. Nothing here posts to the books yet.
+ */
+export const walmartSettlements = pgTable(
+  "walmart_settlements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    /** The date Walmart files the report under (its settlement date). */
+    reportDate: date("report_date").notNull(),
+    periodFrom: date("period_from"),
+    periodTo: date("period_to"),
+    currency: char("currency", { length: 3 }),
+    /** What Walmart paid out, when the report says. */
+    payout: numeric("payout", { precision: 20, scale: 4 }),
+    rows: integer("rows").notNull(),
+    /** The columns kept, in the report's order. */
+    columns: jsonb("columns").$type<string[]>().notNull().default([]),
+    broughtInAt: timestamp("brought_in_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("walmart_settlements_org_id_key").on(t.organizationId, t.id),
+    unique("walmart_settlements_channel_date_key").on(t.organizationId, t.channelId, t.reportDate),
+    foreignKey({
+      name: "walmart_settlements_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    check("walmart_settlements_rows_valid", sql`${t.rows} >= 0`),
+    tenantIsolationPolicy("walmart_settlements", t.organizationId),
+  ],
+);
+
+/** One row of a Walmart settlement report: its cells by column name (no buyer details). */
+export const walmartSettlementRows = pgTable(
+  "walmart_settlement_rows",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    settlementId: uuid("settlement_id").notNull(),
+    /** Its place in the report, from 1. */
+    line: integer("line").notNull(),
+    data: jsonb("data").$type<Record<string, string>>().notNull(),
+  },
+  (t) => [
+    unique("walmart_settlement_rows_line_key").on(t.settlementId, t.line),
+    index("walmart_settlement_rows_org_idx").on(t.organizationId),
+    foreignKey({
+      name: "walmart_settlement_rows_settlement_fk",
+      columns: [t.organizationId, t.settlementId],
+      foreignColumns: [walmartSettlements.organizationId, walmartSettlements.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("walmart_settlement_rows", t.organizationId),
+  ],
+);

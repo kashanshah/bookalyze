@@ -10,7 +10,16 @@ import {
   type WalmartAccess,
   type WalmartScopeArea,
 } from "@bookalyze/core";
-import { CircleAlert, FileSearch, KeyRound, PlugZap, Plus, RefreshCw, Unplug } from "lucide-react";
+import {
+  CircleAlert,
+  Download,
+  FileSearch,
+  KeyRound,
+  PlugZap,
+  Plus,
+  RefreshCw,
+  Unplug,
+} from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +39,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import {
   addWalmartChannelAction,
+  bringInWalmartSettlementsAction,
   checkWalmartSettlementAction,
   connectWalmartAction,
   disconnectWalmartAction,
@@ -601,6 +611,116 @@ function SettlementCheck({
           </ul>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+export type WalmartSettlementView = {
+  id: string;
+  reportDate: string;
+  periodFrom: string | null;
+  periodTo: string | null;
+  currency: string | null;
+  payout: string | null;
+  rows: number;
+};
+
+/**
+ * The Walmart settlement reports brought in for this country, newest first, and the button that
+ * brings in the ones not in yet. They're kept row by row; reading them into the books comes next.
+ */
+export function WalmartSettlements({
+  slug,
+  locale,
+  channelId,
+  canManage,
+  connected,
+  settlements,
+}: {
+  slug: string;
+  locale: string;
+  channelId: string;
+  canManage: boolean;
+  connected: boolean;
+  settlements: WalmartSettlementView[];
+}) {
+  const [pending, start] = useTransition();
+  const day = (iso: string) =>
+    new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(
+      new Date(`${iso}T00:00:00Z`),
+    );
+  const money = (amount: string, currency: string | null) =>
+    currency
+      ? new Intl.NumberFormat(locale, { style: "currency", currency }).format(Number(amount))
+      : amount;
+  const bringIn = () =>
+    start(async () => {
+      const result = await bringInWalmartSettlementsAction(slug, channelId);
+      if (!result.ok) return void toast.error(result.message);
+      toast.success(
+        result.added
+          ? `${result.added === 1 ? "1 settlement" : `${result.added} settlements`} brought in`
+          : "Every settlement is already in",
+        {
+          description: result.more
+            ? "There are more: bring in again to carry on."
+            : `${result.available === 1 ? "1 report" : `${result.available} reports`} at Walmart.`,
+        },
+      );
+    });
+  return (
+    <section
+      aria-labelledby={`walmart-money-${channelId}`}
+      className="fade-in-0 grid animate-in gap-4 rounded-2xl border bg-card px-5 py-5 shadow-xs"
+    >
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1 basis-60">
+          <h2 id={`walmart-money-${channelId}`} className="font-semibold">
+            Walmart settlements
+          </h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            Each payout's report from Walmart, kept row by row as Walmart sent it, without buyer
+            details. Reading them into your books comes next.
+          </p>
+        </div>
+        {canManage && connected ? (
+          <Button variant="outline" onClick={bringIn} disabled={pending}>
+            {pending ? <Spinner /> : <Download />}
+            Bring in from Walmart
+          </Button>
+        ) : null}
+      </div>
+      {settlements.length ? (
+        <ul className="divide-y rounded-xl border">
+          {settlements.map((s) => (
+            <li
+              key={s.id}
+              className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3"
+            >
+              <div className="min-w-0">
+                <p className="font-medium text-sm">{day(s.reportDate)}</p>
+                <p className="text-muted-foreground text-xs">
+                  {[
+                    s.periodFrom && s.periodTo ? `${day(s.periodFrom)} – ${day(s.periodTo)}` : null,
+                    `${s.rows} ${s.rows === 1 ? "row" : "rows"}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              </div>
+              <p className="font-medium text-sm tabular-nums">
+                {s.payout !== null ? money(s.payout, s.currency) : "—"}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="rounded-xl border border-dashed px-4 py-6 text-center text-muted-foreground text-sm">
+          {connected
+            ? "No settlements brought in yet."
+            : "Connect this country's Walmart account to bring its settlements in."}
+        </p>
+      )}
     </section>
   );
 }

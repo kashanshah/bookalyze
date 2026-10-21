@@ -2759,12 +2759,39 @@ test("walmart: look for Walmart Canada's settlement reports and check one, keepi
   await expect(reports.getByText("2 reports at Walmart")).toBeVisible();
   // The newest is chosen; its zipped file is opened and only its shape is shown.
   await reports.getByRole("button", { name: "Check this report" }).click();
-  await expect(reports.getByText(/CSV · 14 columns · 4 rows/)).toBeVisible({ timeout: 15_000 });
+  await expect(reports.getByText(/CSV · 16 columns · 4 rows/)).toBeVisible({ timeout: 15_000 });
   const columns = reports.getByRole("list", { name: "Columns in Walmart's settlement report" });
   await expect(columns.getByText("Purchase Order #", { exact: true })).toBeVisible();
   await expect(columns.getByText("Amount Type", { exact: true })).toBeVisible();
   // Nothing from the report's rows is shown.
   await expect(reports.getByText("WMT-MAPLE-MUG")).toHaveCount(0);
+});
+
+test("walmart: bring in Walmart Canada's settlements, kept row by row without buyer details", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Walmart Canada/ }).click();
+  const money = page.getByRole("region", { name: "Walmart settlements" });
+  await expect(money.getByText("No settlements brought in yet.")).toBeVisible();
+  await money.getByRole("button", { name: "Bring in from Walmart" }).click();
+  await expect(page.getByText("2 settlements brought in")).toBeVisible({ timeout: 30_000 });
+  // Each with its period, rows and payout, as the report says.
+  const rows = money.getByRole("listitem");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("4 rows");
+  await expect(rows.first()).toContainText("$52.07");
+  // Bringing in again finds nothing new.
+  await money.getByRole("button", { name: "Bring in from Walmart" }).click();
+  await expect(page.getByText("Every settlement is already in")).toBeVisible();
+  // Nothing that could say who or where a buyer is was kept.
+  const kept = await withOwnerDb((db) =>
+    db.query<{ data: string }>(`select data::text as data from walmart_settlement_rows`),
+  );
+  expect(kept.rows.length).toBe(8);
+  expect(kept.rows.map((r) => r.data).join("\n")).not.toMatch(/Toronto|M0M|Synthetic/);
 });
 
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
