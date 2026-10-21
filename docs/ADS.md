@@ -26,7 +26,7 @@ goods, landed costs), so it can say, per product and per channel:
 
 ## 2. The model: one store for every marketplace's ad metrics
 
-Table **`ad_metrics`** (migration `0086_ad_metrics`), one row per channel, ad type, day, campaign
+Table **`ad_metrics`** (migration `0089_ad_metrics`), one row per channel, ad type, day, campaign
 and SKU:
 
 | Column | Meaning |

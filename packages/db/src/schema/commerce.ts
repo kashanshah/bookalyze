@@ -130,6 +130,8 @@ export const channelSkus = pgTable(
     unfulfillable: integer("unfulfillable"),
     /** Being looked for (lost or misplaced), when last seen. */
     researching: integer("researching"),
+    /** Walmart's GTIN for the item, looked up once: WFS's inventory log is asked for by it. */
+    gtin: text("gtin"),
     seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

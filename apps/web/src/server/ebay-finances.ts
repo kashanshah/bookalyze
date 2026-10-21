@@ -74,6 +74,9 @@ export async function syncEbayTransactions(
 ): Promise<EbayMoneyResult | null> {
   const deadline = Date.now() + budgetMs;
   const connection = await withOrg(getDb(), ctx, async (tx) => {
+    // Rows already in go to their order's site, even when there's nothing new to read (a site
+    // added, or its orders brought in, after its rows).
+    await placeEbayTransactionsByOrder(tx);
     const found = await getEbayConnection(tx);
     return found && found.status !== "disconnected" && found.hasSecret
       ? getConnection(tx, found.id)

@@ -36,8 +36,12 @@ import {
 
 const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
-type Source = "amazon" | "noon";
-const SOURCE_NAMES: Record<Source, string> = { amazon: "Amazon", noon: "Noon" };
+type Source = "amazon" | "noon" | "walmart";
+const SOURCE_NAMES: Record<Source, string> = {
+  amazon: "Amazon",
+  noon: "Noon",
+  walmart: "Walmart",
+};
 
 /** Brings in the ledger from Amazon's Reports API and Noon's export API. */
 export function SyncLedgerButton({ slug, sources }: { slug: string; sources: Source[] }) {
@@ -58,7 +62,7 @@ export function SyncLedgerButton({ slug, sources }: { slug: string; sources: Sou
             ? ` Noon's ledger also has ${result.countriesMissing.join(", ")}: add ${result.countriesMissing.length === 1 ? "that country" : "those countries"} on Channels to bring ${result.countriesMissing.length === 1 ? "its" : "their"} movements in.`
             : "";
           const more = result.waiting
-            ? `${names} ${sources.length > 1 ? "are" : "is"} still making a report. Press again in a minute for the rest.`
+            ? "Not everything is in yet (a report is being made, or there was more to read). Press again in a minute for the rest."
             : "";
           toast.success(
             result.added ? `${plural(result.added, "movement")} brought in` : "Ledger up to date",

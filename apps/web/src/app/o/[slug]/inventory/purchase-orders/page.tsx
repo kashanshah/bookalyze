@@ -54,6 +54,16 @@ export default async function PurchaseOrdersPage({
     return `${base}${p.size ? `?${p}` : ""}`;
   };
   const number = new Intl.NumberFormat(locale);
+  // On: a quiet button in the header (nothing to do). Off: a card offering the step.
+  const booksSetting = (
+    <PurchaseBooksSetting
+      slug={slug}
+      locale={locale}
+      postFrom={settings?.postFrom ?? null}
+      suggested={openDate(`${today.slice(0, 8)}01`, ctx.profile.booksLockedThrough)}
+      canManage={isOrgAdmin(ctx)}
+    />
+  );
 
   return (
     <div className="grid gap-6">
@@ -62,22 +72,19 @@ export default async function PurchaseOrdersPage({
         title="Purchase orders"
         description="What you've ordered from suppliers, and what has arrived. Record each delivery when it comes in, so you always know what's still on its way."
         actions={
-          <Button asChild>
-            <Link href={`${base}/new`}>
-              <Plus />
-              New purchase order
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {settings?.postFrom ? booksSetting : null}
+            <Button asChild>
+              <Link href={`${base}/new`}>
+                <Plus />
+                New purchase order
+              </Link>
+            </Button>
+          </div>
         }
       />
 
-      <PurchaseBooksSetting
-        slug={slug}
-        locale={locale}
-        postFrom={settings?.postFrom ?? null}
-        suggested={openDate(`${today.slice(0, 8)}01`, ctx.profile.booksLockedThrough)}
-        canManage={isOrgAdmin(ctx)}
-      />
+      {settings?.postFrom ? null : booksSetting}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="Purchase order status" className="flex flex-wrap gap-1">

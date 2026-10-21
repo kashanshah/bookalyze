@@ -1,5 +1,6 @@
 import "server-only";
-import { getDb, schema } from "@bookalyze/db";
+import { decodeSource, readCookie, SOURCE_COOKIE } from "@bookalyze/core";
+import { getDb, recordSignupSource, schema } from "@bookalyze/db";
 import { APIError, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
@@ -12,6 +13,7 @@ import { ResetPassword } from "@/emails/reset-password";
 import { VerifyEmail } from "@/emails/verify-email";
 import { sendEmail } from "./email";
 import { env } from "./env";
+import { logError } from "./log";
 
 /**
  * Sign-ups are invite-only unless SIGNUP_MODE=open. Platform admins and anyone with a pending
@@ -105,6 +107,17 @@ function createAuth() {
         create: {
           before: async (user) => {
             await assertSignupAllowed(user.email);
+          },
+          // Where the new account came from (the site's first-touch cookie), for the Growth page.
+          // Never stops a sign-up.
+          after: async (user, context) => {
+            const cookie =
+              context?.headers?.get("cookie") ?? context?.request?.headers.get("cookie");
+            const source = decodeSource(readCookie(cookie, SOURCE_COOKIE));
+            if (!source) return;
+            await recordSignupSource(getDb(), { userId: user.id, ...source }).catch(
+              (error: unknown) => logError("growth.source_not_saved", error),
+            );
           },
         },
       },

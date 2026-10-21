@@ -6,6 +6,7 @@ import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
 import { SITE_URL } from "@/lib/site";
 import "./globals.css";
+import { Growth } from "@/components/growth";
 
 const DESCRIPTION =
   "Accounting built for Amazon, Walmart and Noon sellers (and eBay): every settlement posted, every payout matched to your bank, cost of goods and profit per channel, for every company you run. Free for 30 days.";
@@ -68,6 +69,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </main>
         <Footer />
         <Analytics />
+        <Growth />
       </body>
     </html>
   );

@@ -2999,6 +2999,18 @@ test("walmart: bring in what WFS holds, see it on the channel, on Products and o
   const mug = page.getByRole("listitem").filter({ hasText: "Maple leaf ceramic mug" });
   await expect(mug).toContainText("34");
   await expect(mug).toContainText("4 held");
+
+  // WFS's inventory log comes in with the other ledgers: a return and a damaged unit count,
+  // a hold Bookalyze doesn't read yet is listed as not counted.
+  await page.goto(`/o/${slug}/inventory/movements`);
+  await page.getByRole("button", { name: /^Bring in from .*Walmart$/ }).click();
+  await expect(page.getByText(/movements? brought in|Ledger up to date/)).toBeVisible({
+    timeout: 60_000,
+  });
+  const card = page.locator("div.rounded-2xl").filter({ hasText: /^Walmart Canada/ });
+  await expect(card).toContainText("5 movements");
+  const notCounted = page.getByRole("region", { name: "Movements not counted yet" });
+  await expect(notCounted).toContainText("Quality Hold");
 });
 
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
@@ -3603,7 +3615,13 @@ test("purchase orders in the books: payments on deposits, deliveries into stock,
   await dialog.getByLabel("For orders dated from").fill("2026-09-01");
   await dialog.getByRole("button", { name: "Put them in the books" }).click();
   await expect(page.getByText(/Purchase orders are in the books from that date/)).toBeVisible();
-  await expect(setting).toContainText("In your books for orders from September 1, 2026.");
+  // On, nothing needs doing: the card goes, and "How purchases post" in the header explains it.
+  await expect(setting).toHaveCount(0);
+  await page.getByRole("button", { name: "How purchases post" }).click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "In your books for orders from September 1, 2026.",
+  );
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
 
   await page.getByRole("link", { name: /Maple Glassworks/ }).click();
   const deposits = page.getByRole("region", { name: "Supplier deposits for this order" });
@@ -3910,6 +3928,44 @@ test("support: a ticket from Help, the desk's reply and note, a reply by email, 
   await website.click();
   await expect(page.getByText("Company: Desert Goods")).toBeVisible();
   await expect(page.getByText("Website enquiry (no company)")).toBeVisible();
+});
+
+test("growth: where a new account came from is kept, and only admins see the Growth page", async ({
+  page,
+  browser,
+}) => {
+  const newcomer = { name: "Nadia Newcomer", email: `newcomer+${run}@example.com` };
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Team members", exact: true }).click();
+  await page.locator("#invite-email").fill(newcomer.email);
+  await page.getByRole("button", { name: "Send invite" }).click();
+  await expect(page.getByText(`Invitation sent to ${newcomer.email}`)).toBeVisible();
+  const inviteUrl = await latestLink(newcomer.email, "accept-invitation");
+
+  // They first arrive from a newsletter, then sign up from the invitation.
+  const visitor = await browser.newContext();
+  const theirs = await visitor.newPage();
+  await theirs.goto(`/sign-in?utm_source=newsletter-${run}&utm_campaign=october`);
+  await expect
+    .poll(async () => (await visitor.cookies()).some((c) => c.name === "bkz_src"))
+    .toBe(true);
+  await theirs.goto(inviteUrl);
+  await theirs.getByRole("link", { name: "Create account" }).click();
+  await theirs.locator("#name").fill(newcomer.name);
+  await theirs.locator("#password").fill("a-newcomers-password");
+  await theirs.getByRole("button", { name: "Create account" }).click();
+  await expect(theirs.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  // Members don't see Growth.
+  await verifyEmail(theirs, newcomer.email);
+  expect((await theirs.goto("/admin/growth"))?.status()).toBe(404);
+  await visitor.close();
+
+  // The platform admin sees them, under the newsletter, and isn't counted themselves.
+  await page.goto("/admin/growth?days=7");
+  await expect(page.getByRole("heading", { name: "Growth" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign-up funnel" })).toBeVisible();
+  const row = page.getByRole("row", { name: new RegExp(`newsletter-${run}`) });
+  await expect(row.getByRole("cell").nth(1)).toHaveText("1");
 });
 
 test("a Google-only user can set a password and then sign in with it", async ({ page }) => {

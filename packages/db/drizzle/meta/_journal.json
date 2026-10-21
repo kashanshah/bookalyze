@@ -607,8 +607,22 @@
     {
       "idx": 86,
       "version": "7",
-      "when": 1792619166268,
-      "tag": "0086_ad_metrics",
+      "when": 1792620681682,
+      "tag": "0086_made_to_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1792621237152,
+      "tag": "0087_channel_sku_gtin",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1792621943429,
+      "tag": "0088_signup_sources",
       "breakpoints": true
     }
   ]

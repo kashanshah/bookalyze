@@ -88,6 +88,8 @@ export async function saveProductAction(
               sku: before.sku,
               notes: before.notes,
               unitWeight: before.unitWeight,
+              tracksStock: before.tracksStock,
+              inStock: before.inStock,
             }
           : undefined,
         after: {
@@ -95,6 +97,8 @@ export async function saveProductAction(
           sku: saved.sku,
           notes: saved.notes,
           unitWeight: saved.unitWeight,
+          tracksStock: saved.tracksStock,
+          inStock: saved.inStock,
         },
       });
       return saved;

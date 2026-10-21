@@ -30,6 +30,7 @@ export * from "./transaction-report";
 export * from "./walmart";
 export * from "./walmart-api";
 export * from "./walmart-inventory";
+export * from "./walmart-inventory-log";
 export * from "./walmart-orders";
 export * from "./walmart-posting";
 export * from "./walmart-recon";

@@ -15,6 +15,7 @@ export * from "./ebay-posting";
 export * from "./ebay-transactions";
 export * from "./entity";
 export * from "./fx";
+export * from "./growth";
 export * from "./imports";
 export * from "./inventory";
 export * from "./inventory-ledger";

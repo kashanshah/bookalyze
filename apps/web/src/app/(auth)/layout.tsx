@@ -1,6 +1,7 @@
 import { CONTACT, PRIVACY, siteHref, TERMS } from "@bookalyze/core";
 import { BrandPanel } from "@/components/auth/brand-panel";
 import { Brand } from "@/components/brand";
+import { SourceCookie } from "@/components/growth/source-cookie";
 import { LINK_URLS, SITE_URL } from "@/lib/site";
 
 /** The shared footer's legal and contact links, in one line under the form. */
@@ -28,6 +29,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </p>
       </div>
       <BrandPanel />
+      <SourceCookie />
     </div>
   );
 }

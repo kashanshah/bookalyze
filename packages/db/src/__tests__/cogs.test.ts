@@ -24,7 +24,7 @@ import {
   setChannelActive,
   upsertOrders,
 } from "../commerce";
-import { createProduct, linkSku } from "../inventory";
+import { createProduct, getProduct, linkSku, updateProduct } from "../inventory";
 import { importLedgerEvents } from "../inventory-ledger";
 import { listLots } from "../landed-costs";
 import { accountBalances, createDefaultChart } from "../ledger";
@@ -181,6 +181,19 @@ describe("cost of goods sold", () => {
     expect(preview.problems).toEqual([
       "Mug: 5 went out, but only 0 were in stock lots by the month's end. Add opening stock or record the delivery.",
     ]);
+  });
+
+  it("leaves out a product made to order: nothing waits for its stock", async () => {
+    const mug = await scoped((tx) => getProduct(tx, mugId));
+    if (!mug) throw new Error("no mug");
+    const keep = { name: mug.name, sku: mug.sku, notes: mug.notes };
+    await scoped((tx) => updateProduct(tx, { ...keep, id: mugId, tracksStock: false }));
+    const preview = await scoped((tx) =>
+      previewCogs(tx, { channelId, month: "2026-08", ...where }),
+    );
+    expect(preview.problems).toEqual([]);
+    expect(preview.lines).toEqual([]);
+    await scoped((tx) => updateProduct(tx, { ...keep, id: mugId, tracksStock: true }));
   });
 
   it("books opening stock against opening balance equity", async () => {
