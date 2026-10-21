@@ -1149,6 +1149,12 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     popular guides, categories, "Still stuck?" → contact form, or a ticket in the app (`APP_URL/help`).
   - Header: Marketplaces, Features, Pricing, Guides, Help. Footer: Product, Resources, Sellers in,
     Company. The sitemap lists every page and guide.
+  - **One header and footer for every public page:** the links, tagline and trademarks line live
+    in core `site/` (`SITE_NAV`, `SITE_FOOTER_COLUMNS`, `siteHref`: relative on its own side,
+    absolute from the other). The site's `Header`/`Footer` and the app's `SiteHeader`/`SiteFooter`
+    (`components/site/`, on `/terms` and `/privacy-policy` through `LegalPage`) read them; the
+    auth pages' footer line uses the same Terms, Privacy and Contact links, and their logo goes to
+    the site. The app finds the site at `NEXT_PUBLIC_SITE_URL` (default https://bookalyze.com).
 - **Pictures of the app** are drawn in code with the app's tokens (`previews.tsx`), made-up
   companies and amounts, so they follow light and dark mode and hold no real data. They move
   like short GIFs (CSS loops, `anim-*` utilities in `globals.css`). Charts draw when scrolled into

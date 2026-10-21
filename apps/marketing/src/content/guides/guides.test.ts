@@ -69,3 +69,11 @@ describe("guides", () => {
     }
   });
 });
+
+describe("shared site links", () => {
+  it("name the same countries the site has pages for", async () => {
+    const { SITE_COUNTRIES } = await import("@bookalyze/core");
+    const { COUNTRIES } = await import("../countries");
+    expect(SITE_COUNTRIES).toEqual(COUNTRIES.map((c) => ({ name: c.name, slug: c.slug })));
+  });
+});

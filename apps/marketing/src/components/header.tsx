@@ -1,20 +1,17 @@
 "use client";
 
+import { SIGN_IN, SITE_NAV, START_FREE, siteHref } from "@bookalyze/core";
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { cn, SIGN_IN_URL, SIGN_UP_URL } from "@/lib/site";
+import { cn, LINK_URLS } from "@/lib/site";
 import { Brand } from "./brand";
 import { ButtonLink } from "./button";
 
-const NAV = [
-  { label: "Marketplaces", href: "/marketplaces" },
-  { label: "Features", href: "/features" },
-  { label: "Pricing", href: "/pricing" },
-  { label: "Guides", href: "/guides" },
-  { label: "Help", href: "/help" },
-] as const;
+const NAV = SITE_NAV.map((l) => ({ label: l.label, href: siteHref(l, "site", LINK_URLS) }));
+const SIGN_IN_URL = siteHref(SIGN_IN, "site", LINK_URLS);
+const SIGN_UP_URL = siteHref(START_FREE, "site", LINK_URLS);
 
 export function Header() {
   const pathname = usePathname();
@@ -64,10 +61,10 @@ export function Header() {
             size="sm"
             className="hidden sm:inline-flex"
           >
-            Sign in
+            {SIGN_IN.label}
           </ButtonLink>
           <ButtonLink href={SIGN_UP_URL} size="sm">
-            Start free
+            {START_FREE.label}
           </ButtonLink>
           <button
             type="button"
@@ -100,7 +97,7 @@ export function Header() {
             href={SIGN_IN_URL}
             className="rounded-md px-3 py-2.5 font-medium text-base hover:bg-accent"
           >
-            Sign in
+            {SIGN_IN.label}
           </a>
         </nav>
       ) : null}

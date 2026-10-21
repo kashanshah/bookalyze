@@ -1,9 +1,9 @@
-import Link from "next/link";
-import { Brand } from "@/components/brand";
+import { SiteFooter } from "@/components/site/site-footer";
+import { SiteHeader } from "@/components/site/site-header";
 
 export type LegalSection = { title: string; body: React.ReactNode };
 
-/** A public legal page (privacy policy, terms): plain sections under the logo. */
+/** A public legal page (privacy policy, terms): plain sections, in the public site's header and footer. */
 export function LegalPage({
   title,
   updated,
@@ -17,16 +17,7 @@ export function LegalPage({
 }) {
   return (
     <div className="min-h-dvh bg-background">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4 sm:px-6">
-          <Link href="/" className="w-fit">
-            <Brand className="h-7" />
-          </Link>
-          <Link href="/sign-in" className="text-muted-foreground text-sm hover:text-foreground">
-            Sign in
-          </Link>
-        </div>
-      </header>
+      <SiteHeader />
       <main className="fade-in-0 slide-in-from-bottom-2 mx-auto max-w-3xl animate-in px-4 py-10 duration-500 sm:px-6 sm:py-14">
         <h1 className="font-semibold text-3xl tracking-tight">{title}</h1>
         <p className="mt-2 text-muted-foreground text-sm">Last updated {updated}</p>
@@ -44,17 +35,7 @@ export function LegalPage({
           ))}
         </div>
       </main>
-      <footer className="border-t">
-        <p className="mx-auto flex max-w-3xl flex-wrap gap-x-4 px-4 py-6 text-muted-foreground text-xs sm:px-6">
-          <span>© {new Date().getFullYear()} Bookalyze</span>
-          <Link href="/terms" className="hover:text-foreground">
-            Terms of service
-          </Link>
-          <Link href="/privacy-policy" className="hover:text-foreground">
-            Privacy policy
-          </Link>
-        </p>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

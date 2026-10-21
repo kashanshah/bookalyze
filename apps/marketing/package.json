@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@bookalyze/core": "workspace:*",
     "@vercel/analytics": "^2.0.1",
     "clsx": "^2.1.1",
     "geist": "^1.7.2",
