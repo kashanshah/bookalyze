@@ -2878,7 +2878,7 @@ test("walmart: choose how Walmart posts, post a settlement and match its payout 
   await expect(
     page.getByRole("columnheader", { name: /Walmart Canada.*2 Walmart settlements/ }),
   ).toBeVisible();
-  await expect(page.getByRole("row", { name: /^Sales/ })).toContainText("$119.94");
+  await expect(page.getByRole("row", { name: /^Sales \$/ })).toContainText("$119.94");
   await expect(page.getByRole("row", { name: /^Paid out/ })).toContainText("$104.14");
 });
 
