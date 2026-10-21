@@ -313,8 +313,8 @@ async function attentionItems(tx: Transaction, ctx: OrgContext, today: string): 
         items.push({
           key: "noon-stock-check",
           icon: TriangleAlert,
-          title: `Noon's stock reports disagree on ${off} ${plural(off, "day", "days")}`,
-          hint: "A movement is missing from one of Noon's reports. See which SKUs, then ask Noon's seller support.",
+          title: `Noon's stock reports disagree on ${off} ${plural(off, "product", "products")}`,
+          hint: "A movement is missing from one of Noon's reports. See which, then ask Noon's seller support.",
           href: `${base}/inventory/movements#noon-check-title`,
           tone: "warning",
         });

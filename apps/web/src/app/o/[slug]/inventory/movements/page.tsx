@@ -4,6 +4,7 @@ import {
   ledgerOtherTypes,
   noonLedgerCheck,
   noonStockByProduct,
+  noonStockUploads,
   stockComparison,
 } from "@bookalyze/db";
 import { ArrowLeftRight, CheckCircle2, Clock, TriangleAlert } from "lucide-react";
@@ -14,7 +15,7 @@ import { formatDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
 import { getInventoryContext } from "@/server/inventory";
-import { SyncLedgerButton, UploadLedgerButton } from "./ledger-buttons";
+import { RemoveSummaryButton, SyncLedgerButton, UploadLedgerButton } from "./ledger-buttons";
 
 export const metadata: Metadata = { title: "Stock movements" };
 
@@ -38,14 +39,23 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
   const { slug } = await params;
   const ctx = await getInventoryContext(slug, "inventory.cogs");
   const { locale } = ctx.profile;
-  const { channels, months, compare, others, atNoon, check } = await inOrg(ctx, async (tx) => ({
-    channels: await ledgerChannels(tx),
-    months: await ledgerByMonth(tx, { months: 6 }),
-    compare: await stockComparison(tx),
-    others: await ledgerOtherTypes(tx),
-    atNoon: await noonStockByProduct(tx),
-    check: await noonLedgerCheck(tx),
-  }));
+  const { channels, months, compare, others, atNoon, check, uploads } = await inOrg(
+    ctx,
+    async (tx) => ({
+      channels: await ledgerChannels(tx),
+      months: await ledgerByMonth(tx, { months: 6 }),
+      compare: await stockComparison(tx),
+      others: await ledgerOtherTypes(tx),
+      atNoon: await noonStockByProduct(tx),
+      check: await noonLedgerCheck(tx),
+      uploads: await noonStockUploads(tx),
+    }),
+  );
+  /** "19 October 2026", or "8 October 2026 – 19 October 2026" for a period report. */
+  const span = (from: string | null, to: string) =>
+    from
+      ? `${formatDate(from, locale, "long")} – ${formatDate(to, locale, "long")}`
+      : formatDate(to, locale, "long");
   const noonByProduct = new Map(atNoon.products.map((p) => [p.productId, p]));
   const showAmazon = compare.some((r) => r.atAmazon !== null);
   const showNoon = atNoon.date !== null;
@@ -208,7 +218,7 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
             </section>
           ) : null}
 
-          {check.to ? (
+          {check.to || uploads.length ? (
             <section
               aria-labelledby="noon-check-title"
               className="overflow-hidden rounded-2xl border bg-card shadow-xs"
@@ -218,16 +228,26 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
                   Noon's numbers checked
                 </h2>
                 <p className="mt-0.5 text-muted-foreground text-xs">
-                  Each day from {formatDate(check.from ?? "", locale, "long")} to{" "}
-                  {formatDate(check.to, locale, "long")}, Noon's FBN ledger summary (stock at the
-                  start and end of the day) against its detailed ledger (every movement), SKU by
-                  SKU. Cost of goods sold uses the detailed ledger.
+                  {check.to ? (
+                    <>
+                      From {formatDate(check.from ?? "", locale, "long")} to{" "}
+                      {formatDate(check.to, locale, "long")}, Noon's FBN ledger summary (stock at
+                      the start and end of each day, or of the dates a period report covers) against
+                      its detailed ledger (every movement), product by product. Cost of goods sold
+                      uses the detailed ledger.
+                    </>
+                  ) : (
+                    <>
+                      Noon's summaries are checked against its detailed ledger once the ledger is
+                      brought in through their last day.
+                    </>
+                  )}
                 </p>
               </div>
-              {check.mismatches.length === 0 ? (
+              {!check.to ? null : check.mismatches.length === 0 ? (
                 <p className="flex items-center gap-2 px-5 py-3 text-sm">
                   <CheckCircle2 className="size-4 shrink-0 text-success" />
-                  They agree on every day.
+                  They agree.
                 </p>
               ) : (
                 <>
@@ -235,24 +255,22 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
                     <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
                     <span>
                       {plain.format(check.mismatches.length)}{" "}
-                      {check.mismatches.length === 1 ? "day doesn't" : "days don't"} add up: a
-                      movement is missing from one of Noon's reports. Ask Noon's seller support
-                      about {check.mismatches.length === 1 ? "it" : "them"}, with the SKU and day.
+                      {check.mismatches.length === 1 ? "product doesn't" : "products don't"} add up:
+                      a movement is missing from one of Noon's reports. Ask Noon's seller support
+                      about {check.mismatches.length === 1 ? "it" : "them"}, with the product and
+                      dates.
                     </span>
                   </p>
                   <ul className="divide-y">
                     {check.mismatches.slice(0, 20).map((m) => (
                       <li
-                        key={`${m.date}:${m.sku}`}
-                        aria-label={`${m.sku} on ${m.date}`}
+                        key={`${m.from}:${m.date}:${m.sku}`}
+                        aria-label={`${m.sku}, ${span(m.from, m.date)}`}
                         className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-5 py-2.5 text-sm"
                       >
                         <span className="min-w-0 truncate">
                           {m.sku}
-                          <span className="text-muted-foreground">
-                            {" "}
-                            · {formatDate(m.date, locale, "long")}
-                          </span>
+                          <span className="text-muted-foreground"> · {span(m.from, m.date)}</span>
                         </span>
                         <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
                           Summary {n.format(m.summary)} · Ledger {n.format(m.ledger)}
@@ -267,6 +285,38 @@ export default async function MovementsPage({ params }: { params: Promise<{ slug
                   ) : null}
                 </>
               )}
+              {uploads.length ? (
+                <div className="border-t bg-muted/20 px-5 py-3">
+                  <h3 className="font-medium text-muted-foreground text-xs">Noon's summaries in</h3>
+                  <ul className="mt-1.5 grid gap-1">
+                    {uploads.slice(0, 10).map((u) => (
+                      <li
+                        key={`${u.fromDate}:${u.date}`}
+                        className="flex flex-wrap items-center justify-between gap-x-3 text-sm"
+                      >
+                        <span className="min-w-0">
+                          {span(u.fromDate, u.date)}
+                          <span className="text-muted-foreground text-xs">
+                            {" "}
+                            · {plain.format(u.rows)} {u.rows === 1 ? "row" : "rows"}
+                          </span>
+                        </span>
+                        <RemoveSummaryButton
+                          slug={slug}
+                          date={u.date}
+                          fromDate={u.fromDate}
+                          label={span(u.fromDate, u.date)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                  {uploads.length > 10 ? (
+                    <p className="mt-1 text-muted-foreground text-xs">
+                      And {plain.format(uploads.length - 10)} more days.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </section>
           ) : null}
 

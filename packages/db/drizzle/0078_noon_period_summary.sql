@@ -1,0 +1,1 @@
+ALTER TABLE "noon_stock_days" ADD COLUMN "from_date" date;

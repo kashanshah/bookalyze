@@ -547,6 +547,13 @@
       "when": 1792540789091,
       "tag": "0077_receipts_by_email",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1792544125426,
+      "tag": "0078_noon_period_summary",
+      "breakpoints": true
     }
   ]
 }

@@ -2897,9 +2897,9 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   });
   await expect(mugAtNoon).toContainText(/At Noon\s*(39|40)/);
   const checked = page.getByRole("region", { name: "Noon's numbers checked" });
-  await expect(checked.getByText(/1 day doesn't add up/)).toBeVisible();
+  await expect(checked.getByText(/1 product doesn't add up/)).toBeVisible();
   await expect(
-    checked.getByRole("listitem", { name: `NOON-MAPLE-MUG on ${lastMonth}-20` }),
+    checked.getByRole("listitem", { name: /^Maple leaf ceramic mug, \d+ \w+ \d{4}$/ }),
   ).toContainText("Summary -1 · Ledger 0");
   // Or uploaded: a later day says what Noon holds now.
   const today = now.toISOString().slice(0, 10);
@@ -2916,6 +2916,34 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   });
   await page.getByRole("button", { name: "Add Noon's stock" }).click();
   await expect(page.getByText("Noon's stock added")).toBeVisible();
+  await expect(mugAtNoon).toContainText(/At Noon\s*25\s*\+2 not sellable/);
+
+  // Noon's newer report covers dates you choose, which the file doesn't say: they're asked for.
+  await page.getByLabel("Inventory ledger file").setInputFiles({
+    name: "noon-period.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      [
+        "fulfillment_type,id_partner,country_code,warehouse_code,pbarcode,sku,opening_stock,in_transit,inbound_received,customer_shipment,return_reinbound,qc_fail_return,vendor_return,liquidation,dispose,relabel,warehouse_transfer,lost_and_found,unknown_transactions,closing_stock",
+        "fbn,1,AE,DXB01,0001,NOON-MAPLE-MUG,25,0,0,-1,0,0,0,0,0,0,0,0,0,24",
+      ].join("\n"),
+    ),
+  });
+  const periodDialog = page.getByRole("dialog");
+  await periodDialog.getByLabel("From").fill(`${lastMonth}-21`);
+  // Up to yesterday: today's summary above stays what Noon holds now.
+  const yesterday = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+  await periodDialog.getByLabel("To").fill(yesterday);
+  await periodDialog.getByRole("button", { name: "Add Noon's stock" }).click();
+  await expect(page.getByText("Noon's stock added")).toBeVisible();
+  await expect(mugAtNoon).toContainText(/At Noon\s*25\s*\+2 not sellable/);
+  // And taken out again.
+  const removePeriod = checked.getByRole("button", {
+    name: /^Remove Noon's summary for \d+ \w+ \d{4} – /,
+  });
+  await removePeriod.click();
+  await checked.getByRole("button", { name: /^Confirm: remove Noon's summary for/ }).click();
+  await expect(page.getByText(/^Noon's summary for .* removed$/)).toBeVisible();
   await expect(mugAtNoon).toContainText(/At Noon\s*25\s*\+2 not sellable/);
 
   await page.getByRole("link", { name: "Channels", exact: true }).click();
@@ -3132,7 +3160,7 @@ test("home: what needs your attention, each line opening where it's done", async
   await expect(page.getByRole("heading", { name: "Cost of goods sold" })).toBeVisible();
   await page.goBack();
   // Noon's two stock reports disagreed on a day (the Noon test above).
-  await list.getByRole("link", { name: /Noon's stock reports disagree on \d+ days?/ }).click();
+  await list.getByRole("link", { name: /Noon's stock reports disagree on \d+ products?/ }).click();
   await expect(page.getByRole("region", { name: "Noon's numbers checked" })).toBeVisible();
 });
 

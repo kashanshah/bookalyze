@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  isNoonPeriodSummaryHeader,
   isNoonSummaryHeader,
   noonLedgerMismatches,
+  parseNoonPeriodSummary,
   parseNoonStockSummary,
 } from "../commerce/noon-stock";
 
@@ -56,25 +58,86 @@ describe("Noon's FBN ledger summary", () => {
 });
 
 describe("noonLedgerMismatches", () => {
-  it("lists days where the summary and the detailed ledger move a SKU differently", () => {
+  it("lists days where the summary and the detailed ledger move a product differently", () => {
     expect(
       noonLedgerMismatches(
         [
-          { date: "2026-09-02", sku: "MUG-1", change: -2 },
-          { date: "2026-09-02", sku: "MUG-1", change: 1 },
-          { date: "2026-09-03", sku: "MUG-1", change: -1 },
-          { date: "2026-09-04", sku: "CUP-1", change: 0 },
-          { date: "2026-09-05", sku: "CUP-1", change: 3 },
+          { date: "2026-09-02", key: "mug", label: "Mug", change: -2 },
+          { date: "2026-09-02", key: "mug", label: "Mug", change: 1 },
+          { date: "2026-09-03", key: "mug", label: "Mug", change: -1 },
+          { date: "2026-09-04", key: "cup", label: "Cup", change: 0 },
+          { date: "2026-09-05", key: "cup", label: "Cup", change: 3 },
         ],
         [
-          { date: "2026-09-02", sku: "MUG-1", quantity: -1 },
-          { date: "2026-09-03", sku: "MUG-1", quantity: -2 },
-          { date: "2026-09-06", sku: "CUP-1", quantity: 4 },
+          { date: "2026-09-02", key: "mug", quantity: -1 },
+          { date: "2026-09-03", key: "mug", quantity: -2 },
+          { date: "2026-09-06", key: "cup", quantity: 4 },
         ],
       ),
     ).toEqual([
-      { date: "2026-09-05", sku: "CUP-1", summary: 3, ledger: 0 },
-      { date: "2026-09-03", sku: "MUG-1", summary: -1, ledger: -2 },
+      { date: "2026-09-05", from: null, sku: "Cup", summary: 3, ledger: 0 },
+      { date: "2026-09-03", from: null, sku: "Mug", summary: -1, ledger: -2 },
     ]);
+  });
+
+  it("adds the ledger up over a period report's days", () => {
+    const ledger = [
+      { date: "2026-10-08", key: "mug", quantity: -2 },
+      { date: "2026-10-12", key: "mug", quantity: -3 },
+      { date: "2026-10-20", key: "mug", quantity: -9 },
+    ];
+    const period = { date: "2026-10-19", from: "2026-10-08", key: "mug", label: "Mug" };
+    expect(noonLedgerMismatches([{ ...period, change: -5 }], ledger)).toEqual([]);
+    expect(noonLedgerMismatches([{ ...period, change: -6 }], ledger)).toEqual([
+      { date: "2026-10-19", from: "2026-10-08", sku: "Mug", summary: -6, ledger: -5 },
+    ]);
+  });
+});
+
+describe("parseNoonPeriodSummary", () => {
+  it("reads Noon's period report as the dates chosen, netting each kind of movement", () => {
+    const text = [
+      "fulfillment_type,id_partner,country_code,warehouse_code,pbarcode,sku,opening_stock,in_transit,inbound_received,customer_shipment,return_reinbound,qc_fail_return,vendor_return,liquidation,dispose,relabel,warehouse_transfer,lost_and_found,unknown_transactions,closing_stock",
+      "fbn,1,AE,DXB01,111,Z1-1,25,1,0,-5,0,0,0,0,0,0,-1,0,0,20",
+      "fbn,1,AE,DXB01,111,Z1-1,0,0,0,0,0,0,0,0,0,0,2,1,0,3",
+      "fbn,1,AE,AUH01,222,Z2-1,10,0,0,0,0,0,0,0,0,0,0,,0,10",
+      "fbn,1,AE,AUH01,333,,1,0,0,0,0,0,0,0,0,0,0,0,0,1",
+    ].join("\n");
+    expect(isNoonPeriodSummaryHeader(text.split("\n")[0]?.split(",") ?? [])).toBe(true);
+    const parsed = parseNoonPeriodSummary(text, { from: "2026-10-08", to: "2026-10-19" });
+    expect(parsed).toEqual({
+      ok: true,
+      from: "2026-10-08",
+      to: "2026-10-19",
+      skipped: 1,
+      rows: [
+        {
+          date: "2026-10-19",
+          fromDate: "2026-10-08",
+          location: "DXB01",
+          sku: "Z1-1",
+          nfsku: null,
+          condition: "sellable",
+          opening: 25,
+          closing: 23,
+          movements: { transit: 1, customerOutbound: -5, transferOut: -1, transferIn: 2, found: 1 },
+        },
+        {
+          date: "2026-10-19",
+          fromDate: "2026-10-08",
+          location: "AUH01",
+          sku: "Z2-1",
+          nfsku: null,
+          condition: "sellable",
+          opening: 10,
+          closing: 10,
+          movements: {},
+        },
+      ],
+    });
+    expect(parseNoonPeriodSummary(text, { from: "2026-10-19", to: "2026-10-08" })).toEqual({
+      ok: false,
+      error: "Enter the first and last day the report covers.",
+    });
   });
 });

@@ -4,7 +4,13 @@ import { createDb, type Transaction, withOrg } from "../client";
 import { addNoonChannel } from "../commerce";
 import { createProduct, linkSku } from "../inventory";
 import { importNoonLedger } from "../inventory-ledger";
-import { importNoonStockDays, noonLedgerCheck, noonStockByProduct } from "../noon-stock";
+import {
+  importNoonStockDays,
+  noonLedgerCheck,
+  noonStockByProduct,
+  noonStockUploads,
+  removeNoonStockUpload,
+} from "../noon-stock";
 import * as schema from "../schema";
 
 const ownerUrl =
@@ -111,12 +117,54 @@ describe("Noon's FBN ledger summary", () => {
     expect(await scoped((tx) => noonLedgerCheck(tx))).toEqual({
       from: "2026-09-02",
       to: "2026-09-03",
-      mismatches: [{ date: "2026-09-03", sku: "MUG-1", summary: 0, ledger: 1 }],
+      mismatches: [{ date: "2026-09-03", from: null, sku: "Mug", summary: 0, ledger: 1 }],
     });
     expect(await scoped((tx) => noonLedgerCheck(tx), otherOrgId)).toEqual({
       from: null,
       to: null,
       mismatches: [],
     });
+  });
+
+  it("lists the summaries in, removes one, and checks a period report over its days", async () => {
+    expect(await scoped((tx) => noonStockUploads(tx))).toEqual([
+      { date: "2026-09-04", fromDate: null, rows: 4 },
+      { date: "2026-09-03", fromDate: null, rows: 1 },
+      { date: "2026-09-02", fromDate: null, rows: 2 },
+    ]);
+    for (const date of ["2026-09-02", "2026-09-03", "2026-09-04"]) {
+      await scoped((tx) => removeNoonStockUpload(tx, { date, fromDate: null }));
+    }
+    expect(await scoped((tx) => noonStockUploads(tx))).toEqual([]);
+    // 2 to 3 September at once: shipped 2, 1 back (the detailed ledger's -2 and +1).
+    await scoped((tx) =>
+      importNoonStockDays(tx, {
+        orgId,
+        rows: [
+          {
+            date: "2026-09-03",
+            fromDate: "2026-09-02",
+            location: "DXB01",
+            sku: "MUG-1",
+            nfsku: null,
+            condition: "sellable",
+            opening: 10,
+            closing: 9,
+            movements: {},
+          },
+        ],
+      }),
+    );
+    expect(await scoped((tx) => noonLedgerCheck(tx))).toEqual({
+      from: "2026-09-02",
+      to: "2026-09-03",
+      mismatches: [],
+    });
+    expect(await scoped((tx) => noonStockUploads(tx))).toEqual([
+      { date: "2026-09-03", fromDate: "2026-09-02", rows: 1 },
+    ]);
+    expect(
+      await scoped((tx) => removeNoonStockUpload(tx, { date: "2026-09-03", fromDate: null })),
+    ).toBe(0);
   });
 });

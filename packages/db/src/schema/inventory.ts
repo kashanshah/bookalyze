@@ -779,7 +779,10 @@ export const noonStockDays = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
+    /** The day, or a period report's last day. */
     date: date("date").notNull(),
+    /** A period report's first day (opening is that morning's); null for a single day. */
+    fromDate: date("from_date"),
     location: text("location").notNull(),
     sku: text("sku").notNull(),
     nfsku: text("nfsku"),

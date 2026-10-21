@@ -1,11 +1,13 @@
 "use client";
 
 import {
+  isNoonPeriodSummaryHeader,
   isNoonSummaryHeader,
   type LedgerEvent,
   type NoonStockDay,
   parseInventoryLedger,
   parseNoonLedger,
+  parseNoonPeriodSummary,
   parseNoonStockSummary,
 } from "@bookalyze/core";
 import { FileUp, RefreshCw } from "lucide-react";
@@ -25,7 +27,12 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { syncLedgerAction, uploadLedgerAction, uploadNoonSummaryAction } from "./actions";
+import {
+  removeNoonSummaryAction,
+  syncLedgerAction,
+  uploadLedgerAction,
+  uploadNoonSummaryAction,
+} from "./actions";
 
 const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
@@ -93,8 +100,12 @@ export function UploadLedgerButton({
     noon: boolean;
     /** Noon's summary view: days, not movements. */
     days: NoonStockDay[] | null;
+    /** Noon's summary for a period: read once its dates are entered. */
+    period: string | null;
     to: string | null;
   } | null>(null);
+  const [periodFrom, setPeriodFrom] = useState("");
+  const [periodTo, setPeriodTo] = useState("");
   const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
   const [through, setThrough] = useState("");
   const [pending, start] = useTransition();
@@ -105,6 +116,25 @@ export function UploadLedgerButton({
     const text = await f.text();
     if (input.current) input.current.value = "";
     const header = text.slice(0, 2000).split(/\r?\n/)[0] ?? "";
+    if (isNoonPeriodSummaryHeader(header.split(/[,\t]/))) {
+      if (!noon) {
+        return void toast.error(`${f.name} is Noon's ledger summary`, {
+          description: "Add your Noon country on Commerce → Channels first.",
+        });
+      }
+      setFile({
+        name: f.name,
+        events: [],
+        from: null,
+        noon: true,
+        days: [],
+        period: text,
+        to: null,
+      });
+      setPeriodFrom("");
+      setPeriodTo("");
+      return;
+    }
     if (isNoonSummaryHeader(header.split(/[,\t]/))) {
       const summary = parseNoonStockSummary(text);
       if (!summary.ok) return void toast.error(`${f.name}: ${summary.error}`);
@@ -119,6 +149,7 @@ export function UploadLedgerButton({
         from: summary.from,
         noon: true,
         days: summary.rows,
+        period: null,
         to: summary.to,
       });
       return;
@@ -142,6 +173,7 @@ export function UploadLedgerButton({
       from: parsed.from,
       noon: isNoon,
       days: null,
+      period: null,
       to: parsed.to,
     });
     setThrough(parsed.to ?? "");
@@ -151,17 +183,23 @@ export function UploadLedgerButton({
     start(async () => {
       if (!file) return;
       if (file.days) {
+        let days = file.days;
+        if (file.period !== null) {
+          const parsed = parseNoonPeriodSummary(file.period, { from: periodFrom, to: periodTo });
+          if (!parsed.ok) return void toast.error(parsed.error);
+          days = parsed.rows;
+        }
         let saved = 0;
-        for (let i = 0; i < Math.max(1, file.days.length); i += 2000) {
+        for (let i = 0; i < Math.max(1, days.length); i += 2000) {
           const result = await uploadNoonSummaryAction(slug, {
-            rows: file.days.slice(i, i + 2000),
+            rows: days.slice(i, i + 2000),
           });
           if (!result.ok) return void toast.error(result.message);
           saved += result.added;
         }
         setFile(null);
         toast.success("Noon's stock added", {
-          description: `${plural(saved, "row")} (a SKU on a day). Your lots are compared with it, and Noon's ledger checked against it.`,
+          description: `${plural(saved, "row")} (a SKU ${file.period !== null ? "over the dates" : "on a day"}). Your lots are compared with it, and Noon's ledger checked against it.`,
         });
         router.refresh();
         return;
@@ -203,7 +241,13 @@ export function UploadLedgerButton({
           <DialogHeader>
             <DialogTitle>Add {file?.name}</DialogTitle>
             <DialogDescription>
-              {file?.days ? (
+              {file?.period !== null && file?.period !== undefined ? (
+                <>
+                  Noon's FBN ledger summary for a period: what Noon held of each SKU at the start
+                  and end of the dates you chose. The file doesn't say which dates, so enter them as
+                  you picked them on Noon. A period already brought in is replaced.
+                </>
+              ) : file?.days ? (
                 <>
                   Noon's FBN ledger summary: what Noon held of each SKU each day
                   {file.from ? `, ${file.from} to ${file.to}` : ""}. Days already brought in are
@@ -227,6 +271,33 @@ export function UploadLedgerButton({
               submit();
             }}
           >
+            {file?.period !== null && file?.period !== undefined ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="From"
+                  htmlFor={`${formId}-from`}
+                  hint="The first day you chose on Noon"
+                >
+                  <Input
+                    id={`${formId}-from`}
+                    type="date"
+                    required
+                    value={periodFrom}
+                    onChange={(e) => setPeriodFrom(e.target.value)}
+                  />
+                </Field>
+                <Field label="To" htmlFor={`${formId}-to`} hint="The last day you chose">
+                  <Input
+                    id={`${formId}-to`}
+                    type="date"
+                    required
+                    min={periodFrom || undefined}
+                    value={periodTo}
+                    onChange={(e) => setPeriodTo(e.target.value)}
+                  />
+                </Field>
+              </div>
+            ) : null}
             {file?.days ? null : !file?.noon && channels.length > 1 ? (
               <Field label="Marketplace" htmlFor={`${formId}-channel`}>
                 <Combobox
@@ -268,5 +339,49 @@ export function UploadLedgerButton({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/** Removes one Noon summary (a day, or a period report): click, then click again to confirm. */
+export function RemoveSummaryButton({
+  slug,
+  date,
+  fromDate,
+  label,
+}: {
+  slug: string;
+  date: string;
+  fromDate: string | null;
+  /** "19 October 2026", "8–19 October 2026". */
+  label: string;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [armed, setArmed] = useState(false);
+  return (
+    <Button
+      variant={armed ? "destructive" : "ghost"}
+      size="sm"
+      disabled={pending}
+      aria-label={
+        armed ? `Confirm: remove Noon's summary for ${label}` : `Remove Noon's summary for ${label}`
+      }
+      onBlur={() => setArmed(false)}
+      onClick={() => {
+        if (!armed) return setArmed(true);
+        start(async () => {
+          const result = await removeNoonSummaryAction(slug, { date, fromDate });
+          setArmed(false);
+          if (!result.ok) return void toast.error(result.message);
+          toast.success(`Noon's summary for ${label} removed`, {
+            description: "Upload it again any time.",
+          });
+          router.refresh();
+        });
+      }}
+    >
+      {pending ? <Spinner /> : null}
+      {armed ? "Click again to remove" : "Remove"}
+    </Button>
   );
 }
