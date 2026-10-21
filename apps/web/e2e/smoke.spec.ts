@@ -9,6 +9,7 @@ import {
   signIn,
   signOut,
   signUp,
+  toastsGone,
   torontoDay,
   verifyEmail,
   withOwnerDb,
@@ -2855,11 +2856,13 @@ test("walmart: choose how Walmart posts, post a settlement and match its payout 
   await expect(payout.getByRole("link", { name: /Deposit of .* · JE-/ })).toBeVisible();
 
   // And back: the deposit returns to Sales and isn't suggested for this payout again.
+  await toastsGone(page);
   await payout.getByRole("button", { name: "Unmatch" }).click();
   await expect(page.getByText("Deposit unmatched")).toBeVisible();
   await expect(payout).toContainText("No bank deposit of this amount found");
 
   // The settlement comes back out too.
+  await toastsGone(page);
   await settlement
     .getByRole("button", { name: /^Take Walmart Canada, .* out of the books$/ })
     .click();
