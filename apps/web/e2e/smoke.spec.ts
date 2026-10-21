@@ -3745,7 +3745,9 @@ test("billing: a plan through Checkout, an add-on removed makes only its module 
   page,
 }) => {
   await signIn(page, owner.email, owner.password);
-  await page.getByRole("link", { name: "Plan and billing", exact: true }).click();
+  // The read-only banner links Plan and billing too.
+  const sidebar = page.getByRole("navigation", { name: "Main" });
+  await sidebar.getByRole("link", { name: "Plan and billing", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Plan and billing" })).toBeVisible();
   // No BILLING_STARTS_ON in tests: early access, everything free and usable.
   await expect(page.getByText("Free during early access")).toBeVisible();
@@ -3801,7 +3803,7 @@ test("billing: a plan through Checkout, an add-on removed makes only its module 
   await expect(page.getByText("Automatic requests are on")).toBeVisible();
 
   // Cancelled: everything switched on is read-only, and nothing is deleted.
-  await page.getByRole("link", { name: "Plan and billing", exact: true }).click();
+  await sidebar.getByRole("link", { name: "Plan and billing", exact: true }).click();
   await page.getByRole("button", { name: "Manage billing" }).click();
   await page.getByRole("button", { name: "Cancel subscription" }).click();
   await expect(page.getByRole("heading", { name: "Choose a plan" })).toBeVisible();

@@ -41,7 +41,7 @@ export default async function OrgLayout({
               </span>
               <Link
                 href={`/o/${slug}/settings/billing`}
-                className="font-medium text-primary underline-offset-4 hover:underline"
+                className="basis-full ps-6 font-medium text-primary underline-offset-4 hover:underline sm:basis-auto sm:ps-0"
               >
                 Plan and billing
               </Link>
