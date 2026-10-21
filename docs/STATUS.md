@@ -678,6 +678,11 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   not have (Tax Invoicing is the usual one): the refusal keeps Amazon's own words. One
   connection per region: connecting again replaces its credentials. No AWS signing is needed
   (SP-API dropped SigV4).
+- **The roles, listed where you connect** (Add a channel → Amazon, `AmazonSteps`): Inventory and
+  Order Tracking, Finance and Accounting, Buyer Solicitation, Buyer Communication, Amazon
+  Fulfillment, Product Listing, Pricing, Selling Partner Insights, and Tax Invoicing only if the
+  developer profile has it, each with what it's for, and a link to the site's
+  `/guides/connect-amazon` (the same table). Keep the two in step.
 - **Channels** (`sales_channels`, migration `0025_sales_channels`): one per marketplace the account
   is registered in; new ones start switched on where the seller participates. Switching a channel
   off means nothing is synced from it. Disconnecting deletes the credentials and switches channels

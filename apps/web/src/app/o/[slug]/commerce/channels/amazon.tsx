@@ -232,6 +232,22 @@ export function AmazonAccount({
   );
 }
 
+/** The roles the Amazon app needs, and what each one is for (the guide's table, in step). */
+const AMAZON_ROLES = [
+  { role: "Inventory and Order Tracking", use: "orders" },
+  { role: "Finance and Accounting", use: "settlements and refunds" },
+  { role: "Buyer Solicitation", use: "review requests" },
+  { role: "Buyer Communication", use: "sending buyer invoices" },
+  { role: "Amazon Fulfillment", use: "FBA stock and its ledger" },
+  { role: "Product Listing", use: "listing watch and price changes" },
+  { role: "Pricing", use: "prices and fee estimates" },
+  { role: "Selling Partner Insights", use: "review topics" },
+  { role: "Tax Invoicing", use: "buyer details on invoices, only if your profile has it" },
+] as const;
+
+/** The public guide with every step and screen. */
+const AMAZON_GUIDE_URL = "https://bookalyze.com/guides/connect-amazon";
+
 /** How to get the credentials, shown before the form when Amazon is added. */
 export function AmazonSteps() {
   return (
@@ -242,14 +258,35 @@ export function AmazonSteps() {
         private app.
       </li>
       <li>
-        <span className="font-medium">2.</span> Give it these roles: Selling Partner Insights,
-        Inventory and Order Tracking, Finance and Accounting (for refunds), and Buyer Communication.
-        Add Tax Invoicing only when your developer profile already has that role. A role the profile
-        does not have makes Amazon refuse the connection check.
+        <span className="font-medium">2.</span> Give it the roles for the features you'll use:
+        <ul className="mt-1.5 grid gap-1 ps-4">
+          {AMAZON_ROLES.map((r) => (
+            <li key={r.role} className="list-disc">
+              <span className="font-medium">{r.role}</span>
+              <span className="text-muted-foreground"> · {r.use}</span>
+            </li>
+          ))}
+        </ul>
+        <span className="mt-1.5 block text-muted-foreground">
+          A role your developer profile doesn't have makes Amazon refuse the connection check, so
+          leave it off.
+        </span>
       </li>
       <li>
         <span className="font-medium">3.</span> Copy its LWA client ID and client secret, then
         choose <span className="font-medium">Authorize</span> to get a refresh token.
+      </li>
+      <li className="text-muted-foreground">
+        Every step, and what each role is for:{" "}
+        <a
+          href={AMAZON_GUIDE_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-primary underline-offset-4 hover:underline"
+        >
+          how to connect Amazon
+        </a>
+        .
       </li>
     </ol>
   );
