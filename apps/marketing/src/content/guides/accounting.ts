@@ -344,7 +344,7 @@ export const ACCOUNTING_GUIDES: readonly Guide[] = [
       {
         heading: "Close",
         blocks: [
-          { where: "Settings → General → Close the books (owners and admins)" },
+          { where: "Settings → Company settings → Close the books (owners and admins)" },
           {
             p: "Pick the date, or use the quick picks: the end of last financial year, or the end of last month.",
           },

@@ -1131,7 +1131,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     and SAR; "Free during early access"; the independence rule in the FAQ) from
     `content/pricing.ts`.
   - **Contact** `/contact`: name, email, company, topic (`?topic=` preselects), message; a server
-    action sends it with Resend's REST API (reply-to the visitor) to `CONTACT_TO`. Honeypot,
+    action makes a support ticket in the app (`SUPPORT_INTAKE_URL` + `SUPPORT_INTAKE_SECRET`, the
+    app's `/api/support/intake`), or, when that isn't set up or fails, sends it with Resend's REST
+    API (reply-to the visitor) to `CONTACT_TO`. Honeypot,
     3-second minimum, 5 per address per 10 minutes. Development without `RESEND_API_KEY` logs and
     succeeds; production without it says email isn't set up.
   - **Guides** `/guides` (categories, search with `?q=`) and `/guides/<slug>` (breadcrumb, "On
@@ -1139,7 +1141,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     `content/guides/` (getting started, marketplaces, payouts, banking, invoices, reviews and
     listings, accounting, stock and cost of goods, reports, your company, worked examples), each
     with where, steps, "What you should see" checks and "Not yet". **Help** `/help`: search,
-    popular guides, categories, "Still stuck?" → contact form.
+    popular guides, categories, "Still stuck?" → contact form, or a ticket in the app (`APP_URL/help`).
   - Header: Marketplaces, Features, Pricing, Guides, Help. Footer: Product, Resources, Sellers in,
     Company. The sitemap lists every page and guide.
 - **Pictures of the app** are drawn in code with the app's tokens (`previews.tsx`), made-up

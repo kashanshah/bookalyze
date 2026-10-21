@@ -7,7 +7,7 @@ import { GuideLinks } from "@/components/guide-links";
 import { GuideSearch } from "@/components/guide-search";
 import { Section, SectionHeading } from "@/components/section";
 import { CATEGORIES, guideSummaries, guidesIn, POPULAR_GUIDES } from "@/content/guides";
-import { CONTACT_EMAIL } from "@/lib/site";
+import { APP_URL, CONTACT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Help and support",
@@ -71,13 +71,17 @@ export default function HelpPage() {
             <h2 className="font-semibold text-2xl tracking-tight">Still stuck?</h2>
             <p className="text-muted-foreground leading-relaxed">
               Tell us what you were trying to do and what you saw. A person reads every message and
-              replies by email.
+              replies by email. Signed in? Open a ticket in the app and follow it there.
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-3">
             <ButtonLink href="/contact?topic=help">
               Contact support
               <ArrowRight className="rtl:rotate-180" />
+            </ButtonLink>
+            <ButtonLink href={`${APP_URL}/help`} variant="outline">
+              <LifeBuoy />
+              Open a ticket in the app
             </ButtonLink>
             <ButtonLink href={`mailto:${CONTACT_EMAIL}`} variant="outline">
               <Mail />

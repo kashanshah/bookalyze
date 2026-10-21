@@ -11,10 +11,11 @@ import {
 } from "@/lib/contact";
 
 /**
- * The contact form: checks the message, then emails it to us through Resend's REST API with the
- * visitor's address as reply-to. Never sends anything to the visitor (that would let anyone send
- * our mail to anyone). Env: RESEND_API_KEY (a sending-only key for bookalyze.com), CONTACT_TO,
- * CONTACT_FROM.
+ * The contact form: checks the message, then makes a support ticket in the app
+ * (`SUPPORT_INTAKE_URL`, with `SUPPORT_INTAKE_SECRET` as a bearer token). When that isn't set up
+ * or fails, it emails the message to us through Resend's REST API with the visitor's address as
+ * reply-to. Never sends anything to the visitor (that would let anyone send our mail to anyone).
+ * Env: RESEND_API_KEY (a sending-only key for bookalyze.com), CONTACT_TO, CONTACT_FROM.
  */
 
 const sent = new Map<string, number[]>();
@@ -79,9 +80,31 @@ export async function sendContactMessage(
     };
   }
 
-  const result = await deliver(parsed.data);
+  const result = (await toSupportDesk(parsed.data))
+    ? { ok: true as const }
+    : await deliver(parsed.data);
   if (!result.ok) return { status: "error", message: result.message, values };
   return { status: "sent", name: parsed.data.name };
+}
+
+/** Makes a ticket in the app's support desk. False when it isn't set up or didn't work. */
+async function toSupportDesk(input: ContactInput): Promise<boolean> {
+  const url = process.env.SUPPORT_INTAKE_URL;
+  const secret = process.env.SUPPORT_INTAKE_SECRET;
+  if (!url || !secret) return false;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.ok) return true;
+    console.error(`[contact] The support intake answered ${response.status}; emailing instead.`);
+  } catch (error) {
+    console.error("[contact] The support intake couldn't be reached; emailing instead.", error);
+  }
+  return false;
 }
 
 async function deliver(

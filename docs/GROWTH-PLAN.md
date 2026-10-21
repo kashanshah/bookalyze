@@ -271,7 +271,7 @@ with the Amazon role-per-feature table and troubleshooting) and `src/content/gui
 rest. **Owner: automatic review requests are a headline feature**; give them a home section of
 their own and a place in the hero's highlights.
 
-**App follow-up (small, its own PR):** the Amazon connect dialog's role list
+**App follow-up (small, its own PR; done in [PR #168](https://github.com/kashanshah/bookalyze/pull/168)):** the Amazon connect dialog's role list
 (`apps/web/src/app/o/[slug]/commerce/channels/amazon.tsx`, step 2) names fewer roles than the
 features use. Align it with the guide's table: Inventory and Order Tracking, Finance and
 Accounting, Buyer Solicitation, Buyer Communication, Amazon Fulfillment, Product Listing,
@@ -391,6 +391,10 @@ Made without the owner, to keep going; each fits the docs and is easy to change.
   sending invoices through Walmart/Noon/eBay, a read-only team role, compliance dates outside
   Canada and the UAE, comparing report periods.
 - **Paths say what the sidebar says**, e.g. "Entity & compliance → Brand" (not "Company").
+- **D5 wired here:** the contact form posts to the app's `/api/support/intake` when
+  `SUPPORT_INTAKE_URL` and `SUPPORT_INTAKE_SECRET` are set, and falls back to emailing `CONTACT_TO`
+  when they aren't or the app doesn't answer. Help's "Still stuck?" also offers "Open a ticket in
+  the app" (`APP_URL/help`, live once the support PR merges).
 - **A test for the content** (`apps/marketing/src/content/guides/guides.test.ts`, run by
   `pnpm test`): unique slugs, and every guide linked from a page, the content files or another
   guide exists, so a renamed guide can't leave a 404.

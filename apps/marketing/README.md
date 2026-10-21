@@ -38,7 +38,9 @@ every page is static except the contact form's server action, which needs one se
 
 ### Contact form
 
-`/contact` sends through Resend's API (no SDK) with the visitor as reply-to. Spam guards: a hidden
+`/contact` makes a support ticket in the app (`POST SUPPORT_INTAKE_URL` with
+`SUPPORT_INTAKE_SECRET`); when that isn't set up or fails, it emails `CONTACT_TO` through
+Resend's API (no SDK) with the visitor as reply-to. Spam guards: a hidden
 field, a 3-second minimum, and 5 messages per address per 10 minutes (per server instance).
 
 | Variable | Default | |
@@ -46,6 +48,8 @@ field, a 3-second minimum, and 5 messages per address per 10 minutes (per server
 | `RESEND_API_KEY` | none | A sending-only key. Without it: development logs the message and succeeds; production says email isn't set up |
 | `CONTACT_TO` | `hello@bookalyze.com` | Where messages go |
 | `CONTACT_FROM` | `Bookalyze website <website@bookalyze.com>` | A sender on a domain verified in Resend |
+| `SUPPORT_INTAKE_URL` | none | The app's intake, `https://app.bookalyze.com/api/support/intake` |
+| `SUPPORT_INTAKE_SECRET` | none | The same secret as the app's `SUPPORT_INTAKE_SECRET` |
 
 ```bash
 pnpm --filter @bookalyze/marketing dev     # http://localhost:3001
