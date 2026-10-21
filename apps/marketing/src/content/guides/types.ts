@@ -31,6 +31,7 @@ export type CategoryId =
   | "accounting"
   | "inventory"
   | "reports"
+  | "advertising"
   | "company"
   | "playbooks";
 

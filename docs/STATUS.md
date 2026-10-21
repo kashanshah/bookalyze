@@ -14,8 +14,9 @@ Cursor, Copilot…).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
   - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
-_Last updated: 2026-10-21, phase 4e slice 5: WFS stock, what Walmart Fulfillment Services holds,
-on each WFS channel and on Stock in its own column._
+_Last updated: 2026-10-21, advertising slice 1: ad spend per product per day from Amazon Ads, and
+each product's profit after ads (Channel profit → By product), with its guides and feature page;
+the public site's guides as Markdown for AI assistants (llms.txt)._
 
 ---
 
@@ -1700,6 +1701,64 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
   paths kept, cause chains, Postgres codes and digests).
 
+### Advertising, slice 1: profit after ads (Amazon Ads)
+
+Design and reasoning: **`docs/ADS.md`** (the model, reconciliation with the books' ad fees,
+Sponsored Brands, the numbers and the edge cases). Owner setup: `docs/SETUP.md` → Amazon Ads.
+Analytics only, for profit: no keywords, search terms, placements, bids or budgets.
+
+- **One store for every marketplace's ads** (migration `0086_ad_metrics`): `ad_metrics` (per
+  channel, source, ad type, day, campaign and SKU: spend in the ads account's currency and in the
+  main currency at that day's rate when known, impressions, clicks, attributed sales, orders and
+  units, attribution window; `sku` null for Sponsored Brands; unique with nulls not distinct) and
+  `ad_report_requests` (Amazon's asynchronous reports: pending, done, failed). A sync **replaces**
+  a channel's rows of one source and ad type for the days it fetched (db `replaceAdMetrics`), so
+  late attribution changes and removed campaigns win. An ASIN without a SKU finds it in
+  `channel_skus`. Connection provider `amazon_ads`.
+- **Amazon Ads API** (`server/amazon-ads.ts`, core `commerce/amazon-ads.ts`): Bookalyze's one Ads
+  app (`AMAZON_ADS_CLIENT_ID`, `AMAZON_ADS_CLIENT_SECRET`), consent like eBay's (signed state and a
+  browser cookie; `/api/amazon-ads/callback`), one connection per Ads region with its profiles in
+  settings; profiles match channels by `accountInfo.marketplaceStringId`. v3 reports:
+  `spAdvertisedProduct` (per SKU, 7-day attribution) and `sbCampaigns` (per campaign, 14 days),
+  daily, gzipped JSON, at most 31 days each; a duplicate request (425) reuses Amazon's report.
+- **Sync** (`server/amazon-ads-sync.ts`, core `nextAmazonAdsWindow`): 60 days back first, then
+  every day the last 15 days again. The daily job asks; the 5-minute order job collects reports
+  Amazon has finished; a report pending over 6 hours is failed and asked again. On the Amazon
+  channel's page: **Amazon Ads** (Connect, Bring in ads now (waits about 45 s), Connect again,
+  Disconnect; the ads account, other marketplaces the login covers, "Ad spend in through",
+  reports being made, Amazon's last refusal). Connecting asks for the first reports at once
+  (`after()`).
+- **Channel profit → By product** (`/commerce/profit/products`, `server/product-profit.ts`): per
+  channel, each SKU's units and sales (order lines bought in the period, cancelled left out, less
+  promotions; db `skuSalesForProfit`), its share of what the marketplace leaves before ads (the
+  **keep rate**: net from the marketplace with the books' advertising added back, over gross sales,
+  from the same settlements and transactions as Channel profit, `server/channel-totals.ts`; the
+  last 90 days when the period has none), its product cost (units × `listingCost`, bundles
+  summed), and its spend from the ads reports. Core `skuProfit`: profit before and after ads (and
+  per unit), ACOS, TACOS, ROAS, **break-even ACOS**, organic share, CPC, conversion, **break-even
+  CPC**, margin, and a verdict (Losing money, Ads eat the profit, Ads with no sales, Ads cost more
+  than they earn, Cost missing, Healthy), worst first. Summary cards in the main currency (profit
+  after ads, ad spend and TACOS, products losing money and what they lost, ads with no sales).
+  Sponsored Brands is its own line per channel, not allocated. A channel without ads reports
+  shows the books' advertising as that line, so its products' profit isn't overstated. At the
+  bottom: the books' advertising beside the reports' total and the difference. Download CSV
+  (`/api/o/[slug]/commerce/product-profit`, core `productProfitCsvRows`).
+- **Channel profit** gains muted rows **Ad spend in the ads reports** and **TACOS** (comparison
+  only: Profit still counts the books' advertising) and a **By product** button.
+- **Public site**: feature page **Profit after ads** (`/features/profit-after-ads`), a Home card
+  and a pain; a guide category **Advertising and profit** (`profit-after-ads`,
+  `connect-amazon-ads`, `acos-tacos-break-even`, `ads-in-your-books`, `ads-data-and-limits`) and
+  the playbook `fix-products-losing-money`; Channel profit's and "Are you losing money?"'s guides
+  point to it. Every guide and feature is also Markdown for AI assistants: `/llms.txt` (index,
+  llmstxt.org format), `/llms-full.txt`, and `/guides/<slug>.md`, `/features/<slug>.md`
+  (rewrites to `guides-md`, `features-md`; `lib/markdown.ts`), linked from Guides.
+- Tests: core `ads.test.ts` (keep rate, profit maths with a property test that after = before −
+  spend, verdicts, sorting, summary, merging, Amazon's tokens, profiles, report requests,
+  statuses, rows, windows, CSV); db `ads.test.ts` (replace by window and ad type, SKU from ASIN,
+  main-currency spend, period sums, SKU sales without cancelled orders, report state, isolation);
+  marketing `markdown.test.ts`; e2e "ads: connect Amazon Ads, bring in ad spend, and see each
+  product's profit after ads" with `e2e/amazon-ads-mock.mjs` (port 4016).
+
 ### Phase 4c, slice 8: FBN stock (Noon's FBN inventory ledger)
 
 - **Same movements as Amazon's FBA ledger:** core `parseNoonLedger` reads Noon's
@@ -3275,6 +3334,18 @@ Built like Noon and eBay: channels first, then the account, orders, money and th
 6. [ ] **WFS stock:** what Walmart holds beside your lots, returns and losses. What it holds
    done in slice 5; returns and losses (its inventory ledger) remain.
 
+### Advertising: profit after ads (docs/ADS.md)
+1. [x] **The ad metrics store, Amazon Ads (Sponsored Products and Brands), Profit by product.**
+   Done in slice 1.
+2. [ ] **Noon**: first check Noon's "Reports this key can download" for an ads report; otherwise an
+   upload of Ad Manager's CSV/XLSX export into `ad_metrics` (`source = 'upload'`), its SKUs matched
+   to Noon channels' Partner SKUs.
+3. [ ] **eBay Promoted Listings** through the Marketing API (`ad_type = promoted_listings`).
+4. [ ] **Sponsored Display** (`sdAdvertisedProduct`, per SKU).
+5. [ ] Optional: Sponsored Brands allocated by each ASIN's share of its attributed sales
+   (`sbPurchasedProduct`), as a choice.
+6. [ ] **Walmart Connect**, only once API access is confirmed.
+
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.
 - [x] Encrypted credential vault (AES-GCM) and a `connections` table. Done in phase 2, slice 1.
@@ -3599,3 +3670,11 @@ cases. These answers only help pick sensible defaults and test data:
    `EBAY_RU_NAME` and `EBAY_VERIFICATION_TOKEN` in Vercel (steps in `docs/SETUP.md` → eBay).
    These are Bookalyze's own app keys, not a company's; each company's eBay access comes from
    its own consent and is kept encrypted. Then Connect eBay on each company's eBay site.
+6. Amazon Ads: register Bookalyze's Ads app (a Login with Amazon security profile), apply for
+   Amazon Ads API access and link the profile, add the return URL
+   `https://app.bookalyze.com/api/amazon-ads/callback`, and set `AMAZON_ADS_CLIENT_ID` and
+   `AMAZON_ADS_CLIENT_SECRET` in Vercel (steps in `docs/SETUP.md` → Amazon Ads). Then Connect
+   Amazon Ads on Amazon.ca (North America) and on Amazon.ae (Europe), signing in on Amazon's page
+   with the login used for each marketplace's Campaign Manager. If Amazon charges ads to a card,
+   count that card's advertising category against the marketplace in Channel profit → Your own
+   costs.

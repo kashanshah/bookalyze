@@ -55,6 +55,12 @@ export default defineConfig({
       reuseExistingServer: true,
     },
     {
+      // A stand-in for Amazon Ads: consent, tokens, profiles and reports (e2e/amazon-ads-mock.mjs).
+      command: "node e2e/amazon-ads-mock.mjs",
+      url: "http://localhost:4016/health",
+      reuseExistingServer: true,
+    },
+    {
       command: "node e2e/stripe-mock.mjs",
       url: "http://localhost:4015/health",
       reuseExistingServer: true,
@@ -76,6 +82,13 @@ export default defineConfig({
         EBAY_RU_NAME: "Bookalyze-e2e-RuName",
         EBAY_ENVIRONMENT: "sandbox",
         EBAY_VERIFICATION_TOKEN: "e2e-verification-token-0000000000000000",
+        // Test-only Amazon Ads app keys, accepted by the stand-in only.
+        AMAZON_ADS_CLIENT_ID: "amzn1.application-oa2-client.e2e0000000000000000000000000000",
+        AMAZON_ADS_CLIENT_SECRET: "amzn1.oa2-cs.v1.e2e-client-secret-0000",
+        AMAZON_ADS_AUTH_URL: process.env.AMAZON_ADS_AUTH_URL ?? "http://localhost:4016/ap/oa",
+        AMAZON_ADS_TOKEN_URL:
+          process.env.AMAZON_ADS_TOKEN_URL ?? "http://localhost:4016/auth/o2/token",
+        AMAZON_ADS_API_URL: process.env.AMAZON_ADS_API_URL ?? "http://localhost:4016",
         EBAY_AUTH_URL: process.env.EBAY_AUTH_URL ?? "http://localhost:4013",
         EBAY_API_URL: process.env.EBAY_API_URL ?? "http://localhost:4013",
         EBAY_APIZ_URL: process.env.EBAY_APIZ_URL ?? "http://localhost:4013",

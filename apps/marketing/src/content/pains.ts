@@ -31,6 +31,12 @@ export const PAINS: readonly Pain[] = [
     guide: "channel-profit",
   },
   {
+    pain: "Products that sell every day and lose money once their ads are paid, and an ACOS that can't tell you which.",
+    answer:
+      "Ad spend per product from Amazon Ads, set against each product's fees and landed cost: profit after ads, break-even ACOS, and the losing products first.",
+    guide: "profit-after-ads",
+  },
+  {
     pain: "FBA, FBN or WFS stock that doesn't match the books, and lost units never noticed.",
     answer:
       "Stock movements from the marketplaces' own ledgers: returns back into stock, losses written off, stock compared.",

@@ -105,6 +105,14 @@ export const REPORT_GUIDES: readonly Guide[] = [
         ],
       },
       {
+        heading: "Ads, and each product",
+        blocks: [
+          {
+            p: "With Amazon Ads connected, two more rows show under Profit: **Ad spend in the ads reports** and **TACOS**, for comparison (Profit counts the advertising in your books, so nothing counts twice). **By product** opens each product's profit after fees, cost and ads.",
+          },
+        ],
+      },
+      {
         heading: "Your own costs",
         blocks: [
           { where: "Commerce → Channel profit → Your own costs" },
@@ -126,7 +134,13 @@ export const REPORT_GUIDES: readonly Guide[] = [
         ],
       },
     ],
-    related: ["are-you-losing-money", "cost-of-goods-sold", "amazon-prices", "financial-reports"],
+    related: [
+      "profit-after-ads",
+      "are-you-losing-money",
+      "cost-of-goods-sold",
+      "ads-in-your-books",
+      "financial-reports",
+    ],
   },
   {
     slug: "financial-reports",
