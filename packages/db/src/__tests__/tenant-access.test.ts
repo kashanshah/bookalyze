@@ -43,10 +43,13 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-/** getDb() calls that aren't the first argument of withOrg(). */
+/**
+ * getDb() calls that aren't the first argument of withOrg() or withSupportDesk() (both switch to
+ * the app_runtime role, so row-level security applies).
+ */
 function directUses(source: string): number {
   return [...source.matchAll(/getDb\(\)/g)].filter(
-    (m) => !/withOrg\(\s*$/.test(source.slice(0, m.index)),
+    (m) => !/(withOrg|withSupportDesk)\(\s*$/.test(source.slice(0, m.index)),
   ).length;
 }
 

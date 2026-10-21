@@ -74,6 +74,10 @@ export default defineConfig({
         EBAY_AUTH_URL: process.env.EBAY_AUTH_URL ?? "http://localhost:4013",
         EBAY_API_URL: process.env.EBAY_API_URL ?? "http://localhost:4013",
         EBAY_APIZ_URL: process.env.EBAY_APIZ_URL ?? "http://localhost:4013",
+        // Test-only secrets for received emails and the website's support intake.
+        RESEND_WEBHOOK_SECRET: "whsec_ZTJlLXdlYmhvb2stc2VjcmV0LTAwMDAwMDAwMDAwMA==",
+        INBOUND_EMAIL_DOMAIN: "in.e2e.test",
+        SUPPORT_INTAKE_SECRET: "e2e-support-intake-secret-0000000000000000",
         // Test-only key for the credential vault (32 zero bytes); real keys live in Vercel.
         APP_ENCRYPTION_KEY:
           process.env.APP_ENCRYPTION_KEY ?? "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",

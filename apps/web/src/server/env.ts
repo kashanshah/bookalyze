@@ -64,6 +64,11 @@ const schema = z.object({
   EBAY_APIZ_URL: z.url().optional(),
   /** Secret Vercel Cron sends as a bearer token to scheduled routes (e.g. the daily FX sync). */
   CRON_SECRET: z.string().min(16).optional(),
+  /**
+   * Shared with the public site: its contact form sends enquiries to /api/support/intake with
+   * this as a bearer token. Without it the endpoint is switched off.
+   */
+  SUPPORT_INTAKE_SECRET: z.string().min(32).optional(),
   /** "s3", or "local" to keep files on disk (development and CI only). */
   STORAGE_DRIVER: z.enum(["s3", "local", ""]).optional(),
 });

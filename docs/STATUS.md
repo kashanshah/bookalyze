@@ -1166,6 +1166,51 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Tests: marketing `guides.test.ts` (unique slugs, every guide linked from the site or another
   guide exists); e2e "the terms of service are public and linked from sign-up".
 
+### Help & support: tickets
+
+- **In the app:** sidebar → **Help & support** (`/o/[slug]/help`; `/help` redirects there for
+  the current company, the site's "Still stuck?" link). Search the site's guides (opens
+  bookalyze.com/guides), popular guides, **Contact support** (topic, subject, message; the page
+  the person came from with `?from=`), **Your tickets**. A ticket's page has the thread, a reply
+  box and **Mark as solved** / **Open again**. Every member of the company sees its tickets.
+- **The desk** (`/admin/support`, platform admins in `PLATFORM_ADMIN_EMAILS`, a 404 for anyone
+  else): tabs Needs a reply / Waiting on the customer / Solved and closed / All, each ticket's
+  company (or "Website"), requester, page and topic, reply or **internal note** (never shown or
+  emailed to the customer), status, priority, assign to me.
+- **Statuses:** a customer's message → `waiting_on_us` (reopens solved and closed); the desk's
+  reply → `waiting_on_you`; notes change nothing. Home's Needs your attention: "N support replies
+  are waiting for you".
+- **Email:** each new ticket and customer reply emails the desk; each desk reply emails the
+  customer (`emails/support-message.tsx`). With inbound email set up, they carry reply-to
+  `support-<token>@INBOUND_EMAIL_DOMAIN`; the Resend webhook (`/api/inbound/email`) adds a reply's
+  new part (core `stripQuotedReply` cuts "On … wrote:", `>` lines, Outlook's block, signatures),
+  from the requester's address as the customer or an agent's as the desk; anyone else's is
+  dropped. The body is the event's `text` or Resend's received-email API. Resend's email id keeps
+  a repeated webhook from adding it twice.
+- **Website intake (D5):** `POST /api/support/intake`, `Authorization: Bearer
+  SUPPORT_INTAKE_SECRET` (off without it), zod-checked, 5 per address per 10 minutes: a ticket
+  with no company (`source = 'website'`), subject from the message's first line, company and topic
+  at the top of the body; the desk is emailed. No acknowledgement goes to the visitor (the form
+  can't be used to make us email a stranger); the desk's reply reaches them by email.
+- **Schema** (migration `0081_support_tickets`): `support_tickets` (number from the global
+  `support_ticket_number_seq`, shown T-0001; organization nullable; requester; topic, status,
+  priority, assignee, source, page, token) and `support_messages` (author, from support,
+  internal, body ≤ 20,000, via app/email/website, `email_ref` unique). RLS: a company sees its own
+  tickets and their non-internal messages; `withSupportDesk()` (db `client.ts`) sets
+  `app.support_desk` and the app_runtime role, which shows every ticket and note and opens no
+  other tenant table. A trigger copies the ticket's company onto each message.
+- **Code:** core `support/` (labels, `supportTicketLabel`, `supportRecipient`, `stripQuotedReply`,
+  `emailAddressOf`); db `support.ts`; web `server/support.ts` (`isSupportAgent`,
+  `requireSupportAgent`, `asDesk`, `emailDesk`, `emailCustomer`, `handleSupportEmail`),
+  `app/o/[slug]/help/`, `app/admin/support/`, `app/api/support/intake/`. Audited:
+  `support_ticket.opened`, `.solved`, `.reopened`.
+- **Not yet:** files on tickets, canned replies, a satisfaction rating, auto-closing solved
+  tickets, the desk's own search.
+- Tests: core `support.test.ts`; db `support.test.ts` (one sequence, isolation, notes hidden,
+  statuses, emailed reply once, the desk opens nothing else even on the owner's connection);
+  e2e "support: a ticket from Help, the desk's reply and note, a reply by email, and the
+  website's enquiries".
+
 ### Pagination on every paged list
 
 - One component (`components/ui/pagination.tsx`) on Transactions, Orders, Settlements and Review

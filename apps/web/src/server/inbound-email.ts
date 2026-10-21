@@ -1,6 +1,11 @@
 import "server-only";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { type InboxKind, inboxRecipient, parseInvoiceRequestEmail } from "@bookalyze/core";
+import {
+  type InboxKind,
+  inboxRecipient,
+  parseInvoiceRequestEmail,
+  supportRecipient,
+} from "@bookalyze/core";
 import {
   createEmailAttachment,
   getDb,
@@ -15,6 +20,7 @@ import { ALLOWED_ATTACHMENT_TYPES, MAX_ATTACHMENT_BYTES } from "@/lib/attachment
 import { env } from "@/server/env";
 import { logInfo, logWarn } from "@/server/log";
 import { attachmentKey, putStoredFile, removeStoredFile } from "@/server/storage";
+import { handleSupportEmail } from "@/server/support";
 
 /** Resend signs webhooks the Svix way: HMAC-SHA256 of "id.timestamp.body", base64. */
 export function verifyWebhook(
@@ -44,6 +50,8 @@ type ReceivedEmail = {
   from?: string;
   to?: string[] | string;
   subject?: string;
+  /** The plain-text body, when the event carries it (Resend's API always has it). */
+  text?: string;
 };
 
 const RESEND_API = "https://api.resend.com";
@@ -151,10 +159,39 @@ async function saveReceipts(orgId: string, data: ReceivedEmail, at: Date) {
   return saved;
 }
 
-export type ReceivedResult = "recorded" | "saved" | "noted" | "ignored";
+export type ReceivedResult = "recorded" | "saved" | "noted" | "ignored" | "replied";
+
+/** The full received email from Resend's API: its text, and every address in it. */
+async function fullEmail(
+  emailId: string | undefined,
+): Promise<{ raw: string; text: string | null }> {
+  if (!emailId) return { raw: "", text: null };
+  const response = await resendGet(`/emails/receiving/${encodeURIComponent(emailId)}`);
+  if (!response) return { raw: "", text: null };
+  const raw = await response.text();
+  try {
+    const parsed = JSON.parse(raw) as { text?: unknown };
+    return { raw, text: typeof parsed.text === "string" ? parsed.text : null };
+  } catch {
+    return { raw, text: null };
+  }
+}
+
+/** A reply to a support ticket's address (support-<token>@…), or null when it isn't one. */
+async function supportReply(event: unknown, data: ReceivedEmail, domain: string) {
+  const inEvent = supportRecipient([JSON.stringify(event)], domain);
+  if (inEvent && typeof data.text === "string") return { token: inEvent, text: data.text };
+  if (inEvent || !inboxRecipient([JSON.stringify(event)], domain)) {
+    const full = await fullEmail(data.email_id);
+    const token = inEvent ?? supportRecipient([full.raw], domain);
+    if (token) return { token, text: full.text ?? data.text ?? null };
+  }
+  return null;
+}
 
 /**
- * Handles one received email: finds the company by its forwarding address, then records a
+ * Handles one received email. A reply to a support ticket (support-…) is added to the ticket.
+ * Otherwise it finds the company by its forwarding address, then records a
  * buyer's invoice request (invoices-…), or saves the files (receipts-…). Anything else to an
  * invoices address is kept by its subject (a forwarding confirmation). Emails to no company are
  * dropped.
@@ -164,6 +201,16 @@ export async function handleReceivedEmail(event: unknown): Promise<ReceivedResul
   const body = (event ?? {}) as { type?: string; data?: ReceivedEmail };
   if (!domain || body.type !== "email.received" || !body.data) return "ignored";
   const data = body.data;
+  const reply = await supportReply(event, data, domain);
+  if (reply) {
+    const result = await handleSupportEmail({
+      token: reply.token,
+      emailId: data.email_id ?? null,
+      from: data.from ?? null,
+      text: reply.text,
+    });
+    return result === "added" ? "replied" : "ignored";
+  }
   const recipient = await recipientOf(event, data, domain);
   const orgId = recipient ? await invoiceInboxOrg(getDb(), recipient.token) : null;
   if (!recipient || !orgId) {
