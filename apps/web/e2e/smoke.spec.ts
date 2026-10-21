@@ -2736,12 +2736,14 @@ test("walmart: bring in Walmart Canada's orders, shipped by the seller and by WF
   // Walmart's states read like the others.
   await page.getByLabel("Search orders").fill("108800000002");
   await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/q=108800000002/);
   await expect(rows.getByText("Cancelled").first()).toBeVisible();
   await expect(rows.getByText(/Walmart Canada/).first()).toBeVisible();
 
   // An order Walmart shipped says so; its SKU is the product linked before. No buyer details.
   await page.getByLabel("Search orders").fill("108800000003");
   await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/q=108800000003/);
   await rows
     .getByRole("link", { name: /108800000003/ })
     .first()
