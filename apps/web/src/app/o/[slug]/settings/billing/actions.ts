@@ -7,6 +7,7 @@ import {
   PACKAGE_KEYS,
   priceLookupKey,
   selectionProblem,
+  signupTrialDays,
 } from "@bookalyze/core";
 import { getDb, saveBillingCustomer, withBillingWriter } from "@bookalyze/db";
 import { z } from "zod";
@@ -80,12 +81,20 @@ export async function startCheckoutAction(slug: string, input: unknown): Promise
         });
       });
     }
-    const base = `${env().BETTER_AUTH_URL}/o/${slug}/settings/billing`;
-    // Chosen during early access or the free trial: nothing is charged until the trial is over.
-    const chargeOn = firstChargeOn(ctx.billing.entitlement, ctx.billing.companyCreatedOn);
-    const trialEnd = chargeOn
-      ? Math.floor(new Date(`${chargeOn}T00:00:00Z`).getTime() / 1000)
-      : null;
+    const atSignUp = ctx.billing.entitlement.mode === "needs_card";
+    const base = atSignUp
+      ? `${env().BETTER_AUTH_URL}/start/${slug}`
+      : `${env().BETTER_AUTH_URL}/o/${slug}/settings/billing`;
+    let trialEnd: number | null;
+    if (ctx.billing.state.account?.cardRequired) {
+      // A card at sign-up: the trial runs from today (30 days for an owner's first company).
+      const days = signupTrialDays(ctx.billing.state.account, ctx.billing.state.subscription);
+      trialEnd = days ? Math.floor(Date.now() / 1000) + days * 86_400 : null;
+    } else {
+      // Chosen during early access or the free trial: nothing is charged until the trial is over.
+      const chargeOn = firstChargeOn(ctx.billing.entitlement, ctx.billing.companyCreatedOn);
+      trialEnd = chargeOn ? Math.floor(new Date(`${chargeOn}T00:00:00Z`).getTime() / 1000) : null;
+    }
     const session = await createCheckoutSession({
       customerId,
       orgId: ctx.org.id,

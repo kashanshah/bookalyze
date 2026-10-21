@@ -97,6 +97,11 @@ marketplaces):**
 **Add-ons** (on Seller): **Stock** (Inventory) +$8 · **Review requests** +$5. Seller with both add-ons
 is $32, so Seller Plus saves $3. Analytics (phase 6) isn't sold yet.
 
+**Card at sign-up** (owner's decision, October 2026): a new company chooses a plan and gives a
+card in Stripe Checkout as its last setup step. An owner's first company is free for 30 days with
+everything included; Stripe charges on day 31 unless it's cancelled first. Further companies are
+charged from the start. Companies from before keep their free period and are asked for a card.
+
 **Review requests only** $9 ($90 a year): Review requests on its own, for Amazon sellers who keep
 their books elsewhere (owner's decision, October 2026). It uses Commerce only in part: connecting
 marketplaces and bringing in orders work; the rest of Commerce and the books stay read-only.

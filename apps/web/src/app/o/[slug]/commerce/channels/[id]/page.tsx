@@ -1,4 +1,4 @@
-import { can, isFulfilmentMode, noonReportInputs } from "@bookalyze/core";
+import { CONNECTION_AREA, can, isFulfilmentMode, noonReportInputs } from "@bookalyze/core";
 import {
   channelRemovalBlockers,
   describeBlockers,
@@ -53,7 +53,9 @@ export default async function ChannelPage({
   const { slug, id } = await params;
   const sp = await searchParams;
   if (!UUID.test(id)) notFound();
-  const ctx = await getCommerceContext(slug);
+  // Connection screens: a connection action re-renders this page in its own request, so it
+  // passes the same area (Review requests only may use it).
+  const ctx = await getCommerceContext(slug, CONNECTION_AREA);
   const data = await inOrg(ctx, async (tx) => {
     const channel = await getChannel(tx, id);
     if (!channel) return null;

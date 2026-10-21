@@ -6,7 +6,7 @@ import { ButtonLink } from "./button";
 /** The closing call to action on every page. */
 export function ClosingCta({
   title = "Connect your first marketplace today",
-  lead = "Free during early access. Set up a company, connect a marketplace, and see your payouts in your books.",
+  lead = "Try everything free for 30 days. Set up a company, connect a marketplace, and see your payouts in your books.",
 }: {
   title?: string;
   lead?: string;

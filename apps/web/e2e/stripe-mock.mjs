@@ -58,7 +58,9 @@ const list = (obj) =>
     : [];
 
 function subscriptionObject(sub) {
-  const periodEnd = clock + 30 * 86_400;
+  // While trialing, the period ends when the trial does (the first charge).
+  const periodEnd =
+    sub.status === "trialing" && sub.trialEnd ? Number(sub.trialEnd) : clock + 30 * 86_400;
   return {
     id: sub.id,
     object: "subscription",
@@ -66,6 +68,7 @@ function subscriptionObject(sub) {
     status: sub.status,
     cancel_at_period_end: false,
     current_period_end: periodEnd,
+    trial_end: sub.status === "trialing" ? Number(sub.trialEnd) : null,
     metadata: sub.metadata,
     items: {
       data: sub.items.map((item) => ({
@@ -124,10 +127,13 @@ createServer(async (req, res) => {
     const session = sessions.get(match[1]);
     if (!session) return json(res, 404, {});
     const lines = session.prices.map((p) => `<li>${p.lookup_key}</li>`).join("");
+    const when = session.trialEnd
+      ? `Card charged on ${new Date(Number(session.trialEnd) * 1000).toISOString().slice(0, 10)}`
+      : "Card charged today";
     return page(
       res,
       "Stripe test checkout",
-      `<ul>${lines}</ul><form method="post" action="/checkout/${session.id}/pay"><button>Pay</button></form>`,
+      `<ul>${lines}</ul><p>${when}</p><form method="post" action="/checkout/${session.id}/pay"><button>Pay</button></form>`,
     );
   }
   match = /^\/checkout\/([\w]+)\/pay$/.exec(path);
@@ -138,6 +144,7 @@ createServer(async (req, res) => {
       id: next("sub"),
       customer: session.customer,
       status: session.trialEnd ? "trialing" : "active",
+      trialEnd: session.trialEnd,
       metadata: session.metadata,
       items: session.prices.map((price) => ({ id: next("si"), price })),
     };
@@ -164,13 +171,18 @@ createServer(async (req, res) => {
           `<form method="post" action="/portal/${match[1]}/remove?item=${item.id}&return=${back}"><button>Remove ${item.price.lookup_key}</button></form>`,
       )
       .join("");
+    // Tests stand in for day 31 with "End trial": the trial ends and the first charge goes through.
+    const endTrial =
+      sub.status === "trialing"
+        ? `<form method="post" action="/portal/${match[1]}/end-trial?return=${back}"><button>End trial</button></form>`
+        : "";
     return page(
       res,
       "Stripe test portal",
-      `${removes}<form method="post" action="/portal/${match[1]}/cancel?return=${back}"><button>Cancel subscription</button></form>`,
+      `${removes}${endTrial}<form method="post" action="/portal/${match[1]}/cancel?return=${back}"><button>Cancel subscription</button></form>`,
     );
   }
-  match = /^\/portal\/([\w]+)\/(remove|cancel)$/.exec(path);
+  match = /^\/portal\/([\w]+)\/(remove|cancel|end-trial)$/.exec(path);
   if (match && req.method === "POST") {
     const sub = [...subscriptions.values()].find(
       (s) => s.customer === match[1] && s.status !== "canceled",
@@ -179,6 +191,10 @@ createServer(async (req, res) => {
     if (!sub) return redirect(res, back);
     if (match[2] === "remove") {
       sub.items = sub.items.filter((item) => item.id !== url.searchParams.get("item"));
+      await sendEvent("customer.subscription.updated", subscriptionObject(sub));
+    } else if (match[2] === "end-trial") {
+      sub.status = "active";
+      sub.trialEnd = null;
       await sendEvent("customer.subscription.updated", subscriptionObject(sub));
     } else {
       sub.status = "canceled";

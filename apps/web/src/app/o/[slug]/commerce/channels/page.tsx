@@ -1,5 +1,6 @@
 import {
   AMAZON_REGIONS,
+  CONNECTION_AREA,
   defaultAmazonRegion,
   defaultEbayMarketplace,
   defaultNoonMarketplace,
@@ -41,7 +42,9 @@ const WALMART_SHIPPING: Record<FulfilmentMode, string> = {
 
 export default async function ChannelsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const ctx = await getCommerceContext(slug);
+  // Connection screens: a connection action re-renders this page in its own request, so it
+  // passes the same area (Review requests only may use it).
+  const ctx = await getCommerceContext(slug, CONNECTION_AREA);
   const { connections, ebay, noon, walmart, noonConnection, ebayConnection } = await inOrg(
     ctx,
     async (tx) => ({

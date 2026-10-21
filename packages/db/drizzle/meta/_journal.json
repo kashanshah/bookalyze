@@ -589,6 +589,13 @@
       "when": 1792596485817,
       "tag": "0083_reviews_only_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1792598752303,
+      "tag": "0084_card_at_signup",
+      "breakpoints": true
     }
   ]
 }

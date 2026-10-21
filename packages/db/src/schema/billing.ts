@@ -5,6 +5,7 @@ import {
   check,
   date,
   foreignKey,
+  integer,
   pgPolicy,
   pgTable,
   text,
@@ -48,14 +49,24 @@ export const SUBSCRIPTION_ITEM_KEYS = [
   "reviews",
 ] as const;
 
-/** One row per company that has started Checkout: its Stripe customer. */
+/**
+ * One row per company that has started Checkout (its Stripe customer), or that was created
+ * since a card is asked for at sign-up (`card_required`, before it has a customer).
+ */
 export const billingAccounts = pgTable(
   "billing_accounts",
   {
     organizationId: uuid("organization_id")
       .primaryKey()
       .references(() => organization.id, { onDelete: "cascade" }),
-    stripeCustomerId: text("stripe_customer_id").notNull(),
+    stripeCustomerId: text("stripe_customer_id"),
+    /**
+     * Created since sign-up asks for a card: the company opens only once its owner has chosen a
+     * plan in Checkout. Companies from before carry on as they were and are asked for a card.
+     */
+    cardRequired: boolean("card_required").notNull().default(false),
+    /** Days free before the first charge: 30 for an owner's first company, 0 for more. */
+    trialDays: integer("trial_days").notNull().default(0),
     /**
      * When billing starts for this company, if not the global BILLING_STARTS_ON (set by the
      * platform owner, e.g. for a company that wants to pay before everyone else).
@@ -69,6 +80,7 @@ export const billingAccounts = pgTable(
   },
   (t) => [
     uniqueIndex("billing_accounts_customer_key").on(t.stripeCustomerId),
+    check("billing_accounts_trial_days_valid", sql`${t.trialDays} between 0 and 90`),
     ...billingPolicies("billing_accounts", t.organizationId),
   ],
 );

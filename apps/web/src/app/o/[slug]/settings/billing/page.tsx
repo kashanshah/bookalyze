@@ -54,7 +54,7 @@ export default async function BillingPage({
   const chargeOn = isoDay(firstChargeOn(entitlement, ctx.billing.companyCreatedOn));
   const daysLeft = trialDaysLeft(entitlement.trialEndsOn);
   let invoices: StripeInvoice[] = [];
-  if (configured && owner && state.account) {
+  if (configured && owner && state.account?.stripeCustomerId) {
     invoices = await listInvoices(state.account.stripeCustomerId).catch(() => []);
   }
   const blocked = readonly && readOnly.includes(readonly as never) ? moduleLabel(readonly) : null;
@@ -110,9 +110,9 @@ export default async function BillingPage({
               Free trial: {daysLeft} {daysLeft === 1 ? "day" : "days"} left
             </h2>
             <p className="text-muted-foreground text-sm">
-              Everything is included, with nothing held back, until {trialEnds}. Choose a plan any
-              time to keep what you use; nothing is charged before {chargeOn}. No card is needed for
-              the trial.
+              {current
+                ? `Everything is included, with nothing held back, until ${trialEnds}. Your card is charged on ${chargeOn} for the plan below, unless you cancel before then in Manage billing.`
+                : `Everything is included, with nothing held back, until ${trialEnds}. Add a card and choose a plan to keep what you use; nothing is charged before ${chargeOn}.`}
             </p>
           </div>
         </section>

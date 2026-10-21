@@ -78,6 +78,27 @@ test("owner signs up, verifies email and sets up a company with the wizard", asy
   await expect(page.getByText("Ontario, Canada")).toBeVisible();
   await page.getByRole("button", { name: "Create company" }).click();
 
+  // Last step: a plan and a card in Stripe Checkout; the first company is free for 30 days.
+  await expect(page).toHaveURL(/\/start\/maple-goods-/);
+  await expect(
+    page.getByRole("heading", { name: `Choose a plan for Maple Goods ${run}` }),
+  ).toBeVisible();
+  await expect(page.getByText("30 days free", { exact: true })).toBeVisible();
+  // Leaving for the app first just comes back here: the company opens once a plan is chosen.
+  await page.goto(page.url().replace("/start/", "/o/"));
+  await expect(page).toHaveURL(/\/start\/maple-goods-/);
+  // Seller with both add-ons (the page notes Seller Plus would be cheaper).
+  await page.getByText("Everything in Books, plus Amazon, Walmart, Noon and eBay.").click();
+  for (const name of ["Stock", "Review requests"]) {
+    const box = page.getByRole("checkbox", { name: new RegExp(`^${name}`) });
+    if (!(await box.isChecked())) await box.check();
+  }
+  await expect(page.getByText(/Total \$32 a month/)).toBeVisible();
+  await page.getByRole("button", { name: "Start 30 days free" }).click();
+  await expect(page.getByRole("heading", { name: "Stripe test checkout" })).toBeVisible();
+  await expect(page.getByText(/Card charged on \d{4}-\d{2}-\d{2}/)).toBeVisible();
+  await page.getByRole("button", { name: "Pay" }).click();
+
   await expect(page).toHaveURL(/\/o\/maple-goods-/);
   await expect(page.getByText("Get started with Bookalyze")).toBeVisible();
   await expect(page.getByText("Ontario, Canada")).toBeVisible();
@@ -3873,7 +3894,7 @@ test("a Google-only user can set a password and then sign in with it", async ({ 
   await expect(page).toHaveURL(/\/onboarding/);
 });
 
-test("billing: a plan through Checkout, an add-on removed makes only its module read-only, cancelled, then review requests on their own", async ({
+test("billing: the plan chosen at sign-up, its trial ending, an add-on removed makes only its module read-only, cancelled, then review requests on their own", async ({
   page,
 }) => {
   await signIn(page, owner.email, owner.password);
@@ -3881,46 +3902,20 @@ test("billing: a plan through Checkout, an add-on removed makes only its module 
   const sidebar = page.getByRole("navigation", { name: "Main" });
   await sidebar.getByRole("link", { name: "Plan and billing", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Plan and billing" })).toBeVisible();
-  // No BILLING_STARTS_ON in tests: early access, everything free and usable.
-  await expect(page.getByText("Free during early access")).toBeVisible();
-
-  // Seller with both add-ons (the page notes Seller Plus would be cheaper).
-  await page.getByText("Everything in Books, plus Amazon, Walmart, Noon and eBay.").click();
-  for (const name of ["Stock", "Review requests"]) {
-    const box = page.getByRole("checkbox", { name: new RegExp(`^${name}`) });
-    if (!(await box.isChecked())) await box.check();
-  }
-  await expect(page.getByText("Both add-ons cost more than Seller Plus")).toBeVisible();
-  await expect(page.getByText(/Total \$32 a month/)).toBeVisible();
-  await page.getByRole("button", { name: "Continue to payment" }).click();
-
-  // The stand-in's Checkout, then back: Stripe's webhook has recorded the plan.
-  await expect(page.getByRole("heading", { name: "Stripe test checkout" })).toBeVisible();
-  await page.getByRole("button", { name: "Pay" }).click();
-  await expect(page).toHaveURL(/settings\/billing\?checkout=done/);
+  // Chosen at sign-up: everything is open for 30 days, then the card is charged for the plan.
   await expect(
     page.getByRole("heading", { name: "Seller + Review requests + Stock" }),
   ).toBeVisible();
-  await expect(page.getByText("Active", { exact: true })).toBeVisible();
-
-  // Billing starts for this company (as the owner would set it).
-  await withOwnerDb((db) =>
-    db.query(
-      "update billing_accounts set starts_on = '2026-01-01' where stripe_customer_id like 'cus_e2e%'",
-    ),
-  );
-  await page.reload();
-  // The company was created today: billing starting means its 30-day trial, everything open.
   await expect(page.getByText("Free trial: 30 days left")).toBeVisible();
+  await expect(page.getByText("Free until the trial ends")).toBeVisible();
+  await expect(page.getByText(/Your card is charged on .+ unless you cancel/)).toBeVisible();
   await expect(page.getByText(/Read-only, because they aren't in the plan/)).toHaveCount(0);
-  // A company from long before: its trial is long over, and its plan decides.
-  await withOwnerDb((db) =>
-    db.query(
-      `update organization set created_at = '2025-06-01' where id in
-        (select organization_id from billing_accounts where stripe_customer_id like 'cus_e2e%')`,
-    ),
-  );
-  await page.reload();
+
+  // Day 31 (the stand-in ends the trial): the first charge, and from now on the plan decides.
+  await page.getByRole("button", { name: "Manage billing" }).click();
+  await expect(page.getByRole("heading", { name: "Stripe test portal" })).toBeVisible();
+  await page.getByRole("button", { name: "End trial" }).click();
+  await expect(page.getByText("Active", { exact: true })).toBeVisible();
   await expect(page.getByText(/Free trial/)).toHaveCount(0);
   await expect(page.getByText(/Read-only, because they aren't in the plan/)).toHaveCount(0);
 
@@ -3972,19 +3967,16 @@ test("billing: a plan through Checkout, an add-on removed makes only its module 
   await page.getByRole("link", { name: "Automatic requests", exact: true }).first().click();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Automatic requests are on")).toBeVisible();
-  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await sidebar.getByRole("link", { name: "Channels", exact: true }).click();
   await page.getByRole("link", { name: /^Noon UAE/ }).click();
   await page.getByRole("switch", { name: "Use Noon UAE" }).click();
   await expect(page.getByText("Switched off", { exact: true })).toBeVisible();
   await page.getByRole("switch", { name: "Use Noon UAE" }).click();
   await expect(page.getByRole("switch", { name: "Use Noon UAE" })).toBeChecked();
   // The rest of Commerce stays read-only, and says what the plan does include.
-  await page.getByRole("link", { name: "Settlements", exact: true }).click();
+  await sidebar.getByRole("link", { name: "Settlements", exact: true }).click();
   await page.getByRole("button", { name: "Bring in settlements" }).click();
   await expect(page).toHaveURL(/settings\/billing\?readonly=commerce/);
   await expect(page.getByText("Commerce is read-only.")).toBeVisible();
   await expect(page.getByText(/the rest of it needs Seller/)).toBeVisible();
-
-  // Back to early access for anything after this test.
-  await withOwnerDb((db) => db.query("update billing_accounts set starts_on = null"));
 });

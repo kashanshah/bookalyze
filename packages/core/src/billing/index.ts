@@ -204,6 +204,8 @@ export type SubscriptionSnapshot = {
   items: readonly string[];
   /** When the last payment failed (the grace period counts from here). */
   paymentFailedAt?: Date | null;
+  /** The end of the current period; while `trialing`, when the trial ends and Stripe charges. */
+  currentPeriodEnd?: Date | null;
 };
 
 /** Days after a failed payment that everything keeps working. */
@@ -215,9 +217,11 @@ export const TRIAL_DAYS = 30;
 export type Entitlement = {
   /**
    * early_access: free until billing starts. trial: the 30 days of everything, from the later
-   * of billing starting and the company being created. grace: a payment failed, still working.
+   * of billing starting and the company being created, or a card-at-sign-up company's Stripe
+   * trial. grace: a payment failed, still working. needs_card: created since sign-up asks for a
+   * card, and no plan chosen in Checkout yet; the company doesn't open until there is one.
    */
-  mode: "early_access" | "trial" | "subscribed" | "grace" | "lapsed" | "none";
+  mode: "early_access" | "trial" | "subscribed" | "grace" | "lapsed" | "none" | "needs_card";
   modules: ModuleKey[];
   /** When early access ends (ISO date), when known. */
   billingStartsOn: string | null;
@@ -250,10 +254,17 @@ export function trialEndsOn(billingStartsOn: string, companyCreatedOn: string): 
  */
 export function entitledModules(
   subscription: SubscriptionSnapshot | null,
-  options: { now: Date; billingStartsOn: string | null; companyCreatedOn?: string | null },
+  options: {
+    now: Date;
+    billingStartsOn: string | null;
+    companyCreatedOn?: string | null;
+    /** The company was created since sign-up asks for a card (`billing_accounts.card_required`). */
+    cardRequired?: boolean;
+  },
 ): Entitlement {
   const { now, billingStartsOn } = options;
   const today = now.toISOString().slice(0, 10);
+  if (options.cardRequired) return cardEntitlement(subscription, now, billingStartsOn);
   if (!billingStartsOn || today < billingStartsOn) {
     return {
       mode: "early_access",
@@ -283,6 +294,52 @@ export function entitledModules(
     if (now.getTime() < graceEnds) return { mode: "grace", modules: ordered, ...base, partly };
   }
   return { mode: "lapsed", modules: [], ...base };
+}
+
+/** Subscription states that never got a working plan (Checkout left, or its payment failed). */
+const NEVER_STARTED = ["incomplete", "incomplete_expired"];
+
+/**
+ * A company that gave a card at sign-up: early access and BILLING_STARTS_ON don't apply. Without
+ * a plan from Checkout it doesn't open; while Stripe's trial runs, everything is open; then its
+ * plan, as for any subscription.
+ */
+function cardEntitlement(
+  subscription: SubscriptionSnapshot | null,
+  now: Date,
+  billingStartsOn: string | null,
+): Entitlement {
+  const none = { billingStartsOn, trialEndsOn: null, partly: [] as ModuleKey[] };
+  if (!subscription || NEVER_STARTED.includes(subscription.status)) {
+    return { mode: "needs_card", modules: [], ...none };
+  }
+  if (subscription.status === "trialing") {
+    const chargeOn = (subscription.currentPeriodEnd ?? now).toISOString().slice(0, 10);
+    return {
+      mode: "trial",
+      modules: [...MODULE_KEYS],
+      billingStartsOn,
+      trialEndsOn: addDaysIso(chargeOn, -1),
+      partly: [],
+    };
+  }
+  // Its trial is over: the usual subscription rules (active, grace, lapsed).
+  const paid = entitledModules(subscription, { now, billingStartsOn: "1970-01-01" });
+  return { ...paid, ...none, partly: paid.partly };
+}
+
+/**
+ * Days free before the first charge for a plan chosen now by a company that gives its card at
+ * sign-up: its trial days (30 for an owner's first company) until it has had a plan; 0 after,
+ * so a plan cancelled and chosen again doesn't start another trial.
+ */
+export function signupTrialDays(
+  account: { cardRequired: boolean; trialDays: number } | null,
+  subscription: { status: string } | null,
+): number {
+  if (!account?.cardRequired) return 0;
+  if (subscription && !NEVER_STARTED.includes(subscription.status)) return 0;
+  return account.trialDays;
 }
 
 /** Days left in the trial, counting today; 0 when it's over or not started. */

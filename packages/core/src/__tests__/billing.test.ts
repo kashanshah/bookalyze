@@ -12,6 +12,7 @@ import {
   readOnlyModules,
   selectionProblem,
   selectionTotal,
+  signupTrialDays,
   suggestedSelection,
   TRIAL_DAYS,
   trialDaysLeft,
@@ -243,5 +244,59 @@ describe("days left in the trial", () => {
     expect(trialDaysLeft("2026-12-28", at)).toBe(1);
     expect(trialDaysLeft("2026-12-27", at)).toBe(0);
     expect(trialDaysLeft(null, at)).toBe(0);
+  });
+});
+
+describe("a card at sign-up", () => {
+  const card = { now, billingStartsOn: null, cardRequired: true };
+
+  it("doesn't open the company until a plan is chosen in Checkout, even in early access", () => {
+    expect(entitledModules(null, card)).toMatchObject({ mode: "needs_card", modules: [] });
+    expect(entitledModules({ status: "incomplete", items: ["books"] }, card).mode).toBe(
+      "needs_card",
+    );
+  });
+
+  it("opens everything while Stripe's trial runs, whatever the plan", () => {
+    const trial = entitledModules(
+      {
+        status: "trialing",
+        items: ["books"],
+        currentPeriodEnd: new Date("2027-01-09T12:00:00Z"),
+      },
+      card,
+    );
+    expect(trial).toMatchObject({ mode: "trial", trialEndsOn: "2027-01-08" });
+    expect(trial.modules).toContain("inventory");
+    expect(firstChargeOn(trial, "2026-12-10")).toBe("2027-01-09");
+    expect(trialDaysLeft(trial.trialEndsOn, now)).toBe(30);
+  });
+
+  it("then gives the plan, or nothing once cancelled", () => {
+    const paid = entitledModules({ status: "active", items: ["books"] }, card);
+    expect(paid).toMatchObject({ mode: "subscribed", trialEndsOn: null, billingStartsOn: null });
+    expect(paid.modules).toEqual(["accounting", "banking", "entity"]);
+    expect(entitledModules({ status: "canceled", items: ["books"] }, card)).toMatchObject({
+      mode: "lapsed",
+      modules: [],
+    });
+    const reviews = entitledModules({ status: "active", items: ["reviews_only"] }, card);
+    expect(reviews.partly).toEqual(["commerce"]);
+  });
+
+  it("leaves companies from before the card as they were", () => {
+    expect(entitledModules(null, { now, billingStartsOn: null }).mode).toBe("early_access");
+  });
+});
+
+describe("days free for a plan chosen at sign-up", () => {
+  const first = { cardRequired: true, trialDays: 30 };
+  it("gives the first company its 30 days once, and none to later companies", () => {
+    expect(signupTrialDays(first, null)).toBe(30);
+    expect(signupTrialDays(first, { status: "incomplete_expired" })).toBe(30);
+    expect(signupTrialDays(first, { status: "canceled" })).toBe(0);
+    expect(signupTrialDays({ cardRequired: true, trialDays: 0 }, null)).toBe(0);
+    expect(signupTrialDays({ cardRequired: false, trialDays: 0 }, null)).toBe(0);
+    expect(signupTrialDays(null, null)).toBe(0);
   });
 });

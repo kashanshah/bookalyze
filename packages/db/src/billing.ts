@@ -32,6 +32,20 @@ export async function saveBillingCustomer(
     });
 }
 
+/**
+ * Marks a new company as needing a card before it opens (sign-up asks for one), with the days
+ * free before its first charge. Only in `withBillingWriter()`.
+ */
+export async function requireBillingCard(
+  tx: Transaction,
+  input: { orgId: string; trialDays: number },
+) {
+  await tx
+    .insert(billingAccounts)
+    .values({ organizationId: input.orgId, cardRequired: true, trialDays: input.trialDays })
+    .onConflictDoNothing({ target: billingAccounts.organizationId });
+}
+
 /** The company a Stripe customer belongs to, or null. Outside any tenant (the webhook). */
 export async function billingOrgForCustomer(db: Database, customerId: string) {
   const result = await db.execute<{ org: string | null }>(
