@@ -1,9 +1,11 @@
 "use server";
 
+import { gunzipSync } from "node:zlib";
 import {
   AMAZON_REGIONS,
   addDaysIso,
   CONNECTION_AREA,
+  can,
   ebayMarketplace,
   FULFILMENT_MODES,
   isAmazonRegion,
@@ -18,8 +20,11 @@ import {
   parseWalmartCredentials,
   previewReport,
   type ReportPreview,
+  readWalmartSettlement,
   WALMART_FULFILMENT,
+  walmartLayout,
   walmartMarketplace,
+  walmartSettlementDate,
 } from "@bookalyze/core";
 import {
   addEbayChannel,
@@ -41,9 +46,11 @@ import {
   getWalmartConnection,
   listAmazonConnections,
   listOrderConnections,
+  listWalmartSettlements,
   recordConnectionSync,
   removeChannel,
   saveAmazonChannels,
+  saveWalmartSettlement,
   schema,
   setChannelActive,
   setChannelFulfilment,
@@ -1187,6 +1194,119 @@ async function walmartKey(ctx: Awaited<ReturnType<typeof getCommerceContext>>, c
     marketplace: found.marketplace,
     creds: openWalmartCredentials(ctx.org.id, connection.id, connection.secret),
   } as const;
+}
+
+/** A report this size or larger, once unpacked, is refused (Seller Center's are far smaller). */
+const SETTLEMENT_UPLOAD_MAX = 50 * 1024 * 1024;
+
+/**
+ * Adds a settlement report downloaded from Seller Center (Payments → reconciliation report) to a
+ * Walmart country, for a company whose API key can't read reports, or a settlement from before
+ * it connected. The browser sends the file gzipped; it's read like the API's (buyer details left
+ * out) and kept under its settlement date, in place of the same period if it's already in.
+ */
+export async function uploadWalmartSettlementAction(
+  slug: string,
+  form: FormData,
+): Promise<
+  CommerceResult<{
+    reportDate: string;
+    periodFrom: string | null;
+    periodTo: string | null;
+    rows: number;
+    replaced: boolean;
+  }>
+> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  if (!can(ctx.plan, ctx.enabledModules, "commerce.settlements")) {
+    return { ok: false, message: "Payouts aren't part of this company's plan." };
+  }
+  const channelId = form.get("channelId");
+  const fileName = String(form.get("fileName") ?? "").slice(0, 200);
+  const packed = form.get("file");
+  if (typeof channelId !== "string" || !(packed instanceof Blob)) {
+    return { ok: false, message: "Choose a report to upload." };
+  }
+  const found = await walmartChannel(ctx, channelId);
+  if (!found) return { ok: false, message: "Unknown channel." };
+  let file: ReturnType<typeof readWalmartSettlement>;
+  try {
+    const text = gunzipSync(Buffer.from(await packed.arrayBuffer()), {
+      maxOutputLength: SETTLEMENT_UPLOAD_MAX,
+    }).toString("utf-8");
+    file = readWalmartSettlement(text);
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error && error.message.startsWith("This isn't")
+          ? error.message
+          : "This file couldn't be read. Upload the report as Seller Center downloads it (CSV).",
+    };
+  }
+  if (!walmartLayout(file.columns)) {
+    return {
+      ok: false,
+      message:
+        "This isn't Walmart's settlement report: it has no Amount column. In Seller Center, open Payments and download the settlement's reconciliation report.",
+    };
+  }
+  if (!file.rows.length) return { ok: false, message: "There are no rows in this report." };
+  const reportDate = walmartSettlementDate(file);
+  if (!reportDate) {
+    return {
+      ok: false,
+      message:
+        "This report doesn't say which settlement it's for (no period end date). Download it again from Seller Center.",
+    };
+  }
+  const result = await inOrg(ctx, async (tx) => {
+    const before = await listWalmartSettlements(tx, channelId);
+    const samePeriod = (s: { periodFrom: string | null; periodTo: string | null }) =>
+      s.periodFrom === file.periodFrom && s.periodTo === file.periodTo;
+    const clash = before.find((s) => s.reportDate === reportDate && !samePeriod(s));
+    if (clash && !before.some(samePeriod)) return { clash: clash.reportDate } as const;
+    const id = await saveWalmartSettlement(tx, {
+      orgId: ctx.org.id,
+      channelId,
+      reportDate,
+      file: { ...file, currency: file.currency ?? found.marketplace.currency },
+      source: "upload",
+    });
+    const saved = (await listWalmartSettlements(tx, channelId)).find((s) => s.id === id);
+    const replaced = before.some((s) => s.id === id);
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "walmart.settlement_uploaded",
+      entityType: "walmart_settlement",
+      entityId: id,
+      after: {
+        fileName,
+        reportDate: saved?.reportDate ?? reportDate,
+        periodFrom: file.periodFrom,
+        periodTo: file.periodTo,
+        rows: file.rows.length,
+        replaced,
+      },
+    });
+    return { reportDate: saved?.reportDate ?? reportDate, replaced };
+  });
+  if ("clash" in result) {
+    return {
+      ok: false,
+      message: `Another settlement is already in under ${result.clash}, for a different period. Check this is the right report.`,
+    };
+  }
+  revalidate(slug);
+  return {
+    ok: true,
+    ...result,
+    periodFrom: file.periodFrom,
+    periodTo: file.periodTo,
+    rows: file.rows.length,
+  };
 }
 
 /** The dates Walmart has a settlement report for, newest first (admins; nothing is saved). */
