@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { PlanPicker } from "@/app/o/[slug]/settings/billing/plan-picker";
 import { Brand } from "@/components/brand";
 import { getOrgContext } from "@/server/org";
+import { stripePublishableKey } from "@/server/stripe";
 import { WaitForStripe } from "./wait-for-stripe";
 
 export const metadata: Metadata = { title: "Choose your plan" };
@@ -118,6 +119,7 @@ export default async function StartPage({
               slug={slug}
               suggested={suggestedSelection(ctx.enabledModules)}
               canBuy
+              publishableKey={stripePublishableKey()}
               cta={days ? `Start ${days} days free` : "Continue to payment"}
             />
           ) : (

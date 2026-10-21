@@ -7,13 +7,14 @@ import {
   type PackageKey,
   selectionTotal,
 } from "@bookalyze/core";
-import { Check, CreditCard } from "lucide-react";
+import { ArrowLeft, Check, CreditCard } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { startCheckoutAction } from "./actions";
+import { EmbeddedCheckout } from "./embedded-checkout";
 
 const INCLUDES: Record<PackageKey, string> = {
   books: "Accounting, banking, and your company's profile and calendar.",
@@ -27,24 +28,51 @@ const INCLUDES: Record<PackageKey, string> = {
 
 const money = (amount: string) => `$${amount.replace(/\.00$/, "")}`;
 
-/** Choose a package and how often to pay, then go to Stripe Checkout. */
+/**
+ * Choose a package and how often to pay, then give a card: in Stripe's form on this page when
+ * there's a publishable key, otherwise on Stripe's own Checkout page.
+ */
 export function PlanPicker({
   slug,
   suggested,
   canBuy,
+  publishableKey = null,
   cta = "Continue to payment",
 }: {
   slug: string;
   suggested: PackageKey;
   canBuy: boolean;
+  publishableKey?: string | null;
   /** The button's label, e.g. "Start 30 days free" at sign-up. */
   cta?: string;
 }) {
   const [interval, setInterval] = useState<BillingInterval>("month");
   const [pkg, setPkg] = useState<PackageKey>(suggested);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const total = selectionTotal({ package: pkg, interval });
   const per = interval === "year" ? "year" : "month";
+
+  if (clientSecret && publishableKey) {
+    return (
+      <div className="fade-in-0 grid animate-in gap-4 duration-300">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 px-4 py-3">
+          <p className="text-sm">
+            <span className="font-semibold">{BILLING_PACKAGES[pkg].name}</span>
+            <span className="text-muted-foreground">
+              {" "}
+              · <span className="tabular-nums">{money(total)}</span> a {per}, in US dollars
+            </span>
+          </p>
+          <Button variant="outline" size="sm" onClick={() => setClientSecret(null)}>
+            <ArrowLeft className="rtl:rotate-180" />
+            Change plan
+          </Button>
+        </div>
+        <EmbeddedCheckout publishableKey={publishableKey} clientSecret={clientSecret} />
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-5">
@@ -124,7 +152,9 @@ export function PlanPicker({
                 toast.error(result.message);
                 return;
               }
-              window.location.assign(result.url);
+              if ("url" in result) window.location.assign(result.url);
+              else if (publishableKey) setClientSecret(result.clientSecret);
+              else toast.error("The card form isn't set up. Reload the page and try again.");
             })
           }
         >

@@ -1,5 +1,6 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { stripeKeysPair } from "@bookalyze/core";
 import { env } from "./env";
 import { logError } from "./log";
 
@@ -28,6 +29,24 @@ export function stripeConfigured(): boolean {
   return Boolean(stripeKey());
 }
 
+/**
+ * The publishable key for the card form on our own page, or null for Stripe's hosted page: when
+ * none is set, when it isn't the secret key's mode, or when tests use the stand-in.
+ */
+export function stripePublishableKey(): string | null {
+  const secret = stripeKey();
+  const { STRIPE_PUBLISHABLE_KEY: key, STRIPE_API_URL } = env();
+  if (!secret || !key || STRIPE_API_URL) return null;
+  if (!stripeKeysPair(secret, key)) {
+    logError(
+      "stripe.publishable_key_mismatch",
+      new Error("STRIPE_PUBLISHABLE_KEY isn't the same mode as STRIPE_SECRET_KEY"),
+    );
+    return null;
+  }
+  return key;
+}
+
 /** Stripe's form encoding: nested keys as a[b][0]=c. */
 export function formEncode(value: unknown, prefix = "", out = new URLSearchParams()) {
   if (value === undefined || value === null) return out;
@@ -41,7 +60,13 @@ export function formEncode(value: unknown, prefix = "", out = new URLSearchParam
   return out;
 }
 
-async function call<T>(method: "GET" | "POST", path: string, params?: unknown): Promise<T> {
+async function call<T>(
+  method: "GET" | "POST",
+  path: string,
+  params?: unknown,
+  /** Pins Stripe's API version for this call; otherwise the account's default applies. */
+  version?: string,
+): Promise<T> {
   const key = stripeKey();
   if (!key) throw new StripeError("Billing isn't set up yet.");
   const base = env().STRIPE_API_URL ?? "https://api.stripe.com";
@@ -51,6 +76,7 @@ async function call<T>(method: "GET" | "POST", path: string, params?: unknown): 
     method,
     headers: {
       Authorization: `Bearer ${key}`,
+      ...(version ? { "Stripe-Version": version } : {}),
       ...(method === "POST" ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
     },
     body: method === "POST" ? body : undefined,
@@ -94,30 +120,49 @@ export async function createCustomer(input: { name: string; email: string; orgId
   });
 }
 
+/** The version embedded Checkout's "ui_mode: embedded" is written against (Stripe.js "basil"). */
+const EMBEDDED_CHECKOUT_VERSION = "2025-03-31.basil";
+
 export async function createCheckoutSession(input: {
   customerId: string;
   orgId: string;
   priceIds: string[];
   /** Unix seconds: no charge before then (chosen during early access). */
   trialEnd?: number | null;
-  successUrl: string;
-  cancelUrl: string;
+  /**
+   * On our page (Stripe's embedded form, returns a client secret) or on Stripe's (returns a URL).
+   * Embedded has no cancel button: people just choose another plan.
+   */
+  page:
+    | { embedded: true; returnUrl: string }
+    | { embedded: false; successUrl: string; cancelUrl: string };
 }) {
-  return call<{ id: string; url: string }>("POST", "/v1/checkout/sessions", {
-    mode: "subscription",
-    customer: input.customerId,
-    client_reference_id: input.orgId,
-    line_items: input.priceIds.map((price) => ({ price, quantity: 1 })),
-    // The card is taken now, even when the first charge is after a free trial.
-    payment_method_collection: "always",
-    metadata: { organization_id: input.orgId },
-    subscription_data: {
+  const where = input.page.embedded
+    ? {
+        ui_mode: "embedded",
+        // Stripe fills in the session; the app doesn't need it, but Stripe wants the placeholder.
+        return_url: `${input.page.returnUrl}${input.page.returnUrl.includes("?") ? "&" : "?"}session_id={CHECKOUT_SESSION_ID}`,
+      }
+    : { success_url: input.page.successUrl, cancel_url: input.page.cancelUrl };
+  return call<{ id: string; url: string | null; client_secret: string | null }>(
+    "POST",
+    "/v1/checkout/sessions",
+    {
+      mode: "subscription",
+      customer: input.customerId,
+      client_reference_id: input.orgId,
+      line_items: input.priceIds.map((price) => ({ price, quantity: 1 })),
+      // The card is taken now, even when the first charge is after a free trial.
+      payment_method_collection: "always",
       metadata: { organization_id: input.orgId },
-      ...(input.trialEnd ? { trial_end: input.trialEnd } : {}),
+      subscription_data: {
+        metadata: { organization_id: input.orgId },
+        ...(input.trialEnd ? { trial_end: input.trialEnd } : {}),
+      },
+      ...where,
     },
-    success_url: input.successUrl,
-    cancel_url: input.cancelUrl,
-  });
+    input.page.embedded ? EMBEDDED_CHECKOUT_VERSION : undefined,
+  );
 }
 
 export async function createPortalSession(input: { customerId: string; returnUrl: string }) {

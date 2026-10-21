@@ -13,9 +13,16 @@ import {
   pricesByLookupKey,
   StripeError,
   stripeConfigured,
+  stripePublishableKey,
 } from "@/server/stripe";
 
 export type BillingResult = { ok: true; url: string } | { ok: false; message: string };
+
+/** Checkout on our page (a client secret for Stripe's form) or on Stripe's (a URL). */
+export type CheckoutResult =
+  | { ok: true; clientSecret: string }
+  | { ok: true; url: string }
+  | { ok: false; message: string };
 
 const selection = z.object({
   package: z.enum(PACKAGE_KEYS as [string, ...string[]]),
@@ -29,8 +36,8 @@ async function ownerContext(slug: string) {
   return { ctx, denied: null };
 }
 
-/** Starts Stripe Checkout for a package; returns where to send the browser. */
-export async function startCheckoutAction(slug: string, input: unknown): Promise<BillingResult> {
+/** Starts Stripe Checkout for a package: the card form for our page, or where to send the browser. */
+export async function startCheckoutAction(slug: string, input: unknown): Promise<CheckoutResult> {
   const { ctx, denied } = await ownerContext(slug);
   if (denied) return { ok: false, message: denied };
   const parsed = selection.safeParse(input);
@@ -83,16 +90,27 @@ export async function startCheckoutAction(slug: string, input: unknown): Promise
       const chargeOn = firstChargeOn(ctx.billing.entitlement, ctx.billing.companyCreatedOn);
       trialEnd = chargeOn ? Math.floor(new Date(`${chargeOn}T00:00:00Z`).getTime() / 1000) : null;
     }
+    const embedded = Boolean(stripePublishableKey());
     const session = await createCheckoutSession({
       customerId,
       orgId: ctx.org.id,
       // Stripe wants a trial to end at least two days ahead.
       trialEnd: trialEnd && trialEnd > Date.now() / 1000 + 2 * 86_400 ? trialEnd : null,
       priceIds: lookups.map((l) => prices.get(l)?.id ?? ""),
-      successUrl: `${base}?checkout=done`,
-      cancelUrl: `${base}?checkout=cancelled`,
+      page: embedded
+        ? { embedded: true, returnUrl: `${base}?checkout=done` }
+        : {
+            embedded: false,
+            successUrl: `${base}?checkout=done`,
+            cancelUrl: `${base}?checkout=cancelled`,
+          },
     });
-    return { ok: true, url: session.url };
+    if (embedded && session.client_secret) return { ok: true, clientSecret: session.client_secret };
+    if (session.url) return { ok: true, url: session.url };
+    return {
+      ok: false,
+      message: "Stripe didn't start the payment. Try again, or contact support.",
+    };
   } catch (error) {
     if (error instanceof StripeError) return { ok: false, message: error.message };
     throw error;
