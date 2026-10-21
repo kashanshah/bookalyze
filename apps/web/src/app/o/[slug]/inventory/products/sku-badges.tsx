@@ -17,28 +17,35 @@ export function SkuBadges({ items, label }: { items: React.ReactNode[]; label: s
   const [open, setOpen] = React.useState(false);
   const closeTimer = React.useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // Badges past the line stay in the page (invisible), so every badge can be measured again
+  // when the row resizes, the web font arrives or the SKUs change.
+  const fitToRow = React.useCallback(() => {
+    const row = rowRef.current;
+    if (!row) return;
+    const widths = Array.from(row.querySelectorAll<HTMLElement>(":scope > [data-sku]")).map(
+      (el) => el.offsetWidth,
+    );
+    const space = row.clientWidth;
+    const all = widths.reduce((sum, w, i) => sum + w + (i ? GAP : 0), 0);
+    if (all <= space) return setShown(widths.length);
+    let used = MORE_WIDTH;
+    let n = 0;
+    for (const w of widths) {
+      if (used + w + GAP > space) break;
+      used += w + GAP;
+      n++;
+    }
+    setShown(Math.max(1, n));
+  }, []);
+
+  // After every render: new or changed SKUs refit at once (an unchanged fit doesn't re-render).
+  React.useLayoutEffect(() => {
+    fitToRow();
+  });
+
   React.useLayoutEffect(() => {
     const row = rowRef.current;
     if (!row) return;
-    // Badges past the line stay in the page (invisible), so every badge can be measured again
-    // when the row resizes or the web font arrives.
-    const fitToRow = () => {
-      const widths = Array.from(row.querySelectorAll<HTMLElement>(":scope > [data-sku]")).map(
-        (el) => el.offsetWidth,
-      );
-      const space = row.clientWidth;
-      const all = widths.reduce((sum, w, i) => sum + w + (i ? GAP : 0), 0);
-      if (all <= space) return setShown(widths.length);
-      let used = MORE_WIDTH;
-      let n = 0;
-      for (const w of widths) {
-        if (used + w + GAP > space) break;
-        used += w + GAP;
-        n++;
-      }
-      setShown(Math.max(1, n));
-    };
-    fitToRow();
     let live = true;
     document.fonts?.ready.then(() => live && fitToRow());
     const observer = new ResizeObserver(fitToRow);
@@ -47,7 +54,7 @@ export function SkuBadges({ items, label }: { items: React.ReactNode[]; label: s
       live = false;
       observer.disconnect();
     };
-  }, []);
+  }, [fitToRow]);
 
   React.useEffect(() => () => clearTimeout(closeTimer.current), []);
 
@@ -68,7 +75,7 @@ export function SkuBadges({ items, label }: { items: React.ReactNode[]; label: s
     >
       {items.map((item, i) => (
         <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: the list is fixed for the row's life (keyed by its SKUs)
+          // biome-ignore lint/suspicious/noArrayIndexKey: each render is measured again, so position is the identity
           key={i}
           data-sku=""
           aria-hidden={i >= shown || undefined}
@@ -100,7 +107,7 @@ export function SkuBadges({ items, label }: { items: React.ReactNode[]; label: s
               <p className="mb-2 text-muted-foreground text-xs">{items.length} marketplace SKUs</p>
               <div className="flex flex-wrap gap-1.5">
                 {items.map((item, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: the list is fixed for the row's life (keyed by its SKUs)
+                  // biome-ignore lint/suspicious/noArrayIndexKey: each render is measured again, so position is the identity
                   <React.Fragment key={i}>{item}</React.Fragment>
                 ))}
               </div>
