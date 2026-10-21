@@ -194,6 +194,10 @@ describe("Amazon listings and prices", () => {
     expect(listingCost({ components, unitCosts, currency: "USD", rate: "1.37" }).cost).toBe(
       "5.9600",
     );
+    // A rate as the database keeps it, with 10 places.
+    expect(listingCost({ components, unitCosts, currency: "USD", rate: "1.3700000000" }).cost).toBe(
+      "5.9600",
+    );
     expect(listingCost({ components, unitCosts, currency: "USD", rate: null })).toEqual({
       cost: null,
       missing: [],

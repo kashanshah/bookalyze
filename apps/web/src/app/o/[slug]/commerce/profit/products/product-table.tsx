@@ -57,6 +57,8 @@ export function ProductTable({
   const [open, setOpen] = useState<string | null>(null);
   const pct = (v: number | null) =>
     v === null ? "—" : `${v.toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
+  /** A product that loses money before ads can't afford any: its break-even is below zero. */
+  const breakEven = (v: number | null) => (v !== null && v <= 0 ? "no room for ads" : pct(v));
   const money = (v: string | null, className?: string) => (
     <Amount value={v} currency={currency} locale={locale} className={className} />
   );
@@ -135,7 +137,7 @@ export function ProductTable({
                   <td className={cn("tabular px-3 py-2.5 text-end", over && "text-destructive")}>
                     {pct(r.acos)}
                     <span className="block text-muted-foreground text-xs">
-                      of {pct(r.breakEvenAcos)}
+                      of {breakEven(r.breakEvenAcos)}
                     </span>
                   </td>
                   <td className="tabular px-3 py-2.5 text-end">{pct(r.tacos)}</td>
@@ -201,7 +203,7 @@ export function ProductTable({
                           title="How far ads can go"
                           items={[
                             ["ACOS", pct(r.acos)],
-                            ["Break-even ACOS", pct(r.breakEvenAcos)],
+                            ["Break-even ACOS", breakEven(r.breakEvenAcos)],
                             ["Cost per click", money(r.cpc)],
                             ["Break-even cost per click", money(r.breakEvenCpc)],
                             ["Clicks that buy", pct(r.conversion)],
