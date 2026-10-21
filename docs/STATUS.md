@@ -2875,6 +2875,15 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   The card stays while they aren't in the books (a step to take). Web
   `purchase-orders/books-setting.tsx`; e2e "purchase orders in the books".
 
+### eBay: a site added later gets its money rows
+
+- eBay money rows go to the site of their order (`placeEbayTransactionsByOrder`). That ran only
+  while new rows were being read, so a site added later (eBay US on Kazomo CA) kept its orders'
+  rows under the first site until the next window came in. It now also runs when eBay orders are
+  saved (`server/ebay-orders.ts`) and at the start of every "Bring in from eBay"
+  (`syncEbayTransactions`), even with nothing new to read. A posted month whose rows moved shows
+  as changed, to post again.
+
 ### Products made to order: not counted in stock
 
 - A product's **Count its stock** switch (Edit product). Off for something made to order (e.g.
