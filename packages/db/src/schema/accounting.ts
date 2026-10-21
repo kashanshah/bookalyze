@@ -56,6 +56,8 @@ export const JOURNAL_SOURCES = [
   "ebay",
   /** Units taken out of a stock lot by hand (inventory stock_removals). */
   "stock_removal",
+  /** A Walmart settlement on one Walmart channel (commerce walmart_settlements). */
+  "walmart",
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 

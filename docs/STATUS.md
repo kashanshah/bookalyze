@@ -13,8 +13,8 @@ Cursor, Copilot…).
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
 
-_Last updated: 2026-10-21, phase 4e slice 4b-1: Walmart settlements brought in and kept row by
-row as Walmart sent them (no buyer details), ready to be read into the books._
+_Last updated: 2026-10-21, phase 4e slice 4b-2: Walmart settlements read into the books, one
+entry each, and their payouts matched to bank deposits._
 
 ---
 
@@ -31,7 +31,7 @@ row as Walmart sent them (no buyer details), ready to be read into the books._
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) slice 10 (a freight payment is its delivery's cost) and slice 11 (Amazon prices: each listing's price next to its cost, a change with Amazon's fees and the profit first) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off; what Noon holds beside your lots, and Noon's summary checking its ledger day by day) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: Kazomo's FBN transaction types checked against what Stock movements lists as not counted, then FBP stock (the seller's own warehouses). Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold), 4 (eBay money: the Finances API's rows by month, in Channel profit) 5 (payouts and posting: each site's month as one entry to an eBay balance account, payouts matched to bank deposits, in the daily job) and 6 (Seller Hub's transaction report upload, with the API's rows winning on days it has) done. Next: eBay's digital signatures for EU and UK sellers. See §3 "Phase 4d" |
-| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) 2 (connect Walmart: each country's seller account with its own API key) 3 (orders from the Orders API, the seller's and WFS's) 4a (settlement reports listed, one checked without keeping anything) and 4b-1 (settlements brought in and kept row by row) done. Next: the real columns from a check on a live account, then reading the kept rows into the books. See §3 "Phase 4e" |
+| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) 2 (connect Walmart: each country's seller account with its own API key) 3 (orders from the Orders API, the seller's and WFS's) 4a (settlement reports listed, one checked without keeping anything) 4b-1 (settlements brought in and kept row by row) and 4b-2 (each settlement read into the books, its payout matched to the bank deposit, the daily job) done. Next: confirm the reading on a live account's report, then WFS stock. See §3 "Phase 4e" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
@@ -1585,6 +1585,63 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   from the mock (`fbn_inventoryv2_ledgerdetailedview`, inputs described as a JSON schema; the
   summary disagrees on one day last month), then uploads a summary file.
 
+### Phase 4e, slice 4b-2: Walmart settlements in the books
+
+- **Read by amount type** (core `walmart-posting.ts`): Walmart's reconciliation report has one
+  row per amount, with what it's for in "Amount Type" and what happened in "Transaction Type".
+  `walmartLayout` finds the Amount, Amount Type, Transaction Type and description columns (no
+  Amount column: not Walmart's layout, nothing is read); `walmartRowGroup` puts each row in a
+  group: tax (any amount type with "tax": collected and withheld cancel out), WFS fees
+  (fulfilment, storage, inbound, prep), advertising (Sponsored Products, Walmart Connect),
+  shipping labels, Walmart's fees (commission, referral, any other fee), refunds (price rows on
+  a refund or return), sales (product, shipping and gift wrap prices) and other; rows that pay
+  the balance out (deposit, payment, payout, transfer) aren't earnings. Built from Walmart's
+  published layout before a live report was seen: **confirm it on the first live report**.
+- **Only what adds up posts:** `walmartSettlementTotals` adds a settlement's rows up and
+  `walmartSettlementProblem` says, in plain words, when its rows don't add up to Walmart's payout,
+  an amount can't be read, or the layout isn't Walmart's. Such a settlement shows "Needs a look"
+  and never posts. The totals are kept with each settlement (`walmart_settlements.totals`,
+  `totals_version`) when it's brought in, and read again from its kept rows when core's
+  `WALMART_READER_VERSION` changes (also for settlements brought in before this slice).
+- **How Walmart posts** (`/commerce/walmart/accounts`, the shared `PostingAccountsForm`; db
+  `walmart_accounts`, `walmart_settings`): an account for sales, refunds, Walmart's fees, WFS
+  fees, advertising, shipping labels, sales tax and other, plus the **Walmart balance** (an
+  asset); the day posting starts (by default, the first settlement's last day); "Post Walmart
+  automatically". Refunds fall back to sales, WFS fees, advertising, labels and other to the fees
+  (`buildWalmartEntry`); tax has no fallback, but only posts when it doesn't cancel out.
+- **Settlements** (db `walmart-posting.ts`: `walmartPostingList`, `postWalmartSettlement`,
+  `unpostWalmartSettlement`, `walmartSettlementsToPost`): each posts as one entry on its period's
+  last day (source `walmart`, a new journal source; reference `WMT-<report date>`), each group to
+  its account and the net to the Walmart balance, in Walmart's currency at that day's rate. A
+  settlement Walmart corrects (brought in again with other rows or another net) shows "Changed
+  since posted": it's reversed and posted again.
+- **Payouts and deposits** (`walmartPayoutCandidates`, `matchWalmartPayout`,
+  `unmatchWalmartPayout`, `dismissWalmartPayoutDeposit`, `walmartPayoutsWithOneDeposit`; table
+  `walmart_deposit_dismissals`): a posted settlement's payout finds its bank deposit through the
+  shared settlements helpers (`depositCandidates`, from three days before the report date to ten
+  after; entries with source `walmart` are left out), and matching moves it out of the Walmart
+  balance (in another currency, at the rate the settlement posted at).
+- **Walmart money** (`/commerce/walmart`, a Walmart tab beside Amazon, Noon and eBay, linked from
+  each Walmart channel's settlements card): each channel's settlements with sales, refunds,
+  Walmart's fees, WFS fees, advertising, labels, other and the payout; their state with Post /
+  Post again / Take out and why one needs a look; "Post N settlements", "Match N payouts", and
+  **Payouts to your bank** with the suggested deposit, Match / Not this one / Unmatch. The daily
+  job (`runWalmartDaily`, after eBay's) brings in new settlements for every connected Walmart
+  channel, then with "Post Walmart automatically" posts the ready ones and matches a payout whose
+  one exact deposit is uncategorized or in the Walmart sales account. Audit:
+  `walmart.accounts_updated`, `walmart.settlement_posted` / `_reposted` / `_unposted`,
+  `walmart.payout_matched` / `_unmatched`, `walmart.payout_deposit_dismissed`.
+- **Database** (migration `0080_walmart_posting`): the three tables above, the posted entry, net,
+  rows and rate, the deposit and the totals on `walmart_settlements` (nullable columns), and
+  `walmart` in `journal_entries_source_valid`.
+- Not yet: Walmart in Channel profit; uploading Seller Center's report by hand; WFS stock.
+- Tests: core `walmart-posting.test.ts` (layout, each row's group, totals, problems, the entry,
+  fallbacks and errors); db `walmart-posting.test.ts` (setup, states, post, corrected and posted
+  again, a settlement that doesn't add up, before posting starts, payout matched, unmatched and
+  not suggested again, take out, totals read again, isolation); e2e "walmart: choose how Walmart
+  posts, post a settlement and match its payout…" (the stand-in's report: sales, commission and a
+  WFS fee adding up to its payout).
+
 ### Phase 4e, slice 4b-1: Walmart settlements brought in, kept row by row
 
 - **Kept before they're read:** "Bring in from Walmart" on a Walmart channel's page (the
@@ -1605,7 +1662,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   `walmart_settlement_rows` (each row's cells as JSON, in the report's order), both under RLS
   and removed with their channel. Bringing a date in again replaces it whole (db
   `saveWalmartSettlement`; also `listWalmartSettlements`, `walmartSettlementDatesIn`,
-  `walmartSettlementRowsOf`). Nothing posts to the books yet.
+  `walmartSettlementRowsOf`). Posting came in slice 4b-2.
 - Tests: core `walmart-settlement-file.test.ts` (columns kept and dropped, period, payout,
   currency, dates, amounts); db `walmart.test.ts` (saved by date, replaced, rows in order,
   isolation); e2e "walmart: bring in Walmart Canada's settlements…" (two reports from the
@@ -2988,9 +3045,11 @@ Built like Noon and eBay: channels first, then the account, orders, money and th
 2. [x] **Connect Walmart** with the seller's client id and secret. Done in slice 2.
 3. [x] **Orders** from the Orders API, the seller's and WFS's. Done in slice 3.
 4. [ ] **Settlements** from the reconciliation report kept row by row, by settlement period, in
-   Channel profit; the report upload. Slice 4a done: reports listed and one checked (columns).
-5. [ ] **Posting and deposit matching:** each settlement as one entry to a Walmart balance
-   clearing account, payouts matched to bank deposits; the daily job.
+   Channel profit; the report upload. Slices 4a (reports listed, one checked) and 4b-1 (kept row
+   by row) done; Channel profit and the upload remain.
+5. [x] **Posting and deposit matching:** each settlement as one entry to a Walmart balance
+   clearing account, payouts matched to bank deposits; the daily job. Done in slice 4b-2 (confirm
+   the reading on the first live report).
 6. [ ] **WFS stock:** what Walmart holds beside your lots, returns and losses.
 
 ### Phase 0 leftovers

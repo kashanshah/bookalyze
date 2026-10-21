@@ -1,4 +1,4 @@
-import type { ListingObservation, OrderInvoice } from "@bookalyze/core";
+import type { ListingObservation, OrderInvoice, WalmartStoredTotals } from "@bookalyze/core";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -1258,7 +1258,7 @@ export const channelCostAccounts = pgTable(
  * A Walmart settlement (reconciliation) report brought in for a Walmart channel, one per report
  * date. Its rows are kept as Walmart sent them (`walmart_settlement_rows`), without the columns
  * that could identify a buyer, so they can be read into the books once each column's meaning is
- * known. Nothing here posts to the books yet.
+ * known. Each one posts as one entry, and its payout is matched to the bank deposit (slice 4b-2).
  */
 export const walmartSettlements = pgTable(
   "walmart_settlements",
@@ -1279,6 +1279,22 @@ export const walmartSettlements = pgTable(
     /** The columns kept, in the report's order. */
     columns: jsonb("columns").$type<string[]>().notNull().default([]),
     broughtInAt: timestamp("brought_in_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Its rows added up by group (core `walmartSettlementTotals`), kept so pages don't read every
+     * row; read again when `totals_version` isn't core's `WALMART_READER_VERSION`. Null with a
+     * version: the report isn't in Walmart's layout.
+     */
+    totals: jsonb("totals").$type<WalmartStoredTotals | null>(),
+    totalsVersion: integer("totals_version"),
+    /** The entry it posted as (slice 4b-2); a reversed one means it's out of the books. */
+    journalEntryId: uuid("journal_entry_id"),
+    /** What it added to the Walmart balance, and its rows, when posted (to see it changed). */
+    postedNet: numeric("posted_net", { precision: 20, scale: 4 }),
+    postedRows: integer("posted_rows"),
+    postedFxRate: numeric("posted_fx_rate", { precision: 20, scale: 10 }),
+    /** The payout's bank deposit, once matched, and the deposit as it was before. */
+    depositEntryId: uuid("deposit_entry_id"),
+    depositOriginalEntryId: uuid("deposit_original_entry_id"),
   },
   (t) => [
     unique("walmart_settlements_org_id_key").on(t.organizationId, t.id),
@@ -1288,6 +1304,21 @@ export const walmartSettlements = pgTable(
       columns: [t.organizationId, t.channelId],
       foreignColumns: [salesChannels.organizationId, salesChannels.id],
     }).onDelete("cascade"),
+    foreignKey({
+      name: "walmart_settlements_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    foreignKey({
+      name: "walmart_settlements_deposit_entry_fk",
+      columns: [t.organizationId, t.depositEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
+    foreignKey({
+      name: "walmart_settlements_deposit_original_entry_fk",
+      columns: [t.organizationId, t.depositOriginalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }),
     check("walmart_settlements_rows_valid", sql`${t.rows} >= 0`),
     tenantIsolationPolicy("walmart_settlements", t.organizationId),
   ],
@@ -1315,5 +1346,70 @@ export const walmartSettlementRows = pgTable(
       foreignColumns: [walmartSettlements.organizationId, walmartSettlements.id],
     }).onDelete("cascade"),
     tenantIsolationPolicy("walmart_settlement_rows", t.organizationId),
+  ],
+);
+
+/** The account each kind of Walmart amount posts to (core `WALMART_ACCOUNT_KEYS`). */
+export const walmartAccounts = pgTable(
+  "walmart_accounts",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    accountId: uuid("account_id").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.organizationId, t.key] }),
+    foreignKey({
+      name: "walmart_accounts_account_fk",
+      columns: [t.organizationId, t.accountId],
+      foreignColumns: [accounts.organizationId, accounts.id],
+    }),
+    tenantIsolationPolicy("walmart_accounts", t.organizationId),
+  ],
+);
+
+/** The first settlement end date Walmart posts from, and whether the daily job posts. */
+export const walmartSettings = pgTable(
+  "walmart_settings",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    postFrom: date("post_from").notNull(),
+    autoPost: boolean("auto_post").notNull().default(false),
+    updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [tenantIsolationPolicy("walmart_settings", t.organizationId)],
+);
+
+/** Bank deposits someone said aren't a Walmart payout, so they aren't suggested for it again. */
+export const walmartDepositDismissals = pgTable(
+  "walmart_deposit_dismissals",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    settlementId: uuid("settlement_id").notNull(),
+    journalEntryId: uuid("journal_entry_id").notNull(),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.settlementId, t.journalEntryId] }),
+    foreignKey({
+      name: "walmart_deposit_dismissals_settlement_fk",
+      columns: [t.organizationId, t.settlementId],
+      foreignColumns: [walmartSettlements.organizationId, walmartSettlements.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "walmart_deposit_dismissals_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }).onDelete("cascade"),
+    tenantIsolationPolicy("walmart_deposit_dismissals", t.organizationId),
   ],
 );
