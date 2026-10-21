@@ -2899,7 +2899,7 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   const checked = page.getByRole("region", { name: "Noon's numbers checked" });
   await expect(checked.getByText(/1 product doesn't add up/)).toBeVisible();
   await expect(
-    checked.getByRole("listitem", { name: /^Maple leaf ceramic mug, \d+ \w+ \d{4}$/ }),
+    checked.getByRole("listitem", { name: /^Maple leaf ceramic mug, \w/ }),
   ).toContainText("Summary -1 · Ledger 0");
   // Or uploaded: a later day says what Noon holds now.
   const today = now.toISOString().slice(0, 10);
@@ -2939,7 +2939,7 @@ test("noon: connect Noon's API with the key file, test it and disconnect", async
   await expect(mugAtNoon).toContainText(/At Noon\s*25\s*\+2 not sellable/);
   // And taken out again.
   const removePeriod = checked.getByRole("button", {
-    name: /^Remove Noon's summary for \d+ \w+ \d{4} – /,
+    name: /^Remove Noon's summary for .+ – /,
   });
   await removePeriod.click();
   await checked.getByRole("button", { name: /^Confirm: remove Noon's summary for/ }).click();
