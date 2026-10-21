@@ -8,6 +8,7 @@ import {
 import {
   type getChannelForSync,
   getDb,
+  placeEbayTransactionsByOrder,
   recordConnectionSync,
   saveOrderCursor,
   saveOrdersWithItems,
@@ -90,6 +91,8 @@ export async function syncEbayChannelOrders(
           from,
           orders: page.orders,
         });
+        // eBay money rows read before their order came in move to its site now.
+        await placeEbayTransactionsByOrder(tx);
         await saveOrderCursor(
           tx,
           channel.id,
