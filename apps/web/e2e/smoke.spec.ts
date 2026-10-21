@@ -3972,14 +3972,14 @@ test("billing: a plan through Checkout, an add-on removed makes only its module 
   await page.getByRole("link", { name: "Automatic requests", exact: true }).first().click();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Automatic requests are on")).toBeVisible();
-  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await sidebar.getByRole("link", { name: "Channels", exact: true }).click();
   await page.getByRole("link", { name: /^Noon UAE/ }).click();
   await page.getByRole("switch", { name: "Use Noon UAE" }).click();
   await expect(page.getByText("Switched off", { exact: true })).toBeVisible();
   await page.getByRole("switch", { name: "Use Noon UAE" }).click();
   await expect(page.getByRole("switch", { name: "Use Noon UAE" })).toBeChecked();
   // The rest of Commerce stays read-only, and says what the plan does include.
-  await page.getByRole("link", { name: "Settlements", exact: true }).click();
+  await sidebar.getByRole("link", { name: "Settlements", exact: true }).click();
   await page.getByRole("button", { name: "Bring in settlements" }).click();
   await expect(page).toHaveURL(/settings\/billing\?readonly=commerce/);
   await expect(page.getByText("Commerce is read-only.")).toBeVisible();
