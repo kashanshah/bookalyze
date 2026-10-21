@@ -1981,7 +1981,6 @@ test("commerce: a different seller account's credentials hide the previous accou
 
 test("ads: connect Amazon Ads, bring in ad spend, and see each product's profit after ads", async ({
   page,
-  request,
 }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Channels", exact: true }).click();
@@ -2031,7 +2030,7 @@ test("ads: connect Amazon Ads, bring in ad spend, and see each product's profit 
   await expect(channel.getByText("Sales from ads")).toBeVisible();
 
   // The same as a CSV, and the ads on Channel profit for comparison.
-  const csv = await request.get(
+  const csv = await page.request.get(
     (await page.getByRole("link", { name: "Download CSV" }).getAttribute("href")) ?? "",
   );
   const text = await csv.text();
