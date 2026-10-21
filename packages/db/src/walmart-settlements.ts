@@ -1,4 +1,9 @@
-import type { WalmartSettlementFile } from "@bookalyze/core";
+import {
+  storeWalmartTotals,
+  WALMART_READER_VERSION,
+  type WalmartSettlementFile,
+  walmartSettlementTotals,
+} from "@bookalyze/core";
 import { asc, desc, eq } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { walmartSettlementRows, walmartSettlements } from "./schema/commerce";
@@ -6,7 +11,8 @@ import { walmartSettlementRows, walmartSettlements } from "./schema/commerce";
 /**
  * Walmart settlement reports brought in for a channel, one per report date, with their rows as
  * Walmart sent them (core `readWalmartSettlement` has already left out buyer details). Bringing
- * a date in again replaces it, so a report Walmart corrects comes in whole. Nothing posts.
+ * a date in again replaces it, so a report Walmart corrects comes in whole. Its rows are added up
+ * by group as it's saved (core `walmartSettlementTotals`), for posting (`walmart-posting.ts`).
  */
 
 /** Rows are written in batches, so a long report stays within one statement's limits. */
@@ -29,6 +35,8 @@ export async function saveWalmartSettlement(
     payout: file.payout,
     rows: file.rows.length,
     columns: file.columns,
+    totals: storeWalmartTotals(walmartSettlementTotals(file.columns, file.rows)),
+    totalsVersion: WALMART_READER_VERSION,
     broughtInAt: new Date(),
   };
   const [saved] = await tx

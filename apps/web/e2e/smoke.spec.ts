@@ -9,6 +9,7 @@ import {
   signIn,
   signOut,
   signUp,
+  toastsGone,
   torontoDay,
   verifyEmail,
   withOwnerDb,
@@ -2792,6 +2793,82 @@ test("walmart: bring in Walmart Canada's settlements, kept row by row without bu
   );
   expect(kept.rows.length).toBe(8);
   expect(kept.rows.map((r) => r.data).join("\n")).not.toMatch(/Toronto|M0M|Synthetic/);
+});
+
+test("walmart: choose how Walmart posts, post a settlement and match its payout to the deposit", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+
+  // Walmart's payout arrived in the bank, recorded as a sale by mistake.
+  await page.getByRole("link", { name: "Transactions", exact: true }).click();
+  await page.getByRole("button", { name: "Add income" }).click();
+  await choose(page.locator("#tx-money"), "1010 · RBC Chequing");
+  await page.locator("#tx-memo").fill("WALMART CA PAYOUT");
+  await choose(page.getByLabel("Category 1", { exact: true }), "4000 · Sales");
+  await page.getByLabel("Amount 1").fill("52.07");
+  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expect(page.getByText("Transaction added")).toBeVisible();
+
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Walmart Canada/ }).click();
+  await page
+    .getByRole("region", { name: "Walmart settlements" })
+    .getByRole("link", { name: "Walmart money" })
+    .click();
+  await expect(page.getByRole("heading", { name: "Walmart money" })).toBeVisible();
+
+  // The accounts, suggested from their names; the Walmart balance is added on the spot.
+  await page.getByRole("link", { name: /Put Walmart in your books/ }).click();
+  await expect(page.getByRole("heading", { name: "How Walmart posts" })).toBeVisible();
+  const balance = page.getByRole("combobox", { name: "Walmart balance (what Walmart owes you)" });
+  await balance.click();
+  await page.locator('input[role="combobox"][aria-autocomplete="list"]').fill("Walmart balance");
+  await page.getByRole("button", { name: "Add “Walmart balance” as a new account" }).click();
+  await page
+    .getByRole("dialog", { name: "Add an account" })
+    .getByRole("button", { name: "Add account" })
+    .click();
+  await expect(balance).toContainText("Walmart balance");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Walmart posts with these accounts from now on.")).toBeVisible();
+
+  // Each settlement is read by amount type, and one that adds up to its payout posts.
+  const settlement = page.getByRole("row", { name: /^Walmart Canada, / }).first();
+  await expect(settlement).toContainText("$59.97"); // sales: 39.98 + 19.99
+  await expect(settlement).toContainText("($6.00)"); // Walmart's commission
+  await expect(settlement).toContainText("($1.90)"); // WFS
+  await expect(settlement.getByText("Ready to post")).toBeVisible();
+  await settlement.getByRole("button", { name: /^Post Walmart Canada, / }).click();
+  await expect(page.getByText(/^Walmart Canada, .* is in your books$/)).toBeVisible();
+  await expect(settlement.getByText("In books", { exact: true })).toBeVisible();
+  await expect(settlement.getByRole("link", { name: /^JE-/ })).toBeVisible();
+
+  // Its payout finds the deposit.
+  const payout = page
+    .getByRole("region", { name: "Payouts to your bank" })
+    .getByRole("listitem")
+    .first();
+  await expect(payout).toContainText(/Deposit of \$52\.07 into RBC Chequing .*now in .*Sales/);
+  await payout.getByRole("button", { name: "Match", exact: true }).click();
+  await expect(page.getByText("Deposit matched").first()).toBeVisible();
+  await expect(payout.getByRole("link", { name: /Deposit of .* · JE-/ })).toBeVisible();
+
+  // And back: the deposit returns to Sales and isn't suggested for this payout again.
+  await toastsGone(page);
+  await payout.getByRole("button", { name: "Unmatch" }).click();
+  await expect(page.getByText("Deposit unmatched")).toBeVisible();
+  await expect(payout).toContainText("No bank deposit of this amount found");
+
+  // The settlement comes back out too.
+  await toastsGone(page);
+  await settlement
+    .getByRole("button", { name: /^Take Walmart Canada, .* out of the books$/ })
+    .click();
+  await settlement.getByRole("button", { name: /^Click again to take Walmart Canada, / }).click();
+  await expect(page.getByText(/^Walmart Canada, .* is out of your books$/)).toBeVisible();
+  await expect(settlement.getByText("Ready to post")).toBeVisible();
 });
 
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {

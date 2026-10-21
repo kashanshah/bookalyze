@@ -4,16 +4,18 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 /**
- * Where each marketplace's money lives: Amazon's settlements, Noon's transactions, eBay's money.
+ * Where each marketplace's money lives: Amazon's settlements, Noon's transactions, eBay's money,
+ * Walmart's settlements.
  * One tab per platform the company sells on, so its "bring in" button is one click away.
  */
 
-export type PayoutPlatform = "amazon" | "noon" | "ebay";
+export type PayoutPlatform = "amazon" | "noon" | "ebay" | "walmart";
 
 const TABS: { key: PayoutPlatform; label: string; path: string }[] = [
   { key: "amazon", label: "Amazon", path: "/commerce/settlements" },
   { key: "noon", label: "Noon", path: "/commerce/noon" },
   { key: "ebay", label: "eBay", path: "/commerce/ebay" },
+  { key: "walmart", label: "Walmart", path: "/commerce/walmart" },
 ];
 
 /** The platforms the company has channels on (switched off ones too: their money still shows). */

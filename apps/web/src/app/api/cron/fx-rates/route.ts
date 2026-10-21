@@ -8,6 +8,7 @@ import { syncBankOfCanada } from "@/server/fx";
 import { jobStep, logInfo } from "@/server/log";
 import { runNoonDaily } from "@/server/noon-daily";
 import { autoPostSettlements } from "@/server/settlement-posting";
+import { runWalmartDaily } from "@/server/walmart-daily";
 
 /**
  * The daily job (scheduled in vercel.json). Vercel Cron calls this with
@@ -16,8 +17,8 @@ import { autoPostSettlements } from "@/server/settlement-posting";
  * foreign-currency bank lines find their rate. Then it brings in new Amazon settlement reports and
  * posts them (with their deposits) where automatic posting is on, brings in each marketplace's FBA
  * inventory ledger (returns, losses), brings in Noon's transactions and posts its finished months
- * (with their payouts) where that's switched on, and last it emails compliance
- * reminders. Amazon orders have their own job (/api/cron/orders).
+ * (with their payouts) where that's switched on, does the same for eBay and Walmart, and last it
+ * emails compliance reminders. Amazon orders have their own job (/api/cron/orders).
  */
 export const maxDuration = 300;
 
@@ -39,6 +40,7 @@ export async function GET(request: Request) {
   const posting = await jobStep("daily", "posting", () => autoPostSettlements());
   const noon = await jobStep("daily", "noon", () => runNoonDaily(60_000));
   const ebay = await jobStep("daily", "ebay", () => runEbayDaily(40_000));
+  const walmart = await jobStep("daily", "walmart", () => runWalmartDaily(30_000));
   const compliance = await jobStep("daily", "compliance", () => sendComplianceReminders());
   logInfo("job.daily", {
     ms: Date.now() - started,
@@ -49,7 +51,18 @@ export async function GET(request: Request) {
     posting,
     noon,
     ebay,
+    walmart,
     compliance,
   });
-  return Response.json({ stored, banking, settlements, ledgers, posting, noon, ebay, compliance });
+  return Response.json({
+    stored,
+    banking,
+    settlements,
+    ledgers,
+    posting,
+    noon,
+    ebay,
+    walmart,
+    compliance,
+  });
 }

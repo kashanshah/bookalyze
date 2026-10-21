@@ -11,6 +11,7 @@ import {
   type WalmartScopeArea,
 } from "@bookalyze/core";
 import {
+  ArrowRight,
   CircleAlert,
   Download,
   FileSearch,
@@ -20,8 +21,10 @@ import {
   RefreshCw,
   Unplug,
 } from "lucide-react";
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { Amount } from "@/components/accounting/amount";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
@@ -649,10 +652,6 @@ export function WalmartSettlements({
     new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(
       new Date(`${iso}T00:00:00Z`),
     );
-  const money = (amount: string, currency: string | null) =>
-    currency
-      ? new Intl.NumberFormat(locale, { style: "currency", currency }).format(Number(amount))
-      : amount;
   const bringIn = () =>
     start(async () => {
       const result = await bringInWalmartSettlementsAction(slug, channelId);
@@ -680,15 +679,26 @@ export function WalmartSettlements({
           </h2>
           <p className="text-muted-foreground text-sm leading-relaxed">
             Each payout's report from Walmart, kept row by row as Walmart sent it, without buyer
-            details. Reading them into your books comes next.
+            details. Walmart money reads them into your books and matches each payout to its bank
+            deposit.
           </p>
         </div>
-        {canManage && connected ? (
-          <Button variant="outline" onClick={bringIn} disabled={pending}>
-            {pending ? <Spinner /> : <Download />}
-            Bring in from Walmart
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {settlements.length ? (
+            <Button asChild variant="ghost">
+              <Link href={`/o/${slug}/commerce/walmart`}>
+                Walmart money
+                <ArrowRight className="rtl:rotate-180" />
+              </Link>
+            </Button>
+          ) : null}
+          {canManage && connected ? (
+            <Button variant="outline" onClick={bringIn} disabled={pending}>
+              {pending ? <Spinner /> : <Download />}
+              Bring in from Walmart
+            </Button>
+          ) : null}
+        </div>
       </div>
       {settlements.length ? (
         <ul className="divide-y rounded-xl border">
@@ -709,7 +719,11 @@ export function WalmartSettlements({
                 </p>
               </div>
               <p className="font-medium text-sm tabular-nums">
-                {s.payout !== null ? money(s.payout, s.currency) : "—"}
+                {s.payout !== null && s.currency ? (
+                  <Amount value={s.payout} currency={s.currency} locale={locale} />
+                ) : (
+                  (s.payout ?? "—")
+                )}
               </p>
             </li>
           ))}

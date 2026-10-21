@@ -128,3 +128,12 @@ export function torontoDay(offset = 0): string {
   day.setUTCDate(day.getUTCDate() + offset);
   return day.toISOString().slice(0, 10);
 }
+
+/**
+ * Waits for every toast to close. Sonner keeps toasts open while the pointer is over them, and
+ * they stack over the bottom of the page, so the pointer is moved away first.
+ */
+export async function toastsGone(page: Page) {
+  await page.mouse.move(0, 0);
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 15_000 });
+}

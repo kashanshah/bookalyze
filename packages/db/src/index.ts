@@ -41,4 +41,5 @@ export * from "./tax";
 export * from "./transactions";
 export * from "./transfers";
 export * from "./vault";
+export * from "./walmart-posting";
 export * from "./walmart-settlements";

@@ -561,6 +561,13 @@
       "when": 1792546255320,
       "tag": "0079_walmart_settlements",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1792548065742,
+      "tag": "0080_walmart_posting",
+      "breakpoints": true
     }
   ]
 }
