@@ -692,8 +692,8 @@ export const orderInvoices = pgTable(
 );
 
 /**
- * The company's private address for forwarded marketplace emails (invoice requests):
- * `invoices-<token>@<INBOUND_EMAIL_DOMAIN>`. The token is the only key the inbound webhook
+ * The company's private addresses for forwarded emails, sharing one token: invoice requests
+ * to `invoices-<token>@<INBOUND_EMAIL_DOMAIN>`, receipts and bills to `receipts-<token>@…`. The token is the only key the inbound webhook
  * has, so it's long and random. The latest email that wasn't an invoice request is kept by its
  * subject, so a mailbox's forwarding confirmation code can be read in the app.
  */
@@ -708,6 +708,8 @@ export const invoiceInboxes = pgTable(
     lastOtherFrom: text("last_other_from"),
     lastOtherAt: timestamp("last_other_at", { withTimezone: true }),
     lastRequestAt: timestamp("last_request_at", { withTimezone: true }),
+    /** When a file last came in on the receipts address (receipts-<token>@…). */
+    lastReceiptAt: timestamp("last_receipt_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

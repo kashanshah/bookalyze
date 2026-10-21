@@ -7,6 +7,9 @@ import { logError } from "@/server/log";
  * RESEND_WEBHOOK_SECRET; anything unsigned is refused. Answers 200 once handled, so Resend
  * doesn't retry an email that simply wasn't for us.
  */
+/** Saving forwarded receipts downloads their files. */
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const secret = env().RESEND_WEBHOOK_SECRET;
   if (!secret) return new Response("Not configured", { status: 503 });

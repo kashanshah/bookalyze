@@ -36,23 +36,52 @@ export function parseInvoiceRequestEmail(input: {
   return null;
 }
 
+/** What a forwarding address is for: buyers' invoice requests, or receipts and bills. */
+export type InboxKind = "invoices" | "receipts";
+
 /** The forwarding address for a company's inbox token. */
-export function invoiceInboxAddress(token: string, domain: string): string {
-  return `invoices-${token}@${domain}`;
+export function invoiceInboxAddress(
+  token: string,
+  domain: string,
+  kind: InboxKind = "invoices",
+): string {
+  return `${kind}-${token}@${domain}`;
 }
 
 /**
- * The inbox token an email was sent to, from its recipients ("Name <a@b>" or bare addresses),
- * or null when none is one of our forwarding addresses.
+ * Which of our forwarding addresses an email was sent to, found anywhere in the given texts
+ * (recipients like "Name <a@b>", headers, or a whole event), or null when none is.
  */
-export function invoiceInboxToken(recipients: readonly string[], domain: string): string | null {
+export function inboxRecipient(
+  texts: readonly string[],
+  domain: string,
+): { kind: InboxKind; token: string } | null {
   const escaped = domain.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`invoices-([a-z0-9]{20,64})@${escaped}`, "i");
-  for (const recipient of recipients) {
-    const match = pattern.exec(recipient.toLowerCase());
-    if (match?.[1]) return match[1];
+  const pattern = new RegExp(`\\b(invoices|receipts)-([a-z0-9]{20,64})@${escaped}`, "i");
+  for (const text of texts) {
+    const match = pattern.exec(text.toLowerCase());
+    if (match?.[1] && match[2]) return { kind: match[1] as InboxKind, token: match[2] };
   }
   return null;
+}
+
+/** The inbox token of an invoice-request address among `texts`, or null. */
+export function invoiceInboxToken(recipients: readonly string[], domain: string): string | null {
+  const found = inboxRecipient(recipients, domain);
+  return found?.kind === "invoices" ? found.token : null;
+}
+
+/** The sender's display name, or the part of the address before the domain ("Noon" from "Noon <no-reply@noon.com>"). */
+export function senderName(from: string | null | undefined): string | null {
+  const value = (from ?? "").trim();
+  if (!value) return null;
+  const named = /^"?([^"<]+?)"?\s*</.exec(value)?.[1]?.trim();
+  if (named) return named;
+  // The brand part of the domain: "noon" in mail.noon.com, "amazon" in amazon.co.uk.
+  const labels = (/@([^>\s]+)/.exec(value)?.[1] ?? "").toLowerCase().split(".").filter(Boolean);
+  const brand =
+    labels.length >= 3 && (labels.at(-2)?.length ?? 0) <= 3 ? labels.at(-3) : labels.at(-2);
+  return brand ? brand.charAt(0).toUpperCase() + brand.slice(1) : null;
 }
 
 /**

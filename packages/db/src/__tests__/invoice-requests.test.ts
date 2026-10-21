@@ -1,5 +1,6 @@
 import type { AmazonOrder } from "@bookalyze/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createEmailAttachment, hasEmailAttachment, listUnlinkedAttachments } from "../attachments";
 import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import { saveAmazonChannels, upsertOrders } from "../commerce";
@@ -10,6 +11,7 @@ import {
   invoiceRequestForOrder,
   listInvoiceRequests,
   noteInboxEmail,
+  noteInboxReceipt,
   openInvoiceRequests,
   recordInvoiceRequest,
   setInvoiceRequestStatus,
@@ -201,5 +203,45 @@ describe("invoice requests", () => {
 
   it("can't be read by another company", async () => {
     expect(await scoped((tx) => listInvoiceRequests(tx), otherOrgId)).toEqual([]);
+  });
+});
+
+describe("receipts by email", () => {
+  const file = (id: string) => ({
+    id,
+    orgId,
+    storageKey: `org/${orgId}/attachments/test/${id}/receipt.pdf`,
+    fileName: "receipt.pdf",
+    contentType: "application/pdf",
+    sizeBytes: 1234,
+    emailFrom: "Sample Supplier <billing@example.com>",
+    emailSubject: "Your receipt",
+    emailRef: "email_1:att_1",
+  });
+
+  it("saves a forwarded file once, ready in the inbox", async () => {
+    const first = await scoped((tx) =>
+      createEmailAttachment(tx, file("00000000-0000-4000-8000-000000000101")),
+    );
+    expect(first?.status).toBe("ready");
+    expect(first?.source).toBe("email");
+    const again = await scoped((tx) =>
+      createEmailAttachment(tx, {
+        ...file("00000000-0000-4000-8000-000000000102"),
+        storageKey: `org/${orgId}/attachments/test/again/receipt.pdf`,
+      }),
+    );
+    expect(again).toBeNull();
+    expect(await scoped((tx) => hasEmailAttachment(tx, "email_1:att_1"))).toBe(true);
+    const inbox = await scoped((tx) => listUnlinkedAttachments(tx));
+    expect(inbox.filter((a) => a.emailRef === "email_1:att_1")).toHaveLength(1);
+    await scoped((tx) => noteInboxReceipt(tx, new Date("2026-10-21T08:00:00Z")));
+    expect((await scoped((tx) => getInvoiceInbox(tx)))?.lastReceiptAt?.toISOString()).toBe(
+      "2026-10-21T08:00:00.000Z",
+    );
+  });
+
+  it("keeps another company's file apart", async () => {
+    expect(await scoped((tx) => hasEmailAttachment(tx, "email_1:att_1"), otherOrgId)).toBe(false);
   });
 });

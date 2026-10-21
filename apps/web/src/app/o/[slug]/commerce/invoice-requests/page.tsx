@@ -2,6 +2,7 @@ import { listInvoiceRequests } from "@bookalyze/db";
 import { ArrowRight, Inbox, MailCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CopyAddress } from "@/components/copy-address";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/dates";
@@ -9,7 +10,7 @@ import { inOrg } from "@/server/accounting";
 import { getCommerceContext } from "@/server/commerce";
 import { loadInvoiceInbox } from "@/server/invoice-requests";
 import { isOrgAdmin } from "@/server/org";
-import { CopyAddress, RequestActions } from "./request-rows";
+import { RequestActions } from "./request-rows";
 
 export const metadata: Metadata = { title: "Invoice requests" };
 

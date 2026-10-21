@@ -34,4 +34,7 @@ export type AttachmentSummary = {
   createdAt: string;
   /** App URL that shows the file (checks access, then serves or redirects). */
   url: string;
+  /** Set when the file was forwarded by email: who sent it, and the subject. */
+  emailFrom?: string | null;
+  emailSubject?: string | null;
 };

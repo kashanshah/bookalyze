@@ -1,7 +1,7 @@
 "use client";
 
-import { formatMoney } from "@bookalyze/core";
-import { Inbox, Link2, Paperclip, Search, Trash2, UploadCloud, X } from "lucide-react";
+import { formatMoney, senderName } from "@bookalyze/core";
+import { Inbox, Link2, Mail, Paperclip, Search, Trash2, UploadCloud, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -327,6 +327,18 @@ function InboxCard({
         <p className="text-muted-foreground text-xs">
           {formatDate(file.createdAt.slice(0, 10), locale)} · {formatBytes(file.sizeBytes)}
         </p>
+        {file.emailFrom ? (
+          <p
+            className="flex items-center gap-1 truncate text-muted-foreground text-xs"
+            title={file.emailSubject ?? undefined}
+          >
+            <Mail className="size-3 shrink-0" />
+            <span className="truncate">
+              {senderName(file.emailFrom) ?? file.emailFrom}
+              {file.emailSubject ? ` · ${file.emailSubject}` : ""}
+            </span>
+          </p>
+        ) : null}
       </div>
       <div className="mt-auto flex items-center gap-1 p-2">
         <Button size="sm" className="flex-1" onClick={onMatch}>
@@ -421,6 +433,16 @@ function MatchDialog({
             aria-label="Search transactions"
           />
         </div>
+        {file?.emailFrom && senderName(file.emailFrom) && search !== senderName(file.emailFrom) ? (
+          <button
+            type="button"
+            onClick={() => setSearch(senderName(file.emailFrom) ?? "")}
+            className="-mt-1 inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-muted-foreground text-xs hover:bg-muted"
+          >
+            <Mail className="size-3" />
+            Search “{senderName(file.emailFrom)}”, who sent it
+          </button>
+        ) : null}
         <div className="-mx-2 max-h-[50dvh] overflow-y-auto">
           {results === null ? (
             <div className="flex h-24 items-center justify-center">

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  inboxRecipient,
   invoiceInboxAddress,
   invoiceInboxToken,
   messagingAllowsInvoice,
   parseInvoiceRequestEmail,
+  senderName,
 } from "../commerce/invoice-requests";
 
 describe("parseInvoiceRequestEmail", () => {
@@ -72,5 +74,31 @@ describe("messagingAllowsInvoice", () => {
       messagingAllowsInvoice({ _links: { actions: [{ name: "confirmDeliveryDetails" }] } }),
     ).toBe(false);
     expect(messagingAllowsInvoice(null)).toBe(false);
+  });
+});
+
+describe("inboxRecipient", () => {
+  const token = "abcdefghijklmnopqrstuvwx";
+  it("tells the receipts address from the invoices one", () => {
+    expect(invoiceInboxAddress(token, "in.example.com", "receipts")).toBe(
+      `receipts-${token}@in.example.com`,
+    );
+    expect(
+      inboxRecipient(
+        [`{"to":["seller@example.com"],"x-forwarded-to":"receipts-${token}@in.example.com"}`],
+        "in.example.com",
+      ),
+    ).toEqual({ kind: "receipts", token });
+    expect(invoiceInboxToken([`receipts-${token}@in.example.com`], "in.example.com")).toBeNull();
+  });
+});
+
+describe("senderName", () => {
+  it("uses the display name, else the brand part of the domain", () => {
+    expect(senderName("Noon <no-reply@noon.com>")).toBe("Noon");
+    expect(senderName('"Sample Supplier LLC" <billing@example.com>')).toBe("Sample Supplier LLC");
+    expect(senderName("receipts@mail.example.com")).toBe("Example");
+    expect(senderName("orders@amazon.co.uk")).toBe("Amazon");
+    expect(senderName(null)).toBeNull();
   });
 });

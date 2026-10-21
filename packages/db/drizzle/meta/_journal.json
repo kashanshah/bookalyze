@@ -540,6 +540,13 @@
       "when": 1792540088857,
       "tag": "0076_invoice_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1792540789091,
+      "tag": "0077_receipts_by_email",
+      "breakpoints": true
     }
   ]
 }

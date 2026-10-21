@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { invoiceInboxAddress, isAmazonRegion } from "@bookalyze/core";
+import { type InboxKind, invoiceInboxAddress, isAmazonRegion } from "@bookalyze/core";
 import {
   ensureInvoiceInbox,
   getChannelForSync,
@@ -14,6 +14,7 @@ import { AmazonError, canSendInvoice, sendInvoice } from "@/server/amazon";
 import { type CommerceContext, openAmazonCredentials } from "@/server/commerce";
 import { env } from "@/server/env";
 import { logError } from "@/server/log";
+import type { OrgContext } from "@/server/org";
 import { readStoredFile } from "@/server/storage";
 
 export type InvoiceInboxView = {
@@ -23,10 +24,14 @@ export type InvoiceInboxView = {
   lastOtherFrom: string | null;
   lastOtherAt: string | null;
   lastRequestAt: string | null;
+  lastReceiptAt: string | null;
 };
 
-/** The company's forwarding address, made the first time it's asked for. */
-export async function loadInvoiceInbox(ctx: CommerceContext): Promise<InvoiceInboxView> {
+/** The company's forwarding address of that kind, made the first time it's asked for. */
+export async function loadInvoiceInbox(
+  ctx: OrgContext,
+  kind: InboxKind = "invoices",
+): Promise<InvoiceInboxView> {
   const domain = env().INBOUND_EMAIL_DOMAIN;
   const configured = Boolean(domain && env().RESEND_WEBHOOK_SECRET);
   const inbox = await inOrg(ctx, (tx) =>
@@ -34,11 +39,12 @@ export async function loadInvoiceInbox(ctx: CommerceContext): Promise<InvoiceInb
     ensureInvoiceInbox(tx, { orgId: ctx.org.id, token: randomBytes(24).toString("hex") }),
   );
   return {
-    address: configured && domain ? invoiceInboxAddress(inbox.token, domain) : null,
+    address: configured && domain ? invoiceInboxAddress(inbox.token, domain, kind) : null,
     lastOtherSubject: inbox.lastOtherSubject,
     lastOtherFrom: inbox.lastOtherFrom,
     lastOtherAt: inbox.lastOtherAt?.toISOString() ?? null,
     lastRequestAt: inbox.lastRequestAt?.toISOString() ?? null,
+    lastReceiptAt: inbox.lastReceiptAt?.toISOString() ?? null,
   };
 }
 

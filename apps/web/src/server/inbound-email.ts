@@ -1,15 +1,20 @@
 import "server-only";
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { invoiceInboxToken, parseInvoiceRequestEmail } from "@bookalyze/core";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { type InboxKind, inboxRecipient, parseInvoiceRequestEmail } from "@bookalyze/core";
 import {
+  createEmailAttachment,
   getDb,
+  hasEmailAttachment,
   invoiceInboxOrg,
   noteInboxEmail,
+  noteInboxReceipt,
   recordInvoiceRequest,
   withOrg,
 } from "@bookalyze/db";
+import { ALLOWED_ATTACHMENT_TYPES, MAX_ATTACHMENT_BYTES } from "@/lib/attachments";
 import { env } from "@/server/env";
 import { logInfo, logWarn } from "@/server/log";
+import { attachmentKey, putStoredFile, removeStoredFile } from "@/server/storage";
 
 /** Resend signs webhooks the Svix way: HMAC-SHA256 of "id.timestamp.body", base64. */
 export function verifyWebhook(
@@ -41,44 +46,142 @@ type ReceivedEmail = {
   subject?: string;
 };
 
-/**
- * Every place a forwarding address can show up. Gmail's forward keeps the original To (the
- * seller), so ours may only be in the envelope or in headers such as X-Forwarded-To: search the
- * whole event, then the full email from Resend's API when the event didn't have it.
- */
-async function tokenOf(event: unknown, data: ReceivedEmail, domain: string) {
-  const inEvent = invoiceInboxToken([JSON.stringify(event)], domain);
-  if (inEvent || !data.email_id) return inEvent;
+const RESEND_API = "https://api.resend.com";
+
+async function resendGet(path: string): Promise<Response | null> {
   const key = env().RESEND_API_KEY;
   if (!key) return null;
-  const response = await fetch(
-    `https://api.resend.com/emails/receiving/${encodeURIComponent(data.email_id)}`,
-    { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) },
-  ).catch(() => null);
-  if (!response?.ok) return null;
-  return invoiceInboxToken([await response.text()], domain);
+  const response = await fetch(`${RESEND_API}${path}`, {
+    headers: { Authorization: `Bearer ${key}` },
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  }).catch(() => null);
+  return response?.ok ? response : null;
 }
 
 /**
- * Handles one received email: finds the company by its forwarding address and records the
- * buyer's invoice request, or keeps the subject of anything else (a forwarding confirmation).
- * Emails to no company are dropped.
+ * Which forwarding address the email came to. Gmail's forward keeps the original To (the
+ * seller), so ours may only be in the envelope or in headers such as X-Forwarded-To: search the
+ * whole event, then the full email from Resend's API when the event didn't have it.
  */
-export async function handleReceivedEmail(
-  event: unknown,
-): Promise<"recorded" | "noted" | "ignored"> {
+async function recipientOf(event: unknown, data: ReceivedEmail, domain: string) {
+  const inEvent = inboxRecipient([JSON.stringify(event)], domain);
+  if (inEvent || !data.email_id) return inEvent;
+  const response = await resendGet(`/emails/receiving/${encodeURIComponent(data.email_id)}`);
+  return response ? inboxRecipient([await response.text()], domain) : null;
+}
+
+type ResendAttachment = {
+  id?: string;
+  filename?: string;
+  content_type?: string;
+  content_disposition?: string;
+  size?: number;
+  download_url?: string;
+};
+
+/** Files worth keeping: types the receipts inbox takes, not tiny inline images (logos). */
+function usable(file: ResendAttachment): { contentType: string; fileName: string } | null {
+  const fileName = (file.filename ?? "").trim() || "attachment";
+  let contentType = (file.content_type ?? "").toLowerCase().split(";")[0]?.trim() ?? "";
+  if (!ALLOWED_ATTACHMENT_TYPES[contentType] && /\.pdf$/i.test(fileName)) {
+    contentType = "application/pdf";
+  }
+  if (!ALLOWED_ATTACHMENT_TYPES[contentType]) return null;
+  if ((file.size ?? 0) > MAX_ATTACHMENT_BYTES) return null;
+  const inline = (file.content_disposition ?? "").toLowerCase().startsWith("inline");
+  if (inline && contentType.startsWith("image/") && (file.size ?? 0) < 30_000) return null;
+  return { contentType, fileName: fileName.slice(0, 200) };
+}
+
+/**
+ * Saves a forwarded email's files to the company's receipts inbox (unattached, ready to match
+ * to a transaction). An email with none is kept by its subject instead, so a forwarding
+ * confirmation code shows in the app.
+ */
+async function saveReceipts(orgId: string, data: ReceivedEmail, at: Date) {
+  const list = data.email_id
+    ? await resendGet(`/emails/receiving/${encodeURIComponent(data.email_id)}/attachments`)
+    : null;
+  const files = list
+    ? (((await list.json().catch(() => null)) as { data?: ResendAttachment[] } | null)?.data ?? [])
+    : [];
+  let saved = 0;
+  for (const file of files.slice(0, 10)) {
+    const kind = usable(file);
+    if (!kind || !file.id || !file.download_url) continue;
+    const emailRef = `${data.email_id}:${file.id}`;
+    if (await withOrg(getDb(), { orgId }, (tx) => hasEmailAttachment(tx, emailRef))) continue;
+    const download = await fetch(file.download_url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(60_000),
+    }).catch(() => null);
+    if (!download?.ok) {
+      logWarn("inbound.attachment_download_failed", { orgId, status: download?.status });
+      continue;
+    }
+    const bytes = new Uint8Array(await download.arrayBuffer());
+    if (!bytes.byteLength || bytes.byteLength > MAX_ATTACHMENT_BYTES) continue;
+    const id = randomUUID();
+    const key = attachmentKey(orgId, id, kind.fileName);
+    await putStoredFile({ key, bytes, contentType: kind.contentType });
+    const row = await withOrg(getDb(), { orgId }, (tx) =>
+      createEmailAttachment(tx, {
+        id,
+        orgId,
+        storageKey: key,
+        fileName: kind.fileName,
+        contentType: kind.contentType,
+        sizeBytes: bytes.byteLength,
+        emailFrom: data.from ?? null,
+        emailSubject: data.subject ?? null,
+        emailRef,
+      }),
+    );
+    // Saved meanwhile by a repeat delivery: drop this copy.
+    if (!row) await removeStoredFile(key);
+    else saved++;
+  }
+  await withOrg(getDb(), { orgId }, (tx) =>
+    saved
+      ? noteInboxReceipt(tx, at)
+      : noteInboxEmail(tx, { subject: data.subject ?? null, from: data.from ?? null, at }),
+  );
+  if (saved) logInfo("inbound.receipts_saved", { orgId, files: saved });
+  return saved;
+}
+
+export type ReceivedResult = "recorded" | "saved" | "noted" | "ignored";
+
+/**
+ * Handles one received email: finds the company by its forwarding address, then records a
+ * buyer's invoice request (invoices-…), or saves the files (receipts-…). Anything else to an
+ * invoices address is kept by its subject (a forwarding confirmation). Emails to no company are
+ * dropped.
+ */
+export async function handleReceivedEmail(event: unknown): Promise<ReceivedResult> {
   const domain = env().INBOUND_EMAIL_DOMAIN;
   const body = (event ?? {}) as { type?: string; data?: ReceivedEmail };
   if (!domain || body.type !== "email.received" || !body.data) return "ignored";
   const data = body.data;
-  const token = await tokenOf(event, data, domain);
-  const orgId = token ? await invoiceInboxOrg(getDb(), token) : null;
-  if (!orgId) {
+  const recipient = await recipientOf(event, data, domain);
+  const orgId = recipient ? await invoiceInboxOrg(getDb(), recipient.token) : null;
+  if (!recipient || !orgId) {
     logWarn("inbound.unknown_address", { emailId: data.email_id });
     return "ignored";
   }
   const at = data.created_at ? new Date(data.created_at) : new Date();
   const when = Number.isNaN(at.getTime()) ? new Date() : at;
+  return handleFor(recipient.kind, orgId, data, when);
+}
+
+async function handleFor(
+  kind: InboxKind,
+  orgId: string,
+  data: ReceivedEmail,
+  when: Date,
+): Promise<ReceivedResult> {
+  if (kind === "receipts") return (await saveReceipts(orgId, data, when)) ? "saved" : "noted";
   const request = parseInvoiceRequestEmail({ subject: data.subject });
   return withOrg(getDb(), { orgId }, async (tx) => {
     if (!request) {
