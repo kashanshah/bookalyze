@@ -1230,6 +1230,19 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   add-ons on Seller: Stock $8 (Inventory, Analytics), Review requests $5. Yearly is ten months.
   `catalogProblems()` checks every package and add-on gives each module what it `requires`; a
   module a package uses in part (`partly`) counts for what needs it.
+- **Card at sign-up** (owner's decision, October 2026): when Stripe is set up, a new company's
+  last onboarding step is `/start/<slug>`: choose a plan (the plan picker) and give a card in
+  Checkout (`payment_method_collection: always`). Onboarding writes `billing_accounts` with
+  `card_required` and `trial_days` (30 for the owner's first company, 0 for more;
+  `requireBillingCard`, migration `0084_card_at_signup`, `stripe_customer_id` now nullable).
+  Until Stripe confirms, the entitlement is `needs_card` and the org layout sends everyone to
+  `/start/<slug>` (members who aren't owners are told to ask the owner). While Stripe's trial runs
+  (`trialing`), everything is open (`trial`, `trialEndsOn` = the day before the charge); Stripe
+  charges on day 31 unless the plan is cancelled in the portal; then the plan decides as usual.
+  `signupTrialDays` gives the trial once: a plan cancelled and chosen again is charged at once.
+  BILLING_STARTS_ON and early access don't apply to these companies. Companies from before carry
+  on as they were (early access, then their 30 days), and their owners see a banner asking for a
+  card throughout the trial. With no Stripe key nothing is asked and companies open as before.
 - **Using a module in part** (`partly`, `Entitlement.partly`, `mayChange`): Review requests only
   keeps Commerce read-only except its connections (`CONNECTION_AREA`): connecting, testing and
   disconnecting marketplaces, adding and switching channels, who ships, and bringing in orders

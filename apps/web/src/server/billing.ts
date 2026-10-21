@@ -12,6 +12,7 @@ import { type BillingState, getBilling, type Transaction } from "@bookalyze/db";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { env } from "./env";
+import { stripeConfigured } from "./stripe";
 
 export type OrgBilling = {
   entitlement: Entitlement;
@@ -37,9 +38,16 @@ export async function loadOrgBilling(
           status: state.subscription.status,
           items: state.items.map((i) => i.itemKey),
           paymentFailedAt: state.subscription.paymentFailedAt,
+          currentPeriodEnd: state.subscription.currentPeriodEnd,
         }
       : null,
-    { now, billingStartsOn, companyCreatedOn: company.createdOn },
+    {
+      now,
+      billingStartsOn,
+      companyCreatedOn: company.createdOn,
+      // Asked for a card at sign-up; without Stripe set up nothing can be bought, so it's free.
+      cardRequired: Boolean(state.account?.cardRequired) && stripeConfigured(),
+    },
   );
   return {
     entitlement,

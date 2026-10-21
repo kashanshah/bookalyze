@@ -64,7 +64,7 @@ export function SignUpForm({
         description={
           inviteOnly
             ? "Bookalyze is invite-only for now. Use the email address your invitation was sent to."
-            : "Set up your books in a few minutes. No card needed."
+            : "Set up your books in a few minutes. 30 days free; cancel any time."
         }
       />
       <div className="grid gap-5">

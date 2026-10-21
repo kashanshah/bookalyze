@@ -108,6 +108,8 @@ export async function createCheckoutSession(input: {
     customer: input.customerId,
     client_reference_id: input.orgId,
     line_items: input.priceIds.map((price) => ({ price, quantity: 1 })),
+    // The card is taken now, even when the first charge is after a free trial.
+    payment_method_collection: "always",
     metadata: { organization_id: input.orgId },
     subscription_data: {
       metadata: { organization_id: input.orgId },

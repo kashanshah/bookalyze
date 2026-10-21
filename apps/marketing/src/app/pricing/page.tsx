@@ -8,7 +8,7 @@ import { PricingTable } from "./pricing-table";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Simple monthly packages per company: Books $9, Seller $19, Seller Plus $29, or Amazon review requests on their own for $9, with unlimited users, orders and marketplaces. Free during early access.",
+    "Simple monthly packages per company: Books $9, Seller $19, Seller Plus $29, or Amazon review requests on their own for $9, with unlimited users, orders and marketplaces. 30 days free; cancel any time.",
   alternates: { canonical: "/pricing" },
 };
 
@@ -21,16 +21,16 @@ const EVERY_PLAN = [
 
 const FAQ: Question[] = [
   {
-    q: "Is it really free right now?",
-    a: "Yes. During early access every feature is free, for as many companies as you run, and we don't ask for a card. The prices here are what plans will cost once billing starts.",
+    q: "How does the free trial work?",
+    a: "Your first company gets 30 days of everything, with nothing held back, whichever plan you choose. You choose a plan and give a card when you sign up; it's charged on day 31, then every month or year. Change plan any time before then.",
   },
   {
-    q: "When does billing start?",
-    a: "Not yet. We'll email you at least 30 days before it does, and nothing is charged unless you choose a plan.",
+    q: "Can I cancel before I'm charged?",
+    a: "Yes, any time, in Plan and billing. Cancel before day 31 and nothing is charged. After that, a plan stops at the end of the month or year you've paid for, and nothing in your books is deleted.",
   },
   {
-    q: "Is there a free trial?",
-    a: "Yes. Once billing starts, every company gets 30 days of everything, with nothing held back and no card needed. New companies get it from the day they're created. Choose a plan before it ends to keep what you use; anything you don't keep turns read-only, and nothing is deleted.",
+    q: "Is the trial per company?",
+    a: "The 30 days are for your first company. Companies you add after that start on their plan straight away.",
   },
   {
     q: "Can I buy only review requests?",
@@ -78,7 +78,7 @@ export default function PricingPage() {
           <SectionHeading
             as="h1"
             eyebrow="Pricing"
-            title="One simple price per company. Free during early access."
+            title="One simple price per company. 30 days free."
             lead="Packages of modules that work together, and small add-ons. Pay for what each business uses; drop something and the rest keeps working."
           />
         </div>

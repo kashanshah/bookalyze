@@ -33,10 +33,13 @@ export function PlanPicker({
   slug,
   suggested,
   canBuy,
+  cta = "Continue to payment",
 }: {
   slug: string;
   suggested: { package: PackageKey; addOns: readonly AddOnKey[] };
   canBuy: boolean;
+  /** The button's label, e.g. "Start 30 days free" at sign-up. */
+  cta?: string;
 }) {
   const [interval, setInterval] = useState<BillingInterval>("month");
   const [pkg, setPkg] = useState<PackageKey>(suggested.package);
@@ -170,7 +173,7 @@ export function PlanPicker({
           }
         >
           {pending ? <Spinner /> : <CreditCard />}
-          Continue to payment
+          {cta}
         </Button>
       </div>
     </div>

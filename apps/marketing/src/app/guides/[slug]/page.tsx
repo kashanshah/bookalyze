@@ -122,7 +122,7 @@ export default async function GuidePage({ params }: { params: Promise<{ slug: st
         </nav>
         <div className="grid gap-3 rounded-2xl border bg-card p-5 shadow-xs">
           <p className="font-medium text-sm">Try it yourself</p>
-          <p className="text-muted-foreground text-sm leading-6">Free during early access.</p>
+          <p className="text-muted-foreground text-sm leading-6">30 days free. Cancel any time.</p>
           <ButtonLink href={SIGN_UP_URL} size="sm">
             Start free
           </ButtonLink>

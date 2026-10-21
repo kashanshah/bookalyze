@@ -84,7 +84,7 @@ const FEATURES = [
 const FAQ: Question[] = [
   {
     q: "What does it cost?",
-    a: "Nothing during early access, with every feature included. Paid plans start at $9 a month per company; see Pricing. We'll tell you at least 30 days before anything changes, and nothing is charged unless you choose a plan.",
+    a: "Plans start at $9 a month per company; see Pricing. Your first company gets 30 days free with every feature included. We take a card when you sign up and charge it on day 31; cancel any time before then and nothing is charged.",
   },
   {
     q: "Which marketplaces can I connect?",
@@ -121,7 +121,7 @@ export default function HomePage() {
           <div className="fade-in-0 slide-in-from-bottom-3 grid animate-in justify-items-start gap-6 duration-700">
             <p className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 font-medium text-sm shadow-xs">
               <span className="size-2 rounded-full bg-success" />
-              Free during early access
+              30 days free on every plan
             </p>
             <h1 className="text-balance font-semibold text-4xl tracking-tight sm:text-5xl lg:text-6xl">
               Accounting built for Amazon, Walmart and Noon sellers.
@@ -153,7 +153,9 @@ export default function HomePage() {
                 Am I making money?
               </ButtonLink>
             </div>
-            <p className="text-muted-foreground text-sm">No card needed. Set up in an afternoon.</p>
+            <p className="text-muted-foreground text-sm">
+              30 days free, then from $9 a month. Cancel any time.
+            </p>
           </div>
           <div className="fade-in-0 slide-in-from-bottom-6 animate-in fill-mode-both delay-150 duration-700">
             <PayoutsPreview />

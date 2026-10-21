@@ -173,7 +173,13 @@ Test mode until the owner decides otherwise. Nothing is gated before `BILLING_ST
    `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`,
    `invoice.paid`. Its signing secret → `STRIPE_WEBHOOK_SECRET`.
 4. **Settings → Billing → Customer portal**: let customers update payment methods, see invoices,
-   cancel, and switch between the products above (so an add-on can be added or removed).
+   cancel (**at the end of the billing period**, so cancelling during the 30-day trial means no
+   charge), and switch between the products above (so an add-on can be added or removed).
+
+   **Sign-up asks for a card** as soon as `STRIPE_SECRET_KEY` is set: a new company's last step
+   is Stripe Checkout. With a **test** key (`sk_test_…`), Checkout only accepts Stripe's test cards
+   (4242 4242 4242 4242), so real people can't finish signing up. Set the key in production only
+   together with live keys (`STRIPE_LIVE=true`), or leave it unset until then.
 5. `BILLING_STARTS_ON=YYYY-MM-DD` when billing should start; leave it unset for early access.
    Every company then gets a 30-day free trial of everything (from that day, or from its creation
    if later); nothing is charged before it ends. One company can start earlier (or later) with

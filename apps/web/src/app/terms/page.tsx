@@ -64,12 +64,15 @@ const sections: LegalSection[] = [
     ),
   },
   {
-    title: "Early access and pricing",
+    title: "Plans, the free trial and cancelling",
     body: (
       <p>
-        Bookalyze is in early access and free to use. Features may change as we improve them. Paid
-        plans will come later: we'll tell account owners by email well before any charge, and
-        nothing is charged unless you choose a plan.
+        Each company has its own plan, chosen with a card when the company is set up. An owner's
+        first company is free for 30 days; the card is then charged for the plan, and again every
+        month or year until the plan is cancelled. Cancel any time in Plan and billing: before the
+        first charge, nothing is charged; after it, the plan ends with the period already paid for.
+        Companies set up before cards were asked for keep their free period, and their owners are
+        asked for a card before it ends. Features may change as we improve them.
       </p>
     ),
   },
@@ -113,8 +116,8 @@ const sections: LegalSection[] = [
     body: (
       <>
         <p>
-          We work hard to keep Bookalyze accurate, secure and available, but during early access it
-          is provided as it is, without promises that it will always be available or free of errors.
+          We work hard to keep Bookalyze accurate, secure and available, but it is provided as it
+          is, without promises that it will always be available or free of errors.
         </p>
         <p>
           As far as the law allows, we aren't liable for indirect losses, such as lost profits or

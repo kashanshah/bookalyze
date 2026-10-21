@@ -1,6 +1,7 @@
 import { trialDaysLeft } from "@bookalyze/core";
 import { Gift, Lock } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { Sidebar, SidebarContent } from "@/components/shell/sidebar";
 import { readOnlyLabels } from "@/server/billing";
@@ -15,12 +16,14 @@ export default async function OrgLayout({
 }) {
   const { slug } = await params;
   const ctx = await getOrgContext(slug);
+  // Created since sign-up asks for a card, and no plan chosen yet: finish that first.
+  if (ctx.billing.entitlement.mode === "needs_card") redirect(`/start/${slug}`);
   const orgs = await listUserOrgs(ctx.session.user.id);
-  // The trial's last week, while no plan is chosen: a reminder on every page.
+  // The trial, while no card or plan has been given: owners are asked on every page.
   const trialLeft = trialDaysLeft(ctx.billing.entitlement.trialEndsOn);
   const trialEnding =
     ctx.billing.entitlement.mode === "trial" &&
-    trialLeft <= 7 &&
+    ctx.role === "owner" &&
     !ctx.billing.state.subscription?.status.match(/^(active|trialing)$/);
   return (
     <div className="flex min-h-dvh">
@@ -40,14 +43,15 @@ export default async function OrgLayout({
             <p className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm print:hidden">
               <Gift className="size-4 shrink-0 text-primary" />
               <span className="flex-1">
-                Your free trial ends in {trialLeft} {trialLeft === 1 ? "day" : "days"}. Choose a
-                plan to keep what you use; nothing is deleted either way.
+                Your free trial ends in {trialLeft} {trialLeft === 1 ? "day" : "days"}. Add a card
+                and choose a plan to keep what you use; nothing is charged before it ends, and
+                nothing is deleted either way.
               </span>
               <Link
                 href={`/o/${slug}/settings/billing`}
                 className="basis-full ps-6 font-medium text-primary underline-offset-4 hover:underline sm:basis-auto sm:ps-0"
               >
-                Choose a plan
+                Add a card
               </Link>
             </p>
           ) : null}

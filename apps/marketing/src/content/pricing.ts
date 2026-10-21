@@ -2,7 +2,7 @@
  * Packages and add-ons (docs/GROWTH-PLAN.md §2, "Pricing"). USD per company per month; yearly is
  * ten months (two months free). Unlimited users, orders and marketplaces. Billing in the app
  * (workstream C) uses the same table from `packages/core`; keep the two in step.
- * Nothing is charged during early access.
+ * An owner's first company is free for 30 days; the card given at sign-up is charged on day 31.
  */
 
 export type Interval = "month" | "year";
