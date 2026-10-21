@@ -24,6 +24,8 @@ export const productSchema = z.object({
       (v) => v === null || (/^\d+(\.\d{1,4})?$/.test(v) && Number(v) > 0 && Number(v) < 1e8),
       "Enter a weight like 0.45, or leave it empty.",
     ),
+  tracksStock: z.boolean().optional(),
+  inStock: z.boolean().optional(),
 });
 export type ProductFormInput = z.input<typeof productSchema>;
 

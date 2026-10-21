@@ -137,7 +137,7 @@ export async function stockOverview(
         join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku
         where ps.product_id = p.id and cs.fulfillable is not null and ${walmartSku})::int as wfs_held
     from products p
-    where not p.is_archived
+    where not p.is_archived and p.tracks_stock
       and (exists (select 1 from inventory_lots l where l.product_id = p.id)
         or exists (select 1 from product_skus ps join channel_skus cs
           on cs.channel_id = ps.channel_id and cs.sku = ps.sku where ps.product_id = p.id)
