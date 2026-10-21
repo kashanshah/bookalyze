@@ -7,8 +7,8 @@ done into STATUS.md (§2) in the same PR, as usual.
 
 | # | Workstream | Where | State |
 |---|---|---|---|
-| A | Public site: positioning, Walmart, marketplace and country pages, Contact, Guides (knowledge base), Help centre | `apps/marketing` | **Started**: content data written, pages not yet |
-| B | Pricing: packages of linked modules plus add-ons, monthly, on the site | `apps/marketing` (pricing page) | Decided below, page not yet |
+| A | Public site: positioning, Walmart, marketplace and country pages, Contact, Guides (knowledge base), Help centre | `apps/marketing` | **Done in code** (PR #167): every page and all 60 guides; the contact form waits on the owner's Resend key |
+| B | Pricing: packages of linked modules plus add-ons, monthly, on the site | `apps/marketing` (pricing page) | **Done in code** (PR #167): packages, add-ons, monthly/yearly, "Free during early access" |
 | C | Billing in the app: subscriptions per company, per module | `apps/web`, `packages/core`, `packages/db` | Not started |
 | D | Help & support: support tickets in the app, email replies, the site's contact form feeding them | `apps/web`, `packages/db`, `apps/marketing` | Not started |
 
@@ -143,7 +143,7 @@ check at 390px, pictures drawn in code with made-up data (`components/previews.t
   `check`, `note`, `table`; `**bold**`).
 
 **To do:**
-1. [ ] **Walmart everywhere, and the new order** (Amazon, Walmart, Noon, eBay):
+1. [x] **Walmart everywhere, and the new order** (Amazon, Walmart, Noon, eBay):
    `components/marketplaces.tsx` (read `content/marketplaces.ts`; 2×2 cards, each linking to
    `/marketplaces/<slug>`), `components/flow.tsx` (four sources: wide `ys = [12,104,196,288]`;
    tall: four boxes 84 wide at `xs = [0,92,184,276]`, wires from `x + 42`; results stay three),
@@ -152,22 +152,22 @@ check at 390px, pictures drawn in code with made-up data (`components/previews.t
    `app/features/page.tsx` (metadata; WFS stock with FBA and FBN), `app/pricing/page.tsx`,
    `app/page.tsx` (`CONNECTS`, FAQ "Which marketplaces", hero copy). Previews may show a Walmart
    row where natural (`PayoutsPreview`, `SettlementPreview`).
-2. [ ] **Home rewrite** around §2: hero ("Accounting built for Amazon, Walmart and Noon sellers",
+2. [x] **Home rewrite** around §2: hero ("Accounting built for Amazon, Walmart and Noon sellers",
    lead naming the six countries), "Are you really making money?" (the snapshot: the
    `ProfitWaterfall`, with copy on finding out too late), pains → answers, how it works
    (`MoneyFlow`), marketplaces, **three highlight sections** (Wise sync with a bank-feed preview;
    review requests with `ReviewsPreview`; buyer invoices with a new `InvoicePreview`: an order →
    "Create invoice" → bilingual PDF → "Sent to the buyer"), countries grid (flag, name, its
    marketplaces, link), multi-company, safety, FAQ, CTA.
-3. [ ] **Marketplace pages** `app/marketplaces/[slug]/page.tsx` (`generateStaticParams` from
+3. [x] **Marketplace pages** `app/marketplaces/[slug]/page.tsx` (`generateStaticParams` from
    `MARKETPLACES`, `notFound()` otherwise, metadata per page): intro, "brings" checklist,
    connect steps, sections, FAQ (`Faq`), related guides, countries it serves, CTA. Header nav
    "Marketplaces" becomes a link to `/marketplaces` (an index of the four) or a small menu.
-4. [ ] **Country pages** `app/sellers/[country]/page.tsx` from `COUNTRIES`: title/lead, the
+4. [x] **Country pages** `app/sellers/[country]/page.tsx` from `COUNTRIES`: title/lead, the
    marketplaces there (cards linking to their pages), points, the pains block, FAQ, CTA.
    `/sellers` lists all six. Metadata per page (e.g. "Accounting for Amazon.ae and Noon sellers in
    the UAE").
-5. [ ] **Contact** `app/contact/page.tsx` (+ `contact-form.tsx` client with `useActionState`,
+5. [x] **Contact** `app/contact/page.tsx` (+ `contact-form.tsx` client with `useActionState`,
    `actions.ts` server action): name, email, company (optional), topic (A question about
    Bookalyze · Help with my account · A marketplace or country you don't cover yet · Partnerships
    and press · Something else), message; inline errors, pending state, a thank-you state; the
@@ -175,7 +175,7 @@ check at 390px, pictures drawn in code with made-up data (`components/previews.t
    version as `apps/web`). In development without `RESEND_API_KEY`, log the message and succeed;
    in production without it, say email isn't set up and `console.error`. Footer "Contact" →
    `/contact` (keep the mailto as a line on the page).
-6. [ ] **Guides (knowledge base)** `app/guides/page.tsx` (categories, a client-side search box
+6. [x] **Guides (knowledge base)** `app/guides/page.tsx` (categories, a client-side search box
    over titles and summaries, `?q=`), `app/guides/[slug]/page.tsx` (breadcrumb, title, summary,
    an "On this page" list of section headings, the blocks, related guides, "Was this helpful?
    Contact us" → `/contact?topic=help`), a renderer `components/guide-blocks.tsx` for the block
@@ -183,18 +183,20 @@ check at 390px, pictures drawn in code with made-up data (`components/previews.t
    you should see", `note` tip/caution boxes). Content in `src/content/guides/<category>.ts`,
    collected in `src/content/guides/index.ts` (`GUIDES`, `CATEGORIES`, `guide(slug)`). The full
    list is §6 below. Write them from STATUS.md §2 (it says exactly what each screen does).
-7. [ ] **Help centre** `app/help/page.tsx`: search the guides, popular guides, categories, "Still
+7. [x] **Help centre** `app/help/page.tsx`: search the guides, popular guides, categories, "Still
    stuck?" → open a ticket (in the app, once D lands: `APP_URL/help`), or the contact form; the
    status of the service isn't shown (no status page yet). Header: "Guides" and "Help"; footer:
    a **Resources** column (Guides, Help & support, Contact) and **Sellers in** (the six
    countries).
-8. [ ] **Sitemap** (`app/sitemap.ts`): add `/marketplaces`, each marketplace, `/sellers`, each
+8. [x] **Sitemap** (`app/sitemap.ts`): add `/marketplaces`, each marketplace, `/sellers`, each
    country, `/guides`, each guide, `/help`, `/contact`.
-9. [ ] **Docs:** `apps/marketing/README.md` (the content folder, how to add a guide, env vars),
+9. [x] **Docs:** `apps/marketing/README.md` (the content folder, how to add a guide, env vars),
    `docs/SETUP.md` → Public site (the three env vars), STATUS.md §2 "The public site".
-10. [ ] **Check:** `pnpm --filter @bookalyze/marketing build` and `typecheck`, `pnpm lint`;
+10. [x] **Check:** `pnpm --filter @bookalyze/marketing build` and `typecheck`, `pnpm lint`;
     every new page at 390px and in dark mode; the contact form end to end on the Vercel preview
-    (with the env vars set for Preview too).
+    (with the env vars set for Preview too). _Done except the last: the preview needs the owner's
+    `RESEND_API_KEY` (§7). Locally, without the key, the form logs the message and thanks the
+    visitor._
 
 ## 4. Workstream C: billing in the app (module-based subscriptions)
 
@@ -356,3 +358,40 @@ reconcile).
 - [ ] Confirm `hello@bookalyze.com` receives mail.
 - [ ] Confirm the prices in §2; then Stripe (C).
 - [ ] `SIGNUP_MODE=open` on the app's project when the site goes out with "Start free".
+- [ ] Read the guides (`/guides` on the PR #167 preview) for anything that doesn't match how you
+      use the app, above all: the Gmail forwarding steps (`invoice-requests`), the Wise strong
+      customer authentication "Not yet", and the compliance calendar's dates. They were written
+      from STATUS.md §2, not from a live account.
+- [ ] Send one message through the preview's contact form once `RESEND_API_KEY` is set for
+      Preview, and check it reaches `CONTACT_TO` with the visitor as reply-to.
+
+## 8. Decisions made overnight (2026-10-21 → 22)
+
+Made without the owner, to keep going; each fits the docs and is easy to change.
+
+**Site (PR #167)**
+- **Header "Marketplaces" is a link** to `/marketplaces` (an index of the four), not a menu: one
+  less moving part on phones.
+- **Contact form:** Resend's REST API with `fetch` (no SDK in the site); reply-to is the visitor.
+  Spam guards are a hidden field, a 3-second minimum and 5 messages per address per 10 minutes,
+  kept in memory per server instance (good enough for a contact form; no database on the site).
+  Topics as in §3 item 5, plus `?topic=` to preselect (Help and guides link `?topic=help`).
+- **No reply-time promise** ("within one working day" was removed): nobody has agreed to one.
+- **Pricing page:** a Monthly / Yearly switch; local prices only for currencies pegged to the
+  dollar (AED 3.6725, SAR 3.75), since others would need a rate we'd be guessing; "Best value" on
+  Seller Plus; the add-ons shown under Seller, with a note that Seller with both costs more than
+  Seller Plus.
+- **Guides all in PR #167** (not split to `claude/site-guides`): they're data files plus one
+  renderer, and the site build and a new test check them together.
+- **Listing watch and Amazon prices** sit under "Reviews and listings", as §6 lists them.
+- **Worked examples use made-up numbers and say so** (an AED 10,000 payout at 1 AED = 0.3720
+  CAD; 500 mugs at USD 2.00 + USD 250 freight).
+- **"Not yet" where the app isn't there:** daily rates for the riyal and Egyptian pound (the Bank
+  of Canada doesn't publish them), Wise profiles that need strong customer authentication,
+  sending invoices through Walmart/Noon/eBay, a read-only team role, compliance dates outside
+  Canada and the UAE, comparing report periods.
+- **Paths say what the sidebar says**, e.g. "Entity & compliance → Brand" (not "Company").
+- **A test for the content** (`apps/marketing/src/content/guides/guides.test.ts`, run by
+  `pnpm test`): unique slugs, and every guide linked from a page, the content files or another
+  guide exists, so a renamed guide can't leave a 404.
+
