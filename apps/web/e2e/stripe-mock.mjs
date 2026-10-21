@@ -259,4 +259,4 @@ createServer(async (req, res) => {
     });
   }
   return json(res, 404, { error: { message: `No stand-in for ${req.method} ${path}` } });
-}).listen(port, () => console.log(`[stripe-mock] listening on ${port}`));
+}).listen(port);
