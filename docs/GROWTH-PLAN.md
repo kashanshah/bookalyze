@@ -336,9 +336,10 @@ reconcile).
 ## 7. Owner actions
 
 - [ ] Resend: a sending-only API key for the site on the `bookalyze-site` Vercel project
-      (Production and Preview), plus `CONTACT_TO` / `CONTACT_FROM` if not the defaults. (The
-      agent can do this from the owner's machine with the Vercel CLI without the key appearing in
-      chat; a cloud session can't.)
+      (Production and Preview), plus `CONTACT_TO` / `CONTACT_FROM` if not the defaults. The
+      app's key is a sensitive Vercel variable and can't be read back, so make a new one: Resend →
+      API Keys → Create, permission **Sending access**, domain **bookalyze.com**; then Vercel →
+      bookalyze-site → Settings → Environment Variables → `RESEND_API_KEY`, and redeploy.
 - [ ] Confirm `hello@bookalyze.com` receives mail.
 - [ ] Confirm the prices in §2; then Stripe (C).
 - [ ] `SIGNUP_MODE=open` on the app's project when the site goes out with "Start free".
