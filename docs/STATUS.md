@@ -3337,14 +3337,21 @@ Built like Noon and eBay: channels first, then the account, orders, money and th
 ### Advertising: profit after ads (docs/ADS.md)
 1. [x] **The ad metrics store, Amazon Ads (Sponsored Products and Brands), Profit by product.**
    Done in slice 1.
-2. [ ] **Noon**: first check Noon's "Reports this key can download" for an ads report; otherwise an
+2. [ ] **SKU profit and loss, exact** (docs/ADS.md §6b; the main output): any date range, every
+   SKU or one, its waterfall (units sold and returned, gross sales, promotions, refunds, referral,
+   fulfilment, other fees, COGS, ads, profit, margin, per unit, TACOS) with each amount marked
+   actual or estimated; a drill-down per channel in its currency. Needs Amazon settlement amounts
+   kept by SKU (new table, parser change; refill by bringing settlements in again); Noon and
+   Walmart rows read by SKU; eBay through orders; COGS from lot consumptions. Works without
+   Amazon Ads.
+3. [ ] **Noon**: first check Noon's "Reports this key can download" for an ads report; otherwise an
    upload of Ad Manager's CSV/XLSX export into `ad_metrics` (`source = 'upload'`), its SKUs matched
    to Noon channels' Partner SKUs.
-3. [ ] **eBay Promoted Listings** through the Marketing API (`ad_type = promoted_listings`).
-4. [ ] **Sponsored Display** (`sdAdvertisedProduct`, per SKU).
-5. [ ] Optional: Sponsored Brands allocated by each ASIN's share of its attributed sales
+4. [ ] **eBay Promoted Listings** through the Marketing API (`ad_type = promoted_listings`).
+5. [ ] **Sponsored Display** (`sdAdvertisedProduct`, per SKU).
+6. [ ] Optional: Sponsored Brands allocated by each ASIN's share of its attributed sales
    (`sbPurchasedProduct`), as a choice.
-6. [ ] **Walmart Connect**, only once API access is confirmed.
+7. [ ] **Walmart Connect**, only once API access is confirmed.
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.

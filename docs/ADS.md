@@ -176,6 +176,56 @@ One row per SKU (product name when linked), sorted by profit after ads, worst fi
 - **Cost missing**: the SKU isn't linked to a product, or the product has no cost yet.
 - **Healthy**.
 
+## 6b. The SKU profit and loss (the main output)
+
+What the owner wants from all this: pick one SKU, or see every SKU, for **any date range**, and
+see exactly what it made or lost. Layout: a summary row per SKU (all channels, in the main
+currency), a drill-down per channel (in the channel's currency, original amounts kept), and a
+breakdown for one SKU as a waterfall:
+
+| Step | Source | Actual or estimated |
+|---|---|---|
+| Units sold and returned | Order lines; refunds on orders (`orders.refunded`, by item price share) | Actual |
+| Gross sales, promotions and coupons | Order lines (item price, promotion discount) | Actual |
+| Refunds | Settlement/transaction refund lines with the SKU; else order refunds | Actual when the rows carry the SKU |
+| Referral / commission | Settlement and transaction rows with the SKU | Actual per SKU (see below), else **estimated** by the keep rate |
+| FBA / fulfilment | Same | Same |
+| Storage, subscription, other account-level fees | Settlement lines with no SKU | Allocated by units (estimated, said so) |
+| Cost of goods | Lot consumptions of posted COGS months (actual); units × next unit cost for months not posted | Actual / estimated |
+| Ad spend | `ad_metrics` per SKU; Sponsored Brands allocated by each ASIN's share of SB-attributed sales when chosen, else its own line | Actual (reports); attribution can still change for 14 days → **estimated** for the last 14 days |
+| Profit, margin, per unit, TACOS | Computed | Estimated if any part is |
+
+Honesty rules: orders not yet in a settlement are **estimated** (fees by the keep rate); ads in
+the last 14 days are **estimated** (attribution moves); a period shows "x% actual" and each cell
+is marked when estimated. Ad cost without Amazon Ads shows "not connected yet", and the view
+works without it. Every amount converts to the main currency at its day's rate; the channel
+drill-down shows the original currency. CSV export of all of it.
+
+**Per-SKU fees, by marketplace, with today's data:**
+- **Noon**: `noon_transactions` keep each row with its SKU and partner SKU → actual today.
+- **Walmart**: `walmart_settlement_rows.data` keeps each report row whole (with its SKU column)
+  → actual today, once the column is read.
+- **Amazon**: settlements are stored **summed by kind** (`settlement_lines`), without the
+  flat file's `sku` and `order-id`. Exact per-SKU fees need a new table of settlement amounts by
+  SKU (and order), filled when a settlement is brought in or uploaded; settlements already in are
+  filled by bringing them in again (Amazon lists them for months) or re-uploading the file. Until
+  then, Amazon's per-SKU fees are the keep-rate estimate.
+- **eBay**: rows carry the order, not the SKU: matched through the order's lines (exact for
+  one-SKU orders, split by item price otherwise).
+
+**What this PR ships:** Channel profit → By product already is the SKU summary for any date range
+(per channel, every SKU, sales, keep-rate share, product cost, ads, profit before and after ads,
+TACOS, CSV) and works without Amazon Ads. Its marketplace share is the **estimated** keep rate
+for every marketplace.
+
+**PR plan:**
+1. *This PR*: the ad metrics store, Amazon Ads sync, By product (SKU summary, estimated fees).
+2. **SKU P&L, exact**: an Amazon settlement-by-SKU table and parser change; Noon and Walmart rows
+   read by SKU; eBay through orders; one SKU's page with the waterfall and channel drill-down;
+   actual/estimated marks; COGS from lot consumptions; returns; SB allocation as a choice; CSV.
+   Doesn't depend on Amazon Ads (ad cost "not connected yet").
+3. Noon ads upload, eBay Promoted Listings, Sponsored Display, Walmart Connect (§9).
+
 ## 7. Edge cases
 
 - **Spend with no orders**: the SKU still gets a row (its sales are 0, its loss is the spend).
