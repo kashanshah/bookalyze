@@ -15,7 +15,16 @@ import {
   sellerCentralOrderUrl,
 } from "@bookalyze/core";
 import { getOrder, getOrderInvoice, getReviewRequest, invoiceRequestForOrder } from "@bookalyze/db";
-import { ArrowLeft, Download, ExternalLink, FileText, Package, Star, Undo2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Download,
+  ExternalLink,
+  Eye,
+  FileText,
+  Package,
+  Star,
+  Undo2,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -487,6 +496,16 @@ export default async function OrderPage({
                         sent={Boolean(invoice.sentAt)}
                       />
                     ) : null}
+                    <Button asChild variant="outline" size="sm">
+                      <a
+                        href={`/api/o/${slug}/invoices/${invoice.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <Eye />
+                        Preview
+                      </a>
+                    </Button>
                     <Button asChild variant="outline" size="sm">
                       <a href={`/api/o/${slug}/invoices/${invoice.id}?download=1`}>
                         <Download />
