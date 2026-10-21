@@ -9,8 +9,8 @@ done into STATUS.md (§2) in the same PR, as usual.
 |---|---|---|---|
 | A | Public site: positioning, Walmart, marketplace and country pages, Contact, Guides (knowledge base), Help centre | `apps/marketing` | **Done in code** (PR #167): every page and all 60 guides; the contact form waits on the owner's Resend key |
 | B | Pricing: packages of linked modules plus add-ons, monthly, on the site | `apps/marketing` (pricing page) | **Done in code** (PR #167): packages, add-ons, monthly/yearly, "Free during early access" |
-| C | Billing in the app: subscriptions per company, per module | `apps/web`, `packages/core`, `packages/db` | Not started |
-| D | Help & support: support tickets in the app, email replies, the site's contact form feeding them | `apps/web`, `packages/db`, `apps/marketing` | Not started |
+| C | Billing in the app: subscriptions per company, per module | `apps/web`, `packages/core`, `packages/db` | **In progress** on `claude/billing` (Stripe test mode and a stand-in) |
+| D | Help & support: support tickets in the app, email replies, the site's contact form feeding them | `apps/web`, `packages/db`, `apps/marketing` | **Done in code**: [PR #169](https://github.com/kashanshah/bookalyze/pull/169) (tickets, desk, email replies, intake); the site's form calls the intake from this PR |
 
 A and B are one PR (or two: site pages, then guides). C and D are separate PRs, and can run in
 parallel with A (they don't touch the same files, except D's last step, which wires the site's
@@ -349,6 +349,11 @@ Bookalyze offers: settlement balanced, Noon balance check, stock compared, bank 
 reconcile).
 
 ## 7. Owner actions
+
+- [ ] Support (PR #169): generate `SUPPORT_INTAKE_SECRET` (`openssl rand -hex 32`) and set it on
+      the app's Vercel project and on `bookalyze-site`, plus
+      `SUPPORT_INTAKE_URL=https://app.bookalyze.com/api/support/intake` on the site. Until then the
+      form emails `CONTACT_TO`.
 
 - [ ] Resend: a sending-only API key for the site on the `bookalyze-site` Vercel project
       (Production and Preview), plus `CONTACT_TO` / `CONTACT_FROM` if not the defaults. The
