@@ -2650,8 +2650,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Each year's **Put in** and **Took out** on Your stake (and the All years total) opens
   **Put in and taken out** (`reports/your-stake/transactions?from&to&date&way=in|out`): every
   line on an owner account in those dates, each read the way its account counts on the stake's
-  day (a line against it, negative: a correction), with Both / Put in / Took out tabs and totals
-  that match the year. Lines open their journal entry. The year table's Net column is now
+  day (a line against it, negative: a correction; an account at zero counts the way its lines
+  in those dates net, core `stakeLines`, so an entry and its reversal cancel), with Both / Put in
+  / Took out tabs and totals that match the year. Lines open their journal entry. The year table's Net column is now
   "Net put in". core `ownerDirections`, `stakeLine`, `isOwnerAccount`; db `ownerLines`; web
   `loadStakeLines`. Tests: core `stake.test.ts`, db `reports.test.ts`.
 

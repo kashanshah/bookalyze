@@ -12,7 +12,7 @@ import {
   parseDecimal,
   profitAndLoss,
   salesTaxSummary,
-  stakeLine,
+  stakeLines,
   trialBalance,
   yourStake,
 } from "@bookalyze/core";
@@ -126,10 +126,7 @@ export async function loadStakeLines(
     asOf: await accountBalances(tx, { to: date }),
   }));
   const ways = ownerDirections(asOf);
-  const all = lines.map((line) => ({
-    ...line,
-    ...stakeLine(ways.get(line.accountId), line.amount),
-  }));
+  const all = stakeLines(lines, ways);
   const sum = (w: "in" | "out") =>
     formatDecimal(all.filter((l) => l.way === w).reduce((t, l) => t + parseDecimal(l.amount), 0n));
   return {
