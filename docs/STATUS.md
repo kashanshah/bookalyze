@@ -14,10 +14,9 @@ Cursor, Copilot…).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
   - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
-_Last updated: 2026-10-21, phase 4e slice 4d: a Walmart settlement report uploaded from Seller
-Center, kept like the API's, in place of the same settlement when it's already in. Before it,
-advertising slice 1: ad spend per product per day from Amazon Ads, and each product's profit after
-ads (Channel profit → By product)._
+_Last updated: 2026-10-22, advertising slice 3: Walmart Connect, ad spend per Walmart item per day
+through Bookalyze as an API partner, matched to SKUs and in Profit by product. Before it,
+advertising slice 2: the SKU profit and loss._
 
 ---
 
@@ -34,7 +33,7 @@ ads (Channel profit → By product)._
 | 5. Inventory & COGS | **Done.** Slice 1 (products, marketplace SKUs linked to them with units per listing, SKUs from orders not linked yet), slice 2 (purchase orders to suppliers, deliveries received in parts), slice 3 (landed costs, FIFO stock lots) slice 4 (opening stock, monthly cost of goods sold) slice 5 (FBA inventory ledger: returns back into stock, losses written off), slice 6 (bundles), slice 7 (a purchase order filled in from an Alibaba.com receipt) and slice 8 (paying for purchase orders: a payment plan, payments to the supplier and to others) and slice 9 (purchases in the books: payments on Supplier deposits, deliveries into Inventory, settling the difference) slice 10 (a freight payment is its delivery's cost) and slice 11 (Amazon prices: each listing's price next to its cost, a change with Amazon's fees and the profit first) done. Next: Noon (phase 4c), with bundles from day one |
 | 4c. Noon | **In progress.** Built as a product: UAE, KSA and Egypt, FBN and FBP. Slices 1 (Noon channels, added by hand, with who ships the orders), 2 (connect Noon's API with the service-account key file) 3a (Noon's reports by API, with a check of the payouts report's columns) 3b (Noon transactions: the transaction view kept row by row, a year back by API or by upload, with monthly totals) 4 (Noon in the books: each country's month as one entry to a Noon balance, payouts matched to their bank deposits, a balance check) 5 (Noon in the daily job, with automatic posting, and in Channel profit) 6 (Noon orders, made from the transaction view; they feed cost of goods sold once their SKUs are linked) 7 (every report the key can download, each with a check of its columns) and 8 (FBN stock: Noon's FBN inventory ledger, returns back into stock and losses written off; what Noon holds beside your lots, and Noon's summary checking its ledger day by day) done. Kazomo's Noon months from March are posted and its payouts matched; the books agree with Noon. Next: Kazomo's FBN transaction types checked against what Stock movements lists as not counted, then FBP stock (the seller's own warehouses). Kazomo isn't VAT-registered, so VAT inside Noon's fees is a cost, as posted. See §3 "Phase 4c" |
 | 4d. eBay | **In progress.** Built as a product: any eBay site (US, Canada, UK, Australia, Germany, France, Italy, Spain), the seller ships. Slices 1 (eBay sites added by hand as channels, SKUs linkable), 2 (Connect eBay: consent through Bookalyze's one eBay app, tokens in the vault, account-deletion notices), 3 (eBay orders from the Fulfillment API, in cost of goods sold), 4 (eBay money: the Finances API's rows by month, in Channel profit) 5 (payouts and posting: each site's month as one entry to an eBay balance account, payouts matched to bank deposits, in the daily job) and 6 (Seller Hub's transaction report upload, with the API's rows winning on days it has) done. Next: eBay's digital signatures for EU and UK sellers. See §3 "Phase 4d" |
-| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) 2 (connect Walmart: each country's seller account with its own API key) 3 (orders from the Orders API, the seller's and WFS's) 4a (settlement reports listed, one checked without keeping anything) 4b-1 (settlements brought in and kept row by row) 4b-2 (each settlement read into the books, its payout matched to the bank deposit, the daily job) 4c (in Channel profit), 4d (Seller Center's report uploaded), 5 (WFS stock) and 6 (WFS returns and losses) done. Next: confirm the reading on a live account's reports and WFS log. See §3 "Phase 4e" |
+| 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) 2 (connect Walmart: each country's seller account with its own API key) 3 (orders from the Orders API, the seller's and WFS's) 4a (settlement reports listed, one checked without keeping anything) 4b-1 (settlements brought in and kept row by row) 4b-2 (each settlement read into the books, its payout matched to the bank deposit, the daily job) 4c (in Channel profit), 4d (Seller Center's report uploaded), 5 (WFS stock) and 6 (WFS returns and losses) done, and Walmart Connect's ad spend per item (advertising slice 3). Next: confirm the reading on a live account's reports and WFS log. See §3 "Phase 4e" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
 `/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
@@ -1723,6 +1722,39 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   vault (encryption key) problems, member and password errors.
 - Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
   paths kept, cause chains, Postgres codes and digests).
+
+### Advertising, slice 3: Walmart Connect
+
+- **Bookalyze as a Walmart Connect API partner** (web `server/walmart-ads.ts`): every call is
+  signed with the partner's private key (RSA-SHA256 over consumer ID, time and key version; core
+  `walmartAdsSignedText`) and carries the partner token (env `WALMART_ADS_CONSUMER_ID`,
+  `WALMART_ADS_PRIVATE_KEY`, `WALMART_ADS_KEY_VERSION`, `WALMART_ADS_TOKEN`,
+  `WALMART_ADS_API_URL`; docs/SETUP.md → Walmart Connect). Without them the card says it isn't
+  available on this server.
+- **Linking** (Walmart channel page → **Walmart Connect**, admins, with payouts in the plan): the
+  advertiser adds Bookalyze in Ad Center (Admin → API partners), then enters its advertiser ID;
+  "Check and link" lists its campaigns to confirm access (a refusal says, next to the field, how
+  to give it) and keeps a connection `walmart_ads` (no secret; settings advertiser and channel;
+  migration `0093_walmart_connect` adds the provider and the `walmart_ads` ad source). Unlink
+  keeps what came in. Audit `connection.created` / `connection.disconnected`.
+- **The item report** (core `walmart-ads.ts`: `walmartAdsReportRequest`, `parseWalmartAdsSnapshot`,
+  `parseWalmartAdsReport`, `nextWalmartAdsWindow`): `adItem` day by day, 30 days the first time
+  and the last 15 every day after (attribution is 14 days), into `ad_metrics` as Sponsored
+  Products (`source = 'walmart_ads'`), replaced by window like Amazon's (web
+  `server/walmart-ads-sync.ts`: `syncWalmartAdsConnection`, `runWalmartAdsJob` in the daily and
+  5-minute jobs). "Bring in ads now" waits up to ~45 seconds.
+- **Items to SKUs:** Walmart's item ID is the listing; each new one is looked up once in the
+  Marketplace catalog with the country's seller key (`POST /v3/items/catalog/search`, core
+  `parseWalmartCatalogSku`) and kept on the SKU list (db `saveChannelSkuListingRef`,
+  `knownListingRefs`; `saveChannelSkus` now keeps a listing ID a stock list doesn't send). Items
+  the catalog doesn't know stay tied to no product; the toast counts them. So Profit by product
+  takes each Walmart SKU's ad spend, ACOS and TACOS, as for Amazon.
+- Built from Walmart's published API before a live account was seen: **check the first report
+  against Ad Center** (field names, base URL).
+- Tests: core `walmart-ads.test.ts` (signing text, request, snapshot states, JSON and CSV
+  reports, catalog SKU, errors, the window); db `ads.test.ts` (item IDs kept on the SKU list and
+  spend finding each SKU); e2e "walmart: link Walmart Connect…" (an advertiser without access
+  refused, linked, ads in by item with one unmatched, Profit by product, unlinked).
 
 ### Advertising, slice 1: profit after ads (Amazon Ads)
 
@@ -3508,7 +3540,8 @@ Built like Noon and eBay: channels first, then the account, orders, money and th
 5. [ ] **Sponsored Display** (`sdAdvertisedProduct`, per SKU).
 6. [ ] Sponsored Brands shared by each ASIN's share of SB-attributed sales (`sbPurchasedProduct`).
    The SKU profit and loss already shares it as a choice, by Sponsored Products ad sales.
-7. [ ] **Walmart Connect**, only once API access is confirmed.
+7. [x] **Walmart Connect** (Sponsored Search, per item, through Bookalyze as an API partner).
+   Done in advertising slice 3.
 
 ### Phase 0 leftovers
 - [x] `CRON_SECRET` is set in Vercel, so the daily rates job runs.

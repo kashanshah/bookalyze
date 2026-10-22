@@ -29,6 +29,7 @@ export * from "./settlements";
 export * from "./sku-pnl";
 export * from "./transaction-report";
 export * from "./walmart";
+export * from "./walmart-ads";
 export * from "./walmart-api";
 export * from "./walmart-inventory";
 export * from "./walmart-inventory-log";

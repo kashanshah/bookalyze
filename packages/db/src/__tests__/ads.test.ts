@@ -6,9 +6,12 @@ import {
   adReportState,
   adsBroughtInThrough,
   finishAdReportRequest,
+  knownListingRefs,
   listAmazonAdsConnections,
+  listWalmartAdsConnections,
   recordAdReportRequest,
   replaceAdMetrics,
+  saveChannelSkuListingRef,
   skuSalesForProfit,
 } from "../ads";
 import { createConnection } from "../banking";
@@ -341,5 +344,51 @@ describe("ad metrics", () => {
         otherOrgId,
       ),
     ).rejects.toThrow();
+  });
+
+  it("keeps Walmart Connect's item IDs on the SKU list, so its spend finds each SKU", async () => {
+    const walmartAds = await scoped((tx) =>
+      createConnection(tx, {
+        orgId,
+        provider: "walmart_ads",
+        name: "Walmart Connect · 600123",
+        settings: { advertiserId: "600123", channelId },
+      }),
+    );
+    expect((await scoped((tx) => listWalmartAdsConnections(tx))).map((c) => c.id)).toEqual([
+      walmartAds.id,
+    ]);
+    expect(await scoped((tx) => knownListingRefs(tx, channelId, ["5551", "5552"]))).toEqual(
+      new Set(),
+    );
+    // An existing SKU takes the item ID; a SKU not on the list yet is added with it.
+    await scoped(async (tx) => {
+      await saveChannelSkuListingRef(tx, { orgId, channelId, sku: "BOARD-TI", listingRef: "5551" });
+      await saveChannelSkuListingRef(tx, { orgId, channelId, sku: "NEW-SKU", listingRef: "5552" });
+    });
+    expect(await scoped((tx) => knownListingRefs(tx, channelId, ["5551", "5552", "9"]))).toEqual(
+      new Set(["5551", "5552"]),
+    );
+    const kept = await replace(
+      [
+        row({ date: "2026-11-02", sku: null, listingRef: "5551", attributionWindow: "14d" }),
+        row({ date: "2026-11-02", sku: null, listingRef: "5552", campaignId: "222" }),
+      ],
+      {
+        source: "walmart_ads",
+        connectionId: walmartAds.id,
+        accountRef: "600123",
+        from: "2026-11-01",
+        to: "2026-11-03",
+      },
+    );
+    expect(kept).toBe(2);
+    const stored = await scoped((tx) =>
+      tx.select().from(schema.adMetrics).where(eq(schema.adMetrics.source, "walmart_ads")),
+    );
+    expect(stored.map((r) => [r.listingRef, r.sku]).sort()).toEqual([
+      ["5551", "BOARD-TI"],
+      ["5552", "NEW-SKU"],
+    ]);
   });
 });

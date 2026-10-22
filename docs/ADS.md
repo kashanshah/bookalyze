@@ -34,7 +34,7 @@ and SKU:
 | `organization_id` | Tenant (RLS) |
 | `channel_id` | The sales channel the ads ran on (Amazon.ca, Noon UAE…). Ads are kept only for the company's channels |
 | `connection_id` | The ads account it came from (null for an upload) |
-| `source` | `amazon_ads` (Amazon Ads API) or `upload` (a file, e.g. Noon's Ad Manager export, later) |
+| `source` | `amazon_ads` (Amazon Ads API), `walmart_ads` (Walmart Connect) or `upload` (a file, e.g. Noon's Ad Manager export, later) |
 | `account_ref` | The ads account at the source: Amazon's profile ID, Noon's partner, eBay's seller |
 | `country` | The marketplace's country |
 | `date` | The day the spend happened, in the ads account's time zone |
@@ -101,7 +101,7 @@ Decisions:
    Because the books' advertising is taken out of the keep rate and the report's spend is taken
    off per SKU, ads are counted once, from the report. The table's footer shows the books'
    advertising for the channel next to the reports' total, with the difference.
-3. **Without ad reports** for a channel (Walmart today, Noon until its upload), the product table
+3. **Without ad reports** for a channel (Walmart without Walmart Connect, Noon until its upload), the product table
    still works: spend is 0 and the books' advertising is shown as "not split by product" so the
    channel's profit isn't overstated.
 
@@ -312,4 +312,32 @@ client ID and secret in Vercel. Bookalyze never asks for passwords or one-time c
    table (`source = 'upload'`).
 2. **eBay** Promoted Listings through the Marketing API (`ad_type = promoted_listings`).
 3. **Sponsored Display** (`sdAdvertisedProduct`).
-4. **Walmart Connect**, only once API access is confirmed.
+4. ~~**Walmart Connect**~~: done (below).
+
+### Walmart Connect (Sponsored Search)
+
+- **Access:** only API partners call it. Bookalyze is one partner: its consumer ID, partner token
+  and an RSA private key (env `WALMART_ADS_*`, docs/SETUP.md). Every call sends
+  `Authorization: Bearer <token>`, `WM_CONSUMER.ID`, `WM_CONSUMER.intimestamp` (ms), 
+  `WM_SEC.KEY_VERSION` and `WM_SEC.AUTH_SIGNATURE`: RSA-SHA256 over
+  `consumerId\ntimestamp\nkeyVersion\n`, base64 (core `walmartAdsSignedText`).
+- **Link:** the advertiser adds Bookalyze in Ad Center (Admin → API partners), then enters its
+  advertiser ID on the Walmart channel's page; `GET /v1/campaigns?advertiserId=` checks access.
+  It's a connection `walmart_ads` with no secret, settings `{ advertiserId, channelId }`, one per
+  Walmart channel.
+- **Report:** `POST /v2/snapshot/report` `{ advertiserId, reportType: "adItem", reportMetrics:
+  [date, campaignId, campaignName, adGroupId, itemId, itemName, adSpend, numAdsShown,
+  numAdsClicks, attributedSales14days, attributedOrders14days, attributedUnits14days], startDate,
+  endDate }` (with `date` among the metrics, one row per day: only for the trailing 30 days).
+  Poll `GET /v1/snapshot?advertiserId=&snapshotId=` until `jobStatus` is `done`; download
+  `details` (gzipped or zipped JSON or CSV). Stored as `sponsored_products`, `attribution_window`
+  `14d`; v1 snapshot reports were retired in 2026.
+- **Items to SKUs:** Walmart names items by its item ID (`listing_ref`). Each new one is looked
+  up once in the Marketplace catalog (`POST /v3/items/catalog/search`, field `itemId`, with the
+  country's seller key) and kept on `channel_skus.asin`, so `replaceAdMetrics` finds the SKU like
+  an ASIN; an item the catalog doesn't know stays tied to no product, and the toast says how
+  many. A stock refresh (WFS) keeps the listing ID it doesn't send.
+- **When:** like Amazon's: the daily job asks for the last 15 days (30 the first time), the
+  5-minute job collects; "Bring in ads now" waits up to ~45 seconds.
+- Built from Walmart's published API before a live account was seen: the field names and base
+  URL are the ones to check first.

@@ -519,7 +519,8 @@ export async function saveChannelSkus(
       .onConflictDoUpdate({
         target: [channelSkus.channelId, channelSkus.sku],
         set: {
-          asin: sku.asin,
+          // A stock list without the listing ID (Walmart's) keeps the one already known.
+          asin: sql`coalesce(excluded.asin, ${channelSkus.asin})`,
           title: sku.title,
           fulfillable: sku.fulfillable,
           reserved: sku.reserved ?? null,

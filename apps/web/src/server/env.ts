@@ -73,6 +73,18 @@ const schema = z.object({
   AMAZON_ADS_AUTH_URL: z.url().optional(),
   AMAZON_ADS_TOKEN_URL: z.url().optional(),
   AMAZON_ADS_API_URL: z.url().optional(),
+  /**
+   * Bookalyze as a Walmart Connect API partner (Sponsored Search): the consumer ID Walmart issued
+   * at onboarding, the private key it signs with (PEM, PKCS#8; "\n" for line breaks is fine), the
+   * key's version and the partner token. Without all of them, Walmart Connect is unavailable. See
+   * docs/SETUP.md → Walmart Connect.
+   */
+  WALMART_ADS_CONSUMER_ID: z.string().optional(),
+  WALMART_ADS_PRIVATE_KEY: z.string().optional(),
+  WALMART_ADS_KEY_VERSION: z.string().default("1"),
+  WALMART_ADS_TOKEN: z.string().optional(),
+  /** Walmart Connect's API base URL. Tests point it at a stand-in. */
+  WALMART_ADS_API_URL: z.url().optional(),
   /** Secret Vercel Cron sends as a bearer token to scheduled routes (e.g. the daily FX sync). */
   CRON_SECRET: z.string().min(16).optional(),
   /**
