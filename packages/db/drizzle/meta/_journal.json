@@ -635,8 +635,22 @@
     {
       "idx": 90,
       "version": "7",
-      "when": 1792624202335,
-      "tag": "0090_settlement_sku_lines",
+      "when": 1792626028513,
+      "tag": "0090_walmart_settlement_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1792639149514,
+      "tag": "0091_dropship_channels",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792639393751,
+      "tag": "0092_settlement_sku_lines",
       "breakpoints": true
     }
   ]

@@ -1,5 +1,5 @@
 {
-  "id": "7fba8e41-c521-403a-a025-be02cb2f969a",
+  "id": "9cab4478-fc28-4d32-96b9-47047421e028",
   "prevId": "e2f657bd-bd95-407d-b2a3-8ca2b2f51918",
   "version": "7",
   "dialect": "postgresql",
@@ -8998,182 +8998,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.settlement_sku_lines": {
-      "name": "settlement_sku_lines",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "settlement_id": {
-          "name": "settlement_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "order_ref": {
-          "name": "order_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sku": {
-          "name": "sku",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "posted_date": {
-          "name": "posted_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "transaction_type": {
-          "name": "transaction_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount_type": {
-          "name": "amount_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount_description": {
-          "name": "amount_description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "numeric(20, 4)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "quantity": {
-          "name": "quantity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "count": {
-          "name": "count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        }
-      },
-      "indexes": {
-        "settlement_sku_lines_settlement_idx": {
-          "name": "settlement_sku_lines_settlement_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "settlement_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "settlement_sku_lines_order_idx": {
-          "name": "settlement_sku_lines_order_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "order_ref",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "settlement_sku_lines_organization_id_organization_id_fk": {
-          "name": "settlement_sku_lines_organization_id_organization_id_fk",
-          "tableFrom": "settlement_sku_lines",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "settlement_sku_lines_settlement_fk": {
-          "name": "settlement_sku_lines_settlement_fk",
-          "tableFrom": "settlement_sku_lines",
-          "tableTo": "settlements",
-          "columnsFrom": [
-            "organization_id",
-            "settlement_id"
-          ],
-          "columnsTo": [
-            "organization_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {
-        "settlement_sku_lines_tenant_isolation": {
-          "name": "settlement_sku_lines_tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "public"
-          ],
-          "using": "\"settlement_sku_lines\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid",
-          "withCheck": "\"settlement_sku_lines\".\"organization_id\" = nullif(current_setting('app.org_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {
-        "settlement_sku_lines_quantity_valid": {
-          "name": "settlement_sku_lines_quantity_valid",
-          "value": "\"settlement_sku_lines\".\"quantity\" >= 0 and \"settlement_sku_lines\".\"count\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.settlements": {
       "name": "settlements",
       "schema": "",
@@ -9297,12 +9121,6 @@
         "payout_base_amount": {
           "name": "payout_base_amount",
           "type": "numeric(20, 4)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sku_detail_at": {
-          "name": "sku_detail_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -9943,6 +9761,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'api'"
         },
         "totals": {
           "name": "totals",

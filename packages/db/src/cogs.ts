@@ -205,6 +205,8 @@ const ledgerMonth = sql`to_char(e.event_date, 'YYYY-MM')`;
  */
 const costedChannel = sql`(sc.is_active and (sc.connection_id is null or exists (
   select 1 from connections c where c.id = sc.connection_id and c.status <> 'disconnected')))`;
+/** Its orders go out of your stock (not a dropship channel). */
+const fromStock = sql`sc.ships_from_stock`;
 const postedMonth = (month: SQL) =>
   sql`exists (select 1 from cogs_periods p where p.channel_id = sc.id and p.month = ${month})`;
 
@@ -232,7 +234,7 @@ export async function salesByMonth(
     join sales_channels sc on sc.id = o.channel_id
     left join product_skus ps on ps.channel_id = o.channel_id and ps.sku = oi.sku
     where oi.quantity_shipped > 0 and o.status not in (${cancelled})
-      and (${costedChannel} or ${postedMonth(orderMonth)})
+      and ((${costedChannel} and ${fromStock}) or ${postedMonth(orderMonth)})
     group by o.channel_id, sc.name, 3`);
   const moved = await tx.execute<{
     channel_id: string;
@@ -250,7 +252,7 @@ export async function salesByMonth(
     join sales_channels sc on sc.id = e.channel_id
     left join product_skus ps on ps.channel_id = e.channel_id and ps.sku = e.sku
     where e.event_type in ('CustomerReturns', 'Adjustments')
-      and (${costedChannel} or ${postedMonth(ledgerMonth)})
+      and ((${costedChannel} and ${fromStock}) or ${postedMonth(ledgerMonth)})
     group by e.channel_id, sc.name, 3`);
   const map = new Map<string, MonthSales>();
   const entry = (channelId: string, channelName: string, month: string) => {
@@ -299,7 +301,7 @@ export async function channelsNotCosted(
 ): Promise<string[]> {
   const rows = await tx.execute<{ name: string }>(sql`
     select sc.name from sales_channels sc
-    where not ${costedChannel}
+    where not ${costedChannel} and ${fromStock}
       and exists (select 1 from orders o join order_items oi on oi.order_id = o.id
         where o.channel_id = sc.id and oi.quantity_shipped > 0 and o.status not in (${cancelled})
           and not exists (select 1 from cogs_periods p where p.channel_id = sc.id

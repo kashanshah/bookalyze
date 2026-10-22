@@ -104,6 +104,7 @@ export async function stockOverview(
         join orders o on o.id = oi.order_id
         join product_skus ps on ps.channel_id = o.channel_id and ps.sku = oi.sku
         where ps.product_id = p.id and oi.quantity_shipped > 0 and o.status not in (${cancelled})
+          and exists (select 1 from sales_channels sx where sx.id = o.channel_id and sx.ships_from_stock)
           and ${notPostedOrder}), 0)::int as shipped,
       coalesce((select sum(e.quantity * ps.units) from inventory_ledger_events e
         join product_skus ps on ps.channel_id = e.channel_id and ps.sku = e.sku
@@ -114,6 +115,7 @@ export async function stockOverview(
         join orders o on o.id = oi.order_id
         join product_skus ps on ps.channel_id = o.channel_id and ps.sku = oi.sku
         where ps.product_id = p.id and oi.quantity_shipped > 0 and o.status not in (${cancelled})
+          and exists (select 1 from sales_channels sx where sx.id = o.channel_id and sx.ships_from_stock)
           and ${notPostedOrder}) as months,
       (select sum(cs.fulfillable * ps.units) from product_skus ps
         join channel_skus cs on cs.channel_id = ps.channel_id and cs.sku = ps.sku

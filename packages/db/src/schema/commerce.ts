@@ -54,6 +54,11 @@ export const salesChannels = pgTable(
     fulfilment: text("fulfilment", { enum: CHANNEL_FULFILMENT }),
     /** Switched off channels keep their history but aren't synced. */
     isActive: boolean("is_active").notNull().default(true),
+    /**
+     * Its orders go out of your stock (default). Off for a dropship channel (a partner ships,
+     * paid as you go): cost of goods sold, Stock and Reorder leave its orders out.
+     */
+    shipsFromStock: boolean("ships_from_stock").notNull().default(true),
     /** First day orders are brought in from; null until someone starts bringing them in. */
     ordersFrom: date("orders_from"),
     /** Orders updated up to here are in. */
@@ -1324,6 +1329,8 @@ export const walmartSettlements = pgTable(
     /** The columns kept, in the report's order. */
     columns: jsonb("columns").$type<string[]>().notNull().default([]),
     broughtInAt: timestamp("brought_in_at", { withTimezone: true }).notNull().defaultNow(),
+    /** How it came in: Walmart's API ("api") or Seller Center's report uploaded ("upload"). */
+    source: text("source").notNull().default("api"),
     /**
      * Its rows added up by group (core `walmartSettlementTotals`), kept so pages don't read every
      * row; read again when `totals_version` isn't core's `WALMART_READER_VERSION`. Null with a

@@ -22,6 +22,7 @@ import {
   saveAmazonChannels,
   saveOrderItems,
   setChannelActive,
+  setChannelShipsFromStock,
   upsertOrders,
 } from "../commerce";
 import { createProduct, getProduct, linkSku, updateProduct } from "../inventory";
@@ -194,6 +195,13 @@ describe("cost of goods sold", () => {
     expect(preview.problems).toEqual([]);
     expect(preview.lines).toEqual([]);
     await scoped((tx) => updateProduct(tx, { ...keep, id: mugId, tracksStock: true }));
+  });
+
+  it("leaves out a dropship channel's orders: a partner ships them", async () => {
+    await scoped((tx) => setChannelShipsFromStock(tx, channelId, false));
+    const months = await scoped((tx) => salesByMonth(tx, { timezone: where.timezone }));
+    expect(months.filter((m) => m.channelId === channelId)).toEqual([]);
+    await scoped((tx) => setChannelShipsFromStock(tx, channelId, true));
   });
 
   it("books opening stock against opening balance equity", async () => {

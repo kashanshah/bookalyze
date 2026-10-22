@@ -470,6 +470,20 @@ export async function setChannelActive(tx: Transaction, channelId: string, isAct
   return row ?? null;
 }
 
+/** Whether a channel's orders go out of your stock (off: dropship, left out of stock). */
+export async function setChannelShipsFromStock(
+  tx: Transaction,
+  channelId: string,
+  shipsFromStock: boolean,
+) {
+  const [row] = await tx
+    .update(salesChannels)
+    .set({ shipsFromStock })
+    .where(eq(salesChannels.id, channelId))
+    .returning();
+  return row ?? null;
+}
+
 /**
  * Channels still in use: switched on, and either added by hand or on a connection that isn't
  * disconnected. What needs doing (Home) only looks at these.

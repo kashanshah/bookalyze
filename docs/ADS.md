@@ -217,7 +217,7 @@ drill-down shows the original currency. CSV export of all of it.
 line by line** (`/commerce/profit/products/pnl`, one SKU at `…/pnl/[sku]`; server `server/sku-pnl.ts`,
 core `commerce/sku-pnl.ts`, db `sku-pnl.ts`).
 
-- **Amazon by SKU**: table `settlement_sku_lines` (migration `0090_settlement_sku_lines`): each
+- **Amazon by SKU**: table `settlement_sku_lines` (migration `0092_settlement_sku_lines`): each
   settlement's amounts summed by order, SKU and kind (transaction type, amount type,
   description), with the rows' units (`quantity-purchased`) and first posted day; rows with no
   order or SKU are the account's fees. `settlements.sku_detail_at` says they're all in. Filled by

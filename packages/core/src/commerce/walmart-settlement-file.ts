@@ -101,3 +101,20 @@ export function readWalmartSettlement(text: string): WalmartSettlementFile {
     currency: currency && /^[A-Z]{3}$/.test(currency) ? currency : null,
   };
 }
+
+/**
+ * The date an uploaded report is kept under, as Walmart's API files it: the settlement (payment)
+ * date when a column says, else the period's last day. Null when the report says neither.
+ */
+export function walmartSettlementDate(file: WalmartSettlementFile): string | null {
+  const col = column(
+    file.columns,
+    /^settlement date/,
+    /^payment date/,
+    /^pay date/,
+    /^deposit date/,
+    /^disbursement date/,
+  );
+  const value = col ? file.rows.find((r) => r[col])?.[col] : undefined;
+  return (value ? walmartDay(value) : null) ?? file.periodTo;
+}

@@ -234,4 +234,54 @@ describe("Walmart settlements", () => {
     // Another company sees none of it.
     expect(await scoped((tx) => listWalmartSettlements(tx, channelId), otherOrgId)).toEqual([]);
   });
+
+  it("keeps an uploaded report for a period already in in its place, and the API's takes an upload's", async () => {
+    const [channel] = (await scoped((tx) => listWalmartChannels(tx))).filter(
+      (c) => c.marketplaceId === "walmart-ca",
+    );
+    const channelId = channel?.id ?? "";
+    const october = (payout: string) => ({
+      ...file(payout, [{ Amount: payout, "Amount Type": "Product Price" }]),
+      periodFrom: "2026-10-15",
+      periodTo: "2026-10-28",
+    });
+    // Seller Center's copy of the settlement the API brought in on 10-15 (another period): new.
+    const uploaded = await scoped((tx) =>
+      saveWalmartSettlement(tx, {
+        orgId,
+        channelId,
+        reportDate: "2026-10-28",
+        file: october("20.00"),
+        source: "upload",
+      }),
+    );
+    // Uploaded again under another date: the same settlement, replaced.
+    expect(
+      await scoped((tx) =>
+        saveWalmartSettlement(tx, {
+          orgId,
+          channelId,
+          reportDate: "2026-10-30",
+          file: october("21.00"),
+          source: "upload",
+        }),
+      ),
+    ).toBe(uploaded);
+    // Walmart's API brings the same period in under its own date: it takes the upload's place.
+    expect(
+      await scoped((tx) =>
+        saveWalmartSettlement(tx, {
+          orgId,
+          channelId,
+          reportDate: "2026-10-30",
+          file: october("22.00"),
+        }),
+      ),
+    ).toBe(uploaded);
+    const list = await scoped((tx) => listWalmartSettlements(tx, channelId));
+    expect(list.map((s) => [s.reportDate, s.source, s.payout])).toEqual([
+      ["2026-10-30", "api", "22.0000"],
+      ["2026-10-15", "api", "39.9800"],
+    ]);
+  });
 });
