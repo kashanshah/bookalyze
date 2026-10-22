@@ -2,21 +2,30 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   type AdMetricRow,
+  accountCosts,
+  addSettlementLines,
   amazonAdsConsentUrl,
   amazonAdsErrorDetail,
   amazonAdsReportRequest,
   channelAdSummary,
   duplicateAmazonAdsReportId,
+  emptyGroupTotals,
+  giveawayCosts,
   keepRate,
   mergeAdRows,
   nextAmazonAdsWindow,
+  orderKeepRate,
   PRODUCT_PROFIT_COLUMNS,
   parseAmazonAdsProfiles,
   parseAmazonAdsReport,
   parseAmazonAdsReportStatus,
   parseAmazonAdsTokens,
   productProfitCsvRows,
+  type SettlementLine,
   type SkuPeriodInput,
+  type SkuSettledLine,
+  settledKeepRates,
+  settlementLineOnOrder,
   skuProfit,
   sortSkuProfits,
 } from "../index";
@@ -45,6 +54,196 @@ describe("keepRate", () => {
   });
   it("is null without sales", () => {
     expect(keepRate({ sales: "0", net: "-29.99", advertising: "0" })).toBeNull();
+  });
+  it("takes promotions off the sales it's a share of, when given", () => {
+    // Sales 1000 with 300 of promotions: 700 after them; net 350 → half of each sale after them.
+    expect(keepRate({ sales: "1000", promotions: "-300", net: "350", advertising: "0" })).toBe(
+      "0.5000000000",
+    );
+  });
+});
+
+// A launch-period Amazon settlement (synthetic): orders with coupons, their fees and refunds, and
+// the account's own costs (storage, the selling plan, a carried balance, a bank check).
+type Line = Pick<SettlementLine, "transactionType" | "amountType" | "amountDescription" | "amount">;
+const line = (
+  transactionType: string,
+  amountType: string,
+  amountDescription: string,
+  amount: string,
+): Line => ({ transactionType, amountType, amountDescription, amount });
+const launch: Line[] = [
+  line("Order", "ItemPrice", "Principal", "2000.00"),
+  line("Order", "Promotion", "Principal", "-700.00"),
+  line("Order", "ItemFees", "FBAPerUnitFulfillmentFee", "-500.00"),
+  line("Order", "ItemFees", "Commission", "-70.00"),
+  line("Refund", "ItemPrice", "Principal", "-150.00"),
+  line("Refund", "ItemFees", "Commission", "9.00"),
+  line("Order", "ItemWithheldTax", "MarketplaceFacilitatorTax-Principal", "-130.00"),
+  line("Order", "ItemPrice", "Tax", "130.00"),
+  line("FBAFees", "FBA Inventory Storage Fee", "Base fee", "-290.00"),
+  line("FBAFees", "FBA Inventory Storage Fee", "Tax on fee - General Sales and Use Tax", "-0.05"),
+  line("other-transaction", "other-transaction", "Subscription Fee", "-60.00"),
+  line("other-transaction", "other-transaction", "Vine Enrollment Fee", "-200.00"),
+  line("ServiceFee", "Cost of Advertising", "TransactionTotalAmount", "-400.00"),
+  line("other-transaction", "other-transaction", "Payable to Amazon", "-7.50"),
+  line("other-transaction", "other-transaction", "Successful charge", "30.00"),
+  line("Transfers", "Micro Deposit", "Micro Deposit", "-0.02"),
+  line("other-transaction", "FBA Inventory Reimbursement", "Lost:Warehouse", "25.00"),
+];
+
+describe("settlementLineOnOrder", () => {
+  it("tells a sale's or refund's amounts from the account's own", () => {
+    expect(settlementLineOnOrder({ transactionType: "Order" })).toBe(true);
+    expect(settlementLineOnOrder({ transactionType: "Refund" })).toBe(true);
+    expect(settlementLineOnOrder({ transactionType: "Chargeback Refund" })).toBe(true);
+    expect(settlementLineOnOrder({ transactionType: "A-to-z Guarantee Refund" })).toBe(true);
+    expect(settlementLineOnOrder({ transactionType: "FBAFees" })).toBe(false);
+    expect(settlementLineOnOrder({ transactionType: "other-transaction" })).toBe(false);
+    expect(settlementLineOnOrder({ transactionType: "ServiceFee" })).toBe(false);
+    expect(settlementLineOnOrder({ transactionType: "CouponRedemptionFee" })).toBe(false);
+  });
+});
+
+describe("orderKeepRate", () => {
+  const all = addSettlementLines(emptyGroupTotals(), launch);
+  const orders = addSettlementLines(emptyGroupTotals(), launch.filter(settlementLineOnOrder));
+
+  it("leaves the account's own costs out, and takes promotions off once", () => {
+    // On orders: 2000 − 700 − 500 − 70 − 150 + 9 = 589, over 1300 of sales after promotions.
+    expect(orderKeepRate(orders, { feeTaxRecoverable: false, promotionsInSales: true })).toBe(
+      "0.4530769231",
+    );
+    // Over gross sales instead, for order lines that don't take promotions off (Noon's).
+    expect(orderKeepRate(orders, { feeTaxRecoverable: false, promotionsInSales: false })).toBe(
+      "0.2945000000",
+    );
+  });
+
+  it("is what made every product look like a loss before: storage and Vine shared by sales", () => {
+    // The old rate: everything over gross sales (589 on orders, less 502.57 of the account's own
+    // costs and balance moves, ads added back), applied to sales already after promotions.
+    const old = orderKeepRate(all, { feeTaxRecoverable: false, promotionsInSales: false });
+    expect(old).toBe("0.0432150000");
+  });
+});
+
+describe("accountCosts", () => {
+  it("adds up what's on no order, largest first, leaving out ads and balance moves", () => {
+    const c = accountCosts(launch, { feeTaxRecoverable: false });
+    // Storage 290 + tax on it 0.05 + plan 60 + Vine 200 − reimbursement 25.
+    expect(c.amount).toBe("525.0500");
+    expect(c.items.map((i) => i.label)).toEqual([
+      "FBA inventory storage fee",
+      "Vine enrollment fee",
+      "Selling plan subscription",
+      "FBA inventory reimbursement",
+      "Tax on fee general sales and use tax",
+    ]);
+    expect(c.items[3]?.amount).toBe("-25.0000");
+  });
+
+  it("leaves tax on fees out when it's recoverable", () => {
+    expect(accountCosts(launch, { feeTaxRecoverable: true }).amount).toBe("525.0000");
+  });
+
+  it("is nothing for a channel whose lines are all on orders", () => {
+    expect(
+      accountCosts(launch.filter(settlementLineOnOrder), { feeTaxRecoverable: false }),
+    ).toEqual({ amount: "0.0000", items: [] });
+  });
+});
+
+describe("settledKeepRates", () => {
+  const settled = (
+    s: string,
+    order: string,
+    units: number,
+    price: string,
+    promotion: string,
+    fulfilment: string,
+  ): SkuSettledLine[] => [
+    { ...line("Order", "ItemPrice", "Principal", price), orderRef: order, sku: s, quantity: units },
+    { ...line("Order", "ItemPrice", "Shipping", "5.00"), orderRef: order, sku: s, quantity: 0 },
+    { ...line("Order", "Promotion", "Principal", promotion), orderRef: order, sku: s, quantity: 0 },
+    {
+      ...line("Order", "ItemFees", "FBAPerUnitFulfillmentFee", fulfilment),
+      orderRef: order,
+      sku: s,
+      quantity: 0,
+    },
+  ];
+  const options = { feeTaxRecoverable: false, promotionsInSales: true };
+
+  it("gives each SKU its own rate: the same fee per unit costs a cheap product more", () => {
+    const r = settledKeepRates(
+      [
+        ...settled("BOARD", "1", 10, "600.00", "-100.00", "-100.00"),
+        ...settled("MUGS", "2", 10, "250.00", "-50.00", "-100.00"),
+      ],
+      options,
+    );
+    // Board: (600 + 5 − 100 − 100) / (605 − 100) = 405 / 505; mugs: 105 / 205.
+    expect(r.skus.get("BOARD")).toEqual({ rate: "0.8019801980", units: 10 });
+    expect(r.skus.get("MUGS")).toEqual({ rate: "0.5121951220", units: 10 });
+    // Both together: 510 / 710.
+    expect(r.channel).toBe("0.7183098592");
+  });
+
+  it("leaves orders given away out of every rate, and counts their fees apart", () => {
+    const r = settledKeepRates(
+      [
+        ...settled("BOARD", "1", 10, "600.00", "0", "-100.00"),
+        // A Vine unit: the promotion is the whole price; the fulfilment fee is still charged.
+        ...settled("BOARD", "2", 1, "60.00", "-60.00", "-10.00"),
+      ],
+      options,
+    );
+    // Only the 10 sold: (600 + 5 − 100) / 605.
+    expect(r.skus.get("BOARD")).toEqual({ rate: "0.8347107438", units: 10 });
+    expect(r.channel).toBe("0.8347107438");
+    // The giveaway's shipping charge (5) offsets part of its fee (10).
+    expect(r.giveaways.get("BOARD")).toEqual({ units: 1, fees: "5.0000" });
+  });
+
+  it("leaves out a SKU with too few settled units (one refund would swing it)", () => {
+    const lines = settled("NEW", "1", 4, "200.00", "0", "-40.00");
+    expect(settledKeepRates(lines, options).skus.has("NEW")).toBe(false);
+    expect(settledKeepRates(lines, { ...options, minUnits: 4 }).skus.has("NEW")).toBe(true);
+    // The channel's rate still has them.
+    expect(settledKeepRates(lines, options).channel).toBe("0.8048780488");
+  });
+});
+
+describe("giveawayCosts", () => {
+  it("is each unit's cost and the fees per unit given away, × the period's units", () => {
+    const g = giveawayCosts({
+      skus: [
+        { sku: "BOARD", units: 3, unitCost: "13.40" },
+        { sku: "MUGS", units: 2, unitCost: null },
+      ],
+      settled: new Map([["BOARD", { units: 2, fees: "20.00" }]]),
+      currency: "CAD",
+    });
+    // Board: 3 × 13.40 = 40.20, fees 3 × 10; mugs: no cost, fees at every SKU's 10 a unit.
+    expect(g).toEqual({
+      units: 5,
+      productCost: "40.2000",
+      fees: "50.0000",
+      amount: "90.2000",
+      costMissing: 2,
+      feesUnknown: false,
+    });
+  });
+
+  it("says when no giveaway is settled yet to learn the fees from", () => {
+    const g = giveawayCosts({
+      skus: [{ sku: "BOARD", units: 1, unitCost: "13.40" }],
+      settled: new Map(),
+      currency: "CAD",
+    });
+    expect(g.amount).toBe("13.4000");
+    expect(g.feesUnknown).toBe(true);
   });
 });
 
@@ -167,6 +366,14 @@ describe("sortSkuProfits and channelAdSummary", () => {
 
   it("puts the worst first", () => {
     expect(sortSkuProfits(rows).map((r) => r.sku)).toEqual(["LOSS", "WASTE", "NOCOST", "OK"]);
+  });
+
+  it("takes the account's own costs off the channel's profit, not any product's", () => {
+    const s = channelAdSummary(rows, { spend: "60", sales: "200" }, "25.05");
+    expect(s.oneOffCosts).toBe("25.0500");
+    expect(s.profitBeforeAds).toBe("429.8200");
+    expect(s.profitAfterAds).toBe("304.7700");
+    expect(s.losing).toBe(1);
   });
 
   it("counts what was lost, spend with no sales, and spend tied to no SKU", () => {
@@ -389,8 +596,65 @@ describe("productProfitCsvRows", () => {
       "Titanium cutting board",
       "Healthy",
     ]);
-    expect(rows[1]?.[13]).toBe("7");
-    expect(rows[1]?.[26]).toBe("-7.0000");
+    const col = (name: (typeof PRODUCT_PROFIT_COLUMNS)[number]) =>
+      PRODUCT_PROFIT_COLUMNS.indexOf(name);
+    expect(rows[0]?.[col("Marketplace leaves %")]).toBe("60.0");
+    expect(rows[1]?.[col("Ad spend")]).toBe("7");
+    expect(rows[1]?.[col("Profit after ads")]).toBe("-7.0000");
     expect(rows[0]).toHaveLength(PRODUCT_PROFIT_COLUMNS.length);
+  });
+
+  it("writes the account's own costs as their own row", () => {
+    const rows = productProfitCsvRows(
+      [
+        {
+          name: "Amazon.ca",
+          currency: "CAD",
+          rows: [],
+          unallocated: { spend: "0", sales: "0" },
+          accountCosts: {
+            amount: "350",
+            items: [
+              { label: "FBA inventory storage fee", amount: "290" },
+              { label: "Selling plan subscription", amount: "60" },
+            ],
+          },
+        },
+      ],
+      (v) => v ?? "",
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.[3]).toBe(
+      "Storage, selling plan and other account costs (FBA inventory storage fee, Selling plan subscription)",
+    );
+    expect(rows[0]?.[PRODUCT_PROFIT_COLUMNS.indexOf("Profit after ads")]).toBe("-350.0000");
+  });
+
+  it("writes the units given away as their own row", () => {
+    const rows = productProfitCsvRows(
+      [
+        {
+          name: "Amazon.ca",
+          currency: "CAD",
+          rows: [],
+          unallocated: { spend: "0", sales: "0" },
+          giveaways: {
+            units: 3,
+            productCost: "40.20",
+            fees: "30",
+            amount: "70.20",
+            costMissing: 0,
+            feesUnknown: false,
+          },
+        },
+      ],
+      (v) => v ?? "",
+    );
+    const col = (name: (typeof PRODUCT_PROFIT_COLUMNS)[number]) =>
+      PRODUCT_PROFIT_COLUMNS.indexOf(name);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.[col("Units")]).toBe("3");
+    expect(rows[0]?.[col("Product cost")]).toBe("40.20");
+    expect(rows[0]?.[col("Profit after ads")]).toBe("-70.2000");
   });
 });

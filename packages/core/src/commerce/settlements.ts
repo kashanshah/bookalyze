@@ -262,6 +262,15 @@ export function settlementGroup(
   return "other";
 }
 
+/**
+ * Whether a line is on an order (a sale or refund, and its fees and promotions) rather than the
+ * account's own (storage, the selling plan, inbound placement, Vine, coupons, advertising): what
+ * each unit sold costs, as against what the account costs whatever it sells.
+ */
+export function settlementLineOnOrder(line: Pick<SettlementLine, "transactionType">): boolean {
+  return /^(order|refund)|chargeback|guarantee|a-to-z|retrocharge/i.test(line.transactionType);
+}
+
 const record = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" ? (v as Record<string, unknown>) : {};
 const text = (v: unknown) => (typeof v === "string" ? v : "");

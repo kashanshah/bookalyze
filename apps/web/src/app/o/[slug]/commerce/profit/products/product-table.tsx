@@ -1,11 +1,27 @@
 "use client";
 
-import { AD_VERDICT_LABELS, type AdVerdict, type SkuProfit } from "@bookalyze/core";
+import {
+  type AccountCosts,
+  AD_VERDICT_LABELS,
+  type AdVerdict,
+  formatDecimal,
+  formatMoney,
+  type GiveawayCosts,
+  type KeepRateSource,
+  parseDecimal,
+  type SkuProfit,
+} from "@bookalyze/core";
 import { ChevronDown } from "lucide-react";
 import { Fragment, useState } from "react";
 import { Amount } from "@/components/accounting/amount";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+
+const KEEP_SOURCE: Record<KeepRateSource, string> = {
+  sku: "its own orders",
+  period: "the channel's orders",
+  trailing: "the channel's last 90 days",
+};
 
 const TONE: Record<AdVerdict, "destructive" | "warning" | "success" | "outline"> = {
   losing: "destructive",
@@ -35,6 +51,8 @@ export function ProductTable({
   currency,
   locale,
   unallocated,
+  accountCosts,
+  giveaways,
   unallocatedLabel,
   footer,
 }: {
@@ -42,6 +60,10 @@ export function ProductTable({
   currency: string;
   locale: string;
   unallocated: { spend: string; sales: string };
+  /** Storage, the selling plan and other costs on no order: their own line. */
+  accountCosts: AccountCosts;
+  /** Units given away (Vine, 100% off): their cost and the marketplace's fees, their own line. */
+  giveaways: GiveawayCosts;
   /** What the spend tied to no product is: Sponsored Brands, or the books' ads. */
   unallocatedLabel: { title: string; hint: string };
   footer: {
@@ -64,6 +86,13 @@ export function ProductTable({
   );
   const negative = (v: string | null) => Boolean(v?.startsWith("-"));
   const hasUnallocated = !/^0(\.0+)?$/.test(unallocated.spend);
+  const hasAccountCosts = parseDecimal(accountCosts.amount) !== 0n;
+  const keep = (r: SkuProfit) => {
+    if (r.keepRate === null) return "—";
+    const value = Number(formatDecimal(parseDecimal(r.keepRate, 10) / 10n ** 6n, 4)) * 100;
+    const share = `${value.toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
+    return r.keepRateSource ? `${share} · ${KEEP_SOURCE[r.keepRateSource]}` : share;
+  };
 
   return (
     <div className="overflow-x-auto">
@@ -178,6 +207,7 @@ export function ProductTable({
                           items={[
                             ["Sales", money(r.sales)],
                             ["Average price", money(r.averagePrice)],
+                            ["Marketplace leaves", keep(r)],
                             ["Left after the marketplace", money(r.netBeforeAds)],
                             ["Product cost", money(r.productCost)],
                             ["Profit before ads", money(r.profitBeforeAds)],
@@ -233,6 +263,60 @@ export function ProductTable({
               <td className="px-3 py-2.5" />
               <td className="px-3 py-2.5 text-end">
                 {money(`-${unallocated.spend}`, "text-destructive")}
+              </td>
+              <td />
+            </tr>
+          ) : null}
+          {hasAccountCosts ? (
+            <tr className="border-b">
+              <td className="px-4 py-2.5">
+                <span className="block font-medium">Storage, selling plan and account costs</span>
+                <span className="text-muted-foreground text-xs">
+                  On no order, so not shared by sales:{" "}
+                  {accountCosts.items
+                    .slice(0, 4)
+                    .map((i) => `${i.label} ${formatMoney(i.amount, currency, locale)}`)
+                    .join(", ")}
+                  {accountCosts.items.length > 4 ? ", and more" : ""}
+                </span>
+              </td>
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5 text-end">
+                {money(
+                  formatDecimal(-parseDecimal(accountCosts.amount)),
+                  parseDecimal(accountCosts.amount) > 0n ? "text-destructive" : "text-success",
+                )}
+              </td>
+              <td />
+            </tr>
+          ) : null}
+          {giveaways.units > 0 ? (
+            <tr className="border-b">
+              <td className="px-4 py-2.5">
+                <span className="block font-medium">Units given away</span>
+                <span className="text-muted-foreground text-xs">
+                  Vine and other 100%-off orders: their cost{" "}
+                  {formatMoney(giveaways.productCost, currency, locale)} and the marketplace's fees{" "}
+                  {formatMoney(giveaways.fees, currency, locale)}
+                  {giveaways.feesUnknown ? " (some not settled yet)" : ""}
+                  {giveaways.costMissing ? `; ${giveaways.costMissing} with no cost yet` : ""}
+                </span>
+              </td>
+              <td className="tabular px-3 py-2.5 text-end">
+                {giveaways.units.toLocaleString(locale)}
+              </td>
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5 text-end">
+                {money(formatDecimal(-parseDecimal(giveaways.amount)), "text-destructive")}
               </td>
               <td />
             </tr>

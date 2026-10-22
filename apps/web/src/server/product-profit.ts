@@ -1,20 +1,24 @@
 import "server-only";
 import {
+  type AccountCosts,
   type AdType,
+  accountCosts,
   addDaysIso,
   type ChannelAdSummary,
   channelAdSummary,
-  channelProfit,
   convertUnits,
   formatDecimal,
-  type GroupTotals,
+  type GiveawayCosts,
+  giveawayCosts,
   type IsoDate,
-  keepRate,
+  type KeepRateSource,
   listingCost,
   minorUnits,
+  orderKeepRate,
   parseDecimal,
   type SkuPeriodInput,
   type SkuProfit,
+  settledKeepRates,
   skuProfit,
   sortSkuProfits,
 } from "@bookalyze/core";
@@ -23,20 +27,24 @@ import {
   adsBroughtInThrough,
   getSettlementAccounts,
   nextUnitCosts,
+  salesAfter,
   schema,
+  settledSkuLinesForProfit,
   skuSalesForProfit,
 } from "@bookalyze/db";
 import { eq } from "drizzle-orm";
 import { inOrg } from "./accounting";
-import { channelTotals } from "./channel-totals";
+import { type ChannelTotals, channelTotals } from "./channel-totals";
 import type { CommerceContext } from "./commerce";
 import { suggestRate } from "./fx";
 
 /**
  * Profit by product, after ads (docs/ADS.md §3 and §6): for each channel, each SKU's sales from its
- * orders, its share of what the marketplace leaves before ads (the keep rate), its product cost,
- * and its ad spend from the ads reports; plus the spend tied to no product. In each channel's own
- * currency, with a summary of all of them in the main currency.
+ * orders, its share of what the marketplace leaves on its orders before ads (the keep rate: the
+ * SKU's own settled orders', else the channel's), its product cost, and its ad spend from the ads
+ * reports; plus the spend tied to no product and the account's own costs (storage, the selling
+ * plan), each its own line. In each channel's own currency, with a summary of all of them in the
+ * main currency.
  */
 
 /** When a channel has no money in the period (a new channel), its keep rate comes from these days. */
@@ -48,12 +56,21 @@ export type ChannelProductProfit = {
   kind: string;
   currency: string;
   isActive: boolean;
-  /** Null: no sales to learn the marketplace's fees from. */
+  /** The channel's rate on its orders. Null: no sales to learn the marketplace's fees from. */
   keepRate: string | null;
   /** "period", or "trailing" when it came from the 90 days before the period's end. */
-  keepRateFrom: "period" | "trailing" | null;
+  keepRateFrom: Exclude<KeepRateSource, "sku"> | null;
+  /** Products with a rate of their own (enough settled units). */
+  ownRates: number;
   rows: SkuProfit[];
   unallocated: { spend: string; sales: string };
+  /** Storage, the selling plan and other costs on no order, in the period's settlements. */
+  accountCosts: AccountCosts;
+  /** Units given away (Vine, free replacements): their cost and fees, a one-off line. */
+  giveaways: GiveawayCosts;
+  /** The last day the period's settlements cover (Amazon), and the sales bought after it. */
+  settledThrough: string | null;
+  unsettledSales: string;
   summary: ChannelAdSummary;
   /** The books' advertising for the channel in the period (positive: a cost). */
   booksAdvertising: string;
@@ -97,28 +114,28 @@ export async function productProfit(
           .from(schema.accounts)
           .where(eq(schema.accounts.id, feeTax))
       : [];
-    const skus = await skuSalesForProfit(tx, { from: input.from, to: input.to, timezone });
+    const range = { from: input.from, to: input.to, timezone };
+    const skus = await skuSalesForProfit(tx, range);
     const productIds = [...new Set(skus.links.map((l) => l.product_id))];
     return {
       feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
-      totals: await channelTotals(tx, { from: input.from, to: input.to, timezone }),
+      totals: await channelTotals(tx, range),
+      settled: await settledSkuLinesForProfit(tx, range),
       ads: await adMetricsForProfit(tx, { from: input.from, to: input.to }),
       through: await adsBroughtInThrough(tx),
       skus,
       unitCosts: await nextUnitCosts(tx, productIds),
     };
   });
-  let trailing: Map<string, { currency: string; totals: GroupTotals }> | null = null;
-  const keepOf = async (channelId: string) => {
-    const rateOf = (t: { totals: GroupTotals } | undefined) => {
-      if (!t) return null;
-      const p = channelProfit(t.totals, { feeTaxRecoverable: data.feeTaxRecoverable });
-      return keepRate({
-        sales: formatDecimal(t.totals.sales),
-        net: p.net,
-        advertising: p.groups.advertising,
-      });
-    };
+  let trailing: Map<string, ChannelTotals> | null = null;
+  const keepOf = async (channelId: string, promotionsInSales: boolean) => {
+    const rateOf = (t: ChannelTotals | undefined) =>
+      t
+        ? orderKeepRate(t.orderTotals, {
+            feeTaxRecoverable: data.feeTaxRecoverable,
+            promotionsInSales,
+          })
+        : null;
     const now = rateOf(data.totals.get(channelId));
     if (now !== null) return { rate: now, from: "period" as const };
     trailing ??= await inOrg(ctx, (tx) =>
@@ -149,7 +166,20 @@ export async function productProfit(
     const info = data.skus.channels.find((c) => c.id === channelId);
     if (!info) continue;
     const ads = data.ads.find((a) => a.channelId === channelId && a.currency === info.currency);
-    const keep = await keepOf(channelId);
+    // Order lines that take their promotions off (Amazon's, eBay's): the rates must too.
+    const promotionsInSales = data.skus.sales.some(
+      (s) => s.channel_id === channelId && parseDecimal(s.promotions) > 0n,
+    );
+    const settled = settledKeepRates(
+      data.settled.filter((l) => l.channelId === channelId),
+      { feeTaxRecoverable: data.feeTaxRecoverable, promotionsInSales },
+    );
+    // With settlements by SKU, the channel's rate leaves the orders given away out too.
+    const keep =
+      settled.channel !== null
+        ? { rate: settled.channel, from: "period" as const }
+        : await keepOf(channelId, promotionsInSales);
+    const own = settled.skus;
     // Lots are in the main currency: the rate turns them into the channel's.
     const costRate = await rateTo(info.currency);
 
@@ -188,10 +218,16 @@ export async function productProfit(
         impressions: 0,
       };
     };
+    const given: { sku: string; units: number; unitCost: string | null }[] = [];
     for (const s of data.skus.sales.filter((x) => x.channel_id === channelId)) {
       const row = skus.get(s.sku) ?? blank(s.sku);
-      row.units += s.units;
-      row.orders += s.orders;
+      // Units given away are a one-off line, not the product's: they'd charge their cost to
+      // the units that sell.
+      row.units += s.units - s.giveaway_units;
+      row.orders += s.orders - s.giveaway_orders;
+      if (s.giveaway_units > 0) {
+        given.push({ sku: s.sku, units: s.giveaway_units, unitCost: row.unitCost });
+      }
       row.sales = s.sales;
       row.label ??= s.title;
       skus.set(s.sku, row);
@@ -207,9 +243,32 @@ export async function productProfit(
       skus.set(sku, row);
     }
     const rows = sortSkuProfits(
-      [...skus.values()].map((s) => skuProfit(s, { keepRate: keep.rate, currency: info.currency })),
+      [...skus.values()].map((s) => {
+        const mine = own.get(s.sku);
+        return skuProfit(s, {
+          keepRate: mine?.rate ?? keep.rate,
+          keepRateSource: mine ? "sku" : keep.from,
+          currency: info.currency,
+        });
+      }),
     ).filter((r) => r.verdict !== "no_activity");
-    const totals = data.totals.get(channelId)?.totals;
+    const channel = data.totals.get(channelId);
+    const totals = channel?.totals;
+    const account = accountCosts(channel?.accountLines ?? [], {
+      feeTaxRecoverable: data.feeTaxRecoverable,
+    });
+    const giveaways = giveawayCosts({
+      skus: given,
+      settled: settled.giveaways,
+      currency: info.currency,
+    });
+    const settledThrough = channel?.settledThrough ?? null;
+    const unsettledSales =
+      settledThrough && settledThrough < input.to
+        ? await inOrg(ctx, (tx) =>
+            salesAfter(tx, { channelId, after: settledThrough, to: input.to, timezone }),
+          )
+        : "0";
     const through = data.through.get(channelId);
     const hasAds = Boolean(ads) || Boolean(through);
     const booksAdvertising = -(totals?.advertising ?? 0n);
@@ -226,9 +285,18 @@ export async function productProfit(
       isActive: info.isActive,
       keepRate: keep.rate,
       keepRateFrom: keep.from,
+      ownRates: rows.filter((r) => r.keepRateSource === "sku").length,
       rows,
       unallocated,
-      summary: channelAdSummary(rows, unallocated),
+      accountCosts: account,
+      giveaways,
+      settledThrough,
+      unsettledSales,
+      summary: channelAdSummary(
+        rows,
+        unallocated,
+        formatDecimal(parseDecimal(account.amount) + parseDecimal(giveaways.amount)),
+      ),
       booksAdvertising: formatDecimal(booksAdvertising),
       byType: [...(ads?.byType ?? [])].map(([adType, s]) => ({
         adType,

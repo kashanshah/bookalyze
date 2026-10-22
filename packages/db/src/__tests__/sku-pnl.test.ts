@@ -6,6 +6,7 @@ import {
 } from "@bookalyze/core";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { salesAfter } from "../ads";
 import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import { addNoonChannel, saveAmazonChannels, saveOrderItems, upsertOrders } from "../commerce";
@@ -17,6 +18,7 @@ import {
   reportsWithoutSkuDetail,
   saveSettlement,
   saveSettlementSkuLines,
+  settledSkuLinesForProfit,
   settlementByExternalId,
   settlementsWithoutSkuDetail,
 } from "../settlements";
@@ -415,5 +417,43 @@ describe("rates for each day", () => {
       "2026-09-07": "1.3700000000",
       "2026-09-08": "1.3800000000",
     });
+  });
+});
+
+describe("what Profit by product's keep rates learn from", () => {
+  it("reads each SKU's settled amounts by order, summed by kind, never the account's own", async () => {
+    const lines = await scoped((tx) => settledSkuLinesForProfit(tx, range));
+    expect(lines.every((l) => l.channelId === channelId && l.sku)).toBe(true);
+    const mug = lines
+      .filter((l) => l.sku === "MUG-1")
+      .map((l) => [l.orderRef, l.amountDescription, l.amount, l.quantity])
+      .sort();
+    // By order (to tell the orders given away); the subscription and storage (no order) left out.
+    expect(mug).toEqual([
+      ["702-1", "Commission", "-6.0000", 0],
+      ["702-1", "Principal", "40.0000", 1],
+      ["702-2", "Commission", "-3.0000", 0],
+    ]);
+    expect(lines.some((l) => /subscription|storage/i.test(l.amountDescription))).toBe(false);
+    // Settlements ending outside the period aren't read.
+    expect(
+      await scoped((tx) =>
+        settledSkuLinesForProfit(tx, { ...range, from: "2026-10-01", to: "2026-10-31" }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps each company's to itself", async () => {
+    expect(await scoped((tx) => settledSkuLinesForProfit(tx, range), otherOrgId)).toEqual([]);
+  });
+
+  it("adds up the sales bought after the last settled day (cancelled orders left out)", async () => {
+    const sold = (day: string) =>
+      scoped((tx) =>
+        salesAfter(tx, { channelId, after: day, to: range.to, timezone: range.timezone }),
+      );
+    // 702-1 (Sep 3 in Toronto): 40 + 20; 702-3 is cancelled.
+    expect(await sold("2026-09-02")).toBe("60.0000");
+    expect(await sold("2026-09-03")).toBe("0");
   });
 });

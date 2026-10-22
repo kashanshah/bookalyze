@@ -1818,9 +1818,13 @@ Analytics only, for profit: no keywords, search terms, placements, bids or budge
 - **Channel profit → By product** (`/commerce/profit/products`, `server/product-profit.ts`): per
   channel, each SKU's units and sales (order lines bought in the period, cancelled left out, less
   promotions; db `skuSalesForProfit`), its share of what the marketplace leaves before ads (the
-  **keep rate**: net from the marketplace with the books' advertising added back, over gross sales,
-  from the same settlements and transactions as Channel profit, `server/channel-totals.ts`; the
-  last 90 days when the period has none), its product cost (units × `listingCost`, bundles
+  **keep rate**: the amounts on orders only, with the books' advertising added back, over sales
+  measured like the products' (after promotions when the order lines take them off), from the
+  same settlements and transactions as Channel profit, `server/channel-totals.ts`; a SKU with 5+
+  units in Amazon's settlements by SKU uses its own orders' rate; the last 90 days when the
+  period has none), units given away (Vine, 100% off: core `giveawayCosts`) and the account's own
+  costs (storage, the selling plan; core `accountCosts`) as their own lines, not in any product, a note of the sales after the last settlement (estimated at
+  the same rates), its product cost (units × `listingCost`, bundles
   summed), and its spend from the ads reports. Core `skuProfit`: profit before and after ads (and
   per unit), ACOS, TACOS, ROAS, **break-even ACOS**, organic share, CPC, conversion, **break-even
   CPC**, margin, and a verdict (Losing money, Ads eat the profit, Ads with no sales, Ads cost more

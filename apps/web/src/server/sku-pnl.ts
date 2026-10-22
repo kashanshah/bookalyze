@@ -152,19 +152,25 @@ export async function skuProfitAndLoss(
     return roundUnits(divRound(base * 10n ** 10n, parseDecimal(rate, 10)), minorUnits(to));
   };
 
-  // Keep rates, for channels with nothing settled by product (the same as Profit by product).
+  // Keep rates, for channels with nothing settled by product. Unlike Profit by product's, these
+  // keep the account's own fees in: with nothing settled by product there are no rows to share
+  // them from. Promotions come off the sales when the order lines take them off (Amazon's, eBay's).
   let trailing: Map<string, { currency: string; totals: GroupTotals }> | null = null;
-  const rateOf = (t: { totals: GroupTotals } | undefined) => {
+  const rateOf = (t: { totals: GroupTotals } | undefined, promotionsInSales: boolean) => {
     if (!t) return null;
     const p = channelProfit(t.totals, { feeTaxRecoverable: data.feeTaxRecoverable });
     return keepRate({
       sales: formatDecimal(t.totals.sales),
+      promotions: promotionsInSales ? p.groups.promotions : undefined,
       net: p.net,
       advertising: p.groups.advertising,
     });
   };
   const keepOf = async (channelId: string) => {
-    const now = rateOf(data.totals.get(channelId));
+    const promotionsInSales = data.lines.some(
+      (l) => l.channelId === channelId && parseDecimal(l.promotions) > 0n,
+    );
+    const now = rateOf(data.totals.get(channelId), promotionsInSales);
     if (now !== null) return now;
     trailing ??= await inOrg(ctx, (tx) =>
       channelTotals(tx, {
@@ -173,7 +179,7 @@ export async function skuProfitAndLoss(
         timezone,
       }),
     );
-    return rateOf(trailing.get(channelId));
+    return rateOf(trailing.get(channelId), promotionsInSales);
   };
 
   const linksOf = (channelId: string) => {
