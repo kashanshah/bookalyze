@@ -117,6 +117,32 @@ export async function choose(trigger: Locator, option: string | RegExp) {
 }
 
 /**
+ * Sets a multi-select filter (`MultiCombobox`) to exactly these options: opens it, clears what's
+ * ticked, ticks each one and closes it. No options: back to "all".
+ */
+export async function filterTo(trigger: Locator, options: (string | RegExp)[]) {
+  const page = trigger.page();
+  const button = trigger.and(page.locator('button[role="combobox"]'));
+  await button.click();
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+  const listId = await button.getAttribute("aria-controls");
+  const list = page.locator(`[id="${listId}"]`);
+  await expect(list).toBeVisible();
+  const clear = page.getByRole("button", { name: "Clear", exact: true });
+  if (await clear.isVisible()) {
+    await clear.click();
+    await expect(list.locator('[role="option"][aria-selected="true"]')).toHaveCount(0);
+  }
+  for (const option of options) {
+    const item = list.getByRole("option", { name: option, exact: typeof option === "string" });
+    await item.click();
+    await expect(item).toHaveAttribute("aria-selected", "true");
+  }
+  await page.keyboard.press("Escape");
+  await expect(list).toHaveCount(0);
+}
+
+/**
  * The day `offset` calendar days from today in Toronto (the e2e company's time zone), as
  * YYYY-MM-DD. Counts days, not 24-hour steps, so it stays right across a clock change.
  */
