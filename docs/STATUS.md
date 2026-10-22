@@ -3098,6 +3098,14 @@ line** (`/commerce/profit/products/pnl`; one SKU at `…/pnl/[sku]`).
   The card stays while they aren't in the books (a step to take). Web
   `purchase-orders/books-setting.tsx`; e2e "purchase orders in the books".
 
+### Sales-tax threshold: only the company's own marketplace accounts
+
+- Home's "Sales passed the GST/HST threshold" counted every order of the last 12 months,
+  including a disconnected account's (Kazomo CA still holds the Dubai company's Amazon.ae orders
+  from when that account was connected to it by mistake): CAD 349,222 against a few thousand
+  of real sales. db `salesByCurrencySince` now uses `connectedOrder`, as Orders does. Test: db
+  `commerce.test.ts`.
+
 ### Dropship channels: "Ships from your stock"
 
 - A channel page's **Ships from your stock** switch (on by default). Off for a dropship channel
