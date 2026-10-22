@@ -13,6 +13,7 @@ import {
   liveChannels,
   orderGlance,
   ordersNeedingItems,
+  salesByCurrencySince,
   saveAmazonChannels,
   saveOrderCursor,
   saveOrderFinance,
@@ -457,6 +458,9 @@ describe("orders", () => {
     expect(await scoped((tx) => getOrder(tx, ae?.id ?? ""))).toBeNull();
     const totals = await scoped((tx) => listOrders(tx, { timezone: "UTC", limit: 1, offset: 0 }));
     expect(totals.totals.map((t) => t.channelName)).toEqual(["Amazon.ca"]);
+    // Nor do they count as the company's sales (the sales-tax threshold on Home).
+    const sales = await scoped((tx) => salesByCurrencySince(tx, new Date("2000-01-01")));
+    expect(sales.map((r) => r.currency)).not.toContain("AED");
     // Still there, for when the same account is connected again.
     expect(await scoped((tx) => amazonConnectionsForRegion(tx, "eu"))).toEqual([
       { id: connectionId, status: "disconnected", latestOrderId: "406-0000002-0000002" },

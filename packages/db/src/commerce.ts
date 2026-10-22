@@ -1153,6 +1153,9 @@ export async function salesByCurrencySince(
       and(
         gte(orders.purchasedAt, since),
         sql`${orders.status} not in ('Canceled', 'Unfulfillable')`,
+        // A disconnected account's orders aren't the company's sales (as on Orders): another
+        // company's marketplace connected here by mistake mustn't count toward its threshold.
+        connectedOrder,
       ),
     )
     .groupBy(sql`1`);
