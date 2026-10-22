@@ -1,5 +1,5 @@
 import { can } from "@bookalyze/core";
-import { AlertTriangle, ArrowLeft, FileUp, Megaphone, PackageSearch } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, FileUp, Megaphone, PackageSearch } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -10,26 +10,30 @@ import { nowIn } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import { getCommerceContext } from "@/server/commerce";
 import { fiscalConfigOf } from "@/server/org";
-import { skuProfitAndLoss } from "@/server/sku-pnl";
+import { readChannelIds, skuProfitAndLoss } from "@/server/sku-pnl";
 import { resolveRange } from "../../../../accounting/reports/periods";
 import { RangeControls } from "../../../../accounting/reports/report-controls";
 import { ActualShare, isNegative, pct, SkuPnlTable, Stat } from "./pnl-parts";
 
 export const metadata: Metadata = { title: "Profit and loss by product" };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Channel profit → By product → Profit and loss: every SKU's exact profit and loss for any
- * period, from the marketplaces' own rows, each amount marked when it's estimated. All channels
- * in the main currency (each amount at its day's rate), or one channel in its own. docs/ADS.md §6b.
+ * period, from the marketplaces' own rows, each amount marked when it's estimated. All channels,
+ * or the ones ticked, in the main currency (each amount at its day's rate); one channel ticked
+ * shows in its own currency. docs/ADS.md §6b.
  */
 export default async function SkuPnlPage({
   params,
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ from?: string; to?: string; channel?: string; brands?: string }>;
+  searchParams: Promise<{
+    from?: string;
+    to?: string;
+    channel?: string | string[];
+    brands?: string;
+  }>;
 }) {
   const { slug } = await params;
   const ctx = await getCommerceContext(slug);
@@ -38,10 +42,13 @@ export default async function SkuPnlPage({
   const { locale, timezone, baseCurrency } = ctx.profile;
   const today = nowIn(timezone).date;
   const { from, to, presets } = resolveRange(sp, today, fiscalConfigOf(ctx.profile));
-  const channelId = sp.channel && UUID.test(sp.channel) ? sp.channel : null;
+  const asked = readChannelIds(sp.channel);
   const allocateBrands = sp.brands === "shared";
-  const data = await skuProfitAndLoss(ctx, { from, to, allocateBrands });
-  const channel = channelId ? data.channels.find((c) => c.channelId === channelId) : undefined;
+  const data = await skuProfitAndLoss(ctx, { from, to, allocateBrands, channelIds: asked });
+  // The ticked channels that have something in the period, in the list's order.
+  const chosen = data.channels.filter((c) => asked.includes(c.channelId));
+  const chosenIds = chosen.map((c) => c.channelId);
+  const channel = chosen.length === 1 ? chosen[0] : undefined;
   const view = channel
     ? { rows: channel.rows, total: channel.total, currency: channel.currency }
     : { ...data.summary, currency: baseCurrency };
@@ -49,12 +56,22 @@ export default async function SkuPnlPage({
   const base = `/o/${slug}/commerce/profit/products/pnl`;
   const query = (extra: Record<string, string | null>) => {
     const q = new URLSearchParams({ from, to });
-    const merged = { channel: channelId, brands: allocateBrands ? "shared" : null, ...extra };
+    const merged = {
+      channel: chosenIds.join(",") || null,
+      brands: allocateBrands ? "shared" : null,
+      ...extra,
+    };
     for (const [k, v] of Object.entries(merged)) if (v) q.set(k, v);
     return `?${q}`;
   };
   const csvHref = `/api/o/${slug}/commerce/sku-pnl${query({})}`;
-  const shown = channel ? [channel] : data.channels;
+  const shown = chosen.length ? chosen : data.channels;
+  /** The selection with one channel ticked or unticked, in the list's order. */
+  const toggled = (id: string) =>
+    data.channels
+      .map((c) => c.channelId)
+      .filter((c) => (c === id ? !chosenIds.includes(id) : chosenIds.includes(c)))
+      .join(",") || null;
   const missingDetail = shown.filter((c) => c.missingDetail > 0);
   const noAds = shown.filter((c) => !c.hasAds);
   const sold = (c: (typeof shown)[number]) => c.total.unitsSold > 0;
@@ -85,19 +102,40 @@ export default async function SkuPnlPage({
         {data.channels.length > 1 ? (
           <nav aria-label="Channels" className="flex flex-wrap gap-2">
             {[{ channelId: null, name: "All channels" }, ...data.channels].map((c) => {
-              const active = (c.channelId ?? null) === channelId;
+              const active = c.channelId ? chosenIds.includes(c.channelId) : !chosenIds.length;
               return (
                 <Link
                   key={c.channelId ?? "all"}
-                  href={`${base}${query({ channel: c.channelId })}`}
-                  aria-current={active ? "page" : undefined}
+                  href={`${base}${query({ channel: c.channelId ? toggled(c.channelId) : null })}`}
+                  role="checkbox"
+                  aria-checked={active}
+                  title={
+                    c.channelId
+                      ? active
+                        ? `Leave ${c.name} out`
+                        : `Add ${c.name}`
+                      : "Every channel together"
+                  }
                   className={cn(
-                    "rounded-full border px-3 py-1 text-sm transition-colors",
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors",
                     active
                       ? "border-primary bg-primary/10 text-primary"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
                 >
+                  {c.channelId ? (
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "flex size-3.5 items-center justify-center rounded-[4px] border",
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-muted-foreground/50",
+                      )}
+                    >
+                      {active ? <Check className="size-2.5" strokeWidth={3} /> : null}
+                    </span>
+                  ) : null}
                   {c.name}
                 </Link>
               );
@@ -181,7 +219,7 @@ export default async function SkuPnlPage({
           <section className="fade-in-0 grid animate-in overflow-hidden rounded-2xl border bg-card shadow-xs">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-4">
               <h2 className="flex flex-wrap items-center gap-2 font-semibold">
-                {channel ? channel.name : "All channels"}
+                {chosen.length ? chosen.map((c) => c.name).join(" + ") : "All channels"}
                 <span className="font-normal text-muted-foreground text-sm">{view.currency}</span>
                 {channel && !channel.isActive ? (
                   <Badge variant="outline">Switched off</Badge>
@@ -190,7 +228,9 @@ export default async function SkuPnlPage({
               <p className="text-muted-foreground text-xs">
                 {channel
                   ? "In the channel's own currency."
-                  : `Every channel in ${baseCurrency}, each amount at its day's rate. Pick a channel for its own currency.`}{" "}
+                  : chosen.length
+                    ? `These channels in ${baseCurrency}, each amount at its day's rate. Tick one alone for its own currency.`
+                    : `Every channel in ${baseCurrency}, each amount at its day's rate. Tick one alone for its own currency.`}{" "}
                 Worst first. Open a product for its waterfall.
               </p>
             </div>

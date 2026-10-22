@@ -9,10 +9,8 @@ import {
 import { nowIn } from "@/lib/dates";
 import { getCommerceContext } from "@/server/commerce";
 import { fiscalConfigOf } from "@/server/org";
-import { skuProfitAndLoss } from "@/server/sku-pnl";
+import { readChannelIds, skuProfitAndLoss } from "@/server/sku-pnl";
 import { resolveRange } from "../../../../../o/[slug]/accounting/reports/periods";
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Profit and loss by product as a CSV download: every channel together in the main currency,
@@ -33,23 +31,33 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
     nowIn(ctx.profile.timezone).date,
     fiscalConfigOf(ctx.profile),
   );
-  const channel = search.get("channel");
-  const channelId = channel && UUID.test(channel) ? channel : null;
+  const channelIds = readChannelIds(search.getAll("channel"));
   const sku = search.get("sku")?.slice(0, 200) ?? null;
   const data = await skuProfitAndLoss(ctx, {
     from,
     to,
     allocateBrands: search.get("brands") === "shared",
+    channelIds,
   });
+  const chosen = data.channels.filter((c) => channelIds.includes(c.channelId));
   const only = <T extends { sku: string }>(rows: T[]) =>
     sku === null ? rows : rows.filter((r) => r.sku === sku);
   const groups = [
-    ...(channelId
+    // One channel ticked: just its own currency. Several, or none: their total first.
+    ...(chosen.length === 1
       ? []
-      : [{ name: "All channels", currency: data.currency, rows: only(data.summary.rows) }]),
-    ...data.channels
-      .filter((c) => !channelId || c.channelId === channelId)
-      .map((c) => ({ name: c.name, currency: c.currency, rows: only(c.rows) })),
+      : [
+          {
+            name: chosen.length ? chosen.map((c) => c.name).join(" + ") : "All channels",
+            currency: data.currency,
+            rows: only(data.summary.rows),
+          },
+        ]),
+    ...(chosen.length ? chosen : data.channels).map((c) => ({
+      name: c.name,
+      currency: c.currency,
+      rows: only(c.rows),
+    })),
   ];
   const company = ctx.org.name;
   const csv = toCsv([
