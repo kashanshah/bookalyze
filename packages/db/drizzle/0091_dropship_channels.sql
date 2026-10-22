@@ -1,0 +1,1 @@
+ALTER TABLE "sales_channels" ADD COLUMN "ships_from_stock" boolean DEFAULT true NOT NULL;
