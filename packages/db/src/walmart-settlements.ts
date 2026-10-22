@@ -4,7 +4,7 @@ import {
   type WalmartSettlementFile,
   walmartSettlementTotals,
 } from "@bookalyze/core";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, ne } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { walmartSettlementRows, walmartSettlements } from "./schema/commerce";
 
@@ -13,6 +13,10 @@ import { walmartSettlementRows, walmartSettlements } from "./schema/commerce";
  * Walmart sent them (core `readWalmartSettlement` has already left out buyer details). Bringing
  * a date in again replaces it, so a report Walmart corrects comes in whole. Its rows are added up
  * by group as it's saved (core `walmartSettlementTotals`), for posting (`walmart-posting.ts`).
+ *
+ * A report uploaded from Seller Center is the same report: one for a period already in replaces
+ * it (under the date it's kept under), and the API's report for an uploaded period takes the
+ * uploaded one's place, so a settlement is never in twice.
  */
 
 /** Rows are written in batches, so a long report stays within one statement's limits. */
@@ -25,10 +29,42 @@ export async function saveWalmartSettlement(
     channelId: string;
     reportDate: string;
     file: WalmartSettlementFile;
+    source?: "api" | "upload";
   },
 ) {
   const { file } = input;
+  const source = input.source ?? "api";
+  let reportDate = input.reportDate;
+  if (file.periodFrom && file.periodTo) {
+    const [same] = await tx
+      .select({
+        id: walmartSettlements.id,
+        reportDate: walmartSettlements.reportDate,
+        source: walmartSettlements.source,
+      })
+      .from(walmartSettlements)
+      .where(
+        and(
+          eq(walmartSettlements.channelId, input.channelId),
+          eq(walmartSettlements.periodFrom, file.periodFrom),
+          eq(walmartSettlements.periodTo, file.periodTo),
+          ne(walmartSettlements.reportDate, reportDate),
+        ),
+      )
+      .limit(1);
+    if (same && source === "upload") {
+      // Seller Center's copy of a settlement already in: kept under the date it has.
+      reportDate = same.reportDate;
+    } else if (same && same.source === "upload") {
+      // Walmart's API now has the report that was uploaded: it moves to the API's date.
+      await tx
+        .update(walmartSettlements)
+        .set({ reportDate })
+        .where(eq(walmartSettlements.id, same.id));
+    }
+  }
   const values = {
+    source,
     periodFrom: file.periodFrom,
     periodTo: file.periodTo,
     currency: file.currency,
@@ -44,7 +80,7 @@ export async function saveWalmartSettlement(
     .values({
       organizationId: input.orgId,
       channelId: input.channelId,
-      reportDate: input.reportDate,
+      reportDate,
       ...values,
     })
     .onConflictDoUpdate({
@@ -84,6 +120,7 @@ export async function listWalmartSettlements(tx: Transaction, channelId: string)
       rows: walmartSettlements.rows,
       columns: walmartSettlements.columns,
       broughtInAt: walmartSettlements.broughtInAt,
+      source: walmartSettlements.source,
     })
     .from(walmartSettlements)
     .where(eq(walmartSettlements.channelId, channelId))

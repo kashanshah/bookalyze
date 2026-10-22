@@ -16,6 +16,7 @@ import {
   CircleAlert,
   Download,
   FileSearch,
+  FileUp,
   KeyRound,
   PlugZap,
   Plus,
@@ -23,7 +24,7 @@ import {
   Unplug,
 } from "lucide-react";
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Amount } from "@/components/accounting/amount";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,7 @@ import {
   disconnectWalmartAction,
   setChannelFulfilmentAction,
   testWalmartAction,
+  uploadWalmartSettlementAction,
   walmartSettlementDatesAction,
 } from "../actions";
 import type { ExistingChannel } from "./ebay";
@@ -620,6 +622,9 @@ function SettlementCheck({
   );
 }
 
+/** Gzipped uploads stay under the server's 1 MB limit for an action's request. */
+const UPLOAD_MAX_BYTES = 900 * 1024;
+
 export type WalmartSettlementView = {
   id: string;
   reportDate: string;
@@ -628,6 +633,8 @@ export type WalmartSettlementView = {
   currency: string | null;
   payout: string | null;
   rows: number;
+  /** Uploaded from Seller Center rather than brought in from Walmart's API. */
+  uploaded: boolean;
 };
 
 /**
@@ -669,6 +676,38 @@ export function WalmartSettlements({
         },
       );
     });
+  const input = useRef<HTMLInputElement>(null);
+  const upload = (files: FileList | null) =>
+    start(async () => {
+      for (const file of Array.from(files ?? [])) {
+        // Sent gzipped: Seller Center's reports are text, and shrink about tenfold.
+        const packed = await new Response(
+          file.stream().pipeThrough(new CompressionStream("gzip")),
+        ).blob();
+        if (packed.size > UPLOAD_MAX_BYTES) {
+          toast.error(`${file.name} is too big to upload. Bring it in from Walmart instead.`);
+          continue;
+        }
+        const form = new FormData();
+        form.set("channelId", channelId);
+        form.set("fileName", file.name);
+        form.set("file", packed, `${file.name}.gz`);
+        const result = await uploadWalmartSettlementAction(slug, form);
+        if (!result.ok) {
+          toast.error(`${file.name}: ${result.message}`);
+          continue;
+        }
+        const period =
+          result.periodFrom && result.periodTo
+            ? `${day(result.periodFrom)} – ${day(result.periodTo)}`
+            : day(result.reportDate);
+        toast.success(
+          result.replaced ? `Settlement ${period} replaced` : `Settlement ${period} added`,
+          { description: `${result.rows === 1 ? "1 row" : `${result.rows} rows`} kept.` },
+        );
+      }
+      if (input.current) input.current.value = "";
+    });
   return (
     <section
       aria-labelledby={`walmart-money-${channelId}`}
@@ -682,7 +721,8 @@ export function WalmartSettlements({
           <p className="text-muted-foreground text-sm leading-relaxed">
             Each payout's report from Walmart, kept row by row as Walmart sent it, without buyer
             details. Walmart money reads them into your books and matches each payout to its bank
-            deposit.
+            deposit. A settlement Walmart's API can't give can be uploaded from Seller Center
+            (Payments, the settlement's reconciliation report).
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -693,6 +733,27 @@ export function WalmartSettlements({
                 <ArrowRight className="rtl:rotate-180" />
               </Link>
             </Button>
+          ) : null}
+          {canManage ? (
+            <>
+              <input
+                ref={input}
+                type="file"
+                accept=".csv,.txt,text/csv,text/plain"
+                multiple
+                className="hidden"
+                aria-label="Walmart settlement reports"
+                onChange={(e) => upload(e.target.files)}
+              />
+              <Button
+                variant={connected ? "ghost" : "outline"}
+                onClick={() => input.current?.click()}
+                disabled={pending}
+              >
+                {pending ? <Spinner /> : <FileUp />}
+                Upload Seller Center's report
+              </Button>
+            </>
           ) : null}
           {canManage && connected ? (
             <Button variant="outline" onClick={bringIn} disabled={pending}>
@@ -710,7 +771,10 @@ export function WalmartSettlements({
               className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3"
             >
               <div className="min-w-0">
-                <p className="font-medium text-sm">{day(s.reportDate)}</p>
+                <p className="flex flex-wrap items-center gap-2 font-medium text-sm">
+                  {day(s.reportDate)}
+                  {s.uploaded ? <Badge variant="outline">Uploaded</Badge> : null}
+                </p>
                 <p className="text-muted-foreground text-xs">
                   {[
                     s.periodFrom && s.periodTo ? `${day(s.periodFrom)} – ${day(s.periodTo)}` : null,
@@ -734,7 +798,7 @@ export function WalmartSettlements({
         <p className="rounded-xl border border-dashed px-4 py-6 text-center text-muted-foreground text-sm">
           {connected
             ? "No settlements brought in yet."
-            : "Connect this country's Walmart account to bring its settlements in."}
+            : "Connect this country's Walmart account to bring its settlements in, or upload a settlement report from Seller Center."}
         </p>
       )}
     </section>

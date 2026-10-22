@@ -167,7 +167,7 @@ export default async function WalmartMoneyPage({ params }: { params: Promise<{ s
           <p className="font-medium">No settlements brought in yet</p>
           <p className="max-w-sm text-muted-foreground text-sm">
             {channels.length
-              ? "On a connected Walmart channel's page, choose Bring in from Walmart. Its settlements then show here."
+              ? "On a Walmart channel's page, choose Bring in from Walmart, or upload a settlement report from Seller Center. Its settlements then show here."
               : "Add a Walmart channel and connect it, and its settlements can come in here."}
           </p>
           <Button asChild variant="outline">

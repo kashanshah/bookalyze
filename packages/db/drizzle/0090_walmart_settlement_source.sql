@@ -1,0 +1,1 @@
+ALTER TABLE "walmart_settlements" ADD COLUMN "source" text DEFAULT 'api' NOT NULL;

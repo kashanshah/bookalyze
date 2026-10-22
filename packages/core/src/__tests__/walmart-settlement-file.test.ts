@@ -3,6 +3,7 @@ import {
   readWalmartSettlement,
   walmartAmount,
   walmartDay,
+  walmartSettlementDate,
 } from "../commerce/walmart-settlement-file";
 
 const CSV = [
@@ -61,5 +62,14 @@ describe("Walmart settlement file", () => {
     expect(walmartAmount("$6")).toBe("6.0000");
     expect(walmartAmount("")).toBeNull();
     expect(walmartAmount("n/a")).toBeNull();
+  });
+
+  it("files an uploaded report under its settlement date, else its period's last day", () => {
+    expect(walmartSettlementDate(readWalmartSettlement(CSV))).toBe("2026-10-14");
+    const paid = readWalmartSettlement(
+      "Period Start Date,Period End Date,Settlement Date,Amount\n10/01/2026,10/14/2026,10/16/2026,5\n",
+    );
+    expect(walmartSettlementDate(paid)).toBe("2026-10-16");
+    expect(walmartSettlementDate(readWalmartSettlement("Date,Amount\n2026-10-01,5\n"))).toBeNull();
   });
 });
