@@ -1286,6 +1286,8 @@ export const walmartSettlements = pgTable(
     /** The columns kept, in the report's order. */
     columns: jsonb("columns").$type<string[]>().notNull().default([]),
     broughtInAt: timestamp("brought_in_at", { withTimezone: true }).notNull().defaultNow(),
+    /** How it came in: Walmart's API ("api") or Seller Center's report uploaded ("upload"). */
+    source: text("source").notNull().default("api"),
     /**
      * Its rows added up by group (core `walmartSettlementTotals`), kept so pages don't read every
      * row; read again when `totals_version` isn't core's `WALMART_READER_VERSION`. Null with a

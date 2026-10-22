@@ -341,6 +341,7 @@ export default async function ChannelPage({
             currency: s.currency,
             payout: s.payout,
             rows: s.rows,
+            uploaded: s.source === "upload",
           }))}
         />
       ) : null}

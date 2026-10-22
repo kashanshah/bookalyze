@@ -1,5 +1,5 @@
 {
-  "id": "8dc56db3-3e09-420c-8590-44917ff36187",
+  "id": "9cab4478-fc28-4d32-96b9-47047421e028",
   "prevId": "e2f657bd-bd95-407d-b2a3-8ca2b2f51918",
   "version": "7",
   "dialect": "postgresql",
@@ -8359,13 +8359,6 @@
           "notNull": true,
           "default": true
         },
-        "ships_from_stock": {
-          "name": "ships_from_stock",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "orders_from": {
           "name": "orders_from",
           "type": "date",
@@ -9768,6 +9761,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'api'"
         },
         "totals": {
           "name": "totals",

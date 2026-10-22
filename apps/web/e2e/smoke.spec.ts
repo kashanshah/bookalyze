@@ -3013,6 +3013,63 @@ test("walmart: bring in what WFS holds, see it on the channel, on Products and o
   await expect(notCounted).toContainText("Quality Hold");
 });
 
+test("walmart: upload a settlement report from Seller Center, again to replace it, and a wrong file", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Walmart Canada/ }).click();
+  const money = page.getByRole("region", { name: "Walmart settlements" });
+  await expect(money.getByRole("listitem")).toHaveCount(2);
+
+  // An older settlement, from before the API key: downloaded from Seller Center, buyer columns and all.
+  const day = (back: number) => {
+    const d = new Date(Date.now() - back * 86_400_000);
+    return `${String(d.getUTCMonth() + 1).padStart(2, "0")}/${String(d.getUTCDate()).padStart(2, "0")}/${d.getUTCFullYear()}`;
+  };
+  const report = (payout: string) => ({
+    name: "settlement.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      [
+        "Period Start Date,Period End Date,Total Payout,Currency,Transaction Type,Purchase Order #,Amount,Amount Type,Customer Name,Ship to City",
+        `${day(75)},${day(62)},${payout},CAD,Sale,108800000009,${payout},Product Price,Synthetic Buyer,Toronto`,
+      ].join("\n"),
+    ),
+  });
+  const files = money.getByLabel("Walmart settlement reports");
+  await files.setInputFiles(report("24.99"));
+  await expect(page.getByText(/^Settlement .* added$/)).toBeVisible({ timeout: 30_000 });
+  await expect(money.getByRole("listitem")).toHaveCount(3);
+  const uploaded = money.getByRole("listitem").last();
+  await expect(uploaded.getByText("Uploaded")).toBeVisible();
+  await expect(uploaded).toContainText("$24.99");
+
+  // The same settlement again (Walmart corrected it): it replaces the one in, not a second copy.
+  await toastsGone(page);
+  await files.setInputFiles(report("25.99"));
+  await expect(page.getByText(/^Settlement .* replaced$/)).toBeVisible({ timeout: 30_000 });
+  await expect(money.getByRole("listitem")).toHaveCount(3);
+  await expect(uploaded).toContainText("$25.99");
+
+  // Another report altogether says what's wrong, and nothing is kept.
+  await toastsGone(page);
+  await files.setInputFiles({
+    name: "orders.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("Order,Total\n1,5\n"),
+  });
+  await expect(page.getByText(/isn't Walmart's settlement report/)).toBeVisible();
+  await expect(money.getByRole("listitem")).toHaveCount(3);
+
+  // No buyer details kept from the upload either.
+  const kept = await withOwnerDb((db) =>
+    db.query<{ data: string }>(`select data::text as data from walmart_settlement_rows`),
+  );
+  expect(kept.rows.map((r) => r.data).join("\n")).not.toMatch(/Toronto|M0M|Synthetic/);
+});
+
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
   const keyFile = async (path: string) => ({
     name: "noon_credentials.json",
