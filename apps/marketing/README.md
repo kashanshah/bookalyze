@@ -49,7 +49,7 @@ field, a 3-second minimum, and 5 messages per address per 10 minutes (per server
 | Variable | Default | |
 |---|---|---|
 | `RESEND_API_KEY` | none | A sending-only key. Without it: development logs the message and succeeds; production says email isn't set up |
-| `CONTACT_TO` | `hello@bookalyze.com` | Where messages go |
+| `CONTACT_TO` | `info@bookalyze.com` | Where messages go |
 | `CONTACT_FROM` | `Bookalyze website <website@bookalyze.com>` | A sender on a domain verified in Resend |
 | `SUPPORT_INTAKE_URL` | none | The app's intake, `https://app.bookalyze.com/api/support/intake` |
 | `SUPPORT_INTAKE_SECRET` | none | The same secret as the app's `SUPPORT_INTAKE_SECRET` |

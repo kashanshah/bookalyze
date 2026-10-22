@@ -111,7 +111,7 @@ async function deliver(
   input: ContactInput,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   const key = process.env.RESEND_API_KEY;
-  const to = process.env.CONTACT_TO || "hello@bookalyze.com";
+  const to = process.env.CONTACT_TO || "info@bookalyze.com";
   const from = process.env.CONTACT_FROM || "Bookalyze website <website@bookalyze.com>";
   const subject = `[Website] ${topicLabel(input.topic)}: ${input.name}`;
   const body = [
@@ -134,7 +134,7 @@ async function deliver(
     console.error("[contact] RESEND_API_KEY isn't set: a contact form message couldn't be sent.");
     return {
       ok: false,
-      message: "Our contact form isn't set up yet. Please email hello@bookalyze.com instead.",
+      message: "Our contact form isn't set up yet. Please email info@bookalyze.com instead.",
     };
   }
 

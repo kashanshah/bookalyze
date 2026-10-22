@@ -148,3 +148,65 @@ export function funnelRates(steps: readonly FunnelStep[]) {
     };
   });
 }
+
+/** A visitor's answer to "Can we remember how you found us?", shared across bookalyze.com. */
+export const CONSENT_COOKIE = "bkz_consent";
+export const CONSENT_COOKIE_DAYS = 180;
+
+/**
+ * Where a cookie like `bkz_src` needs the visitor's consent first (the ePrivacy rules): the EU,
+ * the rest of the EEA, the UK and Switzerland. Elsewhere the privacy policy tells people.
+ */
+const CONSENT_COUNTRIES = new Set([
+  // EU
+  "AT",
+  "BE",
+  "BG",
+  "HR",
+  "CY",
+  "CZ",
+  "DK",
+  "EE",
+  "FI",
+  "FR",
+  "DE",
+  "GR",
+  "HU",
+  "IE",
+  "IT",
+  "LV",
+  "LT",
+  "LU",
+  "MT",
+  "NL",
+  "PL",
+  "PT",
+  "RO",
+  "SK",
+  "SI",
+  "ES",
+  "SE",
+  // Rest of the EEA, the UK, Switzerland
+  "IS",
+  "LI",
+  "NO",
+  "GB",
+  "CH",
+]);
+
+/** Whether visitors from this country (ISO code, from the host's geolocation) are asked first. */
+export function needsConsent(country: string | null | undefined): boolean {
+  return Boolean(country && CONSENT_COUNTRIES.has(country.trim().toUpperCase()));
+}
+
+export type ConsentChoice = "yes" | "no";
+
+export function readConsent(cookieHeader: string | null | undefined): ConsentChoice | null {
+  const value = readCookie(cookieHeader, CONSENT_COOKIE);
+  return value === "yes" || value === "no" ? value : null;
+}
+
+/** May `bkz_src` be set: no consent is needed there, or the visitor said yes. */
+export function maySetSource(consentNeeded: boolean, choice: ConsentChoice | null): boolean {
+  return !consentNeeded || choice === "yes";
+}

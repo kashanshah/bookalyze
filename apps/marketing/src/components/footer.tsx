@@ -2,6 +2,7 @@ import { SITE_FOOTER_COLUMNS, SITE_TAGLINE, SITE_TRADEMARKS, siteHref } from "@b
 import Link from "next/link";
 import { LINK_URLS } from "@/lib/site";
 import { Brand } from "./brand";
+import { CookieChoices } from "./growth";
 
 const COLUMNS = SITE_FOOTER_COLUMNS.map((col) => ({
   title: col.title,
@@ -38,9 +39,13 @@ export function Footer() {
         ))}
       </div>
       <div className="border-t">
-        <p className="mx-auto max-w-6xl px-4 py-6 text-muted-foreground text-xs leading-5 sm:px-6">
-          © {new Date().getFullYear()} Bookalyze. {SITE_TRADEMARKS}
-        </p>
+        <div className="mx-auto flex max-w-6xl flex-wrap items-start justify-between gap-x-6 gap-y-2 px-4 py-6 text-muted-foreground text-xs leading-5 sm:px-6">
+          <p>
+            © {new Date().getFullYear()} Bookalyze, by Teknoffice Technologies Inc.{" "}
+            {SITE_TRADEMARKS}
+          </p>
+          <CookieChoices />
+        </div>
       </div>
     </footer>
   );

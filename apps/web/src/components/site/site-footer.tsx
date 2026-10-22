@@ -40,7 +40,7 @@ export function SiteFooter() {
       </div>
       <div className="border-t">
         <p className="mx-auto max-w-6xl px-4 py-6 text-muted-foreground text-xs leading-5 sm:px-6">
-          © {new Date().getFullYear()} Bookalyze. {SITE_TRADEMARKS}
+          © {new Date().getFullYear()} Bookalyze, by Teknoffice Technologies Inc. {SITE_TRADEMARKS}
         </p>
       </div>
     </footer>
