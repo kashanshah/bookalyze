@@ -59,6 +59,8 @@ export type ChannelSkuPnl = {
   currency: string;
   isActive: boolean;
   mode: ChannelPnl["mode"];
+  /** Nothing settled by product and no keep rate: its fees aren't known. */
+  feesUnknown: boolean;
   rows: SkuPnl[];
   total: SkuPnl;
   /** Ads reports exist for it (else ad cost is "not connected yet"). */
@@ -256,6 +258,7 @@ export async function skuProfitAndLoss(
       currency: info.currency,
       isActive: info.isActive,
       mode: pnl.mode,
+      feesUnknown: pnl.feesUnknown,
       rows,
       total: totalSkuPnl(rows, info.currency),
       hasAds,

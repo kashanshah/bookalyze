@@ -57,7 +57,12 @@ export default async function SkuPnlPage({
   const shown = channel ? [channel] : data.channels;
   const missingDetail = shown.filter((c) => c.missingDetail > 0);
   const noAds = shown.filter((c) => !c.hasAds);
-  const keep = shown.filter((c) => c.mode === "keep" && c.rows.length);
+  const sold = (c: (typeof shown)[number]) => c.total.unitsSold > 0;
+  const keep = shown.filter((c) => c.mode === "keep" && !c.feesUnknown && sold(c));
+  const unknown = shown.filter((c) => c.feesUnknown && sold(c));
+  // A switched-off or disconnected channel's settlements can't be brought in again.
+  const refillable = missingDetail.filter((c) => c.isActive);
+  const uploadOnly = missingDetail.filter((c) => !c.isActive);
   const { total } = view;
 
   return (
@@ -140,9 +145,11 @@ export default async function SkuPnlPage({
               tone={isNegative(total.profit) ? "bad" : "good"}
               value={<Amount value={total.profit} currency={view.currency} locale={locale} />}
               sub={
-                total.margin === null
-                  ? "Add product costs to see it"
-                  : `${pct(total.margin, locale)} of sales`
+                total.unitsSold === 0
+                  ? "No sales in the period"
+                  : total.margin === null
+                    ? "Shows once products have a cost and their fees are known"
+                    : `${pct(total.margin, locale)} of sales`
               }
             />
             <Stat
@@ -208,7 +215,7 @@ export default async function SkuPnlPage({
         </div>
       )}
 
-      {missingDetail.length || noAds.length || keep.length || data.unconverted ? (
+      {missingDetail.length || noAds.length || keep.length || unknown.length || data.unconverted ? (
         <div className="grid gap-2 rounded-2xl border bg-muted/20 px-5 py-4 text-sm">
           {missingDetail.length ? (
             <p className="flex gap-2">
@@ -221,12 +228,40 @@ export default async function SkuPnlPage({
                   )
                   .join(", ")}{" "}
                 in this period came in before Bookalyze kept settlements by product, so their
-                orders' fees are estimated. On{" "}
-                <Link href={`/o/${slug}/commerce/settlements`} className="underline">
-                  Settlements
-                </Link>
-                , Bring in settlements fills the ones Amazon still lists (about 90 days); for older
-                ones, upload their flat files again. Nothing in your books changes.
+                orders' fees are estimated.{" "}
+                {refillable.length ? (
+                  <>
+                    On{" "}
+                    <Link href={`/o/${slug}/commerce/settlements`} className="underline">
+                      Settlements
+                    </Link>
+                    , Bring in settlements fills the ones Amazon still lists (about 90 days); for
+                    older ones, upload their flat files again.{" "}
+                  </>
+                ) : null}
+                {uploadOnly.length ? (
+                  <>
+                    {uploadOnly.map((c) => c.name).join(", ")}{" "}
+                    {uploadOnly.length === 1 ? "is" : "are"} switched off or disconnected, so
+                    {uploadOnly.length === 1 ? " its" : " their"} settlements can only be filled by
+                    uploading their flat files (Seller Central → Payments → All statements → “Flat
+                    File V2”).{" "}
+                  </>
+                ) : null}
+                Nothing in your books changes.
+              </span>
+            </p>
+          ) : null}
+          {unknown.length ? (
+            <p className="flex gap-2">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <span>
+                {unknown.map((c) => c.name).join(", ")}: no settlements or transactions to learn the
+                marketplace's fees from, in this period or the 90 days before
+                {unknown.some((c) => !c.isActive)
+                  ? " (a switched-off channel's settlements aren't counted)"
+                  : ""}
+                , so {unknown.length === 1 ? "its" : "their"} products' fees and profit show as —.
               </span>
             </p>
           ) : null}

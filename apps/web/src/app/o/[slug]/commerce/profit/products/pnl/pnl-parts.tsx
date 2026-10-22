@@ -191,7 +191,9 @@ export function SkuPnlTable({
                 <td className={cell}>
                   {money(r.sales, sumEstimated(r, ["grossSales", "promotions"]))}
                 </td>
-                <td className={cell}>{money(marketplace.amount, marketplace.estimated)}</td>
+                <td className={cell} title={r.feesUnknown ? "No fees to go by yet" : undefined}>
+                  {money(r.feesUnknown ? null : marketplace.amount, marketplace.estimated)}
+                </td>
                 <td className={cell}>{money(r.lines.cogs.amount, r.lines.cogs.estimated)}</td>
                 <td className={cell}>{money(ads.amount, ads.estimated)}</td>
                 <td

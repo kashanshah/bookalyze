@@ -702,7 +702,8 @@ export function summarizeSkuPnl(input: {
       margin: profit === null ? null : percent(profit, sales),
       profitPerUnit: profit === null || units === 0n ? null : r(divRound(profit, units)),
       tacos: percent(-ads, sales),
-      actualShare: s.all === 0n ? null : percent(s.actual, s.all),
+      // Fees not known at all: what's actual can't be said either.
+      actualShare: feesUnknown || s.all === 0n ? null : percent(s.actual, s.all),
       costMissing,
       feesUnknown,
       unconverted: s.unconverted,
@@ -719,10 +720,14 @@ export function summarizeSkuPnl(input: {
   });
 }
 
-/** Rows together: every amount summed, the period's "x% actual". */
+/**
+ * Rows together: every amount summed, and the period's "x% actual" (of the rows whose fees are
+ * known: a row with no fees at all would read as all actual).
+ */
 export function totalSkuPnl(rows: readonly SkuPnl[], currency: string): SkuPnl {
   const decimals = minorUnits(currency);
   const lines = blankLines();
+  const known = blankLines();
   let unitsSold = 0;
   let unitsReturned = 0;
   let orders = 0;
@@ -739,6 +744,9 @@ export function totalSkuPnl(rows: readonly SkuPnl[], currency: string): SkuPnl {
     for (const l of SKU_PNL_LINES) {
       lines[l].amount += parseDecimal(row.lines[l].amount);
       lines[l].estimated += parseDecimal(row.lines[l].estimated);
+      if (row.feesUnknown) continue;
+      known[l].amount += parseDecimal(row.lines[l].amount);
+      known[l].estimated += parseDecimal(row.lines[l].estimated);
     }
     if (row.profit !== null) {
       anyProfit = true;
@@ -746,8 +754,8 @@ export function totalSkuPnl(rows: readonly SkuPnl[], currency: string): SkuPnl {
     }
   }
   for (const l of SKU_PNL_LINES) {
-    all += abs(lines[l].amount);
-    actualWeighted += abs(lines[l].amount - lines[l].estimated);
+    all += abs(known[l].amount);
+    actualWeighted += abs(known[l].amount - known[l].estimated);
   }
   const r = (v: bigint) => formatDecimal(roundUnits(v, decimals));
   const sum = (keys: readonly SkuPnlLine[]) => keys.reduce((t, k) => t + lines[k].amount, 0n);

@@ -248,6 +248,9 @@ describe("channelSkuPnl", () => {
     expect(rowOf(rows, "MUG-1").feesUnknown).toBe(true);
     expect(rowOf(rows, "MUG-1").profit).toBeNull();
     expect(rowOf(rows, "LOOSE").costMissing).toBe(true);
+    // No fees to go by: nothing can be called actual, here or in the total.
+    expect(rowOf(rows, "MUG-1").actualShare).toBeNull();
+    expect(totalSkuPnl(rows, "CAD").actualShare).toBeNull();
   });
 
   it("shares an order's rows with no SKU by item price (eBay)", () => {
