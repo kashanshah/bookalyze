@@ -762,8 +762,8 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     while the budget lasts, then stops with `more: true`.
 - **Runs:** "Bring in new orders" (`syncOrdersAction`, any member, 20 s per call; the button
   calls again while `more`, up to 30 rounds, refreshing the list) and the order job
-  `/api/cron/orders`, every 5 minutes, every day (`syncAllOrders`, 240 s so a run ends before
-  the next; passes of at most 60 s per channel, then leftover time to channels still with more;
+  `/api/cron/orders`, every half hour (on the hour and half past, with the hourly jobs, so the
+  database sleeps in between; it was every 5 minutes) (`syncAllOrders`, 220 s; passes of at most 60 s per channel, then leftover time to channels still with more;
   over `syncable_sales_channels()`; route `maxDuration = 300`). Amazon allows about one order's
   items every 2 s, so a first sync of thousands of orders takes a few hours, on its own. Orders
   aren't listed again within 10 minutes of the last listing (`FRESH_MS`); items carry on.
@@ -3536,7 +3536,7 @@ Built like Amazon and Noon: channels first, then the account, orders, money and 
 1. [x] **eBay channels.** Done in slice 1.
 2. [x] **Connect eBay.** Done in slice 2 (needs the app keys in Vercel to be used: owner
    input 5).
-3. [x] **Orders** from the Fulfillment API, a year back and every few minutes; SKUs, so cost of
+3. [x] **Orders** from the Fulfillment API, a year back and every half hour; SKUs, so cost of
    goods sold counts eBay. Done in slice 3.
 4. [x] **Transactions** from the Finances API kept row by row (a year back), monthly totals, in
    Channel profit. Done in slice 4 (the transaction report upload isn't built yet).

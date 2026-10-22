@@ -356,7 +356,7 @@ export const ADVERTISING_GUIDES: readonly Guide[] = [
               },
               {
                 title: "Back in Bookalyze",
-                body: "You land on the marketplace's page, connected, with your ads account's name. The first reports are asked for straight away: about 60 days of spend, in a few minutes.",
+                body: "You land on the marketplace's page, connected, with your ads account's name. The first reports are asked for straight away: about 60 days of spend, within half an hour.",
               },
               {
                 title: "Optional: bring them in now",

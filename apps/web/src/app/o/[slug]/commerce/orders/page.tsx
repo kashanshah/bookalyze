@@ -143,7 +143,7 @@ export default async function OrdersPage({
     <PageHeader
       eyebrow="Commerce"
       title="Orders"
-      description="Every order from your marketplaces, kept up to date every few minutes. Orders don't change your books: the marketplaces' payouts do."
+      description="Every order from your marketplaces, kept up to date every half hour. Orders don't change your books: the marketplaces' payouts do."
       actions={syncing.length ? <SyncOrdersButton slug={slug} /> : null}
     />
   );

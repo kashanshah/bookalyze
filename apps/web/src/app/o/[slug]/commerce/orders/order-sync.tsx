@@ -138,7 +138,7 @@ export function StartOrders({
           <div>
             <h2 className="font-semibold text-lg tracking-tight">Bring in your orders</h2>
             <p className="mt-1.5 text-muted-foreground text-sm leading-relaxed">
-              From {channels.join(", ")}. After this, new orders come in every few minutes on their
+              From {channels.join(", ")}. After this, new orders come in every half hour on their
               own. Orders don't change your books: the marketplaces' payouts will.
             </p>
           </div>
