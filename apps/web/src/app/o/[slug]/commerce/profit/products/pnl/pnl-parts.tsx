@@ -222,7 +222,10 @@ export function SkuPnlTable({
               <span className="tabular">{total.unitsSold.toLocaleString(locale)}</span>
             </td>
             <td className={cell}>{money(total.sales)}</td>
-            <td className={cell}>{money(feesAndRefunds(total))}</td>
+            <td className={cell}>
+              {/* No product's fees known (a channel with nothing to go by): not 0.00. */}
+              {money(rows.some((r) => r.sku && !r.feesUnknown) ? feesAndRefunds(total) : null)}
+            </td>
             <td className={cell}>{money(total.cogs)}</td>
             <td className={cell}>{money(total.ads)}</td>
             <td className={cn(cell, isNegative(total.profit) && "text-destructive")}>
