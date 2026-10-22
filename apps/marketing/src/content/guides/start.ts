@@ -13,7 +13,7 @@ export const START_GUIDES: readonly Guide[] = [
         heading: "Orders aren't money yet",
         blocks: [
           {
-            p: "Orders arrive from Amazon, Walmart, Noon and eBay every few minutes, with their items, refunds and claims. They're for running the business: searching, invoicing buyers, asking for reviews, counting units for cost of goods sold. **Orders never post to your books.** The marketplace's own money report does.",
+            p: "Orders arrive from Amazon, Walmart, Noon and eBay every half hour, with their items, refunds and claims. They're for running the business: searching, invoicing buyers, asking for reviews, counting units for cost of goods sold. **Orders never post to your books.** The marketplace's own money report does.",
           },
           {
             table: {
@@ -52,7 +52,7 @@ export const START_GUIDES: readonly Guide[] = [
         blocks: [
           {
             list: [
-              "**Every few minutes:** orders from every connected marketplace.",
+              "**Every half hour:** orders from every connected marketplace.",
               "**Every day:** settlements and marketplace money, Wise bank lines, exchange rates.",
               "**If you switch it on:** new settlements and months posted automatically, and deposits with exactly one exact match matched for you.",
               "**Every hour:** automatic review requests, if you use them.",

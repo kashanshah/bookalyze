@@ -5,7 +5,8 @@ import { jobStep, logInfo } from "@/server/log";
 import { runWalmartAdsJob } from "@/server/walmart-ads-sync";
 
 /**
- * The order job, every 5 minutes (vercel.json). Vercel Cron calls it with
+ * The order job, every half hour (vercel.json; on the hour and half past, with the hourly jobs,
+ * so the database sleeps in between). Vercel Cron calls it with
  * "Authorization: Bearer $CRON_SECRET"; anything else is refused. It brings in new and changed
  * Amazon orders, then the items of orders still without them (Amazon allows about one order's
  * items every 2 seconds, so a large first sync carries on run after run). The budget ends each

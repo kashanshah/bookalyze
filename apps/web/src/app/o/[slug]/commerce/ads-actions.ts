@@ -89,7 +89,7 @@ export async function startAmazonAdsConnectAction(
 
 /**
  * Asks Amazon for this channel's latest ad spend and waits up to about 45 seconds for the
- * reports; what isn't ready by then comes in with the next run (every few minutes).
+ * reports; what isn't ready by then comes in with the next run (every half hour).
  */
 export async function syncAmazonAdsAction(
   slug: string,
@@ -245,7 +245,7 @@ export async function connectWalmartAdsAction(
 
 /**
  * Asks Walmart Connect for this channel's latest ad spend and waits up to about 45 seconds for
- * the report; what isn't ready by then comes in with the next run (every few minutes).
+ * the report; what isn't ready by then comes in with the next run (every half hour).
  */
 export async function syncWalmartAdsAction(
   slug: string,

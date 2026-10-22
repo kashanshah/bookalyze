@@ -371,8 +371,10 @@ Drain (Vercel → Settings → Log Drains) to a log service; nothing in the app 
 Bank of Canada publishes its daily rates at about 16:30 Eastern. The job stores the last ten days
 of rates, so missed runs fill themselves in, then syncs bank connections.
 
-The same file schedules `/api/cron/orders` every 5 minutes (Amazon orders and their items) and
-`/api/cron/review-requests` hourly. Both need Vercel Pro (Hobby allows daily jobs only) and the
+The same file schedules `/api/cron/orders` every half hour (Amazon orders and their items),
+`/api/cron/review-requests` hourly on the hour and `/api/cron/listings` at half past, all on
+the same two slots so the Neon database can scale to zero between them (a job every 5 minutes
+kept it awake around the clock: about 180 compute hours a month, over the free plan's 100). Both need Vercel Pro (Hobby allows daily jobs only) and the
 same `CRON_SECRET`.
 
 1. Generate a secret: `openssl rand -base64 32`.
