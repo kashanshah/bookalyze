@@ -4116,7 +4116,7 @@ test("growth: where a new account came from is kept, and only admins see the Gro
   await theirs.goto(inviteUrl);
   await theirs.getByRole("link", { name: "Create account" }).click();
   await theirs.locator("#name").fill(newcomer.name);
-  await theirs.locator("#password").fill("a-newcomers-password");
+  await theirs.locator("#password").fill("maple-leaf-sunrise");
   await theirs.getByRole("button", { name: "Create account" }).click();
   await expect(theirs.getByRole("heading", { name: "Check your email" })).toBeVisible();
   // Members don't see Growth.
