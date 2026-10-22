@@ -13,5 +13,6 @@ export * from "./modules/entitlements";
 export * from "./modules/registry";
 export * from "./money";
 export * from "./pagination";
+export * from "./password";
 export * from "./site";
 export * from "./support";

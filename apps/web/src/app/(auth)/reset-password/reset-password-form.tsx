@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AuthHeading } from "@/components/auth/auth-heading";
+import { PasswordRules, passwordReady } from "@/components/auth/password-rules";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -22,6 +23,7 @@ export function ResetPasswordForm({
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
+  const [password, setPassword] = useState("");
 
   if (invalid || !token) {
     return (
@@ -41,6 +43,10 @@ export function ResetPasswordForm({
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const newPassword = String(form.get("password"));
+    if (!passwordReady(newPassword)) {
+      setError("Choose a password that meets every rule under it.");
+      return;
+    }
     if (newPassword !== String(form.get("confirm"))) {
       setError("The two passwords don't match.");
       return;
@@ -64,13 +70,21 @@ export function ResetPasswordForm({
       />
       <form onSubmit={onSubmit} className="grid gap-4">
         {error ? <Alert variant="destructive">{error}</Alert> : null}
-        <Field label="New password" htmlFor="password" hint="At least 10 characters.">
+        <Field
+          label="New password"
+          htmlFor="password"
+          hint={<PasswordRules id="password-rules" password={password} />}
+        >
           <PasswordInput
             id="password"
             name="password"
             autoComplete="new-password"
-            minLength={10}
+            minLength={12}
+            maxLength={128}
             required
+            aria-describedby="password-rules"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
         <Field label="Confirm new password" htmlFor="confirm">
@@ -78,7 +92,8 @@ export function ResetPasswordForm({
             id="confirm"
             name="confirm"
             autoComplete="new-password"
-            minLength={10}
+            minLength={12}
+            maxLength={128}
             required
           />
         </Field>

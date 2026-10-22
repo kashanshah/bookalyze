@@ -99,6 +99,8 @@ export default defineConfig({
         WALMART_ADS_PRIVATE_KEY: process.env.E2E_WALMART_ADS_PRIVATE_KEY ?? "",
         WALMART_ADS_TOKEN: process.env.E2E_WALMART_ADS_TOKEN ?? "",
         WALMART_ADS_API_URL: process.env.WALMART_ADS_API_URL ?? "http://localhost:4014/wca",
+        // No calls to Have I Been Pwned from tests; the shared password rules still apply.
+        PASSWORD_BREACH_CHECK: "off",
         // Test-only Amazon Ads app keys, accepted by the stand-in only.
         AMAZON_ADS_CLIENT_ID: "amzn1.application-oa2-client.e2e0000000000000000000000000000",
         AMAZON_ADS_CLIENT_SECRET: "amzn1.oa2-cs.v1.e2e-client-secret-0000",

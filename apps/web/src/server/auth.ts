@@ -1,5 +1,11 @@
 import "server-only";
-import { decodeSource, readCookie, SOURCE_COOKIE } from "@bookalyze/core";
+import {
+  decodeSource,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  readCookie,
+  SOURCE_COOKIE,
+} from "@bookalyze/core";
 import { getDb, recordSignupSource, schema } from "@bookalyze/db";
 import { APIError, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -14,6 +20,7 @@ import { VerifyEmail } from "@/emails/verify-email";
 import { sendEmail } from "./email";
 import { env } from "./env";
 import { logError } from "./log";
+import { passwordPolicyHook } from "./password-policy";
 
 /**
  * Sign-ups are invite-only unless SIGNUP_MODE=open. Platform admins and anyone with a pending
@@ -75,7 +82,9 @@ function createAuth() {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
-      minPasswordLength: 10,
+      // The full rules (common, personal, breached) run in `hooks.before` (password-policy.ts).
+      minPasswordLength: PASSWORD_MIN_LENGTH,
+      maxPasswordLength: PASSWORD_MAX_LENGTH,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
         await sendEmail({
@@ -102,6 +111,7 @@ function createAuth() {
       // instead of creating a duplicate user (Google verifies email ownership).
       accountLinking: { enabled: true, trustedProviders: ["google", "email-password"] },
     },
+    hooks: { before: passwordPolicyHook },
     databaseHooks: {
       user: {
         create: {

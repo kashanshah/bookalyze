@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { PasswordRules, passwordReady } from "@/components/auth/password-rules";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -15,7 +16,17 @@ import { type SetPasswordState, setPasswordAction } from "./actions";
  * Password card body. Owns the "set password" state so that when the page refreshes into
  * "change password" mode (the account now has a password) the success toast still fires.
  */
-export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
+export function PasswordSection({
+  hasPassword,
+  email,
+  name,
+}: {
+  hasPassword: boolean;
+  /** The signed-in person: the rules keep their name and email out of the password. */
+  email: string;
+  name: string;
+}) {
+  const [password, setPassword] = useState("");
   const [state, action, pending] = useActionState<SetPasswordState, FormData>(
     setPasswordAction,
     {},
@@ -26,17 +37,25 @@ export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
         "Password set. You can now sign in with your email and password, or with Google.",
       );
   }, [state.done]);
-  if (hasPassword) return <ChangePasswordForm />;
+  if (hasPassword) return <ChangePasswordForm email={email} name={name} />;
   return (
     <form action={action} className="grid max-w-sm gap-4">
       {state.error ? <Alert variant="destructive">{state.error}</Alert> : null}
-      <Field label="New password" htmlFor="password" hint="At least 10 characters.">
+      <Field
+        label="New password"
+        htmlFor="password"
+        hint={<PasswordRules id="password-rules" password={password} email={email} name={name} />}
+      >
         <PasswordInput
           id="password"
           name="password"
           autoComplete="new-password"
-          minLength={10}
+          minLength={12}
+          maxLength={128}
           required
+          aria-describedby="password-rules"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
         />
       </Field>
       <Field label="Confirm password" htmlFor="confirm">
@@ -44,7 +63,8 @@ export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
           id="confirm"
           name="confirm"
           autoComplete="new-password"
-          minLength={10}
+          minLength={12}
+          maxLength={128}
           required
         />
       </Field>
@@ -56,8 +76,9 @@ export function PasswordSection({ hasPassword }: { hasPassword: boolean }) {
   );
 }
 
-function ChangePasswordForm() {
+function ChangePasswordForm({ email, name }: { email: string; name: string }) {
   const [error, setError] = useState<string>();
+  const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -65,6 +86,10 @@ function ChangePasswordForm() {
     const formEl = event.currentTarget;
     const form = new FormData(formEl);
     const newPassword = String(form.get("newPassword"));
+    if (!passwordReady(newPassword, { email, name })) {
+      setError("Choose a password that meets every rule under it.");
+      return;
+    }
     if (newPassword !== String(form.get("confirm"))) {
       setError("Passwords don't match.");
       return;
@@ -82,6 +107,7 @@ function ChangePasswordForm() {
       return;
     }
     formEl.reset();
+    setPassword("");
     toast.success("Password changed. You've been signed out on your other devices.");
   }
 
@@ -96,13 +122,23 @@ function ChangePasswordForm() {
           required
         />
       </Field>
-      <Field label="New password" htmlFor="newPassword" hint="At least 10 characters.">
+      <Field
+        label="New password"
+        htmlFor="newPassword"
+        hint={
+          <PasswordRules id="new-password-rules" password={password} email={email} name={name} />
+        }
+      >
         <PasswordInput
           id="newPassword"
           name="newPassword"
           autoComplete="new-password"
-          minLength={10}
+          minLength={12}
+          maxLength={128}
           required
+          aria-describedby="new-password-rules"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
         />
       </Field>
       <Field label="Confirm new password" htmlFor="confirm">
@@ -110,7 +146,8 @@ function ChangePasswordForm() {
           id="confirm"
           name="confirm"
           autoComplete="new-password"
-          minLength={10}
+          minLength={12}
+          maxLength={128}
           required
         />
       </Field>
