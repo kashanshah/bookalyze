@@ -1,4 +1,11 @@
-import { AD_TYPE_LABELS, can, formatDecimal, formatMoney, parseDecimal } from "@bookalyze/core";
+import {
+  AD_TYPE_LABELS,
+  can,
+  formatDecimal,
+  formatMoney,
+  parseDecimal,
+  SKU_KEEP_MIN_UNITS,
+} from "@bookalyze/core";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -191,7 +198,13 @@ export default async function ProductProfitPage({
                   <p className="max-w-prose text-muted-foreground text-xs leading-relaxed">
                     {c.keepRate === null
                       ? "No sales in its settlements or transactions to learn the marketplace's fees from, in this period or the 90 days before its end: profit shows once some are in."
-                      : `The marketplace left ${keepPercent(c.keepRate, locale)} of each sale before ads${c.keepRateFrom === "trailing" ? " over the last 90 days (none in this period yet)" : " in this period"}: fees, refunds, promotions and the rest, shared by each product's sales.`}{" "}
+                      : `${c.ownRates ? `Products with ${SKU_KEEP_MIN_UNITS} or more settled units use what the marketplace left on their own orders; the rest use ` : "The marketplace left "}${keepPercent(c.keepRate, locale)} of each sale on its orders before ads${c.keepRateFrom === "trailing" ? " over the last 90 days (none in this period yet)" : " in this period"}: referral and fulfilment fees, refunds and the rest.`}{" "}
+                    {c.keepRate !== null && parseDecimal(c.accountCosts.amount) !== 0n
+                      ? "Storage, the selling plan and other costs on no order are their own line, not shared by sales."
+                      : ""}{" "}
+                    {c.settledThrough && parseDecimal(c.unsettledSales) > 0n
+                      ? `Settled through ${formatDate(c.settledThrough, locale)}: ${formatMoney(c.unsettledSales, c.currency, locale)} of sales after that are estimated at the same rates.`
+                      : ""}{" "}
                     {c.hasAds
                       ? c.adsThrough
                         ? `Ads in through ${formatDate(c.adsThrough, locale)}.`
@@ -226,6 +239,7 @@ export default async function ProductProfitPage({
                 currency={c.currency}
                 locale={locale}
                 unallocated={c.unallocated}
+                accountCosts={c.accountCosts}
                 unallocatedLabel={
                   c.hasAds
                     ? {
@@ -278,12 +292,15 @@ export default async function ProductProfitPage({
         <p>
           <strong className="font-medium text-foreground">How it's worked out.</strong> Sales are
           each product's order lines bought in the period (cancelled orders left out), less
-          promotions. What the marketplace leaves before ads comes from its settlements and
-          transactions in the period (fees, refunds, promotions, reimbursements and the rest, with
-          the advertising in them taken out), shared by each product's sales. Product cost is the
-          units sold × the next unit's landed cost (bundles add up their products). Ad spend is each
-          day's spend from the ads reports, so ads count once: from the reports, never also from the
-          settlements.
+          promotions. What the marketplace leaves before ads comes from the amounts on orders in its
+          settlements and transactions in the period (referral and fulfilment fees, refunds and the
+          rest, with the advertising taken out): a product with {SKU_KEEP_MIN_UNITS} or more units
+          in Amazon's settlements uses its own orders' share, the others the channel's. Orders not
+          settled yet are estimated at that share. Storage, the selling plan, inbound placement,
+          Vine and other costs on no order don't grow with each unit sold, so they're their own
+          line, in full, rather than shared by sales. Product cost is the units sold × the next
+          unit's landed cost (bundles add up their products). Ad spend is each day's spend from the
+          ads reports, so ads count once: from the reports, never also from the settlements.
         </p>
         <p>
           <strong className="font-medium text-foreground">Break-even ACOS</strong> is profit before

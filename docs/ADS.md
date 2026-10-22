@@ -90,10 +90,32 @@ Decisions:
    added twice, because report spend is never added into Profit there.
 2. **Product profit allocates.** Per SKU, the channel's money before ads is shared out, and the
    **report spend** is subtracted per SKU:
-   - **keep rate** = (net from the marketplace **with the books' advertising added back**) ÷
-     gross sales, for the channel in the period. It's what the marketplace leaves you per unit of
-     sales after fees, refunds, promotions, reimbursements and other lines, but before ads.
-   - SKU's **net before ads** = its sales × keep rate.
+   - **keep rate** = (net of the amounts **on orders**, with the books' advertising added back) ÷
+     sales, for the channel in the period (core `orderKeepRate`). It's what the marketplace leaves
+     you per unit of sales after referral and fulfilment fees, refunds, the orders' promotions and
+     other per-order lines, but before ads. Amazon's settlement lines are on an order when their
+     transaction type is Order, Refund, a chargeback or an A-to-z claim (core
+     `settlementLineOnOrder`); Noon's, eBay's and Walmart's sums aren't split, so all of theirs.
+   - **Sales** in that ratio are the same as the products': when the channel's order lines take
+     their promotions off (Amazon, eBay), so does the ratio's base (sales + promotions); otherwise
+     (Noon, whose promotions are its own subsidies) it's gross sales. Before this, Amazon's
+     promotions came off twice: once from the products' sales and again inside the rate.
+   - **A SKU's own rate**: with 5 or more units in the period's Amazon settlements kept by SKU
+     (`settlement_sku_lines`, db `settledSkuLinesForProfit`), its rate comes from its own orders'
+     amounts (core `skuKeepRates`): fulfilment fees are about the same per unit at very different
+     prices, so one channel rate overstates cheap products and understates dear ones. Fewer units,
+     or no detail by SKU: the channel's rate.
+   - **The account's own costs** (Amazon's lines on no order: storage, the selling plan, inbound
+     placement, Vine, coupon fees, less reimbursements for lost stock; balance moves such as a
+     carried balance or a card charge left out) are **not** in any rate. They don't grow with each
+     unit, so shared by sales they'd make every unit look unprofitable in a launch month, the
+     fewer units the worse. They're their own line on the channel, in full (core `accountCosts`),
+     taken off the channel's profit after ads, like Sponsored Brands.
+   - **Orders not settled yet**: a rate is a ratio of settled amounts to the same orders' sales,
+     so it's applied to the period's later sales as an estimate; the channel says how much of its
+     sales came after its last settlement (db `salesAfter`). The account's own costs are only
+     what the period's settlements charged, never scaled up to the unsettled sales.
+   - SKU's **net before ads** = its sales × its keep rate.
    - SKU's **product cost** = units × its listing cost (the next unit's landed cost, bundles
      summed: core `listingCost`).
    - **Profit before ads** = net before ads − product cost.
@@ -155,7 +177,7 @@ One row per SKU (product name when linked), sorted by profit after ads, worst fi
 |---|---|
 | Units, sales | Order lines purchased in the period (company time zone), cancelled orders left out; sales = item price less promotion |
 | Avg price | Sales ÷ units |
-| Net before ads | Sales × the channel's keep rate |
+| Net before ads | Sales × the SKU's own keep rate (5+ settled units), else the channel's |
 | Product cost | Units × listing cost |
 | Profit before ads, per unit | |
 | Ad spend, ad sales, ad orders | From `ad_metrics` |
@@ -283,7 +305,9 @@ core `commerce/sku-pnl.ts`, db `sku-pnl.ts`).
 - **Cost missing**: profit is "—" and the row says how to fix it (link the SKU, add a cost).
 - **Bundles**: cost sums each product × units; ads stay on the bundle's SKU.
 - **No settlements in the period** (a new channel): no keep rate, so profit before ads uses the
-  last 90 days' keep rate; with none either, it's "—".
+  last 90 days' keep rate (on orders, too); with none either, it's "—". The SKU profit and loss
+  (§6b) keeps the account's fees in its keep-rate fallback: with nothing settled by product it has
+  no rows to share them from; it takes promotions off the same way.
 - **Refunds**: in the keep rate on By product; per SKU and order on the SKU profit and loss (§6b).
 - **ASIN without SKU** in a report: mapped through `channel_skus`; otherwise kept by ASIN.
 - **Several SKUs per ASIN** (FBA and FBM): each SKU has its own row; Amazon reports the SKU.

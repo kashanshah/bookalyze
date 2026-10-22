@@ -1193,6 +1193,53 @@ export async function settlementsWithOneDeposit(tx: Transaction, limit = 50) {
 // --- Profit by channel --------------------------------------------------------------------
 
 /**
+ * The amounts on orders, by channel and SKU, of the settlements `settlementsForProfit` reads (the
+ * ones kept by SKU): what each SKU's own keep rate is learned from. Summed by kind of line.
+ */
+export async function settledSkuLinesForProfit(
+  tx: Transaction,
+  input: { from: string; to: string; timezone: string },
+) {
+  const rows = await tx
+    .select({
+      channelId: settlements.channelId,
+      sku: settlementSkuLines.sku,
+      transactionType: settlementSkuLines.transactionType,
+      amountType: settlementSkuLines.amountType,
+      amountDescription: settlementSkuLines.amountDescription,
+      amount: sql<string>`sum(${settlementSkuLines.amount})::text`,
+      quantity: sql<number>`sum(${settlementSkuLines.quantity})::int`,
+    })
+    .from(settlementSkuLines)
+    .innerJoin(settlements, eq(settlements.id, settlementSkuLines.settlementId))
+    .where(
+      and(
+        shown,
+        isNotNull(settlements.channelId),
+        isNotNull(settlementSkuLines.orderRef),
+        isNotNull(settlementSkuLines.sku),
+        sql`(${settlements.endAt} at time zone ${input.timezone})::date between ${input.from}::date and ${input.to}::date`,
+      ),
+    )
+    .groupBy(
+      settlements.channelId,
+      settlementSkuLines.sku,
+      settlementSkuLines.transactionType,
+      settlementSkuLines.amountType,
+      settlementSkuLines.amountDescription,
+    );
+  return rows.map((r) => ({
+    channelId: r.channelId as string,
+    sku: r.sku as string,
+    transactionType: r.transactionType,
+    amountType: r.amountType,
+    amountDescription: r.amountDescription,
+    amount: String(r.amount),
+    quantity: Number(r.quantity),
+  }));
+}
+
+/**
  * The settlements (shown ones: see `shown`) whose period ends between `from` and `to` in the
  * company's time zone, with their marketplace, the rate they posted at (if posted), and their
  * lines: what the channel profit report adds up.

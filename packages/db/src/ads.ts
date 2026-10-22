@@ -399,8 +399,26 @@ export async function adMetricsForProfit(tx: Transaction, input: { from: string;
 }
 
 /**
- * What each SKU sold in the period on each channel: units, orders and sales (item price less
- * promotions) of order lines purchased in it (company time zone), cancelled orders left out;
+ * A channel's sales (item price less promotions) bought after `after` and through `to` (company
+ * time zone), cancelled orders left out: what its settlements don't cover yet.
+ */
+export async function salesAfter(
+  tx: Transaction,
+  input: { channelId: string; after: string; to: string; timezone: string },
+): Promise<string> {
+  const rows = await tx.execute<{ sales: string }>(sql`
+    select coalesce(sum(coalesce(oi.item_price, 0) - coalesce(oi.promotion_discount, 0)), 0)::text as sales
+    from order_items oi
+    join orders o on o.id = oi.order_id
+    where oi.sku is not null and o.status not in (${cancelled}) and o.channel_id = ${input.channelId}
+      and (o.purchased_at at time zone ${input.timezone})::date > ${input.after}::date
+      and (o.purchased_at at time zone ${input.timezone})::date <= ${input.to}::date`);
+  return rows.rows[0]?.sales ?? "0";
+}
+
+/**
+ * What each SKU sold in the period on each channel: units, orders, sales (item price less
+ * promotions) and the promotions of order lines purchased in it (company time zone), cancelled orders left out;
  * with the products it's linked to (name and units per listing, for its cost).
  */
 export async function skuSalesForProfit(
@@ -418,10 +436,12 @@ export async function skuSalesForProfit(
     units: number;
     orders: number;
     sales: string;
+    promotions: string;
   }>(sql`
     select o.channel_id, oi.sku, max(oi.title) as title, max(oi.asin) as asin,
       sum(oi.quantity_ordered)::int as units, count(distinct o.id)::int as orders,
-      coalesce(sum(coalesce(oi.item_price, 0) - coalesce(oi.promotion_discount, 0)), 0)::text as sales
+      coalesce(sum(coalesce(oi.item_price, 0) - coalesce(oi.promotion_discount, 0)), 0)::text as sales,
+      coalesce(sum(coalesce(oi.promotion_discount, 0)), 0)::text as promotions
     from order_items oi
     join orders o on o.id = oi.order_id
     where oi.sku is not null and o.status not in (${cancelled})
