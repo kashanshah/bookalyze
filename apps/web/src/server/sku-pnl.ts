@@ -75,17 +75,33 @@ export type ChannelSkuPnl = {
 export type SkuProfitAndLoss = {
   currency: string;
   channels: ChannelSkuPnl[];
-  /** Every channel, by SKU, in the main currency. */
+  /** Every channel (or the ones chosen), by SKU, in the main currency. */
   summary: { rows: SkuPnl[]; total: SkuPnl };
   /** Amounts left out of the summary: no exchange rate for their day. */
   unconverted: number;
   allocateBrands: boolean;
 };
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The channels chosen in the address: `?channel=<id>,<id>` (one or several; nothing: all). */
+export function readChannelIds(value: string | string[] | null | undefined): string[] {
+  const parts = (Array.isArray(value) ? value : [value ?? ""]).flatMap((v) => v.split(","));
+  return [...new Set(parts.map((p) => p.trim()).filter((p) => UUID.test(p)))];
+}
+
 export async function skuProfitAndLoss(
   ctx: CommerceContext,
-  input: { from: string; to: string; allocateBrands: boolean },
+  input: {
+    from: string;
+    to: string;
+    allocateBrands: boolean;
+    /** The channels the summary adds up; empty or left out: every channel. */
+    channelIds?: readonly string[];
+  },
 ): Promise<SkuProfitAndLoss> {
+  const inSummary = (channelId: string) =>
+    !input.channelIds?.length || input.channelIds.includes(channelId);
   const { timezone, baseCurrency } = ctx.profile;
   const range = { from: input.from, to: input.to, timezone };
   const fromMonth = input.from.slice(0, 7);
@@ -272,6 +288,7 @@ export async function skuProfitAndLoss(
       missingDetail: data.missing.filter((m) => m.channelId === channelId).length,
       unconverted: rows.reduce((t, r) => t + r.unconverted, 0),
     });
+    if (!inSummary(channelId)) continue;
     allEntries.push(...pnl.entries);
     for (const [sku, c] of pnl.counts) {
       const found = allCounts.get(sku) ?? {
