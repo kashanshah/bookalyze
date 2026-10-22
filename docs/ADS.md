@@ -105,6 +105,14 @@ Decisions:
      amounts (core `skuKeepRates`): fulfilment fees are about the same per unit at very different
      prices, so one channel rate overstates cheap products and understates dear ones. Fewer units,
      or no detail by SKU: the channel's rate.
+   - **Units given away** (an order line whose promotion is its whole item price: Vine, a free
+     replacement) aren't in any product's units, cost or rate (db `skuSalesForProfit`'s
+     `giveaway_units`; core `settledKeepRates` leaves their settled orders out of every rate). A
+     launch's Vine units would otherwise charge their landed cost and fulfilment fees to the units
+     that sell. They're their own line (core `giveawayCosts`): units × each one's cost, plus the
+     marketplace's fees per unit given away (the SKU's settled giveaways, else every SKU's) × the
+     period's units. With settlements by SKU, the channel's rate also comes from them, giveaways
+     left out.
    - **The account's own costs** (Amazon's lines on no order: storage, the selling plan, inbound
      placement, Vine, coupon fees, less reimbursements for lost stock; balance moves such as a
      carried balance or a card charge left out) are **not** in any rate. They don't grow with each

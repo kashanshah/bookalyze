@@ -1193,8 +1193,9 @@ export async function settlementsWithOneDeposit(tx: Transaction, limit = 50) {
 // --- Profit by channel --------------------------------------------------------------------
 
 /**
- * The amounts on orders, by channel and SKU, of the settlements `settlementsForProfit` reads (the
- * ones kept by SKU): what each SKU's own keep rate is learned from. Summed by kind of line.
+ * The amounts on orders, by channel, order and SKU, of the settlements `settlementsForProfit`
+ * reads (the ones kept by SKU): what each SKU's own keep rate is learned from, and what the units
+ * given away cost in fees. Summed by kind of line.
  */
 export async function settledSkuLinesForProfit(
   tx: Transaction,
@@ -1203,6 +1204,7 @@ export async function settledSkuLinesForProfit(
   const rows = await tx
     .select({
       channelId: settlements.channelId,
+      orderRef: settlementSkuLines.orderRef,
       sku: settlementSkuLines.sku,
       transactionType: settlementSkuLines.transactionType,
       amountType: settlementSkuLines.amountType,
@@ -1223,6 +1225,7 @@ export async function settledSkuLinesForProfit(
     )
     .groupBy(
       settlements.channelId,
+      settlementSkuLines.orderRef,
       settlementSkuLines.sku,
       settlementSkuLines.transactionType,
       settlementSkuLines.amountType,
@@ -1230,6 +1233,7 @@ export async function settledSkuLinesForProfit(
     );
   return rows.map((r) => ({
     channelId: r.channelId as string,
+    orderRef: r.orderRef as string,
     sku: r.sku as string,
     transactionType: r.transactionType,
     amountType: r.amountType,

@@ -25,6 +25,10 @@ import {
  */
 
 const cancelled = sql.raw(ORDER_STATUS_GROUPS.cancelled.map((s) => `'${s}'`).join(", "));
+/** An order line given away: its promotion is the whole item price (Vine, a free replacement). */
+const giveaway = sql.raw(
+  "coalesce(oi.item_price, 0) > 0 and coalesce(oi.promotion_discount, 0) >= oi.item_price",
+);
 
 /**
  * Replaces a channel's rows of one source and ad type for the days `from`–`to` with `rows` (a
@@ -418,7 +422,8 @@ export async function salesAfter(
 
 /**
  * What each SKU sold in the period on each channel: units, orders, sales (item price less
- * promotions) and the promotions of order lines purchased in it (company time zone), cancelled orders left out;
+ * promotions), the promotions, and the units and orders given away (a promotion of the whole item
+ * price: Vine, a free replacement) of order lines purchased in it (company time zone), cancelled orders left out;
  * with the products it's linked to (name and units per listing, for its cost).
  */
 export async function skuSalesForProfit(
@@ -437,11 +442,15 @@ export async function skuSalesForProfit(
     orders: number;
     sales: string;
     promotions: string;
+    giveaway_units: number;
+    giveaway_orders: number;
   }>(sql`
     select o.channel_id, oi.sku, max(oi.title) as title, max(oi.asin) as asin,
       sum(oi.quantity_ordered)::int as units, count(distinct o.id)::int as orders,
       coalesce(sum(coalesce(oi.item_price, 0) - coalesce(oi.promotion_discount, 0)), 0)::text as sales,
-      coalesce(sum(coalesce(oi.promotion_discount, 0)), 0)::text as promotions
+      coalesce(sum(coalesce(oi.promotion_discount, 0)), 0)::text as promotions,
+      coalesce(sum(oi.quantity_ordered) filter (where ${giveaway}), 0)::int as giveaway_units,
+      count(distinct o.id) filter (where ${giveaway})::int as giveaway_orders
     from order_items oi
     join orders o on o.id = oi.order_id
     where oi.sku is not null and o.status not in (${cancelled})

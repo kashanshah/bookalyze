@@ -421,17 +421,18 @@ describe("rates for each day", () => {
 });
 
 describe("what Profit by product's keep rates learn from", () => {
-  it("reads each SKU's settled amounts on orders, summed by kind, never the account's own", async () => {
+  it("reads each SKU's settled amounts by order, summed by kind, never the account's own", async () => {
     const lines = await scoped((tx) => settledSkuLinesForProfit(tx, range));
     expect(lines.every((l) => l.channelId === channelId && l.sku)).toBe(true);
     const mug = lines
       .filter((l) => l.sku === "MUG-1")
-      .map((l) => [l.amountDescription, l.amount, l.quantity])
+      .map((l) => [l.orderRef, l.amountDescription, l.amount, l.quantity])
       .sort();
-    // Both orders' referral fees in one line; the subscription and storage (no order) left out.
+    // By order (to tell the orders given away); the subscription and storage (no order) left out.
     expect(mug).toEqual([
-      ["Commission", "-9.0000", 0],
-      ["Principal", "40.0000", 1],
+      ["702-1", "Commission", "-6.0000", 0],
+      ["702-1", "Principal", "40.0000", 1],
+      ["702-2", "Commission", "-3.0000", 0],
     ]);
     expect(lines.some((l) => /subscription|storage/i.test(l.amountDescription))).toBe(false);
     // Settlements ending outside the period aren't read.

@@ -174,7 +174,7 @@ beforeAll(async () => {
     await saveOrderItems(tx, {
       orgId,
       orderId: id("702-2"),
-      items: [item("BOARD-TI", 2, "129.98", "10.00"), item("MAG-SET", 1, "19.99")],
+      items: [item("BOARD-TI", 2, "129.98", "10.00"), item("MAG-SET", 1, "19.99", "19.99")],
     });
     await saveOrderItems(tx, {
       orgId,
@@ -294,7 +294,21 @@ describe("ad metrics", () => {
       skuSalesForProfit(tx, { from: "2026-10-01", to: "2026-10-31", timezone: "America/Toronto" }),
     );
     const board = data.sales.find((s) => s.sku === "BOARD-TI");
-    expect(board).toMatchObject({ units: 3, orders: 2, sales: "184.9700" });
+    expect(board).toMatchObject({
+      units: 3,
+      orders: 2,
+      sales: "184.9700",
+      promotions: "10.0000",
+      giveaway_units: 0,
+      giveaway_orders: 0,
+    });
+    // A promotion of the whole price: given away (Vine), so a one-off line, not the product's.
+    expect(data.sales.find((s) => s.sku === "MAG-SET")).toMatchObject({
+      units: 1,
+      sales: "0.0000",
+      giveaway_units: 1,
+      giveaway_orders: 1,
+    });
     expect(data.links.find((l) => l.sku === "BOARD-TI")?.product_name).toBe("Titanium board");
     expect(data.titles.get(`${channelId}|MAG-SET`)).toBeNull();
   });

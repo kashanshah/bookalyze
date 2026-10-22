@@ -6,6 +6,7 @@ import {
   type AdVerdict,
   formatDecimal,
   formatMoney,
+  type GiveawayCosts,
   type KeepRateSource,
   parseDecimal,
   type SkuProfit,
@@ -51,6 +52,7 @@ export function ProductTable({
   locale,
   unallocated,
   accountCosts,
+  giveaways,
   unallocatedLabel,
   footer,
 }: {
@@ -60,6 +62,8 @@ export function ProductTable({
   unallocated: { spend: string; sales: string };
   /** Storage, the selling plan and other costs on no order: their own line. */
   accountCosts: AccountCosts;
+  /** Units given away (Vine, 100% off): their cost and the marketplace's fees, their own line. */
+  giveaways: GiveawayCosts;
   /** What the spend tied to no product is: Sponsored Brands, or the books' ads. */
   unallocatedLabel: { title: string; hint: string };
   footer: {
@@ -287,6 +291,32 @@ export function ProductTable({
                   formatDecimal(-parseDecimal(accountCosts.amount)),
                   parseDecimal(accountCosts.amount) > 0n ? "text-destructive" : "text-success",
                 )}
+              </td>
+              <td />
+            </tr>
+          ) : null}
+          {giveaways.units > 0 ? (
+            <tr className="border-b">
+              <td className="px-4 py-2.5">
+                <span className="block font-medium">Units given away</span>
+                <span className="text-muted-foreground text-xs">
+                  Vine and other 100%-off orders: their cost{" "}
+                  {formatMoney(giveaways.productCost, currency, locale)} and the marketplace's fees{" "}
+                  {formatMoney(giveaways.fees, currency, locale)}
+                  {giveaways.feesUnknown ? " (some not settled yet)" : ""}
+                  {giveaways.costMissing ? `; ${giveaways.costMissing} with no cost yet` : ""}
+                </span>
+              </td>
+              <td className="tabular px-3 py-2.5 text-end">
+                {giveaways.units.toLocaleString(locale)}
+              </td>
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5" />
+              <td className="px-3 py-2.5 text-end">
+                {money(formatDecimal(-parseDecimal(giveaways.amount)), "text-destructive")}
               </td>
               <td />
             </tr>

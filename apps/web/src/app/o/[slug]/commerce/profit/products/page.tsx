@@ -202,6 +202,9 @@ export default async function ProductProfitPage({
                     {c.keepRate !== null && parseDecimal(c.accountCosts.amount) !== 0n
                       ? "Storage, the selling plan and other costs on no order are their own line, not shared by sales."
                       : ""}{" "}
+                    {c.giveaways.units
+                      ? `${c.giveaways.units.toLocaleString(locale)} ${c.giveaways.units === 1 ? "unit was" : "units were"} given away (Vine or 100% off): not in the products' units or rates, but their own line.`
+                      : ""}{" "}
                     {c.settledThrough && parseDecimal(c.unsettledSales) > 0n
                       ? `Settled through ${formatDate(c.settledThrough, locale)}: ${formatMoney(c.unsettledSales, c.currency, locale)} of sales after that are estimated at the same rates.`
                       : ""}{" "}
@@ -240,6 +243,7 @@ export default async function ProductProfitPage({
                 locale={locale}
                 unallocated={c.unallocated}
                 accountCosts={c.accountCosts}
+                giveaways={c.giveaways}
                 unallocatedLabel={
                   c.hasAds
                     ? {
@@ -296,11 +300,13 @@ export default async function ProductProfitPage({
           settlements and transactions in the period (referral and fulfilment fees, refunds and the
           rest, with the advertising taken out): a product with {SKU_KEEP_MIN_UNITS} or more units
           in Amazon's settlements uses its own orders' share, the others the channel's. Orders not
-          settled yet are estimated at that share. Storage, the selling plan, inbound placement,
-          Vine and other costs on no order don't grow with each unit sold, so they're their own
-          line, in full, rather than shared by sales. Product cost is the units sold × the next
-          unit's landed cost (bundles add up their products). Ad spend is each day's spend from the
-          ads reports, so ads count once: from the reports, never also from the settlements.
+          settled yet are estimated at that share. Units given away (Vine, a free replacement: a
+          promotion of the whole price) aren't in any product's units or share: their cost and the
+          marketplace's fees on them are their own line. Storage, the selling plan, inbound
+          placement, Vine and other costs on no order don't grow with each unit sold, so they're
+          their own line, in full, rather than shared by sales. Product cost is the units sold × the
+          next unit's landed cost (bundles add up their products). Ad spend is each day's spend from
+          the ads reports, so ads count once: from the reports, never also from the settlements.
         </p>
         <p>
           <strong className="font-medium text-foreground">Break-even ACOS</strong> is profit before

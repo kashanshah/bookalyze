@@ -1822,8 +1822,8 @@ Analytics only, for profit: no keywords, search terms, placements, bids or budge
   measured like the products' (after promotions when the order lines take them off), from the
   same settlements and transactions as Channel profit, `server/channel-totals.ts`; a SKU with 5+
   units in Amazon's settlements by SKU uses its own orders' rate; the last 90 days when the
-  period has none), the account's own costs (storage, the selling plan, Vine; core
-  `accountCosts`) as their own line, a note of the sales after the last settlement (estimated at
+  period has none), units given away (Vine, 100% off: core `giveawayCosts`) and the account's own
+  costs (storage, the selling plan; core `accountCosts`) as their own lines, not in any product, a note of the sales after the last settlement (estimated at
   the same rates), its product cost (units × `listingCost`, bundles
   summed), and its spend from the ads reports. Core `skuProfit`: profit before and after ads (and
   per unit), ACOS, TACOS, ROAS, **break-even ACOS**, organic share, CPC, conversion, **break-even

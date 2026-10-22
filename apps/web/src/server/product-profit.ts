@@ -8,6 +8,8 @@ import {
   channelAdSummary,
   convertUnits,
   formatDecimal,
+  type GiveawayCosts,
+  giveawayCosts,
   type IsoDate,
   type KeepRateSource,
   listingCost,
@@ -16,7 +18,7 @@ import {
   parseDecimal,
   type SkuPeriodInput,
   type SkuProfit,
-  skuKeepRates,
+  settledKeepRates,
   skuProfit,
   sortSkuProfits,
 } from "@bookalyze/core";
@@ -64,6 +66,8 @@ export type ChannelProductProfit = {
   unallocated: { spend: string; sales: string };
   /** Storage, the selling plan and other costs on no order, in the period's settlements. */
   accountCosts: AccountCosts;
+  /** Units given away (Vine, free replacements): their cost and fees, a one-off line. */
+  giveaways: GiveawayCosts;
   /** The last day the period's settlements cover (Amazon), and the sales bought after it. */
   settledThrough: string | null;
   unsettledSales: string;
@@ -166,11 +170,16 @@ export async function productProfit(
     const promotionsInSales = data.skus.sales.some(
       (s) => s.channel_id === channelId && parseDecimal(s.promotions) > 0n,
     );
-    const keep = await keepOf(channelId, promotionsInSales);
-    const own = skuKeepRates(
+    const settled = settledKeepRates(
       data.settled.filter((l) => l.channelId === channelId),
       { feeTaxRecoverable: data.feeTaxRecoverable, promotionsInSales },
     );
+    // With settlements by SKU, the channel's rate leaves the orders given away out too.
+    const keep =
+      settled.channel !== null
+        ? { rate: settled.channel, from: "period" as const }
+        : await keepOf(channelId, promotionsInSales);
+    const own = settled.skus;
     // Lots are in the main currency: the rate turns them into the channel's.
     const costRate = await rateTo(info.currency);
 
@@ -209,10 +218,16 @@ export async function productProfit(
         impressions: 0,
       };
     };
+    const given: { sku: string; units: number; unitCost: string | null }[] = [];
     for (const s of data.skus.sales.filter((x) => x.channel_id === channelId)) {
       const row = skus.get(s.sku) ?? blank(s.sku);
-      row.units += s.units;
-      row.orders += s.orders;
+      // Units given away are a one-off line, not the product's: they'd charge their cost to
+      // the units that sell.
+      row.units += s.units - s.giveaway_units;
+      row.orders += s.orders - s.giveaway_orders;
+      if (s.giveaway_units > 0) {
+        given.push({ sku: s.sku, units: s.giveaway_units, unitCost: row.unitCost });
+      }
       row.sales = s.sales;
       row.label ??= s.title;
       skus.set(s.sku, row);
@@ -242,6 +257,11 @@ export async function productProfit(
     const account = accountCosts(channel?.accountLines ?? [], {
       feeTaxRecoverable: data.feeTaxRecoverable,
     });
+    const giveaways = giveawayCosts({
+      skus: given,
+      settled: settled.giveaways,
+      currency: info.currency,
+    });
     const settledThrough = channel?.settledThrough ?? null;
     const unsettledSales =
       settledThrough && settledThrough < input.to
@@ -269,9 +289,14 @@ export async function productProfit(
       rows,
       unallocated,
       accountCosts: account,
+      giveaways,
       settledThrough,
       unsettledSales,
-      summary: channelAdSummary(rows, unallocated, account.amount),
+      summary: channelAdSummary(
+        rows,
+        unallocated,
+        formatDecimal(parseDecimal(account.amount) + parseDecimal(giveaways.amount)),
+      ),
       booksAdvertising: formatDecimal(booksAdvertising),
       byType: [...(ads?.byType ?? [])].map(([adType, s]) => ({
         adType,

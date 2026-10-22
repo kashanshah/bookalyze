@@ -10,6 +10,7 @@ import {
   channelAdSummary,
   duplicateAmazonAdsReportId,
   emptyGroupTotals,
+  giveawayCosts,
   keepRate,
   mergeAdRows,
   nextAmazonAdsWindow,
@@ -23,8 +24,8 @@ import {
   type SettlementLine,
   type SkuPeriodInput,
   type SkuSettledLine,
+  settledKeepRates,
   settlementLineOnOrder,
-  skuKeepRates,
   skuProfit,
   sortSkuProfits,
 } from "../index";
@@ -153,42 +154,96 @@ describe("accountCosts", () => {
   });
 });
 
-describe("skuKeepRates", () => {
+describe("settledKeepRates", () => {
   const settled = (
     s: string,
+    order: string,
     units: number,
     price: string,
     promotion: string,
     fulfilment: string,
   ): SkuSettledLine[] => [
-    { ...line("Order", "ItemPrice", "Principal", price), sku: s, quantity: units },
-    { ...line("Order", "ItemPrice", "Shipping", "5.00"), sku: s, quantity: 0 },
-    { ...line("Order", "Promotion", "Principal", promotion), sku: s, quantity: 0 },
-    { ...line("Order", "ItemFees", "FBAPerUnitFulfillmentFee", fulfilment), sku: s, quantity: 0 },
+    { ...line("Order", "ItemPrice", "Principal", price), orderRef: order, sku: s, quantity: units },
+    { ...line("Order", "ItemPrice", "Shipping", "5.00"), orderRef: order, sku: s, quantity: 0 },
+    { ...line("Order", "Promotion", "Principal", promotion), orderRef: order, sku: s, quantity: 0 },
+    {
+      ...line("Order", "ItemFees", "FBAPerUnitFulfillmentFee", fulfilment),
+      orderRef: order,
+      sku: s,
+      quantity: 0,
+    },
   ];
   const options = { feeTaxRecoverable: false, promotionsInSales: true };
 
   it("gives each SKU its own rate: the same fee per unit costs a cheap product more", () => {
-    const rates = skuKeepRates(
+    const r = settledKeepRates(
       [
-        ...settled("BOARD", 10, "600.00", "-100.00", "-100.00"),
-        ...settled("MUGS", 10, "250.00", "-50.00", "-100.00"),
+        ...settled("BOARD", "1", 10, "600.00", "-100.00", "-100.00"),
+        ...settled("MUGS", "2", 10, "250.00", "-50.00", "-100.00"),
       ],
       options,
     );
     // Board: (600 + 5 − 100 − 100) / (605 − 100) = 405 / 505; mugs: 105 / 205.
-    expect(rates.get("BOARD")).toEqual({ rate: "0.8019801980", units: 10 });
-    expect(rates.get("MUGS")).toEqual({ rate: "0.5121951220", units: 10 });
+    expect(r.skus.get("BOARD")).toEqual({ rate: "0.8019801980", units: 10 });
+    expect(r.skus.get("MUGS")).toEqual({ rate: "0.5121951220", units: 10 });
+    // Both together: 510 / 710.
+    expect(r.channel).toBe("0.7183098592");
+  });
+
+  it("leaves orders given away out of every rate, and counts their fees apart", () => {
+    const r = settledKeepRates(
+      [
+        ...settled("BOARD", "1", 10, "600.00", "0", "-100.00"),
+        // A Vine unit: the promotion is the whole price; the fulfilment fee is still charged.
+        ...settled("BOARD", "2", 1, "60.00", "-60.00", "-10.00"),
+      ],
+      options,
+    );
+    // Only the 10 sold: (600 + 5 − 100) / 605.
+    expect(r.skus.get("BOARD")).toEqual({ rate: "0.8347107438", units: 10 });
+    expect(r.channel).toBe("0.8347107438");
+    // The giveaway's shipping charge (5) offsets part of its fee (10).
+    expect(r.giveaways.get("BOARD")).toEqual({ units: 1, fees: "5.0000" });
   });
 
   it("leaves out a SKU with too few settled units (one refund would swing it)", () => {
-    const rates = skuKeepRates(settled("NEW", 4, "200.00", "0", "-40.00"), options);
-    expect(rates.has("NEW")).toBe(false);
-    expect(
-      skuKeepRates(settled("NEW", 4, "200.00", "0", "-40.00"), { ...options, minUnits: 4 }).has(
-        "NEW",
-      ),
-    ).toBe(true);
+    const lines = settled("NEW", "1", 4, "200.00", "0", "-40.00");
+    expect(settledKeepRates(lines, options).skus.has("NEW")).toBe(false);
+    expect(settledKeepRates(lines, { ...options, minUnits: 4 }).skus.has("NEW")).toBe(true);
+    // The channel's rate still has them.
+    expect(settledKeepRates(lines, options).channel).toBe("0.8048780488");
+  });
+});
+
+describe("giveawayCosts", () => {
+  it("is each unit's cost and the fees per unit given away, × the period's units", () => {
+    const g = giveawayCosts({
+      skus: [
+        { sku: "BOARD", units: 3, unitCost: "13.40" },
+        { sku: "MUGS", units: 2, unitCost: null },
+      ],
+      settled: new Map([["BOARD", { units: 2, fees: "20.00" }]]),
+      currency: "CAD",
+    });
+    // Board: 3 × 13.40 = 40.20, fees 3 × 10; mugs: no cost, fees at every SKU's 10 a unit.
+    expect(g).toEqual({
+      units: 5,
+      productCost: "40.2000",
+      fees: "50.0000",
+      amount: "90.2000",
+      costMissing: 2,
+      feesUnknown: false,
+    });
+  });
+
+  it("says when no giveaway is settled yet to learn the fees from", () => {
+    const g = giveawayCosts({
+      skus: [{ sku: "BOARD", units: 1, unitCost: "13.40" }],
+      settled: new Map(),
+      currency: "CAD",
+    });
+    expect(g.amount).toBe("13.4000");
+    expect(g.feesUnknown).toBe(true);
   });
 });
 
@@ -315,7 +370,7 @@ describe("sortSkuProfits and channelAdSummary", () => {
 
   it("takes the account's own costs off the channel's profit, not any product's", () => {
     const s = channelAdSummary(rows, { spend: "60", sales: "200" }, "25.05");
-    expect(s.accountCosts).toBe("25.0500");
+    expect(s.oneOffCosts).toBe("25.0500");
     expect(s.profitBeforeAds).toBe("429.8200");
     expect(s.profitAfterAds).toBe("304.7700");
     expect(s.losing).toBe(1);
@@ -573,5 +628,33 @@ describe("productProfitCsvRows", () => {
       "Storage, selling plan and other account costs (FBA inventory storage fee, Selling plan subscription)",
     );
     expect(rows[0]?.[PRODUCT_PROFIT_COLUMNS.indexOf("Profit after ads")]).toBe("-350.0000");
+  });
+
+  it("writes the units given away as their own row", () => {
+    const rows = productProfitCsvRows(
+      [
+        {
+          name: "Amazon.ca",
+          currency: "CAD",
+          rows: [],
+          unallocated: { spend: "0", sales: "0" },
+          giveaways: {
+            units: 3,
+            productCost: "40.20",
+            fees: "30",
+            amount: "70.20",
+            costMissing: 0,
+            feesUnknown: false,
+          },
+        },
+      ],
+      (v) => v ?? "",
+    );
+    const col = (name: (typeof PRODUCT_PROFIT_COLUMNS)[number]) =>
+      PRODUCT_PROFIT_COLUMNS.indexOf(name);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.[col("Units")]).toBe("3");
+    expect(rows[0]?.[col("Product cost")]).toBe("40.20");
+    expect(rows[0]?.[col("Profit after ads")]).toBe("-70.2000");
   });
 });

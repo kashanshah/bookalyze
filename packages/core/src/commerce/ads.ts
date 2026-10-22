@@ -250,33 +250,146 @@ type RateLine = Pick<
 >;
 
 /** A settlement amount on one of a SKU's orders, and the units on it. */
-export type SkuSettledLine = RateLine & { sku: string; quantity: number };
+export type SkuSettledLine = RateLine & { orderRef: string; sku: string; quantity: number };
+
+/** What the period's settlements by SKU say about each SKU's orders. */
+export type SettledRates = {
+  /** SKUs with `minUnits` settled units sold (not given away): their own rate. */
+  skus: Map<string, { rate: string; units: number }>;
+  /** Every SKU's orders sold (not given away) together: the channel's rate; null without any. */
+  channel: string | null;
+  /**
+   * Orders given away (a promotion of the whole item price: Vine, a free replacement), by SKU:
+   * units, and what the marketplace charged on them (positive: a cost).
+   */
+  giveaways: Map<string, { units: number; fees: string }>;
+};
+
+/** A line's item price (not shipping or gift wrap), for units and for giving away. */
+const itemLine = (l: RateLine) => !/shipping|giftwrap/i.test(l.amountDescription);
 
 /**
  * Each SKU's own keep rate, from the amounts on its settled orders: a board and a set of mugs pay
  * about the same fulfilment fee per unit at very different prices, so one channel rate shared by
- * sales overstates one and understates the other. Only SKUs with `minUnits` settled units.
+ * sales overstates one and understates the other. Orders given away (the promotion is the whole
+ * item price) are left out of every rate: a launch's Vine units would otherwise charge their
+ * fulfilment fees to the units that sell. They're counted apart, as a one-off cost.
  */
-export function skuKeepRates(
+export function settledKeepRates(
   lines: readonly SkuSettledLine[],
   options: { feeTaxRecoverable: boolean; promotionsInSales: boolean; minUnits?: number },
-): Map<string, { rate: string; units: number }> {
-  const bySku = new Map<string, { totals: GroupTotals; units: number }>();
+): SettledRates {
+  type Order = {
+    sku: string;
+    lines: SkuSettledLine[];
+    item: bigint;
+    promotion: bigint;
+    units: number;
+  };
+  const orders = new Map<string, Order>();
   for (const l of lines) {
-    const found = bySku.get(l.sku) ?? { totals: emptyGroupTotals(), units: 0 };
-    addSettlementLines(found.totals, [l]);
-    if (settlementGroup(l) === "sales" && !/shipping|giftwrap/i.test(l.amountDescription)) {
-      found.units += l.quantity;
+    const key = `${l.orderRef}|${l.sku}`;
+    const o = orders.get(key) ?? { sku: l.sku, lines: [], item: 0n, promotion: 0n, units: 0 };
+    o.lines.push(l);
+    const group = settlementGroup(l);
+    if (group === "sales" && itemLine(l)) {
+      o.item += parseDecimal(l.amount);
+      o.units += l.quantity;
     }
-    bySku.set(l.sku, found);
+    if (group === "promotions" && itemLine(l)) o.promotion += parseDecimal(l.amount);
+    orders.set(key, o);
   }
-  const out = new Map<string, { rate: string; units: number }>();
+  const bySku = new Map<string, { totals: GroupTotals; units: number }>();
+  const channel = emptyGroupTotals();
+  const giveaways = new Map<string, { units: number; fees: bigint }>();
+  for (const o of orders.values()) {
+    if (o.item > 0n && o.item + o.promotion <= 0n) {
+      const totals = addSettlementLines(emptyGroupTotals(), o.lines);
+      const p = channelProfit(totals, { feeTaxRecoverable: options.feeTaxRecoverable });
+      const g = giveaways.get(o.sku) ?? { units: 0, fees: 0n };
+      g.units += o.units;
+      g.fees -= parseDecimal(p.net) - parseDecimal(p.groups.advertising);
+      giveaways.set(o.sku, g);
+      continue;
+    }
+    const found = bySku.get(o.sku) ?? { totals: emptyGroupTotals(), units: 0 };
+    addSettlementLines(found.totals, o.lines);
+    addSettlementLines(channel, o.lines);
+    found.units += o.units;
+    bySku.set(o.sku, found);
+  }
+  const skus = new Map<string, { rate: string; units: number }>();
   for (const [sku, s] of bySku) {
     if (s.units < (options.minUnits ?? SKU_KEEP_MIN_UNITS)) continue;
     const rate = orderKeepRate(s.totals, options);
-    if (rate !== null) out.set(sku, { rate, units: s.units });
+    if (rate !== null) skus.set(sku, { rate, units: s.units });
   }
-  return out;
+  return {
+    skus,
+    channel: bySku.size ? orderKeepRate(channel, options) : null,
+    giveaways: new Map(
+      [...giveaways].map(([sku, g]) => [sku, { units: g.units, fees: formatDecimal(g.fees) }]),
+    ),
+  };
+}
+
+/** Units given away in the period (positive amounts: costs), in the channel's currency. */
+export type GiveawayCosts = {
+  units: number;
+  /** Units × each one's cost (the units whose cost is known). */
+  productCost: string;
+  /** The marketplace's fees on them: per unit as their settled giveaways show, × units. */
+  fees: string;
+  amount: string;
+  /** Units with no cost known (left out of the product cost). */
+  costMissing: number;
+  /** No giveaway settled yet to learn their fees from: fees are 0 until one is. */
+  feesUnknown: boolean;
+};
+
+/**
+ * What the period's giveaways cost (docs/ADS.md §3): each unit's cost, and the marketplace's fees
+ * per unit given away (the SKU's settled giveaways, else every SKU's) × the units given away in the
+ * period, so giveaways not settled yet are counted too. A one-off line, not in any product.
+ */
+export function giveawayCosts(input: {
+  skus: readonly { sku: string; units: number; unitCost: string | null }[];
+  settled: SettledRates["giveaways"];
+  currency: string;
+}): GiveawayCosts {
+  const decimals = minorUnits(input.currency);
+  let settledUnits = 0n;
+  let settledFees = 0n;
+  for (const g of input.settled.values()) {
+    settledUnits += BigInt(g.units);
+    settledFees += parseDecimal(g.fees);
+  }
+  let units = 0;
+  let cost = 0n;
+  let fees = 0n;
+  let costMissing = 0;
+  let feesUnknown = false;
+  for (const s of input.skus) {
+    if (s.units <= 0) continue;
+    units += s.units;
+    if (s.unitCost === null) costMissing += s.units;
+    else cost += roundUnits(parseDecimal(s.unitCost) * BigInt(s.units), decimals);
+    const own = input.settled.get(s.sku);
+    const [u, f] =
+      own && own.units > 0
+        ? [BigInt(own.units), parseDecimal(own.fees)]
+        : [settledUnits, settledFees];
+    if (u > 0n) fees += roundUnits(divRound(f * BigInt(s.units), u), decimals);
+    else feesUnknown = true;
+  }
+  return {
+    units,
+    productCost: formatDecimal(cost),
+    fees: formatDecimal(fees),
+    amount: formatDecimal(cost + fees),
+    costMissing,
+    feesUnknown,
+  };
 }
 
 /** The account's own costs in a period (positive: a cost), by what they are, largest first. */
@@ -439,9 +552,12 @@ export type ChannelAdSummary = {
   tacos: number | null;
   /** Profit before ads of the SKUs with a cost. */
   profitBeforeAds: string | null;
-  /** The account's own costs (positive: a cost): storage, the selling plan and the like. */
-  accountCosts: string;
-  /** Profit before ads less all ad spend and the account's costs (null when no SKU has a cost). */
+  /**
+   * One-off costs tied to no product's units (positive: a cost): the account's own (storage, the
+   * selling plan) and the units given away.
+   */
+  oneOffCosts: string;
+  /** Profit before ads less all ad spend and the one-off costs (null when no SKU has a cost). */
   profitAfterAds: string | null;
   losing: number;
   /** What the SKUs losing money (after ads) lost, as a positive amount. */
@@ -454,7 +570,7 @@ export type ChannelAdSummary = {
 export function channelAdSummary(
   rows: readonly SkuProfit[],
   unallocated: { spend: string; sales: string },
-  accountCosts = "0",
+  oneOffCosts = "0",
 ): ChannelAdSummary {
   let sales = 0n;
   let spend = parseDecimal(unallocated.spend);
@@ -489,9 +605,9 @@ export function channelAdSummary(
     acos: percent(spend, adSales),
     tacos: percent(spend, sales),
     profitBeforeAds: before === null ? null : formatDecimal(before),
-    accountCosts: formatDecimal(parseDecimal(accountCosts)),
+    oneOffCosts: formatDecimal(parseDecimal(oneOffCosts)),
     // Each SKU with a cost takes its own spend; the channel also takes the spend tied to no SKU,
-    // and the account's own costs.
+    // and the one-off costs.
     profitAfterAds:
       before === null
         ? null
@@ -502,7 +618,7 @@ export function channelAdSummary(
                 0n,
               ) -
               parseDecimal(unallocated.spend) -
-              parseDecimal(accountCosts),
+              parseDecimal(oneOffCosts),
           ),
     losing,
     lost: formatDecimal(lost),
@@ -555,6 +671,7 @@ export function productProfitCsvRows(
     rows: readonly SkuProfit[];
     unallocated: { spend: string; sales: string };
     accountCosts?: AccountCosts | null;
+    giveaways?: GiveawayCosts | null;
   }[],
   amount: (value: string | null, currency: string) => string,
 ): string[][] {
@@ -621,6 +738,20 @@ export function productProfitCsvRows(
         .join(", ")})`;
       row[column("Profit after ads")] = amount(
         formatDecimal(-parseDecimal(c.accountCosts.amount)),
+        c.currency,
+      );
+      out.push(row);
+    }
+    if (c.giveaways && c.giveaways.units > 0) {
+      const row = PRODUCT_PROFIT_COLUMNS.map(() => "");
+      row[0] = c.name;
+      row[1] = c.currency;
+      row[3] =
+        "Units given away (Vine and other 100%-off orders): their cost and the marketplace's fees";
+      row[column("Units")] = String(c.giveaways.units);
+      row[column("Product cost")] = amount(c.giveaways.productCost, c.currency);
+      row[column("Profit after ads")] = amount(
+        formatDecimal(-parseDecimal(c.giveaways.amount)),
         c.currency,
       );
       out.push(row);

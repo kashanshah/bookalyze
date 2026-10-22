@@ -159,6 +159,9 @@ export const ADVERTISING_GUIDES: readonly Guide[] = [
             p: "Storage, the selling plan, inbound placement, Vine and coupon fees aren't on any order and don't grow with each unit sold, so they're not in the keep rate: they're their own line under the marketplace's products, in full. Shared by sales, a launch month's storage and Vine fees would make every product look like it loses money.",
           },
           {
+            p: "Units given away (Vine, or any order whose promotion is the whole price) aren't in a product's units or keep rate either: their cost and the marketplace's fees on them are a line of their own, so a launch's free units don't make the units that sell look worse.",
+          },
+          {
             note: "Orders the marketplace hasn't settled yet are estimated at the same rates. The marketplace's line says how much of the period's sales came after its last settlement.",
           },
           {
