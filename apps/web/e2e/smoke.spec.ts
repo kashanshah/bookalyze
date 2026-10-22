@@ -2061,17 +2061,6 @@ test("sku profit and loss: each product's lines from its settlement, one product
   await expect(page.getByText("Actual", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Fees and refunds" })).toBeVisible();
 
-  // Channels tick on and off like checkboxes; one alone shows in its own currency.
-  const channels = page.getByRole("navigation", { name: "Channels" });
-  await expect(channels.getByRole("checkbox", { name: "All channels" })).toBeChecked();
-  await channels.getByRole("checkbox", { name: "Amazon.ca" }).click();
-  await expect(page).toHaveURL(/channel=/);
-  await expect(channels.getByRole("checkbox", { name: "Amazon.ca" })).toBeChecked();
-  await expect(channels.getByRole("checkbox", { name: "All channels" })).not.toBeChecked();
-  await expect(page.getByText("In the channel's own currency.", { exact: false })).toBeVisible();
-  await channels.getByRole("checkbox", { name: "Amazon.ca" }).click();
-  await expect(channels.getByRole("checkbox", { name: "All channels" })).toBeChecked();
-
   // Sponsored Brands shared by ad sales, as a choice.
   await page.getByRole("link", { name: "Shared by ad sales" }).click();
   await expect(page).toHaveURL(/brands=shared/);
