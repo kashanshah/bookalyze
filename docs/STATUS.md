@@ -12,6 +12,8 @@ Cursor, Copilot…).
   - Product plan, roadmap and decision log: [`docs/PLAN.md`](PLAN.md), the "why" and long-term "what".
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
+  - Security: access, passwords, credentials and the incident response plan (incl. reporting to
+    security@amazon.com within 24 hours): [`docs/SECURITY.md`](SECURITY.md).
   - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
 _Last updated: 2026-10-22, advertising slice 3: Walmart Connect, ad spend per Walmart item per day
