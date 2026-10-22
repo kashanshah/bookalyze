@@ -37,7 +37,7 @@ ads (Channel profit → By product)._
 | 4e. Walmart | **In progress.** Built as a product: the US, Canada and Mexico, shipped by the seller, by WFS or both. Slices 1 (Walmart channels, added by hand, with who ships the orders) 2 (connect Walmart: each country's seller account with its own API key) 3 (orders from the Orders API, the seller's and WFS's) 4a (settlement reports listed, one checked without keeping anything) 4b-1 (settlements brought in and kept row by row) 4b-2 (each settlement read into the books, its payout matched to the bank deposit, the daily job) 4c (in Channel profit), 4d (Seller Center's report uploaded), 5 (WFS stock) and 6 (WFS returns and losses) done. Next: confirm the reading on a live account's reports and WFS log. See §3 "Phase 4e" |
 
 **Live:** https://app.bookalyze.com (Vercel, `main` branch) on Neon Postgres. Public pages: sign-in and sign-up,
-`/privacy-policy` (`apps/web/src/app/privacy-policy`; contact privacy@bookalyze.com; linked from the
+`/privacy-policy` (`apps/web/src/app/privacy-policy`; contact info@bookalyze.com; linked from the
 sign-in pages and given to eBay), and `/terms` (Terms of service, a draft for the owner's legal
 review; linked from sign-up). Every environment variable is listed in `apps/web/.env.example` (the app) or
 `apps/marketing/.env.example` (the public site). The public site
@@ -1180,7 +1180,7 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - Brand tokens copied into `apps/marketing/src/app/globals.css`; dark mode follows the device.
   Checked at 390px and in dark mode. CI builds it (`pnpm --filter @bookalyze/marketing build`).
 - **Launch (owner):** a Vercel project for `apps/marketing` with bookalyze.com, `SIGNUP_MODE=open`
-  on the app, a `hello@bookalyze.com` mailbox, a sending-only `RESEND_API_KEY` for the contact
+  on the app, the `info@bookalyze.com` mailbox, a sending-only `RESEND_API_KEY` for the contact
   form, review of the terms' wording, then retire `apps/landing/` (`docs/SETUP.md` → Public site).
 - Tests: marketing `guides.test.ts` (unique slugs, every guide linked from the site or another
   guide exists); e2e "the terms of service are public and linked from sign-up".
@@ -1329,8 +1329,21 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Vercel Analytics events** (custom events need Vercel Pro; otherwise they're ignored):
   `Start free` on the site (any link to `/sign-up`, with the page and header/footer/page),
   `Sign up` (email form), `Plan chosen` (plan, interval) and `Card given` (back from Checkout).
-- The privacy policy's Cookies section names `bkz_src`. In the EU and the UK a cookie like it
-  usually needs consent; that's for the owner's legal review (GROWTH-PLAN §7).
+- **Consent** (core `needsConsent`, `readConsent`, `maySetSource`): visitors in the EU, the EEA,
+  the UK and Switzerland (Vercel's `x-vercel-ip-country`; the site asks its `/api/region`, the
+  app's auth layout reads the header) get `bkz_src` only after saying yes to "Can we remember how
+  you found us?" on the site. The answer is `bkz_consent` (yes/no, 180 days, shared with the
+  app); "No thanks" also forgets a source already kept; **Cookie choices** in the site's footer
+  (shown to them only) asks again. The app's sign-in pages never ask: there, they get the cookie
+  only if they said yes on the site. If the site can't tell the region, it asks.
+- **Legal pages** (October 2026 rewrite, in-house, not by a lawyer): the party is Teknoffice
+  Technologies Inc.; terms cover business use, prices in USD plus tax where required, renewal,
+  prorated changes, `BILLING_GRACE_DAYS` then read-only, 30 days' notice of price and term
+  changes, no part-period refunds, the one trial per owner, marketplace rules (review requests),
+  ownership, indemnity, a US$100 minimum liability cap; the privacy policy covers our processor
+  role for companies' records, support, billing (Stripe), forwarded emails, legal grounds, EU/UK
+  transfers and rights, retention (deletion within 30 days of a request), children and breaches.
+  Contact for both: info@bookalyze.com. The footers say "Bookalyze, by Teknoffice Technologies Inc."
 
 ### Pagination on every paged list
 

@@ -130,7 +130,7 @@ plus a settlement tool (~$60+) for $19.
 ### Contact form and Resend
 - The site sends with Resend's REST API (`fetch`, no SDK) from a server action. Env on the
   `bookalyze-site` Vercel project: `RESEND_API_KEY` (a **sending-only key for the bookalyze.com
-  domain**, separate from the app's), `CONTACT_TO` (default `hello@bookalyze.com`),
+  domain**, separate from the app's), `CONTACT_TO` (default `info@bookalyze.com`),
   `CONTACT_FROM` (default `Bookalyze website <website@bookalyze.com>`). `reply_to` is the
   visitor's email. No auto-reply to the visitor (it would let anyone send our mail to anyone).
 - Spam: hidden honeypot field, a minimum time on the form (3 s), a per-IP limit in memory (5 per
@@ -371,7 +371,8 @@ reconcile).
       app's key is a sensitive Vercel variable and can't be read back, so make a new one: Resend →
       API Keys → Create, permission **Sending access**, domain **bookalyze.com**; then Vercel →
       bookalyze-site → Settings → Environment Variables → `RESEND_API_KEY`, and redeploy.
-- [ ] Confirm `hello@bookalyze.com` receives mail.
+- [x] Contact address: `info@bookalyze.com` (confirmed by the owner, October 2026), used by the
+      site and both legal pages.
 - [ ] Confirm the prices in §2; then Stripe (C, PR #170), in **test mode**: products and prices
       with the lookup keys `books_month` … `reviews_year`, the webhook `/api/stripe/webhook` and
       its secret, the customer portal (SETUP → Stripe). Decide `BILLING_STARTS_ON` and Stripe Tax.
@@ -386,9 +387,12 @@ reconcile).
 - [ ] Send one message through the preview's contact form once `RESEND_API_KEY` is set for
       Preview, and check it reaches `CONTACT_TO` with the visitor as reply-to.
 
-- [ ] Legal review: the `bkz_src` source cookie (Admin → Growth). The privacy policy names it;
-      for visitors in the EU and the UK, ask whether it needs a consent banner (or turn it off
-      for them).
+- [x] Legal review (October 2026, done in-house with Claude, not by a lawyer): terms and privacy
+      policy rewritten for Teknoffice Technologies Inc. as the party, business use, fees, trial,
+      grace, refunds, data processing role, EU/UK rights and transfers. The `bkz_src` cookie is set
+      in the EU, EEA, UK and Switzerland only after the visitor agrees (`bkz_consent`, Cookie
+      choices in the site's footer). A lawyer's read is still worth having before relying on
+      them in a dispute.
 
 ## 8. Decisions made overnight (2026-10-21 → 22)
 

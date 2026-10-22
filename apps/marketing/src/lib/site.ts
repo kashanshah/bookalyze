@@ -17,4 +17,4 @@ export const SIGN_UP_URL = `${APP_URL}/sign-up`;
 export const SIGN_IN_URL = `${APP_URL}/sign-in`;
 export const PRIVACY_URL = `${APP_URL}/privacy-policy`;
 export const TERMS_URL = `${APP_URL}/terms`;
-export const CONTACT_EMAIL = "hello@bookalyze.com";
+export const CONTACT_EMAIL = "info@bookalyze.com";

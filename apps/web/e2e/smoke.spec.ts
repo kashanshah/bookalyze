@@ -3857,7 +3857,7 @@ test("the privacy policy is public and linked from sign-in", async ({ browser })
   await expect(page).toHaveURL(/\/privacy-policy$/);
   await expect(page.getByRole("heading", { name: "Privacy policy", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Connected services" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "privacy@bookalyze.com" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "info@bookalyze.com" }).first()).toBeVisible();
   await page.close();
 });
 

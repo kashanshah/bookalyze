@@ -4,6 +4,9 @@ import {
   encodeSource,
   funnelRates,
   isOwnHost,
+  maySetSource,
+  needsConsent,
+  readConsent,
   readCookie,
   shouldReplace,
   sourceFromVisit,
@@ -108,5 +111,22 @@ describe("labels and rates", () => {
       [0, null],
     ]);
     expect(funnelRates([{ key: "a", label: "x", count: 0 }])[0]?.ofFirst).toBeNull();
+  });
+});
+
+describe("consent", () => {
+  it("asks in the EU, the EEA, the UK and Switzerland only", () => {
+    for (const c of ["DE", "fr", "IE", "NO", "GB", "CH"]) expect(needsConsent(c)).toBe(true);
+    for (const c of ["CA", "US", "AE", "SA", "MX", "AU"]) expect(needsConsent(c)).toBe(false);
+    expect(needsConsent(null)).toBe(false);
+  });
+  it("reads the answer and decides", () => {
+    expect(readConsent("bkz_consent=yes")).toBe("yes");
+    expect(readConsent("a=1; bkz_consent=no")).toBe("no");
+    expect(readConsent("bkz_consent=maybe")).toBeNull();
+    expect(maySetSource(false, null)).toBe(true);
+    expect(maySetSource(true, null)).toBe(false);
+    expect(maySetSource(true, "no")).toBe(false);
+    expect(maySetSource(true, "yes")).toBe(true);
   });
 });
