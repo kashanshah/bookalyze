@@ -1821,8 +1821,8 @@ line** (`/commerce/profit/products/pnl`; one SKU at `…/pnl/[sku]`).
   SKU: a waterfall and By channel (each line per channel in its currency). Download CSV
   (`/api/o/[slug]/commerce/sku-pnl`). By product links to it. Public guide
   `sku-profit-and-loss`.
-- **Checked on Kazomo's live data** (2026-10-22): Amazon.ca's settlements refilled by SKU from the
-  Reports API; their per-product fees match the settlement's own lines. A channel with no fees to
+- **Checked on Kazomo's live data** (2026-10-22): Amazon.ca's and Amazon.ae's settlements refilled
+  by SKU from the Reports API, Noon UAE read by partner SKU; their per-product fees match the settlement's own lines. A channel with no fees to
   go by (switched off, so its settlements aren't read, and no keep rate) shows its fees, profit
   and actual share as "—" with a note, not 0.00 and 100% actual; a switched-off or disconnected
   channel's settlements are filled only by uploading their flat files, and the note says so.
@@ -3504,9 +3504,9 @@ Built like Noon and eBay: channels first, then the account, orders, money and th
 1. [x] **The ad metrics store, Amazon Ads (Sponsored Products and Brands), Profit by product.**
    Done in slice 1.
 2. [x] **SKU profit and loss, exact** (docs/ADS.md §6b; the main output). Done in slice 2. Next:
-   Amazon.ca confirmed on live data. Left: Amazon.ae's settlements (switched off: upload their
-   flat files), Noon UAE and Walmart's live report columns once they have settlements in the
-   company that sells there, then the date range transaction report's SKUs.
+   Confirmed on live data (2026-10-22): Amazon.ca (Kazomo CA) and Amazon.ae and Noon UAE (Kazomo
+   UAE), settlements refilled by SKU. Left: Walmart's live report columns once it has
+   settlements, then the date range transaction report's SKUs.
 3. [ ] **Noon**: first check Noon's "Reports this key can download" for an ads report; otherwise an
    upload of Ad Manager's CSV/XLSX export into `ad_metrics` (`source = 'upload'`), its SKUs matched
    to Noon channels' Partner SKUs.
