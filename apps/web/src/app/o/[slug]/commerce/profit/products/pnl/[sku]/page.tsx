@@ -224,7 +224,7 @@ function Waterfall({ row, currency, locale }: { row: SkuPnl; currency: string; l
                 locale={locale}
                 className={cn(isProfit && s.units < 0n && "text-destructive")}
               />
-              <Estimated value={s.estimated} />
+              <Estimated estimated={s.estimated} />
             </span>
           </li>
         );
@@ -248,7 +248,11 @@ function ChannelBreakdown({
   );
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[36rem] text-sm">
+      <table
+        className="w-full text-sm"
+        // The line names, then about 9rem a channel: one channel fits a phone, more scroll.
+        style={{ minWidth: `${12 + 9 * channels.length}rem` }}
+      >
         <thead>
           <tr className="border-b bg-muted/30 text-muted-foreground text-xs">
             <th className="px-5 py-3 text-start font-medium">Line</th>
@@ -286,7 +290,7 @@ function ChannelBreakdown({
                     locale={locale}
                     muteZero
                   />
-                  <Estimated value={row.lines[l]} />
+                  <Estimated estimated={row.lines[l].estimated} />
                 </td>
               ))}
             </tr>

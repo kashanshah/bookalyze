@@ -1,4 +1,7 @@
-import { formatDecimal, parseDecimal, type SkuPnl, type SkuPnlAmount } from "@bookalyze/core";
+import { formatDecimal, parseDecimal, SKU_PNL_LINES, type SkuPnl } from "@bookalyze/core";
+
+const ALL_LINES = [...SKU_PNL_LINES];
+
 import Link from "next/link";
 import { Amount } from "@/components/accounting/amount";
 import { cn } from "@/lib/utils";
@@ -10,10 +13,9 @@ export const pct = (v: number | null, locale: string) =>
 
 export const isNegative = (v: string | null) => v !== null && parseDecimal(v) < 0n;
 
-/** "≈" beside an amount that's partly or wholly estimated, with what it means. */
-export function Estimated({ value }: { value: SkuPnlAmount | string | null }) {
-  const estimated = typeof value === "string" || value === null ? value : value.estimated;
-  if (estimated === null || parseDecimal(estimated) === 0n) return null;
+/** "≈" beside an amount whose `estimated` part isn't zero, with what it means. */
+export function Estimated({ estimated }: { estimated: string | null | undefined }) {
+  if (!estimated || parseDecimal(estimated) === 0n) return null;
   return (
     <abbr
       title="Estimated: not settled by the marketplace yet, shared out, or still changing"
@@ -91,22 +93,20 @@ export function SkuPnlTable({
   locale: string;
   hrefFor: (sku: string) => string;
 }) {
-  const money = (v: SkuPnlAmount | string | null, className?: string) => {
-    const amount = typeof v === "string" || v === null ? v : v.amount;
-    return (
-      <>
-        <Amount value={amount} currency={currency} locale={locale} className={className} />
-        <Estimated value={v} />
-      </>
-    );
-  };
+  /** An amount, and ≈ when part of it is estimated. */
+  const money = (amount: string | null, estimated?: string) => (
+    <>
+      <Amount value={amount} currency={currency} locale={locale} />
+      {amount === null ? null : <Estimated estimated={estimated} />}
+    </>
+  );
   const cell = "px-3 py-2.5 text-end";
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[60rem] text-sm">
+      <table className="w-full min-w-[68rem] text-sm">
         <thead>
           <tr className="border-b bg-muted/30 text-muted-foreground text-xs">
-            <th className="px-4 py-3 text-start font-medium">Product</th>
+            <th className="min-w-56 px-4 py-3 text-start font-medium">Product</th>
             <th className="px-3 py-3 text-end font-medium" title="Units sold, and returned">
               Units
             </th>
@@ -157,7 +157,7 @@ export function SkuPnlTable({
             };
             return (
               <tr key={r.sku || "none"} className="border-b last:border-b-0 hover:bg-muted/20">
-                <td className="max-w-72 px-4 py-2.5">
+                <td className="min-w-56 max-w-80 px-4 py-2.5">
                   {r.sku ? (
                     <Link
                       href={hrefFor(r.sku)}
@@ -188,10 +188,12 @@ export function SkuPnlTable({
                     </span>
                   ) : null}
                 </td>
-                <td className={cell}>{money(r.sales)}</td>
-                <td className={cell}>{money(marketplace)}</td>
-                <td className={cell}>{money(r.lines.cogs)}</td>
-                <td className={cell}>{money(ads)}</td>
+                <td className={cell}>
+                  {money(r.sales, sumEstimated(r, ["grossSales", "promotions"]))}
+                </td>
+                <td className={cell}>{money(marketplace.amount, marketplace.estimated)}</td>
+                <td className={cell}>{money(r.lines.cogs.amount, r.lines.cogs.estimated)}</td>
+                <td className={cell}>{money(ads.amount, ads.estimated)}</td>
                 <td
                   className={cn(
                     cell,
@@ -199,10 +201,10 @@ export function SkuPnlTable({
                     isNegative(r.profit) ? "text-destructive" : r.profit ? "text-success" : "",
                   )}
                 >
-                  {money(r.profit)}
+                  {money(r.profit, sumEstimated(r, ALL_LINES))}
                 </td>
                 <td className={cell}>{pct(r.margin, locale)}</td>
-                <td className={cell}>{money(r.profitPerUnit)}</td>
+                <td className={cell}>{money(r.profitPerUnit, sumEstimated(r, ALL_LINES))}</td>
                 <td className={cell}>{pct(r.tacos, locale)}</td>
                 <td className="px-4 py-2.5 text-end">
                   <ActualShare share={r.actualShare} locale={locale} />
@@ -222,7 +224,7 @@ export function SkuPnlTable({
             <td className={cell}>{money(total.cogs)}</td>
             <td className={cell}>{money(total.ads)}</td>
             <td className={cn(cell, isNegative(total.profit) && "text-destructive")}>
-              {money(total.profit)}
+              {money(total.profit, sumEstimated(total, ALL_LINES))}
             </td>
             <td className={cell}>{pct(total.margin, locale)}</td>
             <td className={cell}>{money(total.profitPerUnit)}</td>
