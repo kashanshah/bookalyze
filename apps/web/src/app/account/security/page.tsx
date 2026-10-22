@@ -54,7 +54,11 @@ export default async function SecurityPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <PasswordSection hasPassword={hasPassword} />
+          <PasswordSection
+            hasPassword={hasPassword}
+            email={session.user.email}
+            name={session.user.name}
+          />
         </CardContent>
       </Card>
 

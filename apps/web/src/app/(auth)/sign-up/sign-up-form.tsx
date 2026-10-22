@@ -1,12 +1,12 @@
 "use client";
 
 import { track } from "@vercel/analytics";
-import { Check } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthHeading } from "@/components/auth/auth-heading";
 import { GoogleButton, OrDivider } from "@/components/auth/google-button";
+import { PasswordRules, passwordReady } from "@/components/auth/password-rules";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -14,7 +14,6 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
-import { cn } from "@/lib/utils";
 
 export function SignUpForm({
   redirectTo,
@@ -31,13 +30,18 @@ export function SignUpForm({
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState(initialEmail ?? "");
   const afterSignUp = redirectTo === "/" ? "/onboarding" : redirectTo;
-  const longEnough = password.length >= 10;
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email"));
+    if (!passwordReady(password, { email, name })) {
+      setError("Choose a password that meets every rule under it.");
+      return;
+    }
     setPending(true);
     setError(undefined);
     const { error } = await authClient.signUp.email({
@@ -79,7 +83,15 @@ export function SignUpForm({
         ) : null}
         <form onSubmit={onSubmit} className="grid gap-4">
           <Field label="Your name" htmlFor="name">
-            <Input id="name" name="name" autoComplete="name" placeholder="Jane Doe" required />
+            <Input
+              id="name"
+              name="name"
+              autoComplete="name"
+              placeholder="Jane Doe"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </Field>
           <Field label="Email address" htmlFor="email">
             <Input
@@ -89,35 +101,25 @@ export function SignUpForm({
               autoComplete="email"
               placeholder="you@company.com"
               required
-              defaultValue={initialEmail}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
             />
           </Field>
           <Field
             label="Password"
             htmlFor="password"
             hint={
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 transition-colors",
-                  longEnough && "text-success",
-                )}
-              >
-                <Check
-                  className={cn(
-                    "size-3 transition-opacity",
-                    longEnough ? "opacity-100" : "opacity-40",
-                  )}
-                />
-                At least 10 characters
-              </span>
+              <PasswordRules id="password-rules" password={password} email={email} name={name} />
             }
           >
             <PasswordInput
               id="password"
               name="password"
               autoComplete="new-password"
-              minLength={10}
+              minLength={12}
+              maxLength={128}
               required
+              aria-describedby="password-rules"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />

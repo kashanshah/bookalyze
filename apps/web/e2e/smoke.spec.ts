@@ -4165,6 +4165,16 @@ test("a Google-only user can set a password and then sign in with it", async ({ 
 
   await page.goto("/account/security");
   await expect(page.getByText("You signed up with Google.")).toBeVisible();
+  // The password rules: the server refuses a common password and one made of the person's name.
+  await page.locator("#password").fill("Password2026!");
+  await expect(page.getByText("At least 12 characters")).toBeVisible();
+  await page.locator("#confirm").fill("Password2026!");
+  await page.getByRole("button", { name: "Set password" }).click();
+  await expect(page.getByText(/too common or easy to guess/)).toBeVisible();
+  await page.locator("#password").fill("gina-google-forever");
+  await page.locator("#confirm").fill("gina-google-forever");
+  await page.getByRole("button", { name: "Set password" }).click();
+  await expect(page.getByText(/Don't use your name, your email address/)).toBeVisible();
   await page.locator("#password").fill("brand-new-password");
   await page.locator("#confirm").fill("brand-new-password");
   await page.getByRole("button", { name: "Set password" }).click();

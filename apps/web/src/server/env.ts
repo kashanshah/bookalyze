@@ -115,6 +115,11 @@ const schema = z.object({
    * this as a bearer token. Without it the endpoint is switched off.
    */
   SUPPORT_INTAKE_SECRET: z.string().min(32).optional(),
+  /**
+   * Checking new passwords against Have I Been Pwned's breach list (k-anonymity: only a hash
+   * prefix leaves the server). "off" only in tests, which mustn't call outside services.
+   */
+  PASSWORD_BREACH_CHECK: z.enum(["on", "off"]).default("on"),
   /** "s3", or "local" to keep files on disk (development and CI only). */
   STORAGE_DRIVER: z.enum(["s3", "local", ""]).optional(),
 });

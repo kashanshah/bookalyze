@@ -34,8 +34,20 @@ only the systems their work needs, and loses it the day the work ends.
 - Devices used for this work have disk encryption and a screen lock.
 
 **For systems:**
-- Bookalyze's own sign-in requires passwords of at least 10 characters (`minPasswordLength` in
-  `apps/web/src/server/auth.ts`), with email verification and an optional second step.
+- **Bookalyze's own passwords** (sign-up, reset, change, and adding one to a Google account)
+  follow NIST SP 800-63B, in core `password.ts`, checked in every form and enforced on the server
+  (`apps/web/src/server/password-policy.ts`, a Better Auth `hooks.before`):
+  - at least **12** characters and at most 128 (any characters, spaces and emoji included);
+  - not a common or easily guessed password (common passwords with digits, symbols or swapped
+    letters added, keyboard and alphabet runs, repeats, digits only);
+  - not the person's name, their email address or "Bookalyze";
+  - not in a known data breach: Have I Been Pwned, by k-anonymity (only the first 5 characters
+    of the SHA-1 hash leave the server; if the service can't be reached, the password is accepted
+    and the miss logged);
+  - no composition rules and no forced periodic changes (NIST advises against both); a reset
+    signs out every other session. Passwords already set before these rules keep working until
+    they're next changed.
+  - Accounts are created only after the email is verified, and sign-in is rate-limited.
 - Database roles have long random passwords. The app's runtime role can't bypass row-level
   security, so each company sees only its own data.
 

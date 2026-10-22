@@ -1771,6 +1771,23 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   spend finding each SKU); e2e "walmart: link Walmart Connect…" (an advertiser without access
   refused, linked, ads in by item with one unmatched, Profit by product, unlinked).
 
+### Security: password rules and the incident response plan
+
+- **`docs/SECURITY.md`**: who has access (the owner only), minimum password requirements for
+  people and systems, how credentials are kept, monitoring, and the incident response plan
+  (contain, investigate, fix, notify: security@amazon.com within 24 hours for anything involving
+  Amazon information, other providers, customers and regulators), records and yearly review.
+  Written for the Amazon Ads API registration.
+- **Password rules** (core `password.ts`: `PASSWORD_MIN_LENGTH` 12, `PASSWORD_MAX_LENGTH` 128,
+  `passwordProblems`, `passwordError`): long enough, not common or guessable, not the person's
+  name, email or "Bookalyze". Enforced on the server for sign-up, reset, change and set password
+  (`server/password-policy.ts`, Better Auth `hooks.before`; `setPasswordAction` too), plus a check
+  against Have I Been Pwned by k-anonymity that accepts the password if the service is down
+  (`PASSWORD_BREACH_CHECK`, `off` in e2e). Every new-password field shows the rules ticking as
+  they're met (`components/auth/password-rules.tsx`). Existing passwords keep working.
+- Tests: core `password.test.ts`; e2e "a Google-only user can set a password…" (a common password
+  and one made of the person's name are refused).
+
 ### Advertising, slice 1: profit after ads (Amazon Ads)
 
 Design and reasoning: **`docs/ADS.md`** (the model, reconciliation with the books' ad fees,
