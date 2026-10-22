@@ -14,6 +14,7 @@ import {
   type Settlement,
   type SettlementAccountKey,
   type SettlementAccounts,
+  type SettlementSkuLine,
   settlementDepositWindow,
 } from "@bookalyze/core";
 import { and, asc, desc, eq, isNotNull, isNull, ne, type SQL, sql } from "drizzle-orm";
@@ -28,6 +29,7 @@ import {
   settlementDepositDismissals,
   settlementLines,
   settlementSettings,
+  settlementSkuLines,
   settlements,
 } from "./schema/commerce";
 import { replaceJournalEntry } from "./transactions";
@@ -64,6 +66,18 @@ export async function knownSettlementReports(tx: Transaction): Promise<Set<strin
     .select({ reportId: settlements.reportId })
     .from(settlements)
     .where(isNotNull(settlements.reportId));
+  return new Set(rows.map((r) => r.reportId ?? ""));
+}
+
+/**
+ * Report IDs of settlements brought in before their amounts were kept by order and SKU: the
+ * next run downloads them again (while Amazon lists them) to fill those.
+ */
+export async function reportsWithoutSkuDetail(tx: Transaction): Promise<Set<string>> {
+  const rows = await tx
+    .select({ reportId: settlements.reportId })
+    .from(settlements)
+    .where(and(isNotNull(settlements.reportId), isNull(settlements.skuDetailAt)));
   return new Set(rows.map((r) => r.reportId ?? ""));
 }
 
@@ -133,6 +147,15 @@ export async function saveSettlement(
     })
     .returning({ id: settlements.id, created: sql<boolean>`(xmax = 0)` });
   if (!row) throw new Error("The settlement couldn't be saved.");
+  if (s.skuLines) {
+    await saveSettlementSkuLines(tx, {
+      orgId: input.orgId,
+      settlementId: row.id,
+      lines: s.skuLines,
+      replace: true,
+      complete: true,
+    });
+  }
   await tx.delete(settlementLines).where(eq(settlementLines.settlementId, row.id));
   if (s.lines.length) {
     await tx.insert(settlementLines).values(
@@ -148,6 +171,94 @@ export async function saveSettlement(
     );
   }
   return { id: row.id, created: Boolean(row.created) };
+}
+
+/**
+ * Keeps a settlement's amounts by order and SKU (docs/ADS.md §6b). `replace` deletes what was
+ * kept first (the first part of an upload); `complete` marks the settlement as having them all.
+ * Never touches the settlement's own lines or the books.
+ */
+export async function saveSettlementSkuLines(
+  tx: Transaction,
+  input: {
+    orgId: string;
+    settlementId: string;
+    lines: readonly SettlementSkuLine[];
+    replace: boolean;
+    complete: boolean;
+  },
+) {
+  if (input.replace) {
+    await tx
+      .delete(settlementSkuLines)
+      .where(eq(settlementSkuLines.settlementId, input.settlementId));
+    await tx
+      .update(settlements)
+      .set({ skuDetailAt: null })
+      .where(eq(settlements.id, input.settlementId));
+  }
+  for (let i = 0; i < input.lines.length; i += 1_000) {
+    await tx.insert(settlementSkuLines).values(
+      input.lines.slice(i, i + 1_000).map((l) => ({
+        organizationId: input.orgId,
+        settlementId: input.settlementId,
+        orderRef: l.orderId?.slice(0, 100) ?? null,
+        sku: l.sku?.slice(0, 200) ?? null,
+        postedDate: l.postedDate,
+        transactionType: l.transactionType.slice(0, 200),
+        amountType: l.amountType.slice(0, 200),
+        amountDescription: l.amountDescription.slice(0, 200),
+        amount: l.amount,
+        quantity: Math.max(0, Math.trunc(l.quantity)),
+        count: Math.max(0, Math.trunc(l.count)),
+      })),
+    );
+  }
+  if (input.complete) {
+    await tx
+      .update(settlements)
+      .set({ skuDetailAt: new Date() })
+      .where(eq(settlements.id, input.settlementId));
+  }
+}
+
+/** A settlement by Amazon's settlement ID, if it's in. */
+export async function settlementByExternalId(tx: Transaction, externalId: string) {
+  const [row] = await tx
+    .select({
+      id: settlements.id,
+      skuDetailAt: settlements.skuDetailAt,
+      source: settlements.source,
+    })
+    .from(settlements)
+    .where(eq(settlements.externalId, externalId));
+  return row ?? null;
+}
+
+/**
+ * Settlements whose amounts aren't kept by order and SKU yet, by channel, ending between `from`
+ * and `to` (company time zone): what the SKU profit and loss estimates instead.
+ */
+export async function settlementsWithoutSkuDetail(
+  tx: Transaction,
+  input: { from: string; to: string; timezone: string },
+) {
+  return tx
+    .select({
+      id: settlements.id,
+      externalId: settlements.externalId,
+      channelId: settlements.channelId,
+      source: settlements.source,
+      reportId: settlements.reportId,
+    })
+    .from(settlements)
+    .where(
+      and(
+        isNull(settlements.skuDetailAt),
+        sql`(${settlements.endAt} at time zone ${input.timezone})::date >= ${input.from}::date`,
+        sql`(${settlements.startAt} at time zone ${input.timezone})::date <= ${input.to}::date`,
+      ),
+    );
 }
 
 /** The settlement's entry, while it's in the books (posted and not reversed). */

@@ -19,11 +19,14 @@ import {
   uploadReportReturnsAction,
   uploadReportSettlementsAction,
   uploadSettlementAction,
+  uploadSettlementSkuLinesAction,
 } from "./actions";
 
 /** At most this many calls per click: the rest comes in with the daily job. */
 const MAX_ROUNDS = 6;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** A settlement's amounts by order and SKU go this many per call (the action's limit). */
+const SKU_LINES_PER_CALL = 1_500;
 
 /** "Bring in settlements": asks Amazon for new settlement reports until it has no more. */
 export function SyncSettlementsButton({ slug }: { slug: string }) {
@@ -207,6 +210,20 @@ export function UploadSettlements({ slug }: { slug: string }) {
         if (!result.ok) {
           toast.error(`${file.name}: ${result.message}`);
           continue;
+        }
+        // Its amounts by order and SKU, for each product's profit and loss, a part at a time.
+        const lines = settlement.skuLines ?? [];
+        for (let i = 0; i === 0 || i < lines.length; i += SKU_LINES_PER_CALL) {
+          const part = await uploadSettlementSkuLinesAction(slug, {
+            settlementId: settlement.settlementId,
+            first: i === 0,
+            last: i + SKU_LINES_PER_CALL >= lines.length,
+            lines: lines.slice(i, i + SKU_LINES_PER_CALL),
+          });
+          if (!part.ok) {
+            toast.error(`${file.name}: ${part.message}`);
+            break;
+          }
         }
         if (result.created) added++;
         else updated++;

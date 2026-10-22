@@ -143,6 +143,10 @@ export const ADVERTISING_GUIDES: readonly Guide[] = [
           {
             p: "Sponsored Brands campaigns promote a brand or several products, and Amazon reports their cost per campaign, not per product. Bookalyze keeps them as their own line under each marketplace's products: counted in the marketplace's total and its TACOS, not split into any product, so no product looks worse for a campaign that wasn't about it.",
           },
+          {
+            note: "On Profit and loss by product you can choose to share Sponsored Brands out by each product's sales from ads instead (marked as estimated). See Profit and loss by product, line by line.",
+            tone: "tip",
+          },
         ],
       },
       {
@@ -184,11 +188,130 @@ export const ADVERTISING_GUIDES: readonly Guide[] = [
       },
     ],
     related: [
+      "sku-profit-and-loss",
       "acos-tacos-break-even",
       "connect-amazon-ads",
       "fix-products-losing-money",
       "ads-in-your-books",
     ],
+  },
+  {
+    slug: "sku-profit-and-loss",
+    category: "advertising",
+    title: "Profit and loss by product, line by line",
+    summary:
+      "For any period, every product's exact profit and loss: units sold and returned, sales, promotions, refunds, each marketplace fee, storage, cost of goods and ads, from the marketplaces' own rows. Each amount is marked when it's estimated.",
+    sections: [
+      {
+        heading: "What it's for",
+        blocks: [
+          {
+            p: 'Profit by product answers "which products lose money after ads?" quickly, sharing each marketplace\'s fees by sales. This page goes further: it reads the fees the marketplace charged **on each order of each product**, so you see exactly what a product made or lost, line by line, for any dates you choose.',
+          },
+          { where: "Commerce → Channel profit → By product → Profit and loss, line by line" },
+        ],
+      },
+      {
+        heading: "Where each line comes from",
+        blocks: [
+          {
+            table: {
+              head: ["Line", "Where it comes from", "Actual or estimated"],
+              rows: [
+                [
+                  "Units sold and returned",
+                  "The product's order lines bought in the period; returns from the orders' refunds",
+                  "Actual",
+                ],
+                [
+                  "Gross sales, promotions and coupons",
+                  "The marketplace's rows for the order, else the order itself",
+                  "Actual",
+                ],
+                [
+                  "Refunds",
+                  "The marketplace's refund rows on the order; before they're in, the order's refunds",
+                  "Actual once settled",
+                ],
+                [
+                  "Referral, fulfilment and other fees",
+                  "Amazon's settlements by product and order, Noon's transactions, Walmart's settlement reports, eBay's finances (shared over an order's products by item price)",
+                  "Actual once settled; estimated before",
+                ],
+                [
+                  "Storage and account fees",
+                  "Storage, the selling plan and other fees on no product, shared by units sold",
+                  "Estimated (shared out)",
+                ],
+                [
+                  "Cost of goods",
+                  "The cost posted for the month on Cost of goods sold; for months not posted, the next unit's landed cost",
+                  "Actual once the month is posted",
+                ],
+                [
+                  "Ad spend",
+                  "Each day's spend on the product in the ads reports",
+                  "Estimated for the last 14 days (the marketplace can still give them sales)",
+                ],
+              ],
+            },
+          },
+          {
+            p: "A product's period is its order lines bought in it, and **every amount on those orders counts there**, even a refund or a fee settled weeks later. So a period's units and what they cost always go together, and a period's figures can still move a little until its orders are settled.",
+          },
+        ],
+      },
+      {
+        heading: 'Estimates, and "x% actual"',
+        blocks: [
+          {
+            p: "An order the marketplace hasn't settled yet has no fees of its own. Bookalyze estimates them at the rates the product's settled orders show (else the marketplace's), and marks them **≈**. When nothing on a marketplace is settled by product yet, the whole marketplace share is estimated by its keep rate (see Profit by product, after ads). Each product, and the period, shows how much of its amounts is actual.",
+          },
+          {
+            note: "Amazon settlements brought in before this page existed don't have their amounts by product yet. On Commerce → Settlements, Bring in settlements fills those Amazon still lists (about 90 days); for older ones, upload their flat files again. Nothing in your books changes.",
+            tone: "tip",
+          },
+        ],
+      },
+      {
+        heading: "One product: the waterfall",
+        blocks: [
+          {
+            p: "Open a product for its waterfall, from gross sales down to profit, with every marketplace together in your main currency (each amount at its own day's exchange rate). Below it, **By channel** shows each marketplace in its own currency, the amounts as the marketplace has them.",
+          },
+        ],
+      },
+      {
+        heading: "Ads and Sponsored Brands",
+        blocks: [
+          {
+            p: "Ad spend comes from the ads reports. Without Amazon Ads connected, ad cost says \"not connected yet\": the page still works, and the advertising in the marketplace's settlements is its own line, not split by product. Sponsored Brands has no spend per product, so it's its own line by default; choose **Shared by ad sales** to share it by each product's sales from ads (marked estimated).",
+          },
+        ],
+      },
+      {
+        heading: "Download it",
+        blocks: [
+          {
+            p: "**Download CSV** gives every line for every product: every marketplace together in your main currency, then each marketplace in its own, with the profit, margin, per unit, TACOS, the share that's actual and how much is estimated. On a product's page, the CSV is that product only.",
+          },
+        ],
+      },
+      {
+        heading: "What you should see",
+        blocks: [
+          {
+            check: [
+              "Every product that sold in the period, worst profit first",
+              "Sales, fees and refunds, cost of goods and ads adding up to each product's profit",
+              "≈ beside amounts that are estimated, and the share that's actual",
+              "A product's waterfall, and its lines on each marketplace in that marketplace's currency",
+            ],
+          },
+        ],
+      },
+    ],
+    related: ["profit-after-ads", "ads-in-your-books", "fix-products-losing-money"],
   },
   {
     slug: "connect-amazon-ads",

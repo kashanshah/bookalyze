@@ -1,6 +1,6 @@
 import "server-only";
 import { BANK_OF_CANADA_CURRENCIES, parseBankOfCanada } from "@bookalyze/core";
-import { fxRateOn, getDb, missingCadRates, upsertFxRates } from "@bookalyze/db";
+import { fxRateOn, fxRatesForDays, getDb, missingCadRates, upsertFxRates } from "@bookalyze/db";
 import { logWarn } from "./log";
 
 /**
@@ -54,4 +54,29 @@ export async function suggestRate(
     }
   }
   return fxRateOn(db, { base, quote, date });
+}
+
+/**
+ * Each day's rate for `quote` (main-currency units per one) from `from` to `to`, fetching Bank of
+ * Canada's for the range first when any day has none. Days still without one are left out.
+ */
+export async function dayRates(
+  base: string,
+  quote: string,
+  from: string,
+  to: string,
+): Promise<Map<string, string>> {
+  const db = getDb();
+  const read = () => fxRatesForDays(db, { base, quote, from, to });
+  const rates = await read();
+  const days =
+    Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+  if (rates.size >= days) return rates;
+  try {
+    await syncBankOfCanada(shift(from, -7), to);
+  } catch (error) {
+    logWarn("fx.day_rates_fetch_failed", { base, quote, from, to }, error);
+    return rates;
+  }
+  return read();
 }

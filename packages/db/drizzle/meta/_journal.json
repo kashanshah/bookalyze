@@ -645,6 +645,13 @@
       "when": 1792639149514,
       "tag": "0091_dropship_channels",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792639393751,
+      "tag": "0092_settlement_sku_lines",
+      "breakpoints": true
     }
   ]
 }
