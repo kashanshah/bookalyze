@@ -11,7 +11,13 @@ import {
 import { and, between, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { connections } from "./schema/banking";
-import { adMetrics, adReportRequests, channelSkus, salesChannels } from "./schema/commerce";
+import {
+  type AD_SOURCES,
+  adMetrics,
+  adReportRequests,
+  channelSkus,
+  salesChannels,
+} from "./schema/commerce";
 
 /**
  * Ad metrics per channel, day, campaign and SKU (docs/ADS.md), from any marketplace's ads
@@ -32,7 +38,7 @@ export async function replaceAdMetrics(
     orgId: string;
     channelId: string;
     connectionId: string | null;
-    source: "amazon_ads" | "upload";
+    source: (typeof AD_SOURCES)[number];
     accountRef: string;
     country: string | null;
     currency: string;
@@ -131,6 +137,61 @@ export async function listAmazonAdsConnections(tx: Transaction) {
     .from(connections)
     .where(eq(connections.provider, "amazon_ads"))
     .orderBy(desc(connections.createdAt));
+}
+
+/** The company's Walmart Connect advertisers (one per Walmart channel), newest first. */
+export async function listWalmartAdsConnections(tx: Transaction) {
+  return tx
+    .select({
+      id: connections.id,
+      name: connections.name,
+      status: connections.status,
+      settings: connections.settings,
+      lastSyncedAt: connections.lastSyncedAt,
+      lastError: connections.lastError,
+    })
+    .from(connections)
+    .where(eq(connections.provider, "walmart_ads"))
+    .orderBy(desc(connections.createdAt));
+}
+
+/**
+ * Which of a channel's listing IDs (Walmart's item IDs, Amazon's ASINs) already have a SKU in the
+ * marketplace's list.
+ */
+export async function knownListingRefs(
+  tx: Transaction,
+  channelId: string,
+  refs: readonly string[],
+): Promise<Set<string>> {
+  if (!refs.length) return new Set();
+  const rows = await tx
+    .select({ asin: channelSkus.asin })
+    .from(channelSkus)
+    .where(and(eq(channelSkus.channelId, channelId), inArray(channelSkus.asin, [...refs])));
+  return new Set(rows.map((r) => r.asin ?? ""));
+}
+
+/**
+ * Keeps a SKU's listing ID (Walmart's item ID) on the channel's list, adding the SKU when it isn't
+ * there yet, so ads reports that only name the listing find the SKU.
+ */
+export async function saveChannelSkuListingRef(
+  tx: Transaction,
+  input: { orgId: string; channelId: string; sku: string; listingRef: string },
+) {
+  await tx
+    .insert(channelSkus)
+    .values({
+      organizationId: input.orgId,
+      channelId: input.channelId,
+      sku: input.sku,
+      asin: input.listingRef,
+    })
+    .onConflictDoUpdate({
+      target: [channelSkus.channelId, channelSkus.sku],
+      set: { asin: input.listingRef },
+    });
 }
 
 /** Where one channel's ads of one type stand: the latest finished report, and one pending. */

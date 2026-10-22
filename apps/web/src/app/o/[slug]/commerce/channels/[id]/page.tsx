@@ -16,6 +16,7 @@ import {
   getWalmartConnection,
   listAmazonAdsConnections,
   listAmazonConnections,
+  listWalmartAdsConnections,
   listWalmartSettlements,
   schema,
 } from "@bookalyze/db";
@@ -31,6 +32,7 @@ import { amazonAdsApp } from "@/server/amazon-ads";
 import { getCommerceContext } from "@/server/commerce";
 import { ebayApp } from "@/server/ebay";
 import { isOrgAdmin } from "@/server/org";
+import { walmartAdsApp } from "@/server/walmart-ads";
 import { AmazonAccount } from "../amazon";
 import { AmazonAdsConnectNotice, AmazonAdsPanel, type AmazonAdsView } from "../amazon-ads";
 import { EbayAccount, EbayConnectNotice } from "../ebay";
@@ -43,6 +45,7 @@ import {
   WalmartSettlements,
   WalmartWfsStock,
 } from "../walmart";
+import { WalmartAdsPanel } from "../walmart-ads";
 import { ChannelSwitch, RemoveChannel, StockSwitch } from "./channel-settings";
 
 export const metadata: Metadata = { title: "Channel" };
@@ -81,7 +84,15 @@ export default async function ChannelPage({
           : null,
       ads: channel.kind === "amazon" ? await listAmazonAdsConnections(tx) : [],
       adsThrough:
-        channel.kind === "amazon" ? (await adsBroughtInThrough(tx)).get(channel.id) : undefined,
+        channel.kind === "amazon" || channel.kind === "walmart"
+          ? (await adsBroughtInThrough(tx)).get(channel.id)
+          : undefined,
+      walmartAds:
+        channel.kind === "walmart"
+          ? ((await listWalmartAdsConnections(tx)).find(
+              (c) => c.settings.channelId === channel.id && c.status !== "disconnected",
+            ) ?? null)
+          : null,
       noon: channel.kind === "noon" ? await getNoonConnection(tx) : null,
       ebay: channel.kind === "ebay" ? await getEbayConnection(tx) : null,
       walmart:
@@ -324,6 +335,30 @@ export default async function ChannelPage({
               ? `/o/${slug}/inventory/stock`
               : null
           }
+        />
+      ) : null}
+      {ch.kind === "walmart" && money ? (
+        <WalmartAdsPanel
+          slug={slug}
+          locale={locale}
+          canManage={canManage}
+          channelId={ch.id}
+          configured={Boolean(walmartAdsApp())}
+          connected={Boolean(data.walmart && data.walmart.status !== "disconnected")}
+          connection={
+            data.walmartAds
+              ? {
+                  status: data.walmartAds.status,
+                  advertiserId: String(data.walmartAds.settings.advertiserId ?? ""),
+                  lastSyncedAt: data.walmartAds.lastSyncedAt?.toISOString() ?? null,
+                  lastError: data.walmartAds.lastError,
+                }
+              : null
+          }
+          through={data.adsThrough?.through ?? null}
+          pending={data.adsThrough?.pending ?? 0}
+          reportError={data.adsThrough?.lastError ?? null}
+          profitHref={`${base}/profit/products?channel=${ch.id}`}
         />
       ) : null}
       {ch.kind === "walmart" && money ? (

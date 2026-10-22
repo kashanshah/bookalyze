@@ -121,6 +121,35 @@ Login with Amazon clients. Design: `docs/ADS.md`.
 Reports: the daily job asks for each channel's last 15 days (60 on first connect); the 5-minute job
 collects them when Amazon has made them. Limits are per app and shared by every connected account.
 
+## Walmart Connect (Sponsored Search ads)
+
+Walmart's ad spend per item comes from **Walmart Connect's Sponsored Search API**, which only
+**API partners** can call: Bookalyze signs every request with its own partner key, and each
+advertiser gives Bookalyze access in Ad Center. Bookalyze keeps nothing of the advertiser's but
+its advertiser ID. Design: `docs/ADS.md` §9.
+
+1. **Become an API partner.** developer.walmart.com → Advertising Partners → Sponsored Search →
+   request API access as a partner (reporting only is enough). Walmart reviews it and sends a
+   **consumer ID** and a **partner token**.
+2. **Signing key.** Make an RSA key pair (2048 bits) and give Walmart the public key, as its
+   onboarding asks; keep the private key (PEM, PKCS#8:
+   `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out walmart-ads.pem`). Walmart
+   gives the key a **version** (usually `1`).
+3. **Vercel** (Production): `WALMART_ADS_CONSUMER_ID`, `WALMART_ADS_PRIVATE_KEY` (the PEM; line
+   breaks as `\n` are fine), `WALMART_ADS_KEY_VERSION`, `WALMART_ADS_TOKEN`. `WALMART_ADS_API_URL`
+   only if Walmart gives another base URL than `https://advertising.walmart.com/api` (its staging
+   one, for example).
+4. **Each advertiser**, in Walmart Connect's Ad Center: Admin → API partners → add Bookalyze with
+   reporting access. Then in Bookalyze, as an owner or admin: Commerce → Channels → the Walmart
+   country → **Walmart Connect** → enter the advertiser ID → **Check and link**. Connect the
+   country's Walmart seller account on the same page too: it tells Bookalyze which SKU each
+   advertised item is.
+
+Reports: the daily job asks for each advertiser's last 15 days (30 on first link; Walmart only
+gives day-by-day rows for the trailing 30), and the 5-minute job collects them when ready.
+Walmart refreshes its numbers once a day. Built from Walmart's published API before a live
+account was seen: check the first report's spend against Ad Center.
+
 ## Vercel
 
 1. Import the GitHub repository. Set **Root Directory** to `apps/web` (framework: Next.js). Vercel

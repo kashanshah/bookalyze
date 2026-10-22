@@ -652,6 +652,13 @@
       "when": 1792639393751,
       "tag": "0092_settlement_sku_lines",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1792641139712,
+      "tag": "0093_walmart_connect",
+      "breakpoints": true
     }
   ]
 }

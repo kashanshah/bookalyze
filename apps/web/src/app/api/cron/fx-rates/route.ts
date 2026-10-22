@@ -9,6 +9,7 @@ import { syncBankOfCanada } from "@/server/fx";
 import { jobStep, logInfo } from "@/server/log";
 import { runNoonDaily } from "@/server/noon-daily";
 import { autoPostSettlements } from "@/server/settlement-posting";
+import { runWalmartAdsJob } from "@/server/walmart-ads-sync";
 import { runWalmartDaily } from "@/server/walmart-daily";
 
 /**
@@ -46,6 +47,9 @@ export async function GET(request: Request) {
   const ads = await jobStep("daily", "amazon_ads", () =>
     runAmazonAdsJob(30_000, { requestNew: true }),
   );
+  const walmartAds = await jobStep("daily", "walmart_ads", () =>
+    runWalmartAdsJob(20_000, { requestNew: true }),
+  );
   const compliance = await jobStep("daily", "compliance", () => sendComplianceReminders());
   logInfo("job.daily", {
     ms: Date.now() - started,
@@ -58,6 +62,7 @@ export async function GET(request: Request) {
     ebay,
     walmart,
     ads,
+    walmartAds,
     compliance,
   });
   return Response.json({
@@ -70,6 +75,7 @@ export async function GET(request: Request) {
     ebay,
     walmart,
     ads,
+    walmartAds,
     compliance,
   });
 }

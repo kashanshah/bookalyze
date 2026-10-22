@@ -29,6 +29,7 @@ const REVIEWED_DIRECT_USE = [
   "server/ebay-finances.ts", // organization for the daily job; the rest in withOrg()
   "server/walmart-daily.ts", // organization for the daily job; the rest in withOrg()
   "server/amazon-ads-sync.ts", // organization for the ads jobs; the rest in withOrg()
+  "server/walmart-ads-sync.ts", // organization for the ads jobs; the rest in withOrg()
   "app/api/ebay/account-deletion/route.ts", // organization, to find who connected the eBay user; the rest in withOrg()
   "server/reviews.ts", // review_request_orgs() for the hourly job; the rest in withOrg()
   "server/inbound-email.ts", // invoice_inbox_org() to find the company of a forwarded email; the rest in withOrg()

@@ -24,6 +24,8 @@ import { tenantIsolationPolicy } from "./tenancy";
  * seller account through the Selling Partner API (with the company's own developer app).
  * "walmart": one Walmart seller account (one market) with the company's own API keys.
  * "amazon_ads": an Amazon Ads account for one Ads region, by consent through Bookalyze's Ads app.
+ * "walmart_ads": a Walmart Connect advertiser that gave Bookalyze (an API partner) access, for one
+ *   Walmart channel. No secret: Bookalyze signs with its own partner key.
  */
 export const CONNECTION_PROVIDERS = [
   "wise",
@@ -33,6 +35,7 @@ export const CONNECTION_PROVIDERS = [
   "ebay",
   "walmart",
   "amazon_ads",
+  "walmart_ads",
 ] as const;
 export type ConnectionProvider = (typeof CONNECTION_PROVIDERS)[number];
 

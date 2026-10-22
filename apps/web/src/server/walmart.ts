@@ -123,19 +123,25 @@ async function accessToken(creds: WalmartCredentials, market: string): Promise<s
   return parsed.accessToken;
 }
 
-/** One GET with a token. A token Walmart no longer takes is renewed once. */
+/** One call with a token (a GET unless a JSON body is sent). A token Walmart no longer takes is renewed once. */
 async function walmartFetch(
   creds: WalmartCredentials,
   market: string,
   path: string,
   accept = "application/json",
+  body?: unknown,
 ): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     const token = await accessToken(creds, market);
     const correlationId = randomUUID();
     const response = await request(path, {
-      method: "GET",
-      headers: { ...walmartHeaders({ market, correlationId, accessToken: token }), Accept: accept },
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        ...walmartHeaders({ market, correlationId, accessToken: token }),
+        Accept: accept,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (response.ok) return response;
     if (response.status === 401 && attempt === 0) {
@@ -184,6 +190,17 @@ export async function walmartGet(
   path: string,
 ): Promise<unknown> {
   const response = await walmartFetch(creds, market, path);
+  return response.json().catch(() => ({}));
+}
+
+/** One POST of JSON, answered with JSON. */
+export async function walmartPost(
+  creds: WalmartCredentials,
+  market: string,
+  path: string,
+  body: unknown,
+): Promise<unknown> {
+  const response = await walmartFetch(creds, market, path, "application/json", body);
   return response.json().catch(() => ({}));
 }
 

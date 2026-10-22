@@ -2,9 +2,9 @@
 // Synthetic keys: nothing real is kept in the repo. Like Walmart, it wants WM_SVC.NAME, a
 // correlation ID and the market on every call, Basic client ID and secret for the token, and the
 // token in WM_SEC.ACCESS_TOKEN after that.
-import { randomUUID } from "node:crypto";
+import { createVerify, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
-import { crc32, deflateRawSync } from "node:zlib";
+import { crc32, deflateRawSync, gzipSync } from "node:zlib";
 
 const port = Number(process.env.WALMART_MOCK_PORT ?? 4014);
 
@@ -210,6 +210,115 @@ const send = (res, status, body) => {
 const walmartError = (res, status, code, description) =>
   send(res, status, { error: [{ code, field: code, description, severity: "ERROR" }] });
 
+// --- Walmart Connect (Sponsored Search), under /wca: Bookalyze as an API partner -------------
+// The partner token and public key come from playwright.config.ts (a key made for the run).
+const ADVERTISER = "600123";
+const snapshots = new Map();
+const isoDaysAgo = (n) =>
+  new Date(Number(process.env.E2E_NOW ?? Date.now()) - n * 86_400_000).toISOString().slice(0, 10);
+
+/** Walmart Connect checks the partner token and the signature of consumer ID, time and version. */
+function partnerSigned(req) {
+  const consumerId = String(req.headers["wm_consumer.id"] ?? "");
+  const timestamp = String(req.headers["wm_consumer.intimestamp"] ?? "");
+  const version = String(req.headers["wm_sec.key_version"] ?? "");
+  const signature = String(req.headers["wm_sec.auth_signature"] ?? "");
+  if (req.headers.authorization !== `Bearer ${process.env.E2E_WALMART_ADS_TOKEN}`) return false;
+  if (!consumerId || !timestamp || !version || !signature) return false;
+  try {
+    return createVerify("RSA-SHA256")
+      .update(`${consumerId}\n${timestamp}\n${version}\n`)
+      .verify(String(process.env.E2E_WALMART_ADS_PUBLIC_KEY ?? ""), signature, "base64");
+  } catch {
+    return false;
+  }
+}
+
+function walmartConnect(req, res, url, body) {
+  const partnerError = (status, code, description) =>
+    send(res, status, { errors: [{ code, description }] });
+  if (!partnerSigned(req)) return partnerError(401, "UNAUTHORIZED", "Invalid partner signature");
+  const advertiser = String(url.searchParams.get("advertiserId") ?? "");
+  if (url.pathname === "/wca/v1/campaigns" && req.method === "GET") {
+    if (advertiser !== ADVERTISER) {
+      return partnerError(401, "UNAUTHORIZED", "The partner has no access to this advertiser");
+    }
+    return send(res, 200, [
+      { campaignId: 77, name: "Maple mugs", campaignType: "auto" },
+      { campaignId: 78, name: "Totes", campaignType: "manual" },
+    ]);
+  }
+  if (url.pathname === "/wca/v2/snapshot/report" && req.method === "POST") {
+    const ask = JSON.parse(body || "{}");
+    if (String(ask.advertiserId) !== ADVERTISER || ask.reportType !== "adItem") {
+      return partnerError(400, "INVALID_REQUEST", "Unknown advertiser or report type");
+    }
+    const snapshotId = `SNAP-${randomUUID()}`;
+    snapshots.set(snapshotId, { from: ask.startDate, to: ask.endDate });
+    return send(res, 200, { code: "success", snapshotId, jobStatus: "pending" });
+  }
+  if (url.pathname === "/wca/v1/snapshot" && req.method === "GET") {
+    const id = String(url.searchParams.get("snapshotId") ?? "");
+    if (advertiser !== ADVERTISER || !snapshots.has(id)) {
+      return partnerError(404, "NOT_FOUND", "No such snapshot");
+    }
+    return send(res, 200, [
+      {
+        snapshotId: id,
+        jobStatus: "done",
+        details: `http://localhost:${port}/wca/files/${id}.json.gz`,
+      },
+    ]);
+  }
+  const file = /^\/wca\/files\/(.+)\.json\.gz$/.exec(url.pathname);
+  if (file && req.method === "GET") {
+    const asked = snapshots.get(file[1]);
+    if (!asked) return partnerError(404, "NOT_FOUND", "No such file");
+    // The maple mug (item 5551) on two days, and an item the seller's catalog doesn't know.
+    const rows = [
+      {
+        date: isoDaysAgo(5),
+        campaignId: 77,
+        campaignName: "Maple mugs",
+        itemId: 5551,
+        adSpend: 3.1,
+        numAdsShown: 400,
+        numAdsClicks: 9,
+        attributedSales14days: 19.99,
+        attributedOrders14days: 1,
+        attributedUnits14days: 1,
+      },
+      {
+        date: isoDaysAgo(3),
+        campaignId: 77,
+        campaignName: "Maple mugs",
+        itemId: 5551,
+        adSpend: 4.2,
+        numAdsShown: 520,
+        numAdsClicks: 12,
+        attributedSales14days: 39.98,
+        attributedOrders14days: 2,
+        attributedUnits14days: 2,
+      },
+      {
+        date: isoDaysAgo(3),
+        campaignId: 78,
+        campaignName: "Totes",
+        itemId: 9999,
+        adSpend: 1,
+        numAdsShown: 80,
+        numAdsClicks: 1,
+        attributedSales14days: 0,
+        attributedOrders14days: 0,
+        attributedUnits14days: 0,
+      },
+    ].filter((r) => r.date >= asked.from && r.date <= asked.to);
+    res.writeHead(200, { "Content-Type": "application/gzip" });
+    return res.end(gzipSync(JSON.stringify(rows)));
+  }
+  return partnerError(404, "NOT_FOUND", "Not found");
+}
+
 /** Walmart refuses calls without its own headers. */
 function missingHeaders(req) {
   return (
@@ -225,6 +334,7 @@ createServer((req, res) => {
   });
   req.on("end", () => {
     if (url.pathname === "/health") return send(res, 200, { ok: true });
+    if (url.pathname.startsWith("/wca/")) return walmartConnect(req, res, url, body);
 
     if (url.pathname === "/v3/token" && req.method === "POST") {
       if (missingHeaders(req))
@@ -257,6 +367,15 @@ createServer((req, res) => {
       return walmartError(res, 400, "INVALID_REQUEST_HEADER.GMP_GATEWAY_API", "Missing headers");
     const id = tokens.get(String(req.headers["wm_sec.access_token"] ?? ""));
     if (!id) return walmartError(res, 401, "UNAUTHORIZED.GMP_GATEWAY_API", "Unauthorized token");
+
+    // The catalog search, by Walmart's item ID: only the maple mug is known.
+    if (url.pathname === "/v3/items/catalog/search" && req.method === "POST") {
+      const value = String(JSON.parse(body || "{}")?.query?.value ?? "");
+      return send(res, 200, {
+        items: value === "5551" ? [{ itemId: "5551", sku: "WMT-MAPLE-MUG", wpid: "WPID5551" }] : [],
+        totalItems: value === "5551" ? 1 : 0,
+      });
+    }
 
     if (url.pathname === "/v3/token/detail" && req.method === "GET") {
       const now = Date.now();

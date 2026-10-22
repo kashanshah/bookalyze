@@ -1,9 +1,21 @@
+import { generateKeyPairSync } from "node:crypto";
 import { defineConfig, devices } from "@playwright/test";
 
 const port = Number(process.env.PORT ?? 3000);
 // One "now" for the whole run, shared with the stand-ins (they inherit the environment) and the
 // tests, so "4 days ago" is the same day everywhere even when a run crosses midnight UTC.
 process.env.E2E_NOW ??= String(Date.now());
+// A Walmart Connect partner key made for this run (the stand-in checks its signatures).
+if (!process.env.E2E_WALMART_ADS_PRIVATE_KEY) {
+  const pair = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  process.env.E2E_WALMART_ADS_PRIVATE_KEY = pair.privateKey
+    .export({ type: "pkcs8", format: "pem" })
+    .toString();
+  process.env.E2E_WALMART_ADS_PUBLIC_KEY = pair.publicKey
+    .export({ type: "spki", format: "pem" })
+    .toString();
+}
+process.env.E2E_WALMART_ADS_TOKEN ??= "wca-e2e-partner-token-0000";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -82,6 +94,11 @@ export default defineConfig({
         EBAY_RU_NAME: "Bookalyze-e2e-RuName",
         EBAY_ENVIRONMENT: "sandbox",
         EBAY_VERIFICATION_TOKEN: "e2e-verification-token-0000000000000000",
+        // Test-only Walmart Connect partner keys, accepted by the stand-in only.
+        WALMART_ADS_CONSUMER_ID: "wca-e2e-consumer-0000",
+        WALMART_ADS_PRIVATE_KEY: process.env.E2E_WALMART_ADS_PRIVATE_KEY ?? "",
+        WALMART_ADS_TOKEN: process.env.E2E_WALMART_ADS_TOKEN ?? "",
+        WALMART_ADS_API_URL: process.env.WALMART_ADS_API_URL ?? "http://localhost:4014/wca",
         // Test-only Amazon Ads app keys, accepted by the stand-in only.
         AMAZON_ADS_CLIENT_ID: "amzn1.application-oa2-client.e2e0000000000000000000000000000",
         AMAZON_ADS_CLIENT_SECRET: "amzn1.oa2-cs.v1.e2e-client-secret-0000",

@@ -3119,6 +3119,64 @@ test("walmart: upload a settlement report from Seller Center, again to replace i
   expect(kept.rows.map((r) => r.data).join("\n")).not.toMatch(/Toronto|M0M|Synthetic/);
 });
 
+test("walmart: link Walmart Connect, bring its ads in by item, and see them on Profit by product", async ({
+  page,
+}) => {
+  await signIn(page, owner.email, owner.password);
+  await page.getByRole("link", { name: "Commerce", exact: true }).click();
+  await page.getByRole("link", { name: "Channels", exact: true }).click();
+  await page.getByRole("link", { name: /^Walmart Canada/ }).click();
+  const ads = page.getByRole("region", { name: "Walmart Connect" });
+  const advertiser = ads.getByLabel("Advertiser ID");
+
+  // An advertiser that hasn't given Bookalyze access says how to give it, next to the field.
+  await advertiser.fill("999");
+  await ads.getByRole("button", { name: "Check and link" }).click();
+  await expect(ads.getByText(/didn't give Bookalyze access to this advertiser/)).toBeVisible();
+
+  await advertiser.fill("600 123");
+  await ads.getByRole("button", { name: "Check and link" }).click();
+  await expect(page.getByText("Walmart Connect linked")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/2 campaigns found/)).toBeVisible();
+  await expect(ads).toContainText("Advertiser 600123");
+
+  // Walmart names items by its item ID: the seller's catalog gives the mug's SKU; another item
+  // isn't known, and says so.
+  await toastsGone(page);
+  await ads.getByRole("button", { name: "Bring in ads now" }).click();
+  await expect(page.getByText("Ad spend brought in")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/1 item couldn't be matched to a SKU yet/)).toBeVisible();
+  await page.reload();
+  await expect(ads.getByText(/Ad spend in through/)).toBeVisible();
+  const kept = await withOwnerDb((db) =>
+    db.query<{ listing_ref: string; sku: string | null; spend: string }>(
+      `select listing_ref, sku, sum(spend)::text as spend from ad_metrics
+       where source = 'walmart_ads' group by listing_ref, sku order by listing_ref`,
+    ),
+  );
+  expect(kept.rows).toEqual([
+    { listing_ref: "5551", sku: "WMT-MAPLE-MUG", spend: "7.3000" },
+    { listing_ref: "9999", sku: null, spend: "1.0000" },
+  ]);
+
+  // Profit by product counts the mug's Walmart ads.
+  const channelPage = page.url();
+  await ads.getByRole("link", { name: /Profit by product, after ads/ }).click();
+  await expect(page.getByRole("heading", { name: "Profit by product" })).toBeVisible();
+  const day = (n: number) =>
+    new Date(Number(process.env.E2E_NOW ?? Date.now()) - n * 86_400_000).toISOString().slice(0, 10);
+  await page.goto(`${page.url().split("?")[0]}?from=${day(29)}&to=${day(0)}`);
+  const channel = page.getByRole("region", { name: /Walmart Canada/ });
+  await expect(channel.getByRole("row", { name: /WMT-MAPLE-MUG/ })).toContainText("$7.30");
+
+  // Unlinked: nothing new comes in, what's in stays.
+  await page.goto(channelPage);
+  await ads.getByRole("button", { name: "Unlink" }).click();
+  await ads.getByRole("button", { name: "Click again to unlink" }).click();
+  await expect(page.getByText("Walmart Connect unlinked")).toBeVisible();
+  await expect(ads.getByLabel("Advertiser ID")).toBeVisible();
+});
+
 test("noon: connect Noon's API with the key file, test it and disconnect", async ({ page }) => {
   const keyFile = async (path: string) => ({
     name: "noon_credentials.json",
