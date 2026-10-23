@@ -156,6 +156,11 @@ Real company details are entered in the app and never committed.
     `period_locked`; actions turn it into an inline date error.
   - A database trigger (migration `0006_period_locks`) refuses them too.
   - Reversals must be dated in an open period.
+  - A reconciled entry can't be reversed: `reverseJournalEntry()` checks first and throws
+    `LedgerError` code `reconciled` (with the account and statement date, and what to do), and
+    the `guard_reconciled_entry` trigger refuses it too. A marketplace month or settlement whose
+    figures changed after it was reconciled can only be posted again once that reconciliation
+    (and any after it) is undone; the eBay page says so in its own words.
 - **In the forms:**
   - The entry form and the reversal dialog default to the first open day and warn inline.
   - Entries in a closed period show a "Closed period" badge.

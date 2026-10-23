@@ -2,7 +2,7 @@ import { prepareJournalEntry, type TransactionInput, transactionLines } from "@b
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
-import { createDefaultChart, postJournalEntry } from "../ledger";
+import { createDefaultChart, LedgerError, postJournalEntry, reverseJournalEntry } from "../ledger";
 import {
   cancelReconciliation,
   completeReconciliation,
@@ -128,6 +128,17 @@ describe("reconciliation", () => {
     expect(state.totals).toMatchObject({ clearedBalance: "100.0000", balanced: true });
     await inA((tx) => completeReconciliation(tx, { id: rec.id }));
     expect(await inA((tx) => entryReconciledThrough(tx, first.id))).toBe("2025-01-31");
+
+    // Reversing it (as a marketplace month posted again does) is refused with what to do.
+    const refused = await inA((tx) =>
+      reverseJournalEntry(tx, { orgId: orgA, entryId: first.id, date: "2025-02-10" }),
+    ).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(LedgerError);
+    expect((refused as LedgerError).code).toBe("reconciled");
+    expect((refused as LedgerError).reconciled?.statementDate).toBe("2025-01-31");
+    expect((refused as LedgerError).message).toMatch(
+      /reconciled in .+, on the statement of January 31, 2025\. To change it, undo that reconciliation/,
+    );
 
     // A reconciled transaction can't be edited or removed, and its tick can't change.
     expect(

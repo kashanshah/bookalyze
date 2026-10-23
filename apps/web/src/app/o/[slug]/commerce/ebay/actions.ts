@@ -155,6 +155,12 @@ function postingError(error: unknown): string {
     if (error.code === "period_locked") {
       return "Your books are closed for that period. Ask an owner to reopen it, or leave this month out.";
     }
+    if (error.code === "reconciled" && error.reconciled) {
+      const on = new Intl.DateTimeFormat("en", { dateStyle: "long", timeZone: "UTC" }).format(
+        new Date(`${error.reconciled.statementDate}T00:00:00Z`),
+      );
+      return `This month is reconciled in ${error.reconciled.account} (statement of ${on}), so its entry can't change. To post eBay's new figures, undo that reconciliation, and any after it, in Accounting → Reconcile, then post again and reconcile once more.`;
+    }
     return error.message;
   }
   throw error;

@@ -9,6 +9,7 @@ import { and, eq, gte, lte, type SQL, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { accounts, type JournalSource, journalEntries, journalLines } from "./schema/accounting";
 import { organizationProfiles } from "./schema/organization";
+import { reconciliationLines, reconciliations } from "./schema/reconciliation";
 
 /**
  * Ledger writes, shared by the app and future importers (Wave, bank feeds). Call these inside
@@ -20,8 +21,15 @@ import { organizationProfiles } from "./schema/organization";
 export class LedgerError extends Error {
   constructor(
     message: string,
-    readonly code: "not_found" | "already_reversed" | "is_reversal" | "period_locked" = "not_found",
+    readonly code:
+      | "not_found"
+      | "already_reversed"
+      | "is_reversal"
+      | "period_locked"
+      | "reconciled" = "not_found",
     readonly lockedThrough?: string,
+    /** For "reconciled": the account and statement date it was reconciled to. */
+    readonly reconciled?: { account: string; statementDate: string },
   ) {
     super(message);
   }
@@ -151,6 +159,29 @@ export async function reverseJournalEntry(
     throw new LedgerError(
       "This entry is itself a reversal. Post a new entry instead.",
       "is_reversal",
+    );
+  }
+  // The database refuses this too; checking first gives a message that says what to do.
+  const [reconciled] = await tx
+    .select({ statementDate: reconciliations.statementDate, account: accounts.name })
+    .from(journalLines)
+    .innerJoin(reconciliationLines, eq(reconciliationLines.journalLineId, journalLines.id))
+    .innerJoin(reconciliations, eq(reconciliations.id, reconciliationLines.reconciliationId))
+    .innerJoin(accounts, eq(accounts.id, reconciliations.accountId))
+    .where(
+      and(eq(journalLines.journalEntryId, original.id), eq(reconciliations.status, "completed")),
+    )
+    .orderBy(reconciliations.statementDate)
+    .limit(1);
+  if (reconciled) {
+    const on = new Intl.DateTimeFormat("en", { dateStyle: "long", timeZone: "UTC" }).format(
+      new Date(`${reconciled.statementDate}T00:00:00Z`),
+    );
+    throw new LedgerError(
+      `This entry is reconciled in ${reconciled.account}, on the statement of ${on}. To change it, undo that reconciliation, and any after it, in Accounting → Reconcile.`,
+      "reconciled",
+      undefined,
+      reconciled,
     );
   }
   const lines = await tx
