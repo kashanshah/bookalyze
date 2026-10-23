@@ -20,6 +20,8 @@ import {
   schema,
   suggestedRules,
   suggestTransfers,
+  TRANSACTION_STATUSES,
+  type TransactionStatus,
 } from "@bookalyze/db";
 import { eq, sql } from "drizzle-orm";
 import { Download, Landmark } from "lucide-react";
@@ -36,7 +38,11 @@ import type { TxFormContext, TxRow } from "./types";
 
 export const metadata: Metadata = { title: "Transactions" };
 
-const STATUSES = ["reviewed", "unreviewed", "duplicates", "no_account", "transfers"] as const;
+/** A filter's choices from the address: `?category=<id>,<id>` (repeated keys work too). */
+function listParam(value: string | string[] | undefined): string[] {
+  const parts = (Array.isArray(value) ? value : [value ?? ""]).flatMap((v) => v.split(","));
+  return [...new Set(parts.map((p) => p.trim()).filter(Boolean))].slice(0, 50);
+}
 const ORIGINS: Record<string, string> = {
   manual: "Entered by hand",
   bank_import: "From your bank",
@@ -51,11 +57,11 @@ export default async function TransactionsPage({
 }: {
   params: Promise<{ slug: string }>;
   searchParams: Promise<{
-    account?: string;
-    category?: string;
+    account?: string | string[];
+    category?: string | string[];
     contact?: string;
-    kind?: string;
-    status?: string;
+    kind?: string | string[];
+    status?: string | string[];
     q?: string;
     page?: string;
     per?: string;
@@ -69,22 +75,25 @@ export default async function TransactionsPage({
 
   const accounts = await listAccounts(ctx);
   const moneyAccounts = accounts.filter((a) => isMoneyAccountSubtype(a.subtype) && !a.isArchived);
-  const account =
-    sp.account && UUID.test(sp.account) && moneyAccounts.some((a) => a.id === sp.account)
-      ? sp.account
-      : "";
-  const category =
-    sp.category &&
-    UUID.test(sp.category) &&
-    accounts.some((a) => a.id === sp.category && !isMoneyAccountSubtype(a.subtype))
-      ? sp.category
-      : "";
-  const kind = (TRANSACTION_KINDS as readonly string[]).includes(sp.kind ?? "")
-    ? (sp.kind as TransactionKind)
-    : null;
-  const status = (STATUSES as readonly string[]).includes(sp.status ?? "")
-    ? (sp.status as (typeof STATUSES)[number])
-    : "";
+  // Each filter takes several choices; any of them matches (filters still narrow each other).
+  const accountIds = listParam(sp.account).filter(
+    (id) => UUID.test(id) && moneyAccounts.some((a) => a.id === id),
+  );
+  const categoryIds = listParam(sp.category).filter(
+    (id) => UUID.test(id) && accounts.some((a) => a.id === id && !isMoneyAccountSubtype(a.subtype)),
+  );
+  const kinds = listParam(sp.kind).filter((k): k is TransactionKind =>
+    (TRANSACTION_KINDS as readonly string[]).includes(k),
+  );
+  const statuses = listParam(sp.status).filter((st): st is TransactionStatus =>
+    (TRANSACTION_STATUSES as readonly string[]).includes(st),
+  );
+  // One account chosen: its balance shows, and new transactions start on it.
+  const account = accountIds.length === 1 ? (accountIds[0] ?? "") : "";
+  const accountFilter = accountIds.join(",");
+  const category = categoryIds.join(",");
+  const kind = kinds.join(",");
+  const status = statuses.join(",");
   const q = (sp.q ?? "").slice(0, 100);
   const contact = sp.contact && UUID.test(sp.contact) ? sp.contact : "";
 
@@ -107,14 +116,14 @@ export default async function TransactionsPage({
     const taxRates = await listTaxRates(tx, { includeArchived: true });
     const transferPairs = await suggestTransfers(tx);
     const result = await listTransactions(tx, {
-      accountId: account || null,
-      categoryId: category || null,
+      accountIds,
+      categoryIds,
       contactId: contact || null,
-      kind,
-      reviewed: status === "reviewed" ? true : status === "unreviewed" ? false : null,
-      possibleDuplicates: status === "duplicates",
-      needsAccount: status === "no_account",
-      entryIds: status === "transfers" ? transferPairs.flatMap((p) => [p.outId, p.inId]) : null,
+      kinds,
+      statuses,
+      transferEntryIds: statuses.includes("transfers")
+        ? transferPairs.flatMap((p) => [p.outId, p.inId])
+        : undefined,
       search: q || null,
       limit: perPage,
       offset: (page - 1) * perPage,
@@ -325,7 +334,15 @@ export default async function TransactionsPage({
       ) : (
         <TransactionList
           rows={rows}
-          filters={{ account, category, contact, kind: kind ?? "", status, q, per: sp.per ?? "" }}
+          filters={{
+            account: accountFilter,
+            category,
+            contact,
+            kind,
+            status,
+            q,
+            per: sp.per ?? "",
+          }}
           ctx={ctxForForms}
           hasAny={hasAny}
           duplicateCount={duplicateCount}
@@ -339,7 +356,14 @@ export default async function TransactionsPage({
               total={result.total}
               noun={["transaction", "transactions"]}
               locale={profile.locale}
-              query={{ account, category, contact, kind: kind ?? undefined, status, q }}
+              query={{
+                account: accountFilter || undefined,
+                category: category || undefined,
+                contact: contact || undefined,
+                kind: kind || undefined,
+                status: status || undefined,
+                q: q || undefined,
+              }}
             />
           }
         />

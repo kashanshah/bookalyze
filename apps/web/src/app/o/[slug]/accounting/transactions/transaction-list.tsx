@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { useCategoryList } from "@/components/accounting/category-picker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Combobox } from "@/components/ui/combobox";
+import { MultiCombobox } from "@/components/ui/combobox";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +39,7 @@ import { ROW_GRID, TransactionRow } from "./transaction-row";
 import { TransferReviewDialog } from "./transfer-dialogs";
 import type { TxFormContext, TxRow } from "./types";
 
+/** Each filter is one value or several joined by commas (any of them matches). */
 type Filters = {
   account: string;
   category: string;
@@ -140,7 +141,10 @@ export function TransactionList({
     return () => clearTimeout(t);
   });
 
-  const filterAccount = filters.account || null;
+  const list = (value: string) => value.split(",").filter(Boolean);
+  const statuses = list(filters.status);
+  // New transactions start on the account the list is filtered to, when it's just one.
+  const filterAccount = list(filters.account).length === 1 ? filters.account : null;
   const contactNames = new Map(ctx.contacts.map((c) => [c.id, c.name]));
   const filterContact = filters.contact ? contactNames.get(filters.contact) : undefined;
   const allPicked = optimisticRows.length > 0 && optimisticRows.every((r) => picked.has(r.id));
@@ -212,53 +216,49 @@ export function TransactionList({
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
-        <Combobox
+        <MultiCombobox
           aria-label="Account"
-          value={filters.account}
-          onChange={(v) => set({ account: v })}
-          options={[
-            { value: "", label: "All accounts" },
-            ...ctx.moneyAccounts.map((a) => ({
-              value: a.id,
-              label: a.label,
-              keywords: a.currency,
-            })),
-          ]}
+          allLabel="All accounts"
+          values={list(filters.account)}
+          onChange={(v) => set({ account: v.join(",") })}
+          options={ctx.moneyAccounts.map((a) => ({
+            value: a.id,
+            label: a.label,
+            keywords: a.currency,
+          }))}
           searchPlaceholder="Search accounts"
         />
-        <Combobox
+        <MultiCombobox
           aria-label="Category"
-          value={filters.category}
-          onChange={(v) => set({ category: v })}
-          options={[
-            { value: "", label: "All categories" },
-            ...ctx.categories.flatMap((g) =>
-              g.options.map((o) => ({
-                value: o.id,
-                label: o.label,
-                group: accountTypes[g.type].label,
-              })),
-            ),
-          ]}
+          allLabel="All categories"
+          values={list(filters.category)}
+          onChange={(v) => set({ category: v.join(",") })}
+          options={ctx.categories.flatMap((g) =>
+            g.options.map((o) => ({
+              value: o.id,
+              label: o.label,
+              group: accountTypes[g.type].label,
+            })),
+          )}
           searchPlaceholder="Search categories"
         />
-        <Combobox
+        <MultiCombobox
           aria-label="Type"
-          value={filters.kind}
-          onChange={(v) => set({ kind: v })}
+          allLabel="Money in and out"
+          values={list(filters.kind)}
+          onChange={(v) => set({ kind: v.join(",") })}
           options={[
-            { value: "", label: "Money in and out" },
             { value: "deposit", label: "Money in" },
             { value: "withdrawal", label: "Money out" },
             { value: "transfer", label: "Transfers" },
           ]}
         />
-        <Combobox
+        <MultiCombobox
           aria-label="Status"
-          value={filters.status}
-          onChange={(v) => set({ status: v })}
+          allLabel="Reviewed or not"
+          values={statuses}
+          onChange={(v) => set({ status: v.join(",") })}
           options={[
-            { value: "", label: "Reviewed or not" },
             { value: "unreviewed", label: "Needs review" },
             { value: "reviewed", label: "Reviewed" },
             { value: "duplicates", label: "Possible duplicates" },
@@ -281,7 +281,7 @@ export function TransactionList({
         </div>
       </div>
 
-      {duplicateCount > 0 && filters.status !== "duplicates" ? (
+      {duplicateCount > 0 && !statuses.includes("duplicates") ? (
         <div className="fade-in-0 flex animate-in flex-wrap items-center gap-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 sm:px-5">
           <Copy className="size-4 shrink-0 text-warning" />
           <p className="min-w-0 flex-1 text-sm">
@@ -321,7 +321,7 @@ export function TransactionList({
         </div>
       ) : null}
 
-      {transferCount > 0 && filters.status !== "transfers" ? (
+      {transferCount > 0 && !statuses.includes("transfers") ? (
         <div className="fade-in-0 flex animate-in flex-wrap items-center gap-3 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 sm:px-5">
           <ArrowRightLeft className="size-4 shrink-0 text-primary" />
           <p className="min-w-0 flex-1 text-sm">
@@ -339,7 +339,7 @@ export function TransactionList({
         </div>
       ) : null}
 
-      {needsAccountCount > 0 && filters.status !== "no_account" ? (
+      {needsAccountCount > 0 && !statuses.includes("no_account") ? (
         <div className="fade-in-0 flex animate-in flex-wrap items-center gap-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 py-3 sm:px-5">
           <Landmark className="size-4 shrink-0 text-warning" />
           <p className="min-w-0 flex-1 text-sm">

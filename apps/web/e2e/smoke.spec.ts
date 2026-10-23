@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import { alibabaReceiptPdf } from "./alibaba-receipt-pdf";
 import {
   choose,
+  filterTo,
   latestLink,
   openTransaction,
   signIn,
@@ -320,10 +321,10 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
   // Review, and filter by status.
   await payment.getByRole("button", { name: /as reviewed/ }).click();
   await expect(payment.getByRole("button", { name: /as not reviewed/ })).toBeVisible();
-  await choose(page.getByLabel("Status"), "Needs review");
+  await filterTo(page.getByLabel("Status"), ["Needs review"]);
   await expect(page.getByText("Supplies and shipping")).toBeVisible();
   await expect(page.getByText("Client payment")).toHaveCount(0);
-  await choose(page.getByLabel("Status"), "Reviewed");
+  await filterTo(page.getByLabel("Status"), ["Reviewed"]);
   await expect(page.getByText("Client payment")).toBeVisible();
 
   // Edit keeps the review tick and replaces the amount.
@@ -337,7 +338,7 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
   ).toBeVisible();
 
   // Remove.
-  await choose(page.getByLabel("Status"), "Reviewed or not");
+  await filterTo(page.getByLabel("Status"), []);
   await openTransaction(page, "Supplies and shipping");
   await page.getByRole("button", { name: "Remove", exact: true }).click();
   await page.getByRole("button", { name: "Click again to remove" }).click();
@@ -380,7 +381,7 @@ test("transactions: money in, split expense, review, edit and remove", async ({ 
   await expect(page).toHaveURL(/per=25/);
 
   // One account at a time, with its balance: 5,000 + 850.
-  await choose(page.getByLabel("Account", { exact: true }), "1010 · RBC Chequing");
+  await filterTo(page.getByLabel("Account", { exact: true }), ["1010 · RBC Chequing"]);
   await expect(page.getByText("RBC Chequing balance")).toBeVisible();
   await expect(page.getByText("$5,850.00")).toBeVisible();
 });
@@ -453,10 +454,9 @@ test("transactions: add a category on the spot, change values on the list, remov
   await page.getByRole("button", { name: "Cancel" }).click();
 
   // Filter by category (the filter comes before the rows' own category dropdowns).
-  await choose(
-    page.getByRole("combobox", { name: "Category", exact: true }).first(),
+  await filterTo(page.getByRole("combobox", { name: "Category", exact: true }).first(), [
     "6400 · Shipping and postage",
-  );
+  ]);
   await expect(page).toHaveURL(/category=/);
   await expect(courier).toBeVisible();
   await expect(page.locator("li", { hasText: "Client payment" })).toHaveCount(0);
@@ -686,7 +686,7 @@ test("exchange rates: suggested rate, USD income and a USD → CAD transfer", as
   await expect(conversion).toContainText("US$500.00");
   await expect(conversion.getByText("→ $680.00")).toBeVisible();
 
-  await choose(page.getByLabel("Account", { exact: true }), "1010 · RBC Chequing");
+  await filterTo(page.getByLabel("Account", { exact: true }), ["1010 · RBC Chequing"]);
   await expect(
     page.locator("li", { hasText: "Convert to CAD" }).getByText("+$680.00"),
   ).toBeVisible();
@@ -1158,7 +1158,7 @@ test("no bank account: choose it on Transactions; delete a journal entry", async
   await choose(dialog.locator("#tx-money"), "1010 · RBC Chequing");
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Transaction updated")).toBeVisible();
-  await choose(page.getByRole("combobox", { name: "Status" }), "Reviewed or not");
+  await filterTo(page.getByRole("combobox", { name: "Status" }), []);
   await expect(page.locator("li", { hasText: "Insurance bill" })).toContainText("RBC Chequing");
   await expect(page.locator("li", { hasText: "Insurance bill" })).not.toContainText(
     "Choose account",

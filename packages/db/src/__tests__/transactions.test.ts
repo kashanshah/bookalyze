@@ -139,6 +139,28 @@ describe("transactions", () => {
     expect((await list({ accountId: code["2100"] })).total).toBe(2);
     expect((await list({ search: "soft" })).rows.map((r) => r.memo)).toEqual(["Software"]);
     expect((await list({ search: "100%" })).total).toBe(0);
+
+    // Several choices in one filter: any of them; filters still narrow each other.
+    const memos = async (f: Partial<Parameters<typeof listTransactions>[1]>) =>
+      (await list(f)).rows.map((r) => r.memo).sort();
+    expect(await memos({ kinds: ["deposit", "transfer"] })).toEqual([
+      "Card payment",
+      "Sale to customer",
+    ]);
+    expect(await memos({ categoryIds: [code["4000"] as string, code["6100"] as string] })).toEqual([
+      "Sale to customer",
+      "Software",
+    ]);
+    expect(await memos({ accountIds: [code["1000"] as string, code["2100"] as string] })).toEqual([
+      "Card payment",
+      "Sale to customer",
+      "Software",
+    ]);
+    expect(
+      await memos({ accountIds: [code["2100"] as string], kinds: ["deposit", "withdrawal"] }),
+    ).toEqual(["Software"]);
+    expect(await memos({ statuses: ["unreviewed", "reviewed"] })).toHaveLength(3);
+    expect(await memos({ statuses: ["transfers"], transferEntryIds: [] })).toEqual([]);
   });
 
   it("tracks review status and keeps it through an edit", async () => {

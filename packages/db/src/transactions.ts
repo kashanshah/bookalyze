@@ -59,12 +59,24 @@ export async function countNeedsAccount(tx: Transaction): Promise<number> {
 export type TransactionFilters = {
   /** Only transactions touching this account. */
   accountId?: string | null;
+  /** Only transactions touching any of these accounts. */
+  accountIds?: readonly string[];
   /** Only transactions with a line in this category (any split counts). */
   categoryId?: string | null;
+  /** Only transactions with a line in any of these categories. */
+  categoryIds?: readonly string[];
   /** Only transactions with this customer or vendor. */
   contactId?: string | null;
   kind?: TransactionKind | null;
+  /** Only transactions of any of these kinds. */
+  kinds?: readonly TransactionKind[];
   reviewed?: boolean | null;
+  /**
+   * Only transactions in any of these states. `transfers` are the entries in `transferEntryIds`
+   * (the suggested transfers, worked out by the caller).
+   */
+  statuses?: readonly TransactionStatus[];
+  transferEntryIds?: readonly string[];
   /** Only transactions flagged as possibly a copy of another (see duplicates.ts). */
   possibleDuplicates?: boolean;
   /** Only transactions whose bank, card or cash account was never chosen. */
@@ -75,6 +87,16 @@ export type TransactionFilters = {
   limit: number;
   offset: number;
 };
+
+/** The Status filter's choices on Transactions. */
+export const TRANSACTION_STATUSES = [
+  "unreviewed",
+  "reviewed",
+  "duplicates",
+  "no_account",
+  "transfers",
+] as const;
+export type TransactionStatus = (typeof TRANSACTION_STATUSES)[number];
 
 export type TransactionRow = {
   id: string;
@@ -102,6 +124,29 @@ export type TransactionRow = {
   view: TransactionView;
 };
 
+const reviewedSql = sql`exists (select 1 from ${transactionReviews} r where r.journal_entry_id = ${journalEntries.id})`;
+
+const duplicateSql = sql`exists (select 1 from duplicate_suggestions d
+  join ${journalEntries} k on k.id = d.duplicate_of_entry_id
+  where d.entry_id = ${journalEntries.id} and d.status = 'open'
+    and k.reversed_by_entry_id is null and k.reverses_entry_id is null)`;
+
+/** Money in, money out, or a transfer between your own accounts. */
+function kindSql(kind: TransactionKind): SQL {
+  if (kind === "transfer") return sql`not ${touchesCategory}`;
+  const net = sql`(select coalesce(sum(l.amount), 0) from ${journalLines} l
+    join ${accounts} a on a.id = l.account_id
+    where l.journal_entry_id = ${journalEntries.id} and a.subtype in (${moneySubtypes}))`;
+  // Without a money account, the Uncategorized stand-in says which way the money went (all
+  // Uncategorized nets to zero, which core reads as money out).
+  const standIn = sql`(select coalesce(sum(l.amount), 0) from ${journalLines} l
+    join ${accounts} a on a.id = l.account_id
+    where l.journal_entry_id = ${journalEntries.id} and a.subtype in (${placeholderSubtypes}))`;
+  return kind === "deposit"
+    ? sql`(${touchesCategory} and (case when ${touchesMoney} then ${net} >= 0 else ${standIn} > 0 end))`
+    : sql`(${touchesCategory} and (case when ${touchesMoney} then ${net} < 0 else ${standIn} <= 0 end))`;
+}
+
 export async function listTransactions(
   tx: Transaction,
   filters: TransactionFilters,
@@ -111,10 +156,18 @@ export async function listTransactions(
     isNull(journalEntries.reversesEntryId),
     filters.needsAccount ? needsAccountSql : sql`(${touchesMoney} or ${needsAccountSql})`,
   ];
-  for (const accountId of [filters.accountId, filters.categoryId]) {
-    if (!accountId) continue;
+  // Within one filter the choices are alternatives (any of them); filters narrow each other.
+  const anyOf = (parts: SQL[]) => sql`(${sql.join(parts, sql` or `)})`;
+  for (const ids of [
+    [...(filters.accountIds ?? []), ...(filters.accountId ? [filters.accountId] : [])],
+    [...(filters.categoryIds ?? []), ...(filters.categoryId ? [filters.categoryId] : [])],
+  ]) {
+    if (!ids.length) continue;
     conditions.push(
-      sql`exists (select 1 from ${journalLines} l where l.journal_entry_id = ${journalEntries.id} and l.account_id = ${accountId})`,
+      sql`exists (select 1 from ${journalLines} l where l.journal_entry_id = ${journalEntries.id} and l.account_id in (${sql.join(
+        ids.map((id) => sql`${id}`),
+        sql`, `,
+      )}))`,
     );
   }
   if (filters.contactId) conditions.push(eq(journalEntries.contactId, filters.contactId));
@@ -122,32 +175,22 @@ export async function listTransactions(
     if (!filters.entryIds.length) return { rows: [], total: 0 };
     conditions.push(inArray(journalEntries.id, [...filters.entryIds]));
   }
-  if (filters.kind === "transfer") conditions.push(sql`not ${touchesCategory}`);
-  if (filters.kind === "deposit" || filters.kind === "withdrawal") {
-    conditions.push(touchesCategory);
-    const net = sql`(select coalesce(sum(l.amount), 0) from ${journalLines} l
-      join ${accounts} a on a.id = l.account_id
-      where l.journal_entry_id = ${journalEntries.id} and a.subtype in (${moneySubtypes}))`;
-    // Without a money account, the Uncategorized stand-in says which way the money went (all
-    // Uncategorized nets to zero, which core reads as money out).
-    const standIn = sql`(select coalesce(sum(l.amount), 0) from ${journalLines} l
-      join ${accounts} a on a.id = l.account_id
-      where l.journal_entry_id = ${journalEntries.id} and a.subtype in (${placeholderSubtypes}))`;
-    conditions.push(
-      filters.kind === "deposit"
-        ? sql`(case when ${touchesMoney} then ${net} >= 0 else ${standIn} > 0 end)`
-        : sql`(case when ${touchesMoney} then ${net} < 0 else ${standIn} <= 0 end)`,
-    );
-  }
-  const reviewedSql = sql`exists (select 1 from ${transactionReviews} r where r.journal_entry_id = ${journalEntries.id})`;
+  const kinds = [...new Set([...(filters.kinds ?? []), ...(filters.kind ? [filters.kind] : [])])];
+  if (kinds.length) conditions.push(anyOf(kinds.map(kindSql)));
+  const statusOf: Record<TransactionStatus, SQL> = {
+    reviewed: reviewedSql,
+    unreviewed: sql`not ${reviewedSql}`,
+    duplicates: duplicateSql,
+    no_account: needsAccountSql,
+    transfers: filters.transferEntryIds?.length
+      ? inArray(journalEntries.id, [...filters.transferEntryIds])
+      : sql`false`,
+  };
+  const statuses = [...new Set(filters.statuses ?? [])];
+  if (statuses.length) conditions.push(anyOf(statuses.map((st) => statusOf[st])));
   if (filters.reviewed === true) conditions.push(reviewedSql);
   if (filters.reviewed === false) conditions.push(sql`not ${reviewedSql}`);
-  if (filters.possibleDuplicates) {
-    conditions.push(sql`exists (select 1 from duplicate_suggestions d
-      join ${journalEntries} k on k.id = d.duplicate_of_entry_id
-      where d.entry_id = ${journalEntries.id} and d.status = 'open'
-        and k.reversed_by_entry_id is null and k.reverses_entry_id is null)`);
-  }
+  if (filters.possibleDuplicates) conditions.push(duplicateSql);
   const search = filters.search?.trim();
   if (search) {
     const pattern = `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;

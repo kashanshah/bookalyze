@@ -34,35 +34,9 @@ function matches(option: ComboboxOption, query: string): boolean {
   return words.every((w) => haystack.includes(w));
 }
 
-/**
- * A dropdown that can be searched by typing: a drop-in for long native selects (accounts,
- * categories, countries). Options can be grouped and carry hidden keywords. The trigger is a
- * button, so `<Label htmlFor={id}>` labels it; `name` adds a hidden input for form posts.
- */
-export function Combobox({
-  id,
-  name,
-  value,
-  onChange,
-  options,
-  placeholder = "Choose…",
-  searchPlaceholder = "Type to search",
-  emptyText = "Nothing matches.",
-  searchable,
-  disabled,
-  invalid,
-  className,
-  wrapperClassName,
-  contentClassName,
-  footer,
-  "aria-label": ariaLabel,
-  "aria-labelledby": ariaLabelledBy,
-  "aria-describedby": ariaDescribedBy,
-}: {
+type SharedProps = {
   id?: string;
   name?: string;
-  value: string;
-  onChange: (value: string) => void;
   options: ComboboxOption[];
   /** Shown on the trigger when nothing is chosen. */
   placeholder?: string;
@@ -82,6 +56,128 @@ export function Combobox({
   "aria-label"?: string;
   "aria-labelledby"?: string;
   "aria-describedby"?: string;
+};
+
+/**
+ * A dropdown that can be searched by typing: a drop-in for long native selects (accounts,
+ * categories, countries). Options can be grouped and carry hidden keywords. The trigger is a
+ * button, so `<Label htmlFor={id}>` labels it; `name` adds a hidden input for form posts.
+ */
+export function Combobox({
+  value,
+  onChange,
+  ...props
+}: SharedProps & { value: string; onChange: (value: string) => void }) {
+  return (
+    <ComboboxBase
+      {...props}
+      isSelected={(v) => v === value}
+      onPick={(option) => onChange(option.value)}
+      closeOnPick
+      triggerText={props.options.find((o) => o.value === value)?.label}
+      formValue={value}
+    />
+  );
+}
+
+/**
+ * The same dropdown, choosing several: each option ticks on and off and the list stays open.
+ * The trigger names the first choice and how many more ("Fees +2"); `allLabel` is shown when
+ * nothing is ticked, and a Clear link empties the choice. `name` posts the values joined by commas.
+ */
+export function MultiCombobox({
+  values,
+  onChange,
+  allLabel,
+  ...props
+}: SharedProps & {
+  values: readonly string[];
+  onChange: (values: string[]) => void;
+  /** What no choice means, e.g. "All categories". */
+  allLabel: string;
+}) {
+  const chosen = props.options.filter((o) => values.includes(o.value));
+  const first = chosen[0];
+  return (
+    <ComboboxBase
+      {...props}
+      placeholder={allLabel}
+      isSelected={(v) => values.includes(v)}
+      onPick={(option) =>
+        onChange(
+          values.includes(option.value)
+            ? values.filter((v) => v !== option.value)
+            : // Keep the list's order, so the address and the trigger read the same each time.
+              props.options
+                .map((o) => o.value)
+                .filter((v) => v === option.value || values.includes(v)),
+        )
+      }
+      multiple
+      triggerText={
+        first
+          ? chosen.length > 1
+            ? `${first.label} +${chosen.length - 1}`
+            : first.label
+          : undefined
+      }
+      triggerTitle={chosen.map((o) => o.label).join(", ") || undefined}
+      formValue={values.join(",")}
+      header={
+        values.length ? (
+          <div className="flex items-center justify-between gap-2 border-b px-3 py-2 text-xs">
+            <span className="text-muted-foreground">{values.length} chosen</span>
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="font-medium text-primary hover:underline"
+            >
+              Clear
+            </button>
+          </div>
+        ) : null
+      }
+    />
+  );
+}
+
+function ComboboxBase({
+  id,
+  name,
+  options,
+  placeholder = "Choose…",
+  searchPlaceholder = "Type to search",
+  emptyText = "Nothing matches.",
+  searchable,
+  disabled,
+  invalid,
+  className,
+  wrapperClassName,
+  contentClassName,
+  footer,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
+  "aria-describedby": ariaDescribedBy,
+  isSelected,
+  onPick,
+  closeOnPick,
+  multiple,
+  triggerText,
+  triggerTitle,
+  formValue,
+  header,
+}: SharedProps & {
+  isSelected: (value: string) => boolean;
+  onPick: (option: ComboboxOption) => void;
+  closeOnPick?: boolean;
+  /** Several can be chosen: options show tick boxes. */
+  multiple?: boolean;
+  /** The trigger's text; the placeholder when nothing is chosen. */
+  triggerText: string | undefined;
+  triggerTitle?: string;
+  formValue: string;
+  /** Pinned above the list, e.g. how many are chosen. */
+  header?: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -92,7 +188,7 @@ export function Combobox({
   const listId = `${baseId}-list`;
   const optionId = (v: string) => `${baseId}-opt-${v}`;
   const withSearch = searchable ?? options.length > SEARCH_THRESHOLD;
-  const selected = options.find((o) => o.value === value);
+  const selected = options.find((o) => isSelected(o.value));
 
   const filtered = React.useMemo(
     () => (query ? options.filter((o) => matches(o, query)) : options),
@@ -125,8 +221,8 @@ export function Combobox({
 
   function choose(option: ComboboxOption) {
     if (option.disabled) return;
-    onChange(option.value);
-    close();
+    onPick(option);
+    if (closeOnPick) close();
   }
 
   // Keep a highlighted option: the current one if still visible, else the first match.
@@ -222,15 +318,15 @@ export function Combobox({
             )}
           >
             <span
-              title={selected?.label}
-              className={cn("min-w-0 flex-1 truncate", !selected && "text-muted-foreground")}
+              title={triggerTitle ?? triggerText}
+              className={cn("min-w-0 flex-1 truncate", !triggerText && "text-muted-foreground")}
             >
-              {selected?.label ?? placeholder}
+              {triggerText ?? placeholder}
             </span>
             <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
           </button>
         </PopoverPrimitive.Trigger>
-        {name ? <input type="hidden" name={name} value={value} /> : null}
+        {name ? <input type="hidden" name={name} value={formValue} /> : null}
       </div>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
@@ -271,10 +367,12 @@ export function Combobox({
               />
             </div>
           ) : null}
+          {header}
           <div
             ref={listRef}
             id={listId}
             role="listbox"
+            aria-multiselectable={multiple || undefined}
             tabIndex={withSearch ? undefined : -1}
             aria-activedescendant={!withSearch && activeValue ? optionId(activeValue) : undefined}
             aria-label={ariaLabel ?? placeholder}
@@ -300,7 +398,7 @@ export function Combobox({
                     </div>
                   ) : null}
                   {g.items.map((option) => {
-                    const isSelected = option.value === value;
+                    const chosen = isSelected(option.value);
                     const isActive = option.value === activeValue;
                     return (
                       // biome-ignore lint/a11y/useFocusableInteractive: focus stays on the search box or listbox (aria-activedescendant)
@@ -313,7 +411,7 @@ export function Combobox({
                         aria-describedby={
                           option.description ? `${optionId(option.value)}-desc` : undefined
                         }
-                        aria-selected={isSelected}
+                        aria-selected={chosen}
                         aria-disabled={option.disabled || undefined}
                         data-active={isActive || undefined}
                         onPointerMove={() => !option.disabled && setActive(option.value)}
@@ -325,6 +423,19 @@ export function Combobox({
                           option.disabled && "cursor-not-allowed opacity-50",
                         )}
                       >
+                        {multiple ? (
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors",
+                              chosen
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-input bg-background",
+                            )}
+                          >
+                            {chosen ? <Check className="size-3" strokeWidth={3} /> : null}
+                          </span>
+                        ) : null}
                         <span className="min-w-0 flex-1">
                           <span className="block truncate">{option.label}</span>
                           {option.description ? (
@@ -336,13 +447,15 @@ export function Combobox({
                             </span>
                           ) : null}
                         </span>
-                        <Check
-                          className={cn(
-                            "mt-0.5 size-4 shrink-0 text-primary",
-                            isSelected ? "opacity-100" : "opacity-0",
-                          )}
-                          strokeWidth={2.5}
-                        />
+                        {multiple ? null : (
+                          <Check
+                            className={cn(
+                              "mt-0.5 size-4 shrink-0 text-primary",
+                              chosen ? "opacity-100" : "opacity-0",
+                            )}
+                            strokeWidth={2.5}
+                          />
+                        )}
                       </div>
                     );
                   })}
