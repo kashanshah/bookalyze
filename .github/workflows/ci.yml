@@ -7,13 +7,17 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to a PR replaces its run, but every merge to main runs to the
+  # end: Deploy waits for CI on that exact commit and won't ship a cancelled one.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   ci:
     name: Lint, typecheck, test, build, e2e
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The e2e tests take about 12 minutes on their own; installing the browser
+    # has taken 10 when the runner is slow.
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres:16
@@ -69,8 +73,21 @@ jobs:
       - name: Build the public site
         run: pnpm --filter @bookalyze/marketing build
 
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(pnpm --filter @bookalyze/web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Cache the Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browser
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm --filter @bookalyze/web exec playwright install --with-deps chromium
+      - name: Install the browser's system libraries
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @bookalyze/web exec playwright install-deps chromium
       - name: End-to-end tests
         run: pnpm e2e
       - uses: actions/upload-artifact@v4
