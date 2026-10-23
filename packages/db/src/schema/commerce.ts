@@ -1217,6 +1217,15 @@ export const listingPrices = pgTable(
     /** False when Amazon didn't know the SKU when last asked. */
     found: boolean("found").notNull().default(true),
     checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Amazon's fee estimate for the listing (in `currency`) at `feesPrice`, its price when last
+     * asked: the referral fee (a share of the price) and the whole. What the rest (FBA, closing
+     * fees) leaves is fixed per unit. Null until asked, or when Amazon couldn't estimate.
+     */
+    feesPrice: numeric("fees_price", { precision: 20, scale: 4 }),
+    feesReferral: numeric("fees_referral", { precision: 20, scale: 4 }),
+    feesTotal: numeric("fees_total", { precision: 20, scale: 4 }),
+    feesCheckedAt: timestamp("fees_checked_at", { withTimezone: true }),
   },
   (t) => [
     unique("listing_prices_org_id_key").on(t.organizationId, t.id),

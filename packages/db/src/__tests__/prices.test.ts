@@ -9,12 +9,14 @@ import { createDefaultChart } from "../ledger";
 import {
   amazonSellerId,
   expireStalePriceChanges,
+  listingFeeEstimates,
   markPriceChange,
   nextUnitCosts,
   pendingPriceChanges,
   pricedSkus,
   recordPriceChange,
   saveAmazonSellerId,
+  saveFeeEstimate,
   saveListingPrice,
 } from "../prices";
 import * as schema from "../schema";
@@ -141,6 +143,49 @@ describe("listing prices", () => {
       found: true,
     });
     expect(after.find((r) => r.sku === "COASTER")).toMatchObject({ price: null, found: false });
+  });
+
+  it("keeps Amazon's fee estimate on the listing's price row, for Profit by product", async () => {
+    expect(await scoped((tx) => listingFeeEstimates(tx))).toEqual([]);
+    await scoped((tx) =>
+      saveFeeEstimate(tx, {
+        channelId,
+        sku: "MUG-2PK",
+        price: "29.99",
+        referral: "4.50",
+        total: "15.37",
+      }),
+    );
+    const [found, ...rest] = await scoped((tx) => listingFeeEstimates(tx));
+    expect(rest).toEqual([]);
+    expect(found).toMatchObject({
+      channelId,
+      sku: "MUG-2PK",
+      currency: "CAD",
+      price: "29.9900",
+      referral: "4.5000",
+      total: "15.3700",
+    });
+    expect(found?.checkedAt).toBeInstanceOf(Date);
+    // Reading the price again keeps the estimate.
+    await scoped((tx) =>
+      saveListingPrice(tx, {
+        orgId,
+        channelId,
+        sku: "MUG-2PK",
+        listing: parseListingItem(
+          {
+            sku: "MUG-2PK",
+            offers: [
+              { marketplaceId: CA, offerType: "B2C", price: { currency: "CAD", amount: "29.99" } },
+            ],
+          },
+          CA,
+        ),
+      }),
+    );
+    expect(await scoped((tx) => listingFeeEstimates(tx))).toHaveLength(1);
+    expect(await scoped((tx) => listingFeeEstimates(tx), otherOrgId)).toEqual([]);
   });
 
   it("records changes, finds those to check, and marks them", async () => {

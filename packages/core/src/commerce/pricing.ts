@@ -199,6 +199,15 @@ export function parseFeesEstimate(json: unknown): FeesEstimate | { error: string
   };
 }
 
+/** The referral fee in an estimate: a share of the price (the rest is fixed per unit). */
+export function referralFee(estimate: FeesEstimate): string {
+  return formatDecimal(
+    estimate.fees
+      .filter((f) => /referral/i.test(f.type))
+      .reduce((t, f) => t + parseDecimal(f.amount), 0n),
+  );
+}
+
 /** The seller's own ID from GET /products/pricing/v0/listings/{sku}/offers (their offer). */
 export function parseMyOfferSellerId(json: unknown): string | null {
   const offers = list(record(record(json).payload).Offers).map(record);

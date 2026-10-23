@@ -10,6 +10,7 @@ import {
   channelAdSummary,
   duplicateAmazonAdsReportId,
   emptyGroupTotals,
+  estimatedKeepRate,
   giveawayCosts,
   keepRate,
   mergeAdRows,
@@ -212,6 +213,38 @@ describe("settledKeepRates", () => {
     expect(settledKeepRates(lines, { ...options, minUnits: 4 }).skus.has("NEW")).toBe(true);
     // The channel's rate still has them.
     expect(settledKeepRates(lines, options).channel).toBe("0.8048780488");
+  });
+});
+
+describe("estimatedKeepRate", () => {
+  const estimate = { price: "100.00", referral: "15.00", total: "25.00" };
+
+  it("takes the referral as a share, the fixed fees at the product's own price, and its refunds", () => {
+    // 1 − 15/100 − 10/50 − 50/1000.
+    expect(
+      estimatedKeepRate({ averagePrice: "50.00", estimate, refunded: "50.00", sales: "1000.00" }),
+    ).toBe("0.6000000000");
+  });
+
+  it("leaves a dear product more than a cheap one with the same fixed fee", () => {
+    const dear = estimatedKeepRate({ averagePrice: "100.00", estimate, refunded: "0", sales: "0" });
+    const cheap = estimatedKeepRate({ averagePrice: "25.00", estimate, refunded: "0", sales: "0" });
+    expect(dear).toBe("0.7500000000");
+    expect(cheap).toBe("0.4500000000");
+  });
+
+  it("is null without a price", () => {
+    expect(
+      estimatedKeepRate({ averagePrice: "0", estimate, refunded: "0", sales: "0" }),
+    ).toBeNull();
+    expect(
+      estimatedKeepRate({
+        averagePrice: "50.00",
+        estimate: { ...estimate, price: "0" },
+        refunded: "0",
+        sales: "0",
+      }),
+    ).toBeNull();
   });
 });
 

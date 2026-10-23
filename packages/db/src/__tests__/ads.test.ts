@@ -16,7 +16,7 @@ import {
 } from "../ads";
 import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
-import { saveAmazonChannels, saveOrderItems, upsertOrders } from "../commerce";
+import { saveAmazonChannels, saveOrderItems, saveRefunds, upsertOrders } from "../commerce";
 import { createProduct, linkSku } from "../inventory";
 import * as schema from "../schema";
 
@@ -186,6 +186,31 @@ beforeAll(async () => {
       orderId: id("702-4"),
       items: [item("BOARD-TI", 1, "64.99")],
     });
+    await saveRefunds(tx, {
+      orgId,
+      channelId,
+      refunds: [
+        {
+          orderId: "702-1",
+          adjustmentId: "adj-1",
+          postedAt: "2026-10-10T12:00:00Z",
+          sku: "BOARD-TI",
+          quantity: 1,
+          amount: "64.99",
+          currency: "CAD",
+        },
+        // The given-away line's refund isn't the product's.
+        {
+          orderId: "702-2",
+          adjustmentId: "adj-2",
+          postedAt: "2026-10-11T12:00:00Z",
+          sku: "MAG-SET",
+          quantity: 1,
+          amount: "1.00",
+          currency: "CAD",
+        },
+      ],
+    });
   });
 });
 
@@ -301,6 +326,7 @@ describe("ad metrics", () => {
       promotions: "10.0000",
       giveaway_units: 0,
       giveaway_orders: 0,
+      refunded: "64.9900",
     });
     // A promotion of the whole price: given away (Vine), so a one-off line, not the product's.
     expect(data.sales.find((s) => s.sku === "MAG-SET")).toMatchObject({
@@ -308,6 +334,7 @@ describe("ad metrics", () => {
       sales: "0.0000",
       giveaway_units: 1,
       giveaway_orders: 1,
+      refunded: "0",
     });
     expect(data.links.find((l) => l.sku === "BOARD-TI")?.product_name).toBe("Titanium board");
     expect(data.titles.get(`${channelId}|MAG-SET`)).toBeNull();

@@ -10,6 +10,7 @@ import {
   type PriceProfit,
   parseDecimal,
   priceProfit,
+  referralFee,
   roundUnits,
 } from "@bookalyze/core";
 import {
@@ -23,6 +24,7 @@ import {
   pricedSkus,
   recordPriceChange,
   saveAmazonSellerId,
+  saveFeeEstimate,
   saveListingPrice,
   VaultError,
   withOrg,
@@ -111,6 +113,42 @@ async function patiently<T>(deadline: number, fn: () => Promise<T>): Promise<T> 
   }
 }
 
+/**
+ * Amazon's fee estimate at the listing's own price, kept on its price row: Profit by product
+ * estimates a product's fees from it while too few of its orders are settled.
+ */
+async function keepFeeEstimate(
+  ctx: Ctx,
+  a: Access,
+  listing: AmazonListing & { sku: string },
+  deadline: number,
+) {
+  if (!listing.price || !listing.currency) return;
+  const { price, currency } = listing;
+  const fees = await patiently(deadline, () =>
+    feesEstimate(a.creds, a.region, {
+      sku: listing.sku,
+      marketplaceId: a.marketplaceId,
+      price,
+      currency,
+      fulfilledByAmazon: listing.fulfilledByAmazon,
+    }),
+  ).catch((error: unknown) => {
+    if (error instanceof AmazonError) return { error: error.message };
+    throw error;
+  });
+  if ("error" in fees || fees.currency !== currency) return;
+  await withOrg(getDb(), ctx, (tx) =>
+    saveFeeEstimate(tx, {
+      channelId: a.channelId,
+      sku: listing.sku,
+      price,
+      referral: referralFee(fees),
+      total: fees.total,
+    }),
+  );
+}
+
 /** The seller ID for a channel's account: saved, or found from one of its listings' offers. */
 async function sellerIdFor(ctx: Ctx, a: Access, skus: readonly string[], deadline: number) {
   const saved = await withOrg(getDb(), ctx, (tx) => amazonSellerId(tx, a.connectionId));
@@ -171,9 +209,10 @@ export async function refreshChannelPrices(
       await withOrg(getDb(), ctx, (tx) =>
         saveListingPrice(tx, { orgId: ctx.orgId, channelId, sku: row.sku, listing }),
       );
+      if (listing) await keepFeeEstimate(ctx, a, { ...listing, sku: row.sku }, options.deadline);
       result.checked++;
-      // Listings allow about five reads a second.
-      await sleep(220);
+      // Listings allow about five reads a second, fee estimates about one.
+      await sleep(listing ? 1_000 : 220);
     }
     await checkPriceChanges(ctx, options.deadline);
   } catch (error) {
@@ -289,6 +328,8 @@ async function line(
   a: Access,
   input: { sku: string; price: string; currency: string; fba: boolean; cost: string | null },
   deadline: number,
+  /** The listing's own price: its estimate is kept for Profit by product. */
+  keep?: Ctx,
 ): Promise<PriceLine> {
   const fees = await patiently(deadline, () =>
     feesEstimate(a.creds, a.region, {
@@ -304,6 +345,17 @@ async function line(
   });
   if ("error" in fees)
     return { price: input.price, fees: null, feesError: fees.error, profit: null };
+  if (keep && fees.currency === input.currency) {
+    await withOrg(getDb(), keep, (tx) =>
+      saveFeeEstimate(tx, {
+        channelId: a.channelId,
+        sku: input.sku,
+        price: input.price,
+        referral: referralFee(fees),
+        total: fees.total,
+      }),
+    );
+  }
   return {
     price: input.price,
     fees: fees.total,
@@ -361,11 +413,12 @@ export async function estimatePrice(
     });
     const price = roundPrice(input.price, currency);
     const shared = { sku: input.sku, currency, fba: listing.fulfilledByAmazon, cost };
+    const atListing = listing.price !== null && parseDecimal(listing.price) === parseDecimal(price);
     const current =
-      listing.price && parseDecimal(listing.price) !== parseDecimal(price)
-        ? await line(a, { ...shared, price: listing.price }, deadline)
+      listing.price && !atListing
+        ? await line(a, { ...shared, price: listing.price }, deadline, ctx)
         : null;
-    const next = await line(a, { ...shared, price }, deadline);
+    const next = await line(a, { ...shared, price }, deadline, atListing ? ctx : undefined);
     return {
       currency,
       current: current ?? (listing.price ? next : null),

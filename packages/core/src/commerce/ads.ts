@@ -217,10 +217,11 @@ export function keepRate(input: {
 }
 
 /**
- * Where a product's keep rate comes from: its own settled orders, the channel's orders in the
- * period, or the channel's orders over the days before the period's end (none in it yet).
+ * Where a product's keep rate comes from: its own settled orders, Amazon's fee estimate for its
+ * listing (too few settled), the channel's orders in the period, or the channel's orders over the
+ * days before the period's end (none in it yet).
  */
-export type KeepRateSource = "sku" | "period" | "trailing";
+export type KeepRateSource = "sku" | "estimate" | "period" | "trailing";
 
 /** A SKU needs this many settled units for a rate of its own; fewer use the channel's. */
 export const SKU_KEEP_MIN_UNITS = 5;
@@ -331,6 +332,38 @@ export function settledKeepRates(
       [...giveaways].map(([sku, g]) => [sku, { units: g.units, fees: formatDecimal(g.fees) }]),
     ),
   };
+}
+
+/** Amazon's fee estimate for a listing at a price (its referral fee and the whole), in its currency. */
+export type ListingFeeEstimate = { price: string; referral: string; total: string };
+
+/**
+ * A SKU's keep rate from Amazon's fee estimate for its listing, for one with too few settled
+ * orders of its own: the referral fee as a share of the price, the rest (FBA, closing fees) fixed
+ * per unit over the SKU's own average price, and its own refunds on its orders as a share of its
+ * sales. The channel's rate would charge a dear product a cheap one's share of the fixed fees. 10
+ * places; null without a price.
+ */
+export function estimatedKeepRate(input: {
+  averagePrice: string;
+  estimate: ListingFeeEstimate;
+  /** What the SKU's orders gave back (positive), and its sales. */
+  refunded: string;
+  sales: string;
+}): string | null {
+  const average = parseDecimal(input.averagePrice);
+  const listed = parseDecimal(input.estimate.price);
+  if (average <= 0n || listed <= 0n) return null;
+  const scale = 10n ** 10n;
+  const referral = parseDecimal(input.estimate.referral);
+  const fixed = parseDecimal(input.estimate.total) - referral;
+  const sales = parseDecimal(input.sales);
+  const rate =
+    scale -
+    divRound(referral * scale, listed) -
+    divRound(fixed * scale, average) -
+    (sales > 0n ? divRound(parseDecimal(input.refunded) * scale, sales) : 0n);
+  return formatDecimal(rate, 10);
 }
 
 /** Units given away in the period (positive amounts: costs), in the channel's currency. */
