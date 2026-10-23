@@ -2318,7 +2318,14 @@ line** (`/commerce/profit/products/pnl`; one SKU at `…/pnl/[sku]`).
   status, payout id, order id, fee type, currency (the payout currency), `amount` signed (credit +,
   debit −), `fees` (eBay's fees on it, positive) and eBay-collected tax. No buyer details. Each row
   sits on its order's eBay site, else the site in its currency, else the first; rows move to their
-  order's site once it comes in (`placeEbayTransactionsByOrder`).
+  order's site once it comes in (`placeEbayTransactionsByOrder`). A fee's order is also read
+  from eBay's `references[]` (`ORDER_ID`), so ad fees follow their order. A row on no order
+  Bookalyze has (store subscription, account fees, adjustments, transfers, orders older than the
+  ones brought in) is `account_wide` (migration `0095_ebay_account_wide`): still kept on a site
+  and posted with its month, but Channel profit shows it on its own **eBay (whole account)**
+  column when there are several eBay sites (`ebayMonths(…, { splitAccountWide: true })`), so a
+  site with no sales (eBay Canada, for a seller paid in CAD who sells on eBay US) isn't charged
+  for the account. It stops being account-wide when its order comes in.
 - **Groups:** a sale's fees are split out (sales = amount + fees; fees given back on a refund),
   refunds and disputes, eBay's fees (charges other than ads), advertising (`AD_FEE`, promoted),
   shipping labels, credits; transfers, withdrawals, loan repayments and purchases are money moved,

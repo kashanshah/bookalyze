@@ -2480,7 +2480,8 @@ test("ebay: bring in eBay's money, see each site's month and Channel profit", as
   await page.getByRole("button", { name: "Bring in from eBay" }).click();
   await expect(page.getByText("eBay's money is up to date")).toBeVisible({ timeout: 30_000 });
 
-  // Channel profit has a column per eBay site; what eBay paid out isn't known yet.
+  // Channel profit has a column per eBay site, and one for what's the account's as a whole (the
+  // ad fee and the transfer, on no order); what eBay paid out isn't known yet.
   const from = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
   const to = new Date().toISOString().slice(0, 10);
   const slug = new URL(page.url()).pathname.split("/")[2];
@@ -2489,8 +2490,12 @@ test("ebay: bring in eBay's money, see each site's month and Channel profit", as
     page.getByRole("columnheader", { name: /eBay US.*2 eBay transactions/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("columnheader", { name: /eBay Canada.*3 eBay transactions/ }),
+    page.getByRole("columnheader", { name: /eBay Canada.*1 eBay transaction/ }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: /eBay \(whole account\).*2 eBay transactions/ }),
+  ).toBeVisible();
+  await expect(page.getByText(/eBay \(whole account\): what eBay charges/)).toBeVisible();
   await expect(page.getByRole("row", { name: /^Paid out/ })).toContainText("—");
 });
 

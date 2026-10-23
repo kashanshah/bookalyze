@@ -48,6 +48,17 @@ const record = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" ? (v as Record<string, unknown>) : {};
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const text = (v: unknown) => (typeof v === "string" ? v : "");
+
+/** The order a transaction refers to (`references[]`, `referenceType` ORDER_ID), if any. */
+function orderReference(v: unknown): string {
+  if (!Array.isArray(v)) return "";
+  for (const r of v) {
+    const ref = record(r);
+    if (text(ref.referenceType) === "ORDER_ID" && text(ref.referenceId))
+      return text(ref.referenceId);
+  }
+  return "";
+}
 const count = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : 0);
 
 /** An Amount ({ value, currency }) in units, or 0n. */
@@ -93,7 +104,8 @@ export function parseEbayTransactionsPage(json: unknown): {
         transactionType,
         status: text(t.transactionStatus) || null,
         transactionDate,
-        orderId: text(t.orderId) || null,
+        // A fee eBay ties to an order (an ad fee, say) names it in references[], not orderId.
+        orderId: text(t.orderId) || orderReference(t.references) || null,
         payoutId: text(t.payoutId) || null,
         feeType: text(t.feeType) || null,
         currency,

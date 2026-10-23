@@ -87,6 +87,28 @@ describe("parseEbayTransactionsPage", () => {
     expect(JSON.stringify(page)).not.toContain("synthetic_buyer");
   });
 
+  it("takes a fee's order from its references", () => {
+    const page = parseEbayTransactionsPage({
+      total: 1,
+      offset: 0,
+      transactions: [
+        {
+          transactionId: "T3",
+          transactionType: "NON_SALE_CHARGE",
+          transactionDate: "2026-09-04T10:00:00.000Z",
+          feeType: "AD_FEE",
+          bookingEntry: "DEBIT",
+          amount: money("1.25"),
+          references: [
+            { referenceId: "110000000001", referenceType: "ITEM_ID" },
+            { referenceId: "12-34567-89012", referenceType: "ORDER_ID" },
+          ],
+        },
+      ],
+    });
+    expect(page.transactions[0]?.orderId).toBe("12-34567-89012");
+  });
+
   it("gives the next page's offset, and refuses what isn't a page", () => {
     const transactions = Array.from({ length: 1000 }, (_, i) => ({
       transactionId: `T${i}`,

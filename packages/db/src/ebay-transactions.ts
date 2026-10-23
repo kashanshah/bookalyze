@@ -64,6 +64,7 @@ export async function importEbayTransactions(
           organizationId: input.orgId,
           channelId:
             (r.orderId && byOrder.get(r.orderId)) || byCurrency.get(r.currency) || fallback.id,
+          accountWide: !(r.orderId && byOrder.has(r.orderId)),
           transactionId: r.transactionId,
           transactionType: r.transactionType,
           status: r.status,
@@ -86,6 +87,7 @@ export async function importEbayTransactions(
         ],
         set: {
           channelId: sql`excluded.channel_id`,
+          accountWide: sql`excluded.account_wide`,
           status: sql`excluded.status`,
           transactionAt: sql`excluded.transaction_at`,
           transactionDate: sql`excluded.transaction_date`,
@@ -167,13 +169,17 @@ export async function dropEbayReportRows(
   return dropped.length;
 }
 
-/** Puts rows on their order's eBay site, for orders that came in after their rows. */
+/**
+ * Puts rows on their order's eBay site, for orders that came in after their rows (they're no
+ * longer the whole account's then).
+ */
 export async function placeEbayTransactionsByOrder(tx: Transaction): Promise<number> {
   const moved = await tx.execute(sql`
-    update ebay_transactions t set channel_id = o.channel_id, updated_at = now()
+    update ebay_transactions t set channel_id = o.channel_id, account_wide = false,
+      updated_at = now()
     from orders o
     join sales_channels sc on sc.id = o.channel_id and sc.kind = 'ebay'
-    where t.order_id = o.external_id and t.channel_id <> o.channel_id`);
+    where t.order_id = o.external_id and (t.channel_id <> o.channel_id or t.account_wide)`);
   return moved.rowCount ?? 0;
 }
 
@@ -183,20 +189,29 @@ export type EbayMonth = {
   currency: string;
   /** YYYY-MM. */
   month: string;
+  /** The eBay account's own rows (only with `splitAccountWide`; otherwise in the site's). */
+  accountWide: boolean;
   rows: number;
   sums: EbaySum[];
 };
 
-/** Each eBay site's months (optionally only days in `from`…`to`), newest first. */
+/**
+ * Each eBay site's months (optionally only days in `from`…`to`), newest first. With
+ * `splitAccountWide`, a site's rows that belong to the whole eBay account come as months of
+ * their own (`accountWide`), for Channel profit; posting keeps them in the site's month.
+ */
 export async function ebayMonths(
   tx: Transaction,
   range?: { from: string; to: string },
+  options: { splitAccountWide?: boolean } = {},
 ): Promise<EbayMonth[]> {
+  const split = Boolean(options.splitAccountWide);
   const rows = await tx.execute<{
     channel_id: string;
     channel_name: string;
     currency: string;
     month: string;
+    account_wide: boolean;
     transaction_type: string;
     fee_type: string | null;
     rows: number;
@@ -205,15 +220,16 @@ export async function ebayMonths(
   }>(sql`
     select t.channel_id, sc.name as channel_name, t.currency,
       to_char(t.transaction_date, 'YYYY-MM') as month, t.transaction_type, t.fee_type,
+      ${split ? sql`t.account_wide` : sql`false`} as account_wide,
       count(*)::int as rows, sum(t.amount)::text as amount, sum(t.fees)::text as fees
     from ebay_transactions t
     join sales_channels sc on sc.id = t.channel_id
     ${range ? sql`where t.transaction_date between ${range.from}::date and ${range.to}::date` : sql``}
-    group by 1, 2, 3, 4, 5, 6
+    group by 1, 2, 3, 4, 5, 6, 7
     order by month desc, channel_name`);
   const months = new Map<string, EbayMonth>();
   for (const r of rows.rows) {
-    const key = `${r.channel_id}:${r.currency}:${r.month}`;
+    const key = `${r.channel_id}:${r.currency}:${r.month}:${r.account_wide}`;
     let m = months.get(key);
     if (!m) {
       m = {
@@ -221,6 +237,7 @@ export async function ebayMonths(
         channelName: r.channel_name,
         currency: r.currency,
         month: r.month,
+        accountWide: r.account_wide,
         rows: 0,
         sums: [],
       };

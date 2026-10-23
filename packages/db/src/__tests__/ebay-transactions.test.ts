@@ -135,6 +135,9 @@ describe("eBay transactions", () => {
     const rows = await scoped((tx) => tx.select().from(schema.ebayTransactions));
     const site = Object.fromEntries(rows.map((r) => [r.transactionId, r.channelId]));
     expect(site).toEqual({ T1: usId, T2: caId, T3: caId });
+    // Not on an order Bookalyze has: the account's as a whole (kept on a site for posting).
+    const ofAccount = Object.fromEntries(rows.map((r) => [r.transactionId, r.accountWide]));
+    expect(ofAccount).toEqual({ T1: false, T2: true, T3: true });
   });
 
   it("updates rows brought in again, and moves rows to an order's site once it comes in", async () => {
@@ -161,7 +164,7 @@ describe("eBay transactions", () => {
     const [t2] = await scoped((tx) =>
       tx.select().from(schema.ebayTransactions).where(eqTransaction("T2")),
     );
-    expect(t2?.channelId).toBe(usId);
+    expect(t2).toMatchObject({ channelId: usId, accountWide: false });
     const [t1] = await scoped((tx) =>
       tx.select().from(schema.ebayTransactions).where(eqTransaction("T1")),
     );
@@ -182,6 +185,13 @@ describe("eBay transactions", () => {
     expect(await scoped((tx) => ebayMonths(tx, { from: "2026-09-10", to: "2026-09-30" }))).toEqual([
       expect.objectContaining({ channelName: "eBay Canada", rows: 1 }),
     ]);
+    // Split for Channel profit: the ad fee on no order is the account's, not eBay Canada's.
+    const split = await scoped((tx) => ebayMonths(tx, undefined, { splitAccountWide: true }));
+    expect(split.map((m) => [m.channelName, m.accountWide, m.rows])).toEqual([
+      ["eBay Canada", true, 1],
+      ["eBay US", false, 2],
+    ]);
+    expect(months.every((m) => !m.accountWide)).toBe(true);
   });
 
   it("keeps how far the rows are in on the eBay connection", async () => {
