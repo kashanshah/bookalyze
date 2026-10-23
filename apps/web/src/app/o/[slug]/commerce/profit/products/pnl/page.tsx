@@ -99,7 +99,7 @@ export default async function SkuPnlPage({
       <RangeControls from={from} to={to} presets={presets} csvHref={csvHref} />
 
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        {data.channels.length > 1 ? (
+        {data.channels.length ? (
           <nav aria-label="Channels" className="flex flex-wrap gap-2">
             {[{ channelId: null, name: "All channels" }, ...data.channels].map((c) => {
               const active = c.channelId ? chosenIds.includes(c.channelId) : !chosenIds.length;
