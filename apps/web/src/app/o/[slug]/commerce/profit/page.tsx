@@ -183,7 +183,7 @@ export default async function ChannelProfitPage({
     return {
       rows: await settlementsForProfit(tx, { from, to, timezone }),
       noon: await noonMonthsForProfit(tx, { from, to }),
-      ebay: await ebayMonths(tx, { from, to }),
+      ebay: await ebayMonths(tx, { from, to }, { splitAccountWide: true }),
       ebayRates: await ebayPostedRates(tx),
       // Each Walmart settlement in the period its last day falls in, as Amazon's.
       walmart: (await walmartPostingList(tx)).filter(
@@ -200,6 +200,7 @@ export default async function ChannelProfitPage({
           name: schema.salesChannels.name,
           currency: schema.salesChannels.currency,
           isActive: schema.salesChannels.isActive,
+          kind: schema.salesChannels.kind,
           connection: schema.connections.status,
         })
         .from(schema.salesChannels)
@@ -296,12 +297,18 @@ export default async function ChannelProfitPage({
   }
   // eBay: its money rows in the period, a month at a time (each at the rate it posted at, else its
   // last day's rate). Payouts are for the whole eBay account, not a site, so they aren't shown.
+  // With several eBay sites, the account's own rows (a store subscription, account fees, an
+  // order Bookalyze doesn't have) are a column of their own rather than one site's costs.
+  const ebaySites = channelStates.filter((c) => c.kind === "ebay").length;
+  let ebayAccountWide = false;
   for (const m of ebay) {
-    const key = `ebay:${m.channelId}:${m.currency}`;
+    const ofAccount = m.accountWide && ebaySites > 1;
+    if (ofAccount) ebayAccountWide = true;
+    const key = ofAccount ? `ebay-account:${m.currency}` : `ebay:${m.channelId}:${m.currency}`;
     const column = columns.get(key) ?? {
       key,
-      channelId: m.channelId,
-      label: m.channelName,
+      channelId: ofAccount ? null : m.channelId,
+      label: ofAccount ? "eBay (whole account)" : m.channelName,
       currency: m.currency,
       totals: emptyGroupTotals(),
       settlements: 0,
@@ -741,6 +748,13 @@ export default async function ChannelProfitPage({
             <AlertTriangle className="size-3.5 shrink-0" />
             Some days' ad spend isn't in the {baseCurrency} total: there's no exchange rate for them
             yet.
+          </p>
+        ) : null}
+        {ebayAccountWide ? (
+          <p>
+            eBay (whole account): what eBay charges or credits the account as a whole, not one site:
+            the store subscription, account fees and adjustments, and orders older than the ones
+            brought in.
           </p>
         ) : null}
         {walmartProblems ? (

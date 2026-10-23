@@ -1021,6 +1021,14 @@ export const ebayTransactions = pgTable(
     amount: numeric("amount", { precision: 20, scale: 4 }).notNull(),
     fees: numeric("fees", { precision: 20, scale: 4 }).notNull(),
     ebayTax: numeric("ebay_tax", { precision: 20, scale: 4 }).notNull(),
+    /**
+     * Not on an order Bookalyze has (a store subscription, an account fee, an adjustment, or an
+     * order older than the ones brought in): it belongs to the eBay account as a whole. It's
+     * still kept on a site (`channel_id`, posted with that site's month); Channel profit shows
+     * it on its own line when there are several sites. It moves to its order's site, and stops
+     * being account-wide, when the order comes in.
+     */
+    accountWide: boolean("account_wide").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
