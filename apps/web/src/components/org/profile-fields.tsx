@@ -159,7 +159,13 @@ export function LocationFields({
           name="subdivisionCode"
           value={state.subdivisionCode}
           onChange={state.setSubdivisionCode}
-          placeholder={state.subdivisions.length ? "Choose one…" : "Not applicable"}
+          placeholder={
+            state.subdivisionsLoading
+              ? "Loading…"
+              : state.subdivisions.length
+                ? "Choose one…"
+                : "Not applicable"
+          }
           disabled={state.subdivisions.length === 0}
           options={state.subdivisions.map((s) => ({
             value: s.code,
