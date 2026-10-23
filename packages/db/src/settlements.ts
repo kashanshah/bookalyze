@@ -21,6 +21,7 @@ import { and, asc, desc, eq, isNotNull, isNull, ne, type SQL, sql } from "drizzl
 import type { Transaction } from "./client";
 import { fxRateOn } from "./fx";
 import { formatEntryNumber, LedgerError, postJournalEntry, reverseJournalEntry } from "./ledger";
+import { entryReconciledThrough } from "./reconciliation";
 import { accounts, journalEntries, journalLines } from "./schema/accounting";
 import { connections } from "./schema/banking";
 import {
@@ -827,6 +828,15 @@ export async function depositCandidates(
           : sql``
       }
       and ${input.notDismissed}
+      -- A reconciled deposit matched by an entry of its own stays as it was: skip it too.
+      and not exists (select 1 from settlements x
+        where x.deposit_original_entry_id = e.id and x.deposit_entry_id is not null)
+      and not exists (select 1 from noon_transactions x
+        where x.deposit_original_entry_id = e.id and x.deposit_entry_id is not null)
+      and not exists (select 1 from ebay_payouts x
+        where x.deposit_original_entry_id = e.id and x.deposit_entry_id is not null)
+      and not exists (select 1 from walmart_settlements x
+        where x.deposit_original_entry_id = e.id and x.deposit_entry_id is not null)
       ${input.onlyEntryId ? sql`and e.id = ${input.onlyEntryId}` : sql``}
     order by abs(e.date - ${anchor}::date), e.date, e.entry_number
     limit 300`);
@@ -966,6 +976,40 @@ export async function moveDepositToClearing(
     description: input.description,
   });
   if (!built.ok) throw new LedgerError(built.error);
+  if (await entryReconciledThrough(tx, entry.id)) {
+    // Reconciled: the deposit can't be replaced (its bank line is ticked on a statement). It
+    // stays as it is, and one more entry moves what it was categorized as to the clearing
+    // account. Same books, bank line untouched; unmatching reverses this entry.
+    const others = lines.filter((l) => l.accountId !== money.accountId);
+    const negate = (v: string) => formatDecimal(-parseDecimal(v));
+    const moved = [
+      ...others.map((l) => ({
+        accountId: l.accountId,
+        description: l.description,
+        currency: l.currency,
+        amount: negate(String(l.amount)),
+        baseAmount: negate(String(l.baseAmount)),
+      })),
+      ...built.lines.filter((l) => l.accountId !== money.accountId),
+    ];
+    const total = formatDecimal(
+      moved.map((l) => parseDecimal(l.amount)).reduce((t, a) => (a > 0n ? t + a : t), 0n),
+    );
+    return postJournalEntry(tx, {
+      orgId: input.orgId,
+      userId: input.userId,
+      date: entry.date,
+      reference: entry.reference,
+      memo: `${input.description}: deposit JE-${String(entry.entryNumber).padStart(4, "0")} (reconciled) moved to the clearing account`,
+      contactId: entry.contactId,
+      entry: {
+        currency: entry.currency,
+        fxRate: entry.fxRate,
+        total,
+        lines: moved.map((l, index) => ({ index, ...l, taxRateId: null })),
+      },
+    });
+  }
   const prepared: PreparedEntry = {
     currency: entry.currency,
     fxRate: entry.fxRate,
@@ -984,7 +1028,22 @@ export async function moveDepositToClearing(
   });
 }
 
-/** Puts a matched deposit back as it was before (`originalId`'s lines), replacing `currentId`. */
+async function hasMoneyLine(tx: Transaction, entryId: string) {
+  const [row] = await tx
+    .select({ id: journalLines.id })
+    .from(journalLines)
+    .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+    .where(
+      and(eq(journalLines.journalEntryId, entryId), sql`${accounts.subtype} in (${moneyList})`),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/**
+ * Puts a matched deposit back as it was before (`originalId`'s lines), replacing `currentId`; or,
+ * when the match moved a reconciled deposit with an entry of its own, reverses that entry.
+ */
 export async function restoreDeposit(
   tx: Transaction,
   input: { orgId: string; userId: string | null; currentId: string; originalId: string },
@@ -998,6 +1057,17 @@ export async function restoreDeposit(
     .from(journalEntries)
     .where(eq(journalEntries.id, input.originalId));
   if (!current || !original) throw new LedgerError("This deposit no longer exists.");
+  if (current.id !== original.id && !(await hasMoneyLine(tx, current.id))) {
+    // Matched while reconciled (see moveDepositToClearing): the deposit was never replaced, so
+    // undoing the match reverses the entry that moved it to the clearing account.
+    await reverseJournalEntry(tx, {
+      orgId: input.orgId,
+      userId: input.userId,
+      entryId: current.id,
+      date: current.date,
+    });
+    return { id: original.id, entryNumber: original.entryNumber };
+  }
   const lines = await tx
     .select()
     .from(journalLines)

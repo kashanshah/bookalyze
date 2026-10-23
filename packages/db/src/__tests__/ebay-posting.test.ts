@@ -19,6 +19,12 @@ import {
 } from "../ebay-posting";
 import { importEbayTransactions } from "../ebay-transactions";
 import { createDefaultChart, postJournalEntry } from "../ledger";
+import {
+  completeReconciliation,
+  entryReconciledThrough,
+  setLinesCleared,
+  startReconciliation,
+} from "../reconciliation";
 import * as schema from "../schema";
 
 const ownerUrl =
@@ -302,6 +308,111 @@ describe("eBay in the books", () => {
     ).toBeNull();
     // The restored deposit isn't suggested for it again.
     expect(await scoped((tx) => ebayPayoutCandidates(tx, p?.id ?? ""))).toEqual([]);
+  });
+
+  it("matches a reconciled deposit without touching it, and undoes that", async () => {
+    await scoped((tx) =>
+      importEbayPayouts(tx, {
+        orgId,
+        payouts: [
+          {
+            payoutId: "P-2",
+            status: "SUCCEEDED",
+            payoutDate: "2026-09-26T08:00:00Z",
+            currency: "CAD",
+            amount: "70.0000",
+            accountLast4: "1234",
+          },
+        ],
+      }),
+    );
+    const line = (accountId: string, amount: string) => ({
+      accountId,
+      description: null,
+      currency: "CAD",
+      amount,
+      baseAmount: amount,
+    });
+    const deposit = await scoped((tx) =>
+      postJournalEntry(tx, {
+        orgId,
+        date: "2026-09-27",
+        memo: "EBAY COMMERCE CA",
+        entry: {
+          currency: "CAD",
+          fxRate: "1",
+          total: "70.00",
+          lines: [
+            { index: 0, ...line(ids.bank, "70.00") },
+            { index: 1, ...line(ids.sales, "-70.00") },
+          ],
+        },
+      }),
+    );
+    // The bank is reconciled with the deposit ticked on its statement.
+    const [bankLine] = await scoped((tx) =>
+      tx
+        .select({ id: schema.journalLines.id })
+        .from(schema.journalLines)
+        .where(
+          sql`${schema.journalLines.journalEntryId} = ${deposit.id} and ${schema.journalLines.accountId} = ${ids.bank}`,
+        ),
+    );
+    const rec = await scoped((tx) =>
+      startReconciliation(tx, {
+        orgId,
+        accountId: ids.bank,
+        statementDate: "2026-09-30",
+        statementBalance: "70.00",
+      }),
+    );
+    await scoped((tx) =>
+      setLinesCleared(tx, {
+        orgId,
+        reconciliationId: rec.id,
+        lineIds: [bankLine?.id ?? ""],
+        cleared: true,
+      }),
+    );
+    await scoped((tx) => completeReconciliation(tx, { id: rec.id }));
+
+    const p = (await scoped((tx) => ebayPayoutList(tx))).find((x) => x.payoutId === "P-2");
+    const matched = await scoped((tx) =>
+      matchEbayPayout(tx, {
+        orgId,
+        userId: null,
+        payoutId: p?.id ?? "",
+        entryId: deposit.id,
+        baseCurrency: "CAD",
+      }),
+    );
+    // One more entry moves the deposit's Sales to the eBay balance; the deposit stays reconciled.
+    expect(matched.id).not.toBe(deposit.id);
+    expect(await linesOf(matched.id)).toEqual({
+      [ids.sales]: "70.0000",
+      [ids.balance]: "-70.0000",
+    });
+    expect(await scoped((tx) => entryReconciledThrough(tx, deposit.id))).toBe("2026-09-30");
+    expect(await linesOf(deposit.id)).toEqual({
+      [ids.bank]: "70.0000",
+      [ids.sales]: "-70.0000",
+    });
+    // It isn't offered to the payout (or any other) again while matched.
+    expect(await scoped((tx) => ebayPayoutCandidates(tx, p?.id ?? "", deposit.id))).toEqual([]);
+
+    // Undoing the match reverses that entry; the deposit is still as it was.
+    await scoped((tx) => unmatchEbayPayout(tx, { orgId, userId: null, payoutId: p?.id ?? "" }));
+    const [moved] = await scoped((tx) =>
+      tx
+        .select({ reversedBy: schema.journalEntries.reversedByEntryId })
+        .from(schema.journalEntries)
+        .where(sql`${schema.journalEntries.id} = ${matched.id}`),
+    );
+    expect(moved?.reversedBy).not.toBeNull();
+    expect(
+      (await scoped((tx) => ebayPayoutList(tx))).find((x) => x.id === p?.id)?.matched,
+    ).toBeNull();
+    expect(await scoped((tx) => entryReconciledThrough(tx, deposit.id))).toBe("2026-09-30");
   });
 
   it("takes a month back out of the books", async () => {
