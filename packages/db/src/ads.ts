@@ -422,8 +422,9 @@ export async function salesAfter(
 
 /**
  * What each SKU sold in the period on each channel: units, orders, sales (item price less
- * promotions), the promotions, and the units and orders given away (a promotion of the whole item
- * price: Vine, a free replacement) of order lines purchased in it (company time zone), cancelled orders left out;
+ * promotions), the promotions, the units and orders given away (a promotion of the whole item
+ * price: Vine, a free replacement), and what the orders sold gave back of the SKU (their refunds)
+ * of order lines purchased in it (company time zone), cancelled orders left out;
  * with the products it's linked to (name and units per listing, for its cost).
  */
 export async function skuSalesForProfit(
@@ -444,13 +445,17 @@ export async function skuSalesForProfit(
     promotions: string;
     giveaway_units: number;
     giveaway_orders: number;
+    refunded: string;
   }>(sql`
     select o.channel_id, oi.sku, max(oi.title) as title, max(oi.asin) as asin,
       sum(oi.quantity_ordered)::int as units, count(distinct o.id)::int as orders,
       coalesce(sum(coalesce(oi.item_price, 0) - coalesce(oi.promotion_discount, 0)), 0)::text as sales,
       coalesce(sum(coalesce(oi.promotion_discount, 0)), 0)::text as promotions,
       coalesce(sum(oi.quantity_ordered) filter (where ${giveaway}), 0)::int as giveaway_units,
-      count(distinct o.id) filter (where ${giveaway})::int as giveaway_orders
+      count(distinct o.id) filter (where ${giveaway})::int as giveaway_orders,
+      coalesce(sum((select sum(rf.amount) from order_refunds rf
+        where rf.order_id = o.id and rf.sku = oi.sku)) filter (where not (${giveaway})), 0)::text
+        as refunded
     from order_items oi
     join orders o on o.id = oi.order_id
     where oi.sku is not null and o.status not in (${cancelled})

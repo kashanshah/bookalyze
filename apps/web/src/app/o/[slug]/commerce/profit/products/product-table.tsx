@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 
 const KEEP_SOURCE: Record<KeepRateSource, string> = {
   sku: "its own orders",
+  estimate: "Amazon's fee estimate",
   period: "the channel's orders",
   trailing: "the channel's last 90 days",
 };

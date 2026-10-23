@@ -1826,7 +1826,9 @@ Analytics only, for profit: no keywords, search terms, placements, bids or budge
   **keep rate**: the amounts on orders only, with the books' advertising added back, over sales
   measured like the products' (after promotions when the order lines take them off), from the
   same settlements and transactions as Channel profit, `server/channel-totals.ts`; a SKU with 5+
-  units in Amazon's settlements by SKU uses its own orders' rate; the last 90 days when the
+  units in Amazon's settlements by SKU uses its own orders' rate, one with fewer Amazon's fee
+  estimate for its listing (kept on `listing_prices` when Inventory → Prices reads prices; core
+  `estimatedKeepRate`) less its own refunds; the last 90 days when the
   period has none), units given away (Vine, 100% off: core `giveawayCosts`) and the account's own
   costs (storage, the selling plan; core `accountCosts`) as their own lines, not in any product, a note of the sales after the last settlement (estimated at
   the same rates), its product cost (units × `listingCost`, bundles

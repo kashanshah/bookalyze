@@ -153,7 +153,7 @@ export const ADVERTISING_GUIDES: readonly Guide[] = [
         heading: "The keep rate: what each sale leaves after the marketplace",
         blocks: [
           {
-            p: "Bookalyze takes the marketplace's money on orders in the period (referral and fulfilment fees, refunds and the rest, with the advertising taken out) over the same orders' sales: that's the **keep rate**, shown under the marketplace's name. On Amazon, a product with 5 or more settled units uses the rate its own orders show, because a fulfilment fee costs a cheap product a bigger share of its price. Each product's share is its sales × its keep rate.",
+            p: "Bookalyze takes the marketplace's money on orders in the period (referral and fulfilment fees, refunds and the rest, with the advertising taken out) over the same orders' sales: that's the **keep rate**, shown under the marketplace's name. On Amazon, a product with 5 or more settled units uses the rate its own orders show, because a fulfilment fee costs a cheap product a bigger share of its price. One with fewer uses Amazon's fee estimate for its listing (kept each time you refresh prices on Inventory → Prices) and its own refunds. Each product's share is its sales × its keep rate.",
           },
           {
             p: "Storage, the selling plan, inbound placement, Vine and coupon fees aren't on any order and don't grow with each unit sold, so they're not in the keep rate: they're their own line under the marketplace's products, in full. Shared by sales, a launch month's storage and Vine fees would make every product look like it loses money.",

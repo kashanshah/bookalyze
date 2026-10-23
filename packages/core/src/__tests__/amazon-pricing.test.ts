@@ -9,6 +9,7 @@ import {
   parseMyOfferSellerId,
   priceChangePercent,
   priceProfit,
+  referralFee,
 } from "../commerce/pricing";
 
 const CA = "A2EUQ1WTGCTBG2";
@@ -145,6 +146,21 @@ describe("Amazon listings and prices", () => {
         },
       }),
     ).toEqual({ error: "Unknown SKU." });
+  });
+
+  it("finds the referral fee in an estimate (the rest is fixed per unit)", () => {
+    const estimate = {
+      total: "20.80",
+      currency: "CAD",
+      fees: [
+        { type: "ReferralFee", amount: "9.75" },
+        { type: "FBAFees", amount: "11.05" },
+      ],
+    };
+    expect(referralFee(estimate)).toBe("9.7500");
+    expect(referralFee({ ...estimate, fees: [{ type: "FBAFees", amount: "11.05" }] })).toBe(
+      "0.0000",
+    );
   });
 
   it("finds the seller's own ID among a listing's offers", () => {

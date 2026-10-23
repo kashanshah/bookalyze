@@ -103,8 +103,16 @@ Decisions:
    - **A SKU's own rate**: with 5 or more units in the period's Amazon settlements kept by SKU
      (`settlement_sku_lines`, db `settledSkuLinesForProfit`), its rate comes from its own orders'
      amounts (core `skuKeepRates`): fulfilment fees are about the same per unit at very different
-     prices, so one channel rate overstates cheap products and understates dear ones. Fewer units,
-     or no detail by SKU: the channel's rate.
+     prices, so one channel rate overstates cheap products and understates dear ones.
+   - **Fewer settled units: Amazon's fee estimate.** Inventory → Prices keeps Amazon's fee
+     estimate for each listing at its own price whenever it reads prices (`listing_prices.fees_*`,
+     db `saveFeeEstimate`, `listingFeeEstimates`). A SKU with fewer than 5 settled units uses it
+     (core `estimatedKeepRate`): 1 − referral ÷ the estimate's price − the other fees (FBA,
+     closing; fixed per unit) ÷ the SKU's own average price − its own refunds ÷ its sales (from
+     `order_refunds` by SKU on its orders sold, not given away; they include any tax given back,
+     so they run a little high). Without an estimate (prices not refreshed yet, not an Amazon
+     channel, or not linked to a product), the channel's rate, and the channel says to refresh
+     prices.
    - **Units given away** (an order line whose promotion is its whole item price: Vine, a free
      replacement) aren't in any product's units, cost or rate (db `skuSalesForProfit`'s
      `giveaway_units`; core `settledKeepRates` leaves their settled orders out of every rate). A

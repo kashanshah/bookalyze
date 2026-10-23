@@ -1,5 +1,5 @@
 import type { AmazonListing } from "@bookalyze/core";
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, lt, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { connections } from "./schema/banking";
 import {
@@ -133,6 +133,51 @@ export async function saveListingPrice(
       target: [listingPrices.organizationId, listingPrices.channelId, listingPrices.sku],
       set: values,
     });
+}
+
+/**
+ * Keeps Amazon's fee estimate for a listing at a price (its referral fee and the whole), on the
+ * listing's price row: what Profit by product estimates a product's fees from when too few of its
+ * orders are settled.
+ */
+export async function saveFeeEstimate(
+  tx: Transaction,
+  input: { channelId: string; sku: string; price: string; referral: string; total: string },
+) {
+  await tx
+    .update(listingPrices)
+    .set({
+      feesPrice: input.price,
+      feesReferral: input.referral,
+      feesTotal: input.total,
+      feesCheckedAt: new Date(),
+    })
+    .where(and(eq(listingPrices.channelId, input.channelId), eq(listingPrices.sku, input.sku)));
+}
+
+/** Amazon's last fee estimate for each listing that has one, in the listing's currency. */
+export async function listingFeeEstimates(tx: Transaction) {
+  const rows = await tx
+    .select({
+      channelId: listingPrices.channelId,
+      sku: listingPrices.sku,
+      currency: listingPrices.currency,
+      price: listingPrices.feesPrice,
+      referral: listingPrices.feesReferral,
+      total: listingPrices.feesTotal,
+      checkedAt: listingPrices.feesCheckedAt,
+    })
+    .from(listingPrices)
+    .where(and(isNotNull(listingPrices.feesTotal), isNotNull(listingPrices.feesPrice)));
+  return rows.map((r) => ({
+    channelId: r.channelId,
+    sku: r.sku,
+    currency: r.currency,
+    price: String(r.price),
+    referral: String(r.referral ?? "0"),
+    total: String(r.total),
+    checkedAt: r.checkedAt,
+  }));
 }
 
 /** Records a change sent to Amazon. */

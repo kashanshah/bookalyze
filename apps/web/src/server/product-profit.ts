@@ -7,6 +7,7 @@ import {
   type ChannelAdSummary,
   channelAdSummary,
   convertUnits,
+  estimatedKeepRate,
   formatDecimal,
   type GiveawayCosts,
   giveawayCosts,
@@ -26,6 +27,7 @@ import {
   adMetricsForProfit,
   adsBroughtInThrough,
   getSettlementAccounts,
+  listingFeeEstimates,
   nextUnitCosts,
   salesAfter,
   schema,
@@ -62,6 +64,8 @@ export type ChannelProductProfit = {
   keepRateFrom: Exclude<KeepRateSource, "sku"> | null;
   /** Products with a rate of their own (enough settled units). */
   ownRates: number;
+  /** Products whose rate comes from Amazon's fee estimate for their listing. */
+  estimatedRates: number;
   rows: SkuProfit[];
   unallocated: { spend: string; sales: string };
   /** Storage, the selling plan and other costs on no order, in the period's settlements. */
@@ -121,6 +125,7 @@ export async function productProfit(
       feeTaxRecoverable: account?.type === "asset" || account?.type === "liability",
       totals: await channelTotals(tx, range),
       settled: await settledSkuLinesForProfit(tx, range),
+      estimates: await listingFeeEstimates(tx),
       ads: await adMetricsForProfit(tx, { from: input.from, to: input.to }),
       through: await adsBroughtInThrough(tx),
       skus,
@@ -219,12 +224,14 @@ export async function productProfit(
       };
     };
     const given: { sku: string; units: number; unitCost: string | null }[] = [];
+    const refunded = new Map<string, string>();
     for (const s of data.skus.sales.filter((x) => x.channel_id === channelId)) {
       const row = skus.get(s.sku) ?? blank(s.sku);
       // Units given away are a one-off line, not the product's: they'd charge their cost to
       // the units that sell.
       row.units += s.units - s.giveaway_units;
       row.orders += s.orders - s.giveaway_orders;
+      refunded.set(s.sku, s.refunded);
       if (s.giveaway_units > 0) {
         given.push({ sku: s.sku, units: s.giveaway_units, unitCost: row.unitCost });
       }
@@ -245,11 +252,37 @@ export async function productProfit(
     const rows = sortSkuProfits(
       [...skus.values()].map((s) => {
         const mine = own.get(s.sku);
-        return skuProfit(s, {
-          keepRate: mine?.rate ?? keep.rate,
-          keepRateSource: mine ? "sku" : keep.from,
-          currency: info.currency,
-        });
+        if (mine) {
+          return skuProfit(s, {
+            keepRate: mine.rate,
+            keepRateSource: "sku",
+            currency: info.currency,
+          });
+        }
+        // Too few settled: Amazon's fee estimate for the listing, else the channel's rate.
+        const estimate = data.estimates.find(
+          (e) => e.channelId === channelId && e.sku === s.sku && e.currency === info.currency,
+        );
+        const estimated =
+          estimate && s.units > 0
+            ? estimatedKeepRate({
+                averagePrice: formatDecimal(parseDecimal(s.sales) / BigInt(s.units)),
+                estimate,
+                refunded: refunded.get(s.sku) ?? "0",
+                sales: s.sales,
+              })
+            : null;
+        return estimated !== null
+          ? skuProfit(s, {
+              keepRate: estimated,
+              keepRateSource: "estimate",
+              currency: info.currency,
+            })
+          : skuProfit(s, {
+              keepRate: keep.rate,
+              keepRateSource: keep.from,
+              currency: info.currency,
+            });
       }),
     ).filter((r) => r.verdict !== "no_activity");
     const channel = data.totals.get(channelId);
@@ -286,6 +319,7 @@ export async function productProfit(
       keepRate: keep.rate,
       keepRateFrom: keep.from,
       ownRates: rows.filter((r) => r.keepRateSource === "sku").length,
+      estimatedRates: rows.filter((r) => r.keepRateSource === "estimate").length,
       rows,
       unallocated,
       accountCosts: account,
