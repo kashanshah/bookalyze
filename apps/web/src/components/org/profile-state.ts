@@ -52,7 +52,14 @@ export function useProfileState(defaults: ProfileDefaults, countries: CountryOpt
   const [firstFiscalYearStart, setFirstFiscalYearStart] = useState(
     defaults.firstFiscalYearStart ?? "",
   );
-  const [subdivisions, setSubdivisions] = useState<{ code: string; name: string }[]>([]);
+  // The regions of the country they were loaded for: until the chosen country's arrive, there
+  // are none (so the old country's can't be picked, and the picker shows it's loading).
+  const [loadedSubdivisions, setLoadedSubdivisions] = useState<{
+    country: string;
+    rows: { code: string; name: string }[];
+  } | null>(null);
+  const subdivisionsLoading = loadedSubdivisions?.country !== countryCode;
+  const subdivisions = subdivisionsLoading ? [] : (loadedSubdivisions?.rows ?? []);
   // Changed through a picker (searchable dropdowns don't fire a form's native change event).
   const [touched, setTouched] = useState(false);
   const clearTouched = useCallback(() => setTouched(false), []);
@@ -68,9 +75,11 @@ export function useProfileState(defaults: ProfileDefaults, countries: CountryOpt
     fetch(`/api/reference/subdivisions?country=${countryCode}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((rows: { code: string; name: string }[]) => {
-        if (!cancelled) setSubdivisions(rows);
+        if (!cancelled) setLoadedSubdivisions({ country: countryCode, rows });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setLoadedSubdivisions({ country: countryCode, rows: [] });
+      });
     return () => {
       cancelled = true;
     };
@@ -103,6 +112,7 @@ export function useProfileState(defaults: ProfileDefaults, countries: CountryOpt
     subdivisionCode,
     setSubdivisionCode: touching(setSubdivisionCode),
     subdivisions,
+    subdivisionsLoading,
     baseCurrency,
     setBaseCurrency: touching(setBaseCurrency),
     timezone,

@@ -161,6 +161,11 @@ Real company details are entered in the app and never committed.
     the `guard_reconciled_entry` trigger refuses it too. A marketplace month or settlement whose
     figures changed after it was reconciled can only be posted again once that reconciliation
     (and any after it) is undone; the eBay page says so in its own words.
+  - **Matching a payout to a reconciled deposit** (`moveDepositToClearing`, all four
+    marketplaces): the deposit can't be replaced, so it stays as it is and one more entry moves
+    what it was categorized as to the clearing account (same books, bank line and its tick
+    untouched). Unmatching (`restoreDeposit`) reverses that entry. `depositCandidates` skips a
+    deposit matched this way (`deposit_original_entry_id` with a `deposit_entry_id`).
 - **In the forms:**
   - The entry form and the reversal dialog default to the first open day and warn inline.
   - Entries in a closed period show a "Closed period" badge.
