@@ -10,6 +10,7 @@ import {
   LedgerError,
   matchEbayPayout,
   postEbayMonth,
+  refreshEbayAdMetrics,
   saveEbaySetup,
   schema,
   unmatchEbayPayout,
@@ -127,6 +128,9 @@ export async function uploadEbayReportAction(
       .limit(1);
     if (!site) return null;
     const saved = await importEbayReport(tx, { orgId: ctx.org.id, rows, payouts });
+    if (ctx.profile) {
+      await refreshEbayAdMetrics(tx, { orgId: ctx.org.id, baseCurrency: ctx.profile.baseCurrency });
+    }
     const days = rows.map((r) => r.transactionDate.slice(0, 10)).sort();
     await audit(tx, {
       orgId: ctx.org.id,

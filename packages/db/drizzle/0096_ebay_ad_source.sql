@@ -1,0 +1,2 @@
+ALTER TABLE "ad_metrics" DROP CONSTRAINT "ad_metrics_source_valid";--> statement-breakpoint
+ALTER TABLE "ad_metrics" ADD CONSTRAINT "ad_metrics_source_valid" CHECK ("ad_metrics"."source" in ('amazon_ads', 'walmart_ads', 'ebay', 'upload'));

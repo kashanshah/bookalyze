@@ -1,9 +1,16 @@
-import type { EbayPayout, EbaySum, EbayTransaction } from "@bookalyze/core";
+import {
+  EBAY_ADVERTISING_FEE,
+  type EbayPayout,
+  type EbaySum,
+  type EbayTransaction,
+  ebayAdMetricRows,
+} from "@bookalyze/core";
 import { and, between, eq, inArray, like, notLike, sql } from "drizzle-orm";
+import { replaceAdMetrics } from "./ads";
 import type { Transaction } from "./client";
 import { importEbayPayouts } from "./ebay-posting";
 import { connections } from "./schema/banking";
-import { ebayTransactions, salesChannels } from "./schema/commerce";
+import { adMetrics, ebayTransactions, salesChannels } from "./schema/commerce";
 
 /**
  * eBay's money (phase 4d, slice 4): the Finances API's rows kept one by one, each on the eBay site
@@ -291,4 +298,75 @@ export async function saveEbaySyncState(
       settings: sql`${connections.settings} || jsonb_build_object('transactions', ${JSON.stringify(state)}::jsonb)`,
     })
     .where(and(eq(connections.id, connectionId), eq(connections.provider, "ebay")));
+}
+
+/**
+ * eBay's Promoted Listings spend as ad metrics (source `ebay`), made again from every ad fee kept
+ * (core `ebayAdMetricRows`): each site's fees on its orders by SKU, the rest tied to no product.
+ * Run after eBay's money comes in (and daily, as orders arrive), so Profit by product and the SKU
+ * profit and loss count eBay's ads per product. Returns how many rows it kept.
+ */
+export async function refreshEbayAdMetrics(
+  tx: Transaction,
+  input: { orgId: string; baseCurrency: string },
+): Promise<number> {
+  const fees = (
+    await tx
+      .select({
+        channelId: ebayTransactions.channelId,
+        date: sql<string>`${ebayTransactions.transactionDate}::text`,
+        orderId: ebayTransactions.orderId,
+        currency: ebayTransactions.currency,
+        amount: ebayTransactions.amount,
+        feeType: ebayTransactions.feeType,
+      })
+      .from(ebayTransactions)
+      .where(sql`${ebayTransactions.feeType} is not null`)
+  ).filter((f) => EBAY_ADVERTISING_FEE.test(f.feeType ?? ""));
+  await tx.delete(adMetrics).where(eq(adMetrics.source, "ebay"));
+  if (!fees.length) return 0;
+  const orderIds = [...new Set(fees.map((f) => f.orderId).filter(Boolean))] as string[];
+  const lines = orderIds.length
+    ? (
+        await tx.execute<{ order_id: string; sku: string; quantity: number; sales: string }>(sql`
+          select o.external_id as order_id, oi.sku, coalesce(oi.quantity_ordered, 0)::int as quantity,
+            (coalesce(oi.item_price, 0) - coalesce(oi.promotion_discount, 0))::text as sales
+          from orders o
+          join sales_channels sc on sc.id = o.channel_id and sc.kind = 'ebay'
+          join order_items oi on oi.order_id = o.id
+          where oi.sku is not null and o.external_id in ${orderIds}`)
+      ).rows.map((r) => ({
+        orderId: r.order_id,
+        sku: r.sku,
+        quantity: r.quantity,
+        sales: r.sales,
+      }))
+    : [];
+  let kept = 0;
+  // By site and currency: each keeps its own rows.
+  const groups = new Map<string, typeof fees>();
+  for (const f of fees) {
+    const key = `${f.channelId}|${f.currency}`;
+    groups.set(key, [...(groups.get(key) ?? []), f]);
+  }
+  for (const group of groups.values()) {
+    const first = group[0];
+    if (!first) continue;
+    const days = group.map((f) => f.date).sort();
+    kept += await replaceAdMetrics(tx, {
+      orgId: input.orgId,
+      channelId: first.channelId,
+      connectionId: null,
+      source: "ebay",
+      accountRef: "",
+      country: null,
+      currency: first.currency,
+      adType: "promoted_listings",
+      from: days[0] ?? first.date,
+      to: days.at(-1) ?? first.date,
+      rows: ebayAdMetricRows(group, lines),
+      baseCurrency: input.baseCurrency,
+    });
+  }
+  return kept;
 }
