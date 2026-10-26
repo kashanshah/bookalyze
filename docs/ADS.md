@@ -34,7 +34,7 @@ and SKU:
 | `organization_id` | Tenant (RLS) |
 | `channel_id` | The sales channel the ads ran on (Amazon.ca, Noon UAE…). Ads are kept only for the company's channels |
 | `connection_id` | The ads account it came from (null for an upload) |
-| `source` | `amazon_ads` (Amazon Ads API), `walmart_ads` (Walmart Connect) or `upload` (a file, e.g. Noon's Ad Manager export, later) |
+| `source` | `amazon_ads` (Amazon Ads API), `walmart_ads` (Walmart Connect), `ebay` (eBay's ad fees in its Finances rows) or `upload` (a file, e.g. Noon's Ad Manager export, later) |
 | `account_ref` | The ads account at the source: Amazon's profile ID, Noon's partner, eBay's seller |
 | `country` | The marketplace's country |
 | `date` | The day the spend happened, in the ads account's time zone |
@@ -350,7 +350,27 @@ client ID and secret in Vercel. Bookalyze never asks for passwords or one-time c
    UAE → Noon's API → "Reports this key can download", for any report named for ads, sponsored
    products or campaigns. If there's none: an upload of Ad Manager's CSV/XLSX export into the same
    table (`source = 'upload'`).
-2. **eBay** Promoted Listings through the Marketing API (`ad_type = promoted_listings`).
+2. ~~**eBay** Promoted Listings~~: done from eBay's own ad fees (below). Later, for impressions,
+   clicks and Priority (cost per click) spend per listing: the Marketing API's reports, which need
+   the `sell.marketing.readonly` scope (every company connects eBay again).
+
+### eBay Promoted Listings (from eBay's ad fees)
+
+- **Source:** the Finances rows already brought in (`ebay_transactions`): every charge whose fee
+  type is advertising (`AD_FEE`, promoted…; core `EBAY_ADVERTISING_FEE`), with the order eBay
+  ties it to. No new eBay access.
+- **Rows** (core `ebayAdMetricRows`, db `refreshEbayAdMetrics`, `source = 'ebay'`,
+  `ad_type = 'promoted_listings'`, `attribution_window` `30d`): an order's fees are shared over
+  its lines by what each sold for (`splitUnits`), dated by its first fee; the sale is the ad's
+  (General charges only when an ad led to the sale), so those lines' sales, units and one order
+  are its attributed sales. A fee given back takes it off (in full: nothing left). A fee on no
+  order Bookalyze has (Priority's click charges, an order not brought in) is spend tied to no
+  product. No impressions or clicks.
+- **When:** made again from every ad fee after eBay's money comes in (`syncEbayTransactions`, the
+  report upload) and in the daily job, so orders that arrive later tie their fees to products.
+- **Counted once:** with eBay rows in `ad_metrics`, the SKU profit and loss takes ads from them
+  (`hasAdsReports`) instead of the same fees in eBay's money rows, and Profit by product's keep
+  rate adds the books' advertising back, as for Amazon.
 3. **Sponsored Display** (`sdAdvertisedProduct`).
 4. ~~**Walmart Connect**~~: done (below).
 

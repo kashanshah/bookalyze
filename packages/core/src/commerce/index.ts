@@ -3,6 +3,7 @@ export * from "./amazon";
 export * from "./amazon-ads";
 export * from "./brand";
 export * from "./ebay";
+export * from "./ebay-ads";
 export * from "./ebay-api";
 export * from "./ebay-finances";
 export * from "./ebay-orders";

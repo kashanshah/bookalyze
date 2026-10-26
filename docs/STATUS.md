@@ -16,9 +16,8 @@ Cursor, Copilot…).
     security@amazon.com within 24 hours): [`docs/SECURITY.md`](SECURITY.md).
   - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
-_Last updated: 2026-10-22, advertising slice 3: Walmart Connect, ad spend per Walmart item per day
-through Bookalyze as an API partner, matched to SKUs and in Profit by product. Before it,
-advertising slice 2: the SKU profit and loss._
+_Last updated: 2026-10-26, advertising slice 4: eBay Promoted Listings, ad spend per SKU from
+eBay's own ad fees (no new eBay access), in Profit by product and the SKU profit and loss._
 
 ---
 
@@ -1747,6 +1746,23 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   vault (encryption key) problems, member and password errors.
 - Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
   paths kept, cause chains, Postgres codes and digests).
+
+### Advertising, slice 4: eBay Promoted Listings
+
+- **From the money already in** (core `ebayAdMetricRows`, db `refreshEbayAdMetrics`): every eBay
+  charge whose fee type is advertising (`AD_FEE`…) becomes ad spend in `ad_metrics`
+  (`source = 'ebay'`, `promoted_listings`; migration `0096_ebay_ad_source` adds the source). A fee
+  on an order is shared over its lines by sales and the sale counts as the ad's (General is paid
+  only when an ad sold it); a fee given back takes it off; a fee on no order (Priority's clicks,
+  an order not in yet) is spend tied to no product. No new eBay access, nothing to reconnect.
+- **Made again** from every ad fee after each eBay money sync and upload, and daily
+  (`refreshEbayAds` in `runEbayDaily`), so a fee finds its products once its order comes in.
+- **Where it shows:** Profit by product (eBay SKUs' ad spend, ACOS, TACOS) and the SKU profit and
+  loss, which now takes eBay's ads from `ad_metrics` instead of the money rows (counted once).
+- Not yet: impressions and clicks (the Marketing API's reports, a new eBay scope).
+- Tests: core `ebay-ads.test.ts` (shared by sales, given back, on no order); db `ebay-ads.test.ts`
+  (an order's fee by SKU, the rest untied, made again not added, isolation); e2e "ebay: bring in
+  eBay's money…" (the ad fee is eBay ad spend, once).
 
 ### Advertising, slice 3: Walmart Connect
 
@@ -3612,7 +3628,9 @@ Built like Noon and eBay: channels first, then the account, orders, money and th
 3. [ ] **Noon**: first check Noon's "Reports this key can download" for an ads report; otherwise an
    upload of Ad Manager's CSV/XLSX export into `ad_metrics` (`source = 'upload'`), its SKUs matched
    to Noon channels' Partner SKUs.
-4. [ ] **eBay Promoted Listings** through the Marketing API (`ad_type = promoted_listings`).
+4. [x] **eBay Promoted Listings**, from eBay's own ad fees (per SKU through their orders). Done in
+   advertising slice 4. Later: impressions, clicks and Priority spend per listing through the
+   Marketing API (a new eBay scope, so every company connects again).
 5. [ ] **Sponsored Display** (`sdAdvertisedProduct`, per SKU).
 6. [ ] Sponsored Brands shared by each ASIN's share of SB-attributed sales (`sbPurchasedProduct`).
    The SKU profit and loss already shares it as a choice, by Sponsored Products ad sales.

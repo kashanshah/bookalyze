@@ -1491,7 +1491,7 @@ export const AD_TYPES = [
   "promoted_listings",
   "other",
 ] as const;
-export const AD_SOURCES = ["amazon_ads", "walmart_ads", "upload"] as const;
+export const AD_SOURCES = ["amazon_ads", "walmart_ads", "ebay", "upload"] as const;
 
 /**
  * What a channel's ads cost and what they sold, per day, campaign and SKU, from any marketplace's
@@ -1554,7 +1554,10 @@ export const adMetrics = pgTable(
       columns: [t.organizationId, t.connectionId],
       foreignColumns: [connections.organizationId, connections.id],
     }),
-    check("ad_metrics_source_valid", sql`${t.source} in ('amazon_ads', 'walmart_ads', 'upload')`),
+    check(
+      "ad_metrics_source_valid",
+      sql`${t.source} in ('amazon_ads', 'walmart_ads', 'ebay', 'upload')`,
+    ),
     check(
       "ad_metrics_ad_type_valid",
       sql`${t.adType} in ('sponsored_products', 'sponsored_brands', 'sponsored_display', 'promoted_listings', 'other')`,

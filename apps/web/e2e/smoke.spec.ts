@@ -2491,6 +2491,15 @@ test("ebay: bring in eBay's money, see each site's month and Channel profit", as
   await page.getByRole("button", { name: "Bring in from eBay" }).click();
   await expect(page.getByText("eBay's money is up to date")).toBeVisible({ timeout: 30_000 });
 
+  // Promoted Listings: the ad fee is eBay's ad spend for Profit by product, tied to no product
+  // here (it's on no order), and not added twice by bringing in again.
+  const ads = await withOwnerDb((db) =>
+    db.query<{ ad_type: string; sku: string | null; spend: string }>(
+      `select ad_type, sku, spend::text from ad_metrics where source = 'ebay'`,
+    ),
+  );
+  expect(ads.rows).toEqual([{ ad_type: "promoted_listings", sku: null, spend: "2.2500" }]);
+
   // Channel profit has a column per eBay site, and one for what's the account's as a whole (the
   // ad fee and the transfer, on no order); what eBay paid out isn't known yet.
   const from = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);

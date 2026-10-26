@@ -30,6 +30,7 @@ import {
   placeEbayTransactionsByOrder,
   postEbayMonth,
   recordConnectionSync,
+  refreshEbayAdMetrics,
   saveEbaySyncState,
   schema,
   VaultError,
@@ -186,6 +187,8 @@ export async function syncEbayTransactions(
       payoutsBehind() || state.pending !== null || nextNoonWindow(state, today) !== null
         ? Date.now() >= deadline - MARGIN_MS
         : false;
+    // Promoted Listings' fees, by product, for Profit by product.
+    if (result.added || result.updated) await refreshEbayAds(ctx);
     await withOrg(getDb(), ctx, (tx) =>
       recordConnectionSync(tx, connection.id, { at: new Date(), error: null }),
     );
@@ -200,6 +203,18 @@ export async function syncEbayTransactions(
     );
   }
   return result;
+}
+
+/**
+ * Makes eBay's Promoted Listings ad metrics again from its ad fees (db `refreshEbayAdMetrics`),
+ * in the company's main currency where the fees are in it.
+ */
+export async function refreshEbayAds(ctx: { orgId: string; userId: string | null }) {
+  return withOrg(getDb(), ctx, async (tx) => {
+    const [profile] = await tx.select().from(schema.organizationProfiles).limit(1);
+    if (!profile) return 0;
+    return refreshEbayAdMetrics(tx, { orgId: ctx.orgId, baseCurrency: profile.baseCurrency });
+  });
 }
 
 /** Every payout dated in a window of days. */
@@ -293,6 +308,8 @@ export async function runEbayDaily(budgetMs: number): Promise<EbayDailyResult> {
             logWarn("ebay.daily_sync_error", { orgId: org.id, error: synced.error });
         }
       }
+      // Orders that came in since tie their ad fees to products.
+      await refreshEbayAds(ctx);
       if (!setup.settings.autoPost || !setup.settings.postFrom) continue;
 
       const months = await withOrg(getDb(), ctx, (tx) => ebayMonthsToPost(tx, today));
