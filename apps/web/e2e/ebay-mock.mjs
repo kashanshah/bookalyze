@@ -233,7 +233,10 @@ createServer((req, res) => {
           eventDate: new Date().toISOString(),
           publishDate: new Date().toISOString(),
           publishAttemptCount: 1,
-          data: { username: USER.username, userId: USER.userId, eiasToken: "e2e-eias" },
+          // ?stranger=1: an eBay user who isn't connected (eBay sends notices for everyone).
+          data: url.searchParams.has("stranger")
+            ? { username: "someone_on_ebay", userId: "stranger-0001", eiasToken: "e2e-eias-2" }
+            : { username: USER.username, userId: USER.userId, eiasToken: "e2e-eias" },
         },
       });
       const signature = createSign("sha1").update(body).sign(privateKey, "base64");

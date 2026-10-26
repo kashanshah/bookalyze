@@ -2409,6 +2409,13 @@ line** (`/commerce/profit/products/pnl`; one SKU at `…/pnl/[sku]`).
   API with an app token, ECDSA over SHA-1; 412 when it doesn't verify), then in each company
   (`withOrg`) disconnects connections to that eBay user and drops the user's id and name
   (`forgetEbayUser`), with an audit entry.
+  **eBay sends a notice for every eBay user who closes their account** (thousands a day), so a
+  notice is first checked against `connectedEbayUsers()` (`server/ebay-users.ts`): the connected
+  eBay user ids in Next.js' cache (`unstable_cache`, tag `ebay-connected-users`, read again
+  daily and at once on connect, disconnect and forget via `ebayUsersChanged()`). A stranger's
+  notice never touches the database. Before this (October 2026), every notice read the company
+  list and opened a transaction per company, which kept Neon's compute awake around the clock
+  and used up the free plan's 100 compute-hours (production down from 2026-10-24).
 - Not yet: orders, transactions and payouts (slices 3 and 4).
 - Tests: core `ebay-api.test.ts` (consent URL, tokens, user, errors, notices, signature header,
   key PEM); db `ebay.test.ts` (connection shared by the sites, later sites join, disconnect,

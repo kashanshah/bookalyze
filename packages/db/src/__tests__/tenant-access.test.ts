@@ -34,6 +34,7 @@ const REVIEWED_DIRECT_USE = [
   "server/reviews.ts", // review_request_orgs() for the hourly job; the rest in withOrg()
   "server/inbound-email.ts", // invoice_inbox_org() to find the company of a forwarded email; the rest in withOrg()
   "server/billing-webhook.ts", // billing_org_for_customer() to find the company of a Stripe customer; the rest in withBillingWriter()
+  "server/ebay-users.ts", // organization, to list connected eBay users once a day; their connections in withOrg()
   "app/admin/growth/page.tsx", // platform_funnel() and platform_signup_sources(): totals only, for platform admins
 ];
 

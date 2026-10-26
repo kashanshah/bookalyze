@@ -87,6 +87,7 @@ import {
   openEbayCredentials,
   signEbayState,
 } from "@/server/ebay";
+import { ebayUsersChanged } from "@/server/ebay-users";
 import { logError, logInfo, logWarn } from "@/server/log";
 import {
   checkNoonKey,
@@ -611,6 +612,7 @@ export async function disconnectEbayAction(slug: string): Promise<CommerceResult
     return true;
   });
   if (!done) return { ok: false, message: "eBay isn't connected." };
+  ebayUsersChanged();
   revalidate(slug);
   return { ok: true };
 }

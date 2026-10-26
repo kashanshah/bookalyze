@@ -21,6 +21,7 @@ import {
   readEbayState,
   sealEbayCredentials,
 } from "@/server/ebay";
+import { ebayUsersChanged } from "@/server/ebay-users";
 import { logWarn } from "@/server/log";
 import { isOrgAdmin } from "@/server/org";
 
@@ -114,6 +115,7 @@ export async function GET(request: NextRequest) {
       return true;
     });
     if (!found) return back("failed", "That eBay site isn't one of this company's channels.");
+    ebayUsersChanged();
     return back("connected");
   } catch (error) {
     if (error instanceof EbayError) return back("failed", error.message);
