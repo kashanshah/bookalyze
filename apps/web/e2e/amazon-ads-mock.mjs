@@ -42,7 +42,8 @@ const days = (from, to) => {
 
 /**
  * Every day: the maple mug's exact-match campaign (spend, and a sale every other day), an oak
- * board advertised with no sales at all, and a Sponsored Brands campaign with no SKU.
+ * board advertised with no sales at all, a Sponsored Brands campaign with no SKU, and the mug in
+ * a Sponsored Display campaign.
  */
 function rowsFor(report) {
   const all = days(report.startDate, report.endDate);
@@ -89,6 +90,22 @@ function rowsFor(report) {
         unitsSoldClicks7d: 0,
       },
     ]);
+  }
+  // Sponsored Display: the maple mug shown to audiences, a sale every third day.
+  if (report.configuration.reportTypeId === "sdAdvertisedProduct") {
+    return all.map((date, i) => ({
+      date,
+      campaignId: 71001,
+      campaignName: "Maple mug – audiences",
+      promotedAsin: "B0E2E00001",
+      promotedSku: "MAPLE-MUG",
+      impressions: 3000,
+      clicks: 2,
+      cost: 0.8,
+      sales: i % 3 === 0 ? 24.99 : 0,
+      purchases: i % 3 === 0 ? 1 : 0,
+      unitsSold: i % 3 === 0 ? 1 : 0,
+    }));
   }
   return all.map((date) => ({
     date,

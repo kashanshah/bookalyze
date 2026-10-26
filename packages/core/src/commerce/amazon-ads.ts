@@ -181,6 +181,27 @@ export const AMAZON_ADS_REPORTS: readonly {
     ],
     window: "14d",
   },
+  {
+    // Per promoted SKU like Sponsored Products; its sales count views and clicks over 14 days.
+    adType: "sponsored_display",
+    adProduct: "SPONSORED_DISPLAY",
+    reportTypeId: "sdAdvertisedProduct",
+    groupBy: ["advertiser"],
+    columns: [
+      "date",
+      "campaignId",
+      "campaignName",
+      "promotedAsin",
+      "promotedSku",
+      "impressions",
+      "clicks",
+      "cost",
+      "sales",
+      "purchases",
+      "unitsSold",
+    ],
+    window: "14d",
+  },
 ];
 
 /** The body of POST /reporting/reports for one ad type and days. */
@@ -231,8 +252,8 @@ export function parseAmazonAdsReportStatus(json: unknown): AmazonAdsReportStatus
 
 /**
  * A finished report's rows (the downloaded JSON array) as ad metric rows. Sponsored Products'
- * rows are per advertised SKU; Sponsored Brands' per campaign (no SKU). Rows outside the asked
- * days, or without a day, are dropped.
+ * rows are per advertised SKU and Sponsored Display's per promoted SKU; Sponsored Brands' per
+ * campaign (no SKU). Rows outside the asked days, or without a day, are dropped.
  */
 export function parseAmazonAdsReport(
   adType: AdType,
@@ -242,6 +263,7 @@ export function parseAmazonAdsReport(
   if (!Array.isArray(json)) throw new Error("Amazon's ads report didn't make sense.");
   const spec = AMAZON_ADS_REPORTS.find((r) => r.adType === adType);
   const products = adType === "sponsored_products";
+  const display = adType === "sponsored_display";
   return json.flatMap((raw): AdMetricRow[] => {
     const r = record(raw);
     const date = text(r.date).slice(0, 10);
@@ -252,8 +274,16 @@ export function parseAmazonAdsReport(
         adType,
         campaignId: text(r.campaignId),
         campaignName: text(r.campaignName) || null,
-        sku: products ? text(r.advertisedSku) || null : null,
-        listingRef: products ? text(r.advertisedAsin) || null : null,
+        sku: products
+          ? text(r.advertisedSku) || null
+          : display
+            ? text(r.promotedSku) || null
+            : null,
+        listingRef: products
+          ? text(r.advertisedAsin) || null
+          : display
+            ? text(r.promotedAsin) || null
+            : null,
         spend: money(r.cost ?? r.spend),
         impressions: count(r.impressions),
         clicks: count(r.clicks),

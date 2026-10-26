@@ -507,6 +507,9 @@ describe("Amazon Ads API", () => {
     expect(
       amazonAdsReportRequest("sponsored_brands", "2026-10-01", "2026-10-01").configuration,
     ).toMatchObject({ reportTypeId: "sbCampaigns" });
+    expect(
+      amazonAdsReportRequest("sponsored_display", "2026-10-01", "2026-10-01").configuration,
+    ).toMatchObject({ adProduct: "SPONSORED_DISPLAY", reportTypeId: "sdAdvertisedProduct" });
   });
 
   it("reads report statuses and Amazon's duplicate answer", () => {
@@ -530,7 +533,7 @@ describe("Amazon Ads API", () => {
     );
   });
 
-  it("reads Sponsored Products per SKU and Sponsored Brands per campaign, inside the days", () => {
+  it("reads Sponsored Products and Display per SKU and Sponsored Brands per campaign, inside the days", () => {
     const sp = parseAmazonAdsReport(
       "sponsored_products",
       [
@@ -583,6 +586,42 @@ describe("Amazon Ads API", () => {
       { from: "2026-10-01", to: "2026-10-15" },
     );
     expect(sb[0]).toMatchObject({ sku: null, spend: "3.1000", attributionWindow: "14d" });
+    const sd = parseAmazonAdsReport(
+      "sponsored_display",
+      [
+        {
+          date: "2026-10-03",
+          campaignId: 7,
+          campaignName: "Boards – audiences",
+          promotedAsin: "B0TITAN",
+          promotedSku: "BOARD-TI",
+          impressions: 5000,
+          clicks: 9,
+          cost: 6.5,
+          sales: 64.99,
+          purchases: 1,
+          unitsSold: 1,
+        },
+      ],
+      { from: "2026-10-01", to: "2026-10-15" },
+    );
+    expect(sd).toEqual([
+      {
+        date: "2026-10-03",
+        adType: "sponsored_display",
+        campaignId: "7",
+        campaignName: "Boards – audiences",
+        sku: "BOARD-TI",
+        listingRef: "B0TITAN",
+        spend: "6.5000",
+        impressions: 5000,
+        clicks: 9,
+        attributedSales: "64.9900",
+        attributedOrders: 1,
+        attributedUnits: 1,
+        attributionWindow: "14d",
+      },
+    ]);
     expect(() => parseAmazonAdsReport("sponsored_products", {}, { from: "a", to: "b" })).toThrow();
   });
 
