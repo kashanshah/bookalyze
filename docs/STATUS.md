@@ -16,8 +16,8 @@ Cursor, Copilot…).
     security@amazon.com within 24 hours): [`docs/SECURITY.md`](SECURITY.md).
   - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
-_Last updated: 2026-10-26, advertising slice 4: eBay Promoted Listings, ad spend per SKU from
-eBay's own ad fees (no new eBay access), in Profit by product and the SKU profit and loss._
+_Last updated: 2026-10-26, advertising slice 5: Amazon Sponsored Display, ad spend per SKU per
+day from a third Amazon Ads report, in Profit by product and the SKU profit and loss._
 
 ---
 
@@ -1749,6 +1749,18 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   vault (encryption key) problems, member and password errors.
 - Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
   paths kept, cause chains, Postgres codes and digests).
+
+### Advertising, slice 5: Amazon Sponsored Display
+
+- **A third Amazon Ads report** (core `AMAZON_ADS_REPORTS`): `sdAdvertisedProduct`
+  (`SPONSORED_DISPLAY`, by advertiser, daily): each promoted SKU and ASIN's cost, impressions,
+  clicks, and `sales`, `purchases`, `unitsSold` (views and clicks, 14 days). Read like Sponsored
+  Products (`parseAmazonAdsReport`), into `ad_metrics` as `sponsored_display` per SKU (an ASIN
+  without a SKU finds it in the channel's list). Comes in with the others: same windows, same
+  jobs, same "Bring in ads now". No new access: the Ads consent already covers it.
+- So Profit by product and the SKU profit and loss count each product's Display spend and sales.
+- Tests: core `ads.test.ts` (the request, a Display row per SKU); e2e "ads: connect Amazon Ads…"
+  (the stand-in's Display rows land per SKU with their ASIN).
 
 ### Advertising, slice 4: eBay Promoted Listings
 
@@ -3634,7 +3646,7 @@ Built like Noon and eBay: channels first, then the account, orders, money and th
 4. [x] **eBay Promoted Listings**, from eBay's own ad fees (per SKU through their orders). Done in
    advertising slice 4. Later: impressions, clicks and Priority spend per listing through the
    Marketing API (a new eBay scope, so every company connects again).
-5. [ ] **Sponsored Display** (`sdAdvertisedProduct`, per SKU).
+5. [x] **Sponsored Display** (`sdAdvertisedProduct`, per SKU). Done in advertising slice 5.
 6. [ ] Sponsored Brands shared by each ASIN's share of SB-attributed sales (`sbPurchasedProduct`).
    The SKU profit and loss already shares it as a choice, by Sponsored Products ad sales.
 7. [x] **Walmart Connect** (Sponsored Search, per item, through Bookalyze as an API partner).

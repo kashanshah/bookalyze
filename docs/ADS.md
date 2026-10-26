@@ -155,7 +155,8 @@ share would make every product look a little worse and hide which one the campai
 On the SKU profit and loss (§6b) it can be shared out instead, as a choice: by each SKU's
 Sponsored Products ad sales for now, by SB-attributed sales (`sbPurchasedProduct`) later.
 
-Sponsored Display has an advertised-product report with SKUs; it's next (same parser shape).
+Sponsored Display is per SKU (`sdAdvertisedProduct`, its promoted SKU and ASIN), so it's tied to
+products like Sponsored Products.
 
 ## 5. Amazon Ads API sync
 
@@ -171,6 +172,8 @@ Sponsored Display has an advertised-product report with SKUs; it's next (same pa
     impressions, clicks, cost, `sales7d`, `purchases7d`, `unitsSoldClicks7d`.
   - `sbCampaigns`, group by `campaign`, daily: date, campaign, impressions, clicks, cost, `sales`,
     `purchases`, `unitsSold` (14 days).
+  - `sdAdvertisedProduct`, group by `advertiser`, daily: date, campaign, promoted SKU and ASIN,
+    impressions, clicks, cost, `sales`, `purchases`, `unitsSold` (views and clicks, 14 days).
   - At most 31 days a report. Poll `GET /reporting/reports/{id}`; on `COMPLETED` download the
     gzipped JSON from its `url`.
 - **When**: the daily job asks for each channel's window; the 5-minute job collects finished
@@ -371,7 +374,7 @@ client ID and secret in Vercel. Bookalyze never asks for passwords or one-time c
 - **Counted once:** with eBay rows in `ad_metrics`, the SKU profit and loss takes ads from them
   (`hasAdsReports`) instead of the same fees in eBay's money rows, and Profit by product's keep
   rate adds the books' advertising back, as for Amazon.
-3. **Sponsored Display** (`sdAdvertisedProduct`).
+3. ~~**Sponsored Display**~~: done (`sdAdvertisedProduct`, §5).
 4. ~~**Walmart Connect**~~: done (below).
 
 ### Walmart Connect (Sponsored Search)

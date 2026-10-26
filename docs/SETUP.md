@@ -104,7 +104,7 @@ Login with Amazon clients. Design: `docs/ADS.md`.
    only on a separate development profile). Allowed Origins can stay empty.
 3. **Ads API access.** Apply at advertising.amazon.com → Amazon Ads API → Apply for access (the
    onboarding form), signed in with the Amazon Ads account Kazomo advertises with. Describe the use:
-   "Reads Sponsored Products and Sponsored Brands reports (spend and attributed sales per product
+   "Reads Sponsored Products, Sponsored Brands and Sponsored Display reports (spend and attributed sales per product
    per day) for the advertiser's own accounting and profit reports; no campaign management." Amazon
    reviews it (usually days) and emails when approved. Offering it to other companies' accounts may
    need Amazon's partner (tool provider) route; Amazon says which when it reviews.

@@ -2008,6 +2008,14 @@ test("ads: connect Amazon Ads, bring in ad spend, and see each product's profit 
     await expect(ads.getByText(/Ad spend in through/)).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 80_000 });
 
+  // Sponsored Display comes in per SKU too: the mug's, with its ASIN.
+  const display = await withOwnerDb((db) =>
+    db.query<{ sku: string; listing_ref: string }>(
+      `select distinct sku, listing_ref from ad_metrics where ad_type = 'sponsored_display'`,
+    ),
+  );
+  expect(display.rows).toEqual([{ sku: "MAPLE-MUG", listing_ref: "B0E2E00001" }]);
+
   // Profit by product: the mug's ads, the board whose ads sold nothing, Sponsored Brands apart.
   await ads.getByRole("link", { name: /Profit by product, after ads/ }).click();
   await expect(page.getByRole("heading", { name: "Profit by product" })).toBeVisible();
