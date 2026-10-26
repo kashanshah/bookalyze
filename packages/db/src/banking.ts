@@ -6,6 +6,7 @@ import {
   type JournalErrors,
   type LedgerAccount,
   pairConversions,
+  parseDecimal,
   prepareJournalEntry,
   prepareTransfer,
   transactionLines,
@@ -288,10 +289,11 @@ export async function importBankLines(
     skipped: [],
   };
   if (!input.lines.length) return result;
+  const lines = await separateReversals(tx, input.lines);
 
   const inserted: BankLineRow[] = [];
-  for (let i = 0; i < input.lines.length; i += 200) {
-    const chunk = input.lines.slice(i, i + 200);
+  for (let i = 0; i < lines.length; i += 200) {
+    const chunk = lines.slice(i, i + 200);
     const rows = await tx
       .insert(bankLines)
       .values(
@@ -320,7 +322,7 @@ export async function importBankLines(
   // transaction was removed comes back only when a statement is uploaded again (restoreRemoved);
   // a sync leaves it removed. An edit or a merge points the line at the entry that still stands,
   // so that one is never posted again.
-  const known = input.lines.map((l) => l.externalId).filter((id) => !insertedIds.has(id));
+  const known = lines.map((l) => l.externalId).filter((id) => !insertedIds.has(id));
   const removed = sql`exists (
     select 1 from ${journalEntries} e
     where e.id = ${bankLines.journalEntryId} and e.reversed_by_entry_id is not null
@@ -340,7 +342,7 @@ export async function importBankLines(
         // Two syncs at once: the second waits here, then skips what the first just posted.
         .for("update")
     : [];
-  result.duplicates = input.lines.length - inserted.length - retry.length;
+  result.duplicates = lines.length - inserted.length - retry.length;
 
   const done = await postBankLines(tx, { ...input, rows: [...inserted, ...retry] });
   result.posted = done.posted;
@@ -348,6 +350,38 @@ export async function importBankLines(
   result.categorized = done.categorized;
   result.skipped = done.skipped;
   return result;
+}
+
+const isCredit = (amount: string) => parseDecimal(amount) > 0n;
+
+/**
+ * Some banks give a refund the same ID as the charge it reverses (Wise does for card refunds:
+ * both carry the card transaction's reference). Matched on ID alone, the refund would be taken
+ * for the charge seen again and dropped. A line whose ID is already used by one going the other
+ * way (in the books or earlier in this batch) gets its own ID: the original plus ":credit" or
+ * ":debit". IDs of lines already stored never change, so a sync run again is still a duplicate.
+ */
+async function separateReversals(tx: Transaction, lines: readonly FeedLine[]): Promise<FeedLine[]> {
+  const ids = [...new Set(lines.map((l) => l.externalId))];
+  const stored = new Map<string, boolean>();
+  for (let i = 0; i < ids.length; i += 500) {
+    const rows = await tx
+      .select({ externalId: bankLines.externalId, amount: bankLines.amount })
+      .from(bankLines)
+      .where(inArray(bankLines.externalId, ids.slice(i, i + 500)));
+    for (const r of rows) stored.set(r.externalId, isCredit(r.amount));
+  }
+  const seen = new Map(stored);
+  return lines.map((l) => {
+    const credit = isCredit(l.amount);
+    const first = seen.get(l.externalId);
+    if (first === undefined) {
+      seen.set(l.externalId, credit);
+      return l;
+    }
+    if (first === credit) return l;
+    return { ...l, externalId: `${l.externalId}:${credit ? "credit" : "debit"}` };
+  });
 }
 
 const toLine = (row: BankLineRow): FeedLine => ({
