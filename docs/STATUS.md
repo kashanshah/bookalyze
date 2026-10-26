@@ -430,7 +430,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
 - **Bank lines** (migration `0017_bank_lines`): every transaction a bank sends is stored once in
   `bank_lines`, unique on `(organization_id, external_id)` (Wise: `wise:<balance>:<reference>`; a
   statement upload will hash its rows the same way). Syncing again, overlapping windows or
-  uploading the same file twice can't add it twice. Status `posted` (`journal_entry_id`) or
+  uploading the same file twice can't add it twice. Wise gives a card refund the same reference
+  as the charge; a line whose ID is already used by one going the other way gets `:credit` or
+  `:debit` added (`separateReversals()`, 2026-10-26), so refunds aren't dropped as duplicates.
+  Status `posted` (`journal_entry_id`) or
   `pending` (`reason`, e.g. no rate yet; retried every sync). A posted line whose transaction was
   removed stays removed on a sync; only uploading the statement again posts it again
   (`importBankLines(…, { restoreRemoved: true })`, decided 2026-10-08). If that second post can't be made (an

@@ -214,6 +214,34 @@ describe("bank connections", () => {
     expect(lines.find((l) => l.accountId === fees)?.amount).toBe("0.0400");
   });
 
+  it("brings in a card refund that reuses the charge's ID, on a later sync and in the same one", async () => {
+    const charge = line({
+      feedId: cadFeed,
+      externalId: "wise:10:CARD-77",
+      amount: "-35.0000",
+      kind: "card",
+      description: "Card at Example Software",
+    });
+    const refund = { ...charge, amount: "35.0000", description: "Refund from Example Software" };
+    expect((await sync([charge])).posted).toBe(1);
+    expect((await sync([refund, charge])).posted).toBe(1);
+    // Synced again: both are duplicates now.
+    expect(await sync([charge, refund])).toMatchObject({ posted: 0, duplicates: 2 });
+    const ids = (await entriesOf(orgA)).map((e) => e.sourceId);
+    expect(ids).toContain("wise:10:CARD-77");
+    expect(ids).toContain("wise:10:CARD-77:credit");
+
+    const hold = line({
+      feedId: cadFeed,
+      externalId: "wise:10:CARD-78",
+      amount: "-1.3900",
+      kind: "card",
+      description: "Card at Example Design",
+    });
+    const release = { ...hold, amount: "1.3900" };
+    expect((await sync([hold, release])).posted).toBe(2);
+  });
+
   it("converts a foreign-currency line at the day's rate", async () => {
     const usdIn = line({
       feedId: usdFeed,
