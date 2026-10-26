@@ -3,6 +3,7 @@ import { forgetEbayUser, getDb, schema, withOrg } from "@bookalyze/db";
 import { type NextRequest, NextResponse } from "next/server";
 import { audit } from "@/server/audit";
 import { ebayApp, ebayChallengeResponse, verifyEbayNotice } from "@/server/ebay";
+import { connectedEbayUsers, ebayUsersChanged } from "@/server/ebay-users";
 import { logError, logInfo, logWarn } from "@/server/log";
 
 /**
@@ -35,6 +36,9 @@ export async function POST(request: NextRequest) {
     return new NextResponse(null, { status: 204 });
   }
   const { userId } = notice;
+  if (!(await connectedEbayUsers()).includes(userId)) {
+    return new NextResponse(null, { status: 204 });
+  }
   // Every company is checked in its own withOrg(): nothing else is read outside it.
   const orgs = await getDb().select({ id: schema.organization.id }).from(schema.organization);
   let forgotten = 0;
@@ -57,6 +61,7 @@ export async function POST(request: NextRequest) {
       logError("ebay.notice_failed", error, { orgId: org.id });
     }
   }
+  if (forgotten) ebayUsersChanged();
   logInfo("ebay.account_deleted", { connections: forgotten });
   return new NextResponse(null, { status: 204 });
 }

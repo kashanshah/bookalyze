@@ -2344,6 +2344,17 @@ test("ebay: connect the eBay account on eBay's page, test it, and handle eBay's 
   expect(forged.status()).toBe(412);
   await page.reload();
   await expect(page.getByRole("link", { name: /^eBay US/ })).toContainText("Connected");
+  // Someone else on eBay closing their account (most notices): answered, nothing changes.
+  const stranger = (await (
+    await fetch("http://localhost:4013/test/deletion-notice?stranger=1")
+  ).json()) as { body: string; header: string };
+  const theirs = await request.post("/api/ebay/account-deletion", {
+    data: stranger.body,
+    headers: { "Content-Type": "application/json", "X-EBAY-SIGNATURE": stranger.header },
+  });
+  expect(theirs.status()).toBe(204);
+  await page.reload();
+  await expect(page.getByRole("link", { name: /^eBay US/ })).toContainText("Connected");
   const real = await request.post("/api/ebay/account-deletion", {
     data: notice.body,
     headers: { "Content-Type": "application/json", "X-EBAY-SIGNATURE": notice.header },
