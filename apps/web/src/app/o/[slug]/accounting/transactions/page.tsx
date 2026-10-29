@@ -57,6 +57,7 @@ export default async function TransactionsPage({
 }: {
   params: Promise<{ slug: string }>;
   searchParams: Promise<{
+    entry?: string;
     account?: string | string[];
     category?: string | string[];
     contact?: string;
@@ -96,6 +97,8 @@ export default async function TransactionsPage({
   const status = statuses.join(",");
   const q = (sp.q ?? "").slice(0, 100);
   const contact = sp.contact && UUID.test(sp.contact) ? sp.contact : "";
+  // A link to one transaction (from its journal entry or a purchase order) shows just that one.
+  const entry = sp.entry && UUID.test(sp.entry) ? sp.entry : "";
 
   const {
     result,
@@ -125,6 +128,7 @@ export default async function TransactionsPage({
         ? transferPairs.flatMap((p) => [p.outId, p.inId])
         : undefined,
       search: q || null,
+      entryIds: entry ? [entry] : null,
       limit: perPage,
       offset: (page - 1) * perPage,
     });
@@ -335,6 +339,7 @@ export default async function TransactionsPage({
         <TransactionList
           rows={rows}
           filters={{
+            entry,
             account: accountFilter,
             category,
             contact,

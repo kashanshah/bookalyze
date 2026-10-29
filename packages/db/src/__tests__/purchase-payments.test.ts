@@ -1,6 +1,8 @@
 import { prepareJournalEntry, transactionLines } from "@bookalyze/core";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Transaction, withOrg } from "../client";
+import { contactTotals } from "../contacts";
 import { createProduct } from "../inventory";
 import { createDefaultChart, postJournalEntry } from "../ledger";
 import {
@@ -238,6 +240,28 @@ describe("purchase order payments", () => {
       }),
     );
     expect(await scoped((tx) => listPurchasePayments(tx, po.id))).toHaveLength(1);
+  });
+
+  it("counts a payment for whoever it paid, even when the transaction names no one", async () => {
+    const po = await order();
+    const before = await scoped((tx) => contactTotals(tx, shipperId));
+    const paid = await payment("120.00", "Customs broker");
+    await scoped((tx) =>
+      addPurchasePayment(tx, {
+        orgId,
+        userId: null,
+        purchaseOrderId: po.id,
+        journalEntryId: paid.id,
+        contactId: shipperId,
+        receiptId: null,
+        label: "Customs",
+        amount: "120.00",
+      }),
+    );
+    // The transaction names no one, but the shipper's totals include it through the payment.
+    const after = await scoped((tx) => contactTotals(tx, shipperId));
+    expect(Number(after.paid) - Number(before.paid)).toBe(120);
+    expect(after.transactions - before.transactions).toBe(1);
   });
 
   it("takes no payments on a cancelled order", async () => {

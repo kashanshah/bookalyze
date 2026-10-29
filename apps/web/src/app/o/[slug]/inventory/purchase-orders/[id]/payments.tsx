@@ -439,8 +439,18 @@ function PaymentRow({
         ) : null}
       </span>
       <Amount value={p.amount} currency={p.currency} locale={locale} className="tabular-nums" />
+      {p.removed ? null : (
+        <Link
+          href={`/o/${slug}/accounting/transactions?entry=${p.journalEntryId}`}
+          className="inline-flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground"
+        >
+          Transaction
+          <ExternalLink className="size-3" />
+        </Link>
+      )}
       <Link
         href={`/o/${slug}/accounting/journal/${p.journalEntryId}`}
+        title="Journal entry"
         className="inline-flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground"
       >
         {p.entryNumber}

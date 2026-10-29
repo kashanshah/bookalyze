@@ -1,7 +1,7 @@
 "use client";
 
 import { formatMoney, mergeProblem, transferMatchProblem } from "@bookalyze/core";
-import { ArrowRightLeft, ExternalLink, GitMerge, Split, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, ExternalLink, GitMerge, Split, Trash2, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -23,7 +23,9 @@ import {
   matchTransferAction,
   mergeTransactionsAction,
   removeTransactionsAction,
+  setContactAction,
 } from "./actions";
+import { ContactPicker } from "./contact-picker";
 import type { TxFormContext, TxRow } from "./types";
 
 const entryNo = (number: string) => Number.parseInt(number.replace(/\D/g, ""), 10) || 0;
@@ -192,9 +194,15 @@ export function SelectionBar({
   const [confirming, setConfirming] = useState(false);
   const [matching, setMatching] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [settingContact, setSettingContact] = useState(false);
+  const [contactId, setContactId] = useState("");
+  const [contacts, setContacts] = useState(ctx.contacts);
   const [pending, start] = useTransition();
   const name = (id?: string) => (id ? (ctx.accountNames[id] ?? "Unknown account") : "—");
   if (!selected.length) return null;
+  // Money in has customers, money out vendors; a mix picks from vendors (anyone can be both).
+  const contactKind = selected.every((r) => r.kind === "deposit") ? "deposit" : "withdrawal";
+  const role = contactKind === "deposit" ? "customer" : "vendor";
 
   const [a, b] = [...selected].sort((x, y) => entryNo(x.number) - entryNo(y.number));
   const problem =
@@ -233,6 +241,27 @@ export function SelectionBar({
       }
     });
 
+  const assignContact = () =>
+    start(async () => {
+      const result = await setContactAction(
+        ctx.slug,
+        selected.map((r) => r.id),
+        contactId || null,
+      );
+      if (!result.ok) return void toast.error(result.message);
+      setSettingContact(false);
+      setContactId("");
+      onClear();
+      const changed = `${result.changed} ${result.changed === 1 ? "transaction" : "transactions"} updated`;
+      if (result.kept) {
+        toast.warning(result.changed ? changed : "Nothing changed", {
+          description: `${result.kept} couldn't be: ${result.reasons[0] ?? ""}`,
+        });
+      } else {
+        toast.success(changed);
+      }
+    });
+
   const match = () =>
     start(async () => {
       if (!a || !b) return;
@@ -262,6 +291,15 @@ export function SelectionBar({
           <p className="font-medium text-sm">{selected.length} selected</p>
           <p className="line-clamp-2 text-muted-foreground text-xs">{hint}</p>
         </div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setSettingContact(true)}
+          aria-label={`Set ${role} on ${selected.length} selected`}
+        >
+          <UserRound />
+          <span className="hidden sm:inline">{role === "customer" ? "Customer" : "Vendor"}</span>
+        </Button>
         <Button
           type="button"
           variant="outline"
@@ -297,6 +335,41 @@ export function SelectionBar({
           <X />
         </Button>
       </div>
+
+      <Dialog open={settingContact} onOpenChange={setSettingContact}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Set the {role} on {selected.length}{" "}
+              {selected.length === 1 ? "transaction" : "transactions"}
+            </DialogTitle>
+            <DialogDescription>
+              Who the money was {contactKind === "deposit" ? "from" : "paid to"}, so it counts in
+              their totals on Customers & vendors. Leave it empty to take it off. Reconciled
+              transactions change too; transfers and closed periods are left alone.
+            </DialogDescription>
+          </DialogHeader>
+          <ContactPicker
+            slug={ctx.slug}
+            kind={contactKind}
+            value={contactId}
+            onChange={setContactId}
+            contacts={contacts}
+            onCreated={(c) =>
+              setContacts((list) => [...list, c].sort((x, y) => x.name.localeCompare(y.name)))
+            }
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setSettingContact(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={assignContact} disabled={pending}>
+              {pending ? <Spinner /> : <UserRound />}
+              {contactId ? `Set on ${selected.length}` : `Clear on ${selected.length}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={removing} onOpenChange={setRemoving}>
         <DialogContent>

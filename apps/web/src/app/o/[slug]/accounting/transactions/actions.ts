@@ -28,6 +28,7 @@ import {
   postJournalEntry,
   replaceJournalEntry,
   schema,
+  setEntryContact,
   setTransactionReviewed,
   TransferError,
   unmatchTransfer,
@@ -62,8 +63,16 @@ function closedMessage(ctx: AccountingContext, lockedThrough: string) {
   return `Your books are closed through ${formatDate(lockedThrough, ctx.profile.locale, "long")}.`;
 }
 
-/** Loads the entry being edited or removed and checks it's a current, open transaction. */
-async function loadEditable(ctx: AccountingContext, id: string) {
+/**
+ * Loads the entry being edited or removed and checks it's a current, open transaction. A
+ * reconciled one can still be edited (`reconciled: "edit"`) where its statement doesn't care;
+ * `replaceJournalEntry` refuses a change to its date, amount or account.
+ */
+async function loadEditable(
+  ctx: AccountingContext,
+  id: string,
+  options: { reconciled?: "edit" | "refuse" } = {},
+) {
   return inOrg(ctx, async (tx) => {
     const [entry] = await tx
       .select()
@@ -79,7 +88,8 @@ async function loadEditable(ctx: AccountingContext, id: string) {
         error: `${closedMessage(ctx, locked)} Transactions dated in a closed period can't be changed.`,
       };
     }
-    const reconciled = await entryReconciledThrough(tx, entry.id);
+    const reconciled =
+      options.reconciled === "edit" ? null : await entryReconciledThrough(tx, entry.id);
     if (reconciled) {
       return {
         error: `This transaction is reconciled to your statement of ${formatDate(reconciled, ctx.profile.locale, "long")}. Undo that reconciliation to change it.`,
@@ -253,7 +263,7 @@ export async function saveTransactionAction(
   }
 
   if (value.id) {
-    const editable = await loadEditable(ctx, value.id);
+    const editable = await loadEditable(ctx, value.id, { reconciled: "edit" });
     if ("error" in editable) return { ok: false, message: editable.error };
   }
 
@@ -516,6 +526,70 @@ export async function removeTransactionsAction(
   }
   if (removed) revalidate(slug);
   return { ok: true, removed, kept, reasons: [...reasons] };
+}
+
+/**
+ * Puts a customer or vendor on several transactions at once (or takes it off with null). Each
+ * is reposted like an edit; reconciled ones too, since who it was with isn't on the statement.
+ * Transfers, and those in a closed period, are left alone and counted.
+ */
+export async function setContactAction(
+  slug: string,
+  entryIds: string[],
+  contactId: string | null,
+): Promise<
+  { ok: true; changed: number; kept: number; reasons: string[] } | { ok: false; message: string }
+> {
+  const ctx = await getAccountingContext(slug);
+  const parsed = z.array(idSchema).min(1).max(200).safeParse(entryIds);
+  if (!parsed.success) return { ok: false, message: "Pick up to 200 transactions." };
+  if (contactId) {
+    const contact = await inOrg(ctx, (tx) => getContact(tx, contactId));
+    if (!contact) return { ok: false, message: "That customer or vendor no longer exists." };
+  }
+  let changed = 0;
+  let kept = 0;
+  const reasons = new Set<string>();
+  for (const entryId of new Set(parsed.data)) {
+    const editable = await loadEditable(ctx, entryId, { reconciled: "edit" });
+    if ("error" in editable) {
+      kept++;
+      reasons.add(editable.error ?? "It couldn't be changed.");
+      continue;
+    }
+    try {
+      const posted = await inOrg(ctx, async (tx) => {
+        const next = await setEntryContact(tx, {
+          orgId: ctx.org.id,
+          userId: ctx.session.user.id,
+          entryId,
+          contactId,
+        });
+        if (next) {
+          await audit(tx, {
+            orgId: ctx.org.id,
+            actorUserId: ctx.session.user.id,
+            action: "transaction.updated",
+            entityType: "journal_entry",
+            entityId: next.id,
+            after: { replaces: entryId, contactId, bulk: true },
+          });
+        }
+        return next;
+      });
+      if (posted) changed++;
+      else if (editable.entry.contactId !== contactId) {
+        kept++;
+        reasons.add("Transfers between your own accounts have no customer or vendor.");
+      }
+    } catch (error) {
+      if (!(error instanceof LedgerError)) throw error;
+      kept++;
+      reasons.add(error.message);
+    }
+  }
+  if (changed) revalidate(slug);
+  return { ok: true, changed, kept, reasons: [...reasons] };
 }
 
 /** Checks every entry can still be changed (current, open period, not reconciled). */

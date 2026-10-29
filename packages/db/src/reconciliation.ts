@@ -1,11 +1,13 @@
 import {
   type AccountType,
   isMoneyAccountSubtype,
+  parseDecimal,
   type ReconciliationTotals,
   reconciliationTotals,
 } from "@bookalyze/core";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
+import { LedgerError } from "./ledger";
 import { accounts, contacts, journalEntries, journalLines } from "./schema/accounting";
 import { reconciliationLines, reconciliations } from "./schema/reconciliation";
 
@@ -340,4 +342,90 @@ export async function entryReconciledThrough(
     .where(and(eq(journalLines.journalEntryId, entryId), eq(reconciliations.status, "completed")))
     .limit(1);
   return row?.date ?? null;
+}
+
+/**
+ * Moves an edited transaction's ticks to the entry that replaced it (`from` was reversed, `to`
+ * posted, in this database transaction). Each tick goes to a line of `to` with the same account,
+ * amount and currency. In a completed reconciliation that line has to be dated within the same
+ * statement period too, or the edit is refused: what the statement shows can't change, only the
+ * category, description and customer or vendor. A tick in one still in progress that finds no
+ * such line is left behind, so that transaction drops out of it as before.
+ */
+export async function moveReconciliationTicks(
+  tx: Transaction,
+  input: { from: string; to: string },
+): Promise<void> {
+  const ticks = await tx
+    .select({
+      lineId: reconciliationLines.journalLineId,
+      accountId: journalLines.accountId,
+      amount: journalLines.amount,
+      currency: journalLines.currency,
+      status: reconciliations.status,
+      statementDate: reconciliations.statementDate,
+      reconciliationAccountId: reconciliations.accountId,
+      account: accounts.name,
+    })
+    .from(reconciliationLines)
+    .innerJoin(journalLines, eq(journalLines.id, reconciliationLines.journalLineId))
+    .innerJoin(reconciliations, eq(reconciliations.id, reconciliationLines.reconciliationId))
+    .innerJoin(accounts, eq(accounts.id, reconciliations.accountId))
+    .where(eq(journalLines.journalEntryId, input.from));
+  if (!ticks.length) return;
+  const [target] = await tx
+    .select({ date: journalEntries.date })
+    .from(journalEntries)
+    .where(eq(journalEntries.id, input.to));
+  const lines = await tx
+    .select({
+      id: journalLines.id,
+      accountId: journalLines.accountId,
+      amount: journalLines.amount,
+      currency: journalLines.currency,
+    })
+    .from(journalLines)
+    .where(eq(journalLines.journalEntryId, input.to))
+    .orderBy(journalLines.lineNo);
+  const taken = new Set<string>();
+  for (const tick of ticks) {
+    const line = lines.find(
+      (l) =>
+        !taken.has(l.id) &&
+        l.accountId === tick.accountId &&
+        l.currency === tick.currency &&
+        parseDecimal(l.amount) === parseDecimal(tick.amount),
+    );
+    if (tick.status === "completed") {
+      const [previous] = await tx
+        .select({ date: sql<string | null>`max(${reconciliations.statementDate})::text` })
+        .from(reconciliations)
+        .where(
+          and(
+            eq(reconciliations.accountId, tick.reconciliationAccountId),
+            eq(reconciliations.status, "completed"),
+            sql`${reconciliations.statementDate} < ${tick.statementDate}`,
+          ),
+        );
+      const date = target?.date ?? "";
+      const inPeriod = date <= tick.statementDate && (!previous?.date || date > previous.date);
+      if (!line || !inPeriod) {
+        const on = new Intl.DateTimeFormat("en", { dateStyle: "long", timeZone: "UTC" }).format(
+          new Date(`${tick.statementDate}T00:00:00Z`),
+        );
+        throw new LedgerError(
+          `This transaction is reconciled in ${tick.account}, on the statement of ${on}, so its date, amount and account stay as the statement shows them. You can still change its category, description and customer or vendor. To change the rest, undo that reconciliation, and any after it, in Accounting → Reconcile.`,
+          "reconciled",
+          undefined,
+          { account: tick.account, statementDate: tick.statementDate },
+        );
+      }
+    }
+    if (!line) continue;
+    taken.add(line.id);
+    await tx
+      .update(reconciliationLines)
+      .set({ journalLineId: line.id })
+      .where(eq(reconciliationLines.journalLineId, tick.lineId));
+  }
 }

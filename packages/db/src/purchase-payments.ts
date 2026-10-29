@@ -177,14 +177,18 @@ export async function addPurchasePayment(
     .returning({ id: purchasePayments.id });
   if (!row) throw new Error("The payment wasn't saved.");
   // An order in the books holds its payments on Supplier deposits until the goods arrive.
+  // Moving it reposts the transaction, so it takes who was paid too if it names no one yet.
+  // Either way Customers & vendors counts it for them (see `entryContactSql`).
   if (orderInBooks(po.orderDate, await getPurchaseSettings(tx))) {
     await moveToAccount(tx, {
       orgId: input.orgId,
       userId: input.userId,
       entryId: input.journalEntryId,
       accountId: await ensureSystemAccount(tx, input.orgId, "supplier_deposits"),
+      contactId,
     });
   }
+
   const cost =
     input.cost && input.receiptId && contactId !== po.supplierId && input.baseCurrency
       ? await linkPaymentCost(tx, {

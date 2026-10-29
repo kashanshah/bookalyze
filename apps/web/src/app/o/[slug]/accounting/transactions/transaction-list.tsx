@@ -41,6 +41,8 @@ import type { TxFormContext, TxRow } from "./types";
 
 /** Each filter is one value or several joined by commas (any of them matches). */
 type Filters = {
+  /** One transaction, opened from elsewhere (a journal entry, a purchase order's payment). */
+  entry: string;
   account: string;
   category: string;
   contact: string;
@@ -118,7 +120,11 @@ export function TransactionList({
       else next.add(id);
       return next;
     });
-  const [dialog, setDialogState] = useState<DialogState>(null);
+  // Opened from a link to one transaction: its dialog starts open.
+  const [dialog, setDialogState] = useState<DialogState>(() => {
+    const row = filters.entry ? rows.find((r) => r.id === filters.entry) : undefined;
+    return row ? { mode: "edit", row } : null;
+  });
   // A fresh dialog per opening, so one can open while the previous one is still animating out.
   const [dialogKey, setDialogKey] = useState(0);
   const setDialog = (next: DialogState) => {
@@ -197,6 +203,23 @@ export function TransactionList({
   return (
     <div className="grid gap-5">
       {addButtons}
+
+      {filters.entry ? (
+        <div className="fade-in-0 flex animate-in items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Showing one transaction</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 py-1 ps-3 pe-1 font-medium text-primary">
+            {rows[0]?.number ?? "Not in the books any more"}
+            <button
+              type="button"
+              onClick={() => set({ entry: "" })}
+              aria-label="Show all transactions"
+              className="flex size-5 items-center justify-center rounded-full hover:bg-primary/15"
+            >
+              <X className="size-3.5" />
+            </button>
+          </span>
+        </div>
+      ) : null}
 
       {filterContact ? (
         <div className="fade-in-0 flex animate-in items-center gap-2 text-sm">
@@ -428,6 +451,10 @@ export function TransactionList({
         key={dialogKey}
         state={dialog}
         onClose={() => setDialog(null)}
+        // Showing one transaction: follow it to the entry that replaced it.
+        onSaved={(id) => {
+          if (filters.entry) set({ entry: id });
+        }}
         ctx={ctx}
         onCategoryCreated={addCategory}
       />

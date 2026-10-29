@@ -926,10 +926,30 @@ test("reconcile: tick to the statement balance, lock, undo and cancel", async ({
   await expect(page.getByText("Reconciled", { exact: true })).toBeVisible();
   await expect(page.getByText(/Past reconciliations/)).toBeVisible();
 
-  // Reconciled transactions show a lock and can't be changed.
+  // Reconciled transactions show a lock: what the statement shows (date, amount, account)
+  // stays, while the description, category and vendor can still change.
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(page.getByText(/Reconciled to the statement of/).first()).toBeAttached();
   await openTransaction(page, "Website sale");
+  await expect(page.getByText(/This transaction is reconciled to your statement/)).toBeVisible();
+  await expect(page.locator("#tx-date")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Remove", exact: true })).toHaveCount(0);
+  await page.locator("#tx-memo").fill("Website sale, shop");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Transaction updated")).toBeVisible();
+  await openTransaction(page, "Website sale, shop");
+  await expect(page.getByText(/This transaction is reconciled to your statement/)).toBeVisible();
+  await page.keyboard.press("Escape");
+  // Its journal entry opens the transaction again.
+  await page
+    .locator("li")
+    .filter({ has: page.getByText("Website sale, shop", { exact: true }) })
+    .first()
+    .getByRole("button", { name: /^More for / })
+    .click();
+  await page.getByRole("menuitem", { name: /^Journal entry / }).click();
+  await page.getByRole("link", { name: "Open transaction" }).click();
+  await expect(page.getByText("Showing one transaction")).toBeVisible();
   await expect(page.getByText(/This transaction is reconciled to your statement/)).toBeVisible();
   await page.keyboard.press("Escape");
 

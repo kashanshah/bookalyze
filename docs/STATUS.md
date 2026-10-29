@@ -155,7 +155,8 @@ Real company details are entered in the app and never committed.
     `period_locked`; actions turn it into an inline date error.
   - A database trigger (migration `0006_period_locks`) refuses them too.
   - Reversals must be dated in an open period.
-  - A reconciled entry can't be reversed: `reverseJournalEntry()` checks first and throws
+  - A reconciled entry can't be reversed (except by an edit that keeps its statement's fields,
+    see "Editing reconciled transactions"): `reverseJournalEntry()` checks first and throws
     `LedgerError` code `reconciled` (with the account and statement date, and what to do), and
     the `guard_reconciled_entry` trigger refuses it too. A marketplace month or settlement whose
     figures changed after it was reconciled can only be posted again once that reconciliation
@@ -386,9 +387,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     one in progress per account).
   - `reconciliation_lines` (journal lines ticked, each clearable once). It references
     `journal_lines` by `(organization_id, id)`.
-  - Triggers: a completed reconciliation's ticks can't change, and its transactions can't be
-    reversed (edited or removed; hint `reconciled`) until it's undone. `undo_import_batch()` also
-    refuses imports with reconciled entries.
+  - Triggers: a completed reconciliation's ticks can't be added or removed, and its transactions
+    can't be removed (hint `reconciled`) until it's undone. `undo_import_batch()` also refuses
+    imports with reconciled entries. Editing one is allowed where the statement doesn't care (see
+    "Editing reconciled transactions" below).
 - **Core** (`accounting/reconcile.ts`): `naturalAmount()` reads balances as statements do (a
   bank's money in, a card's amount owed). `reconciliationTotals()` works out the opening,
   cleared and difference.
@@ -407,7 +409,35 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     statement it follows the statement's own balance, so a gap shows where they part ways.
 - **Transactions list:** the review tick is at the end of the row. A receipt icon shows whether
   files are attached (faint when none), and a lock marks reconciled transactions (tooltip: the
-  statement date). Reconciled transactions open read-only; the server refuses changes too.
+  statement date).
+- **Editing reconciled transactions** (migration `0097_reconciled_edits`, 2026-10-29): the
+  category (a split's parts too, same total), description, customer or vendor and receipts can
+  change; the kind, date, bank account and amount can't, and neither can removing it.
+  `replaceJournalEntry()` reverses with `keepReconciled` and `moveReconciliationTicks()` moves
+  each tick to the corrected entry's line with the same account, amount and currency, dated in the
+  same statement period; otherwise `LedgerError` `reconciled` says what can change. The database
+  backs it: `journal_entries_reconciled_commit_guard` (a deferred constraint trigger; the old BEFORE guard now passes everything) (a reversed
+  entry may not keep ticks in a completed reconciliation, checked at commit) and
+  `reconciliation_lines_move_guard` lets a completed tick move only onto the same money. Ticks in
+  a reconciliation still in progress follow an edit too. Rules can now categorize reconciled
+  transactions. The dialog and the list lock only the statement's fields.
+
+### Customers & vendors: totals and setting them in bulk (2026-10-29)
+- **Payments on purchase orders count for whoever they paid** (`entryContactSql` in
+  `contacts.ts`): a transaction's own customer or vendor, or, when it has none, the contact on a
+  purchase-order payment linked to it. Customers & vendors' totals, the Transactions list and its
+  contact filter all use it, so supplier payments that arrived from the bank without a vendor
+  still show under the supplier. Linking a payment to an order in the books (moved to Supplier
+  deposits) also saves the supplier on the transaction if it names no one. The vendor stays
+  optional everywhere.
+- **Set a customer or vendor on many at once:** the Transactions selection bar has "Vendor" (or
+  "Customer" when every pick is money in): `setContactAction` reposts each with the contact
+  (`setEntryContact()`), reconciled ones included; transfers and closed periods are left alone and
+  counted.
+- **Open the transaction from elsewhere:** `/accounting/transactions?entry=<id>` shows just that
+  transaction with its dialog open (a chip clears it; saving follows the corrected entry). A
+  journal entry through a bank, card or cash account has "Open transaction", and each payment on
+  a purchase order links to its transaction beside its journal entry.
 
 ### Phase 2, slice 1: Wise connection
 - **Credential vault** (`packages/db/src/vault.ts`): AES-256-GCM with `APP_ENCRYPTION_KEY`
