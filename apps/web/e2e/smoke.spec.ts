@@ -3995,6 +3995,23 @@ test("the terms of service are public and linked from sign-up", async ({ browser
   await expect(page).toHaveURL(/\/terms$/);
   await expect(page.getByRole("heading", { name: "Terms of service", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Not professional advice" })).toBeVisible();
+  // The site's header: Features opens a menu of every feature page, and the page of them all.
+  const header = page.getByRole("banner");
+  await header.getByRole("button", { name: "Features" }).click();
+  await expect(header.getByRole("button", { name: "Features" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(header.getByRole("link", { name: /Amazon review requests/ })).toHaveAttribute(
+    "href",
+    /\/features\/review-requests$/,
+  );
+  await expect(header.getByRole("link", { name: "All features" })).toHaveAttribute(
+    "href",
+    /\/features$/,
+  );
+  await page.keyboard.press("Escape");
+  await expect(header.getByRole("link", { name: /Amazon review requests/ })).toHaveCount(0);
   await page.getByRole("contentinfo").getByRole("link", { name: "Privacy policy" }).click();
   await expect(page).toHaveURL(/\/privacy-policy$/);
   await page.close();
