@@ -15,7 +15,7 @@ import {
   updateReconciliationStatement,
 } from "../reconciliation";
 import * as schema from "../schema";
-import { replaceJournalEntry, voidJournalEntry } from "../transactions";
+import { replaceJournalEntry, setEntryContact, voidJournalEntry } from "../transactions";
 
 const ownerUrl =
   process.env.TEST_DATABASE_URL_MIGRATOR ??
@@ -252,5 +252,146 @@ describe("reconciliation", () => {
       tx.select().from(schema.reconciliations),
     );
     expect(other).toEqual([]);
+  });
+
+  it("edits a reconciled transaction where the statement doesn't care, keeping its tick", async () => {
+    const [bank] = await inA((tx) =>
+      tx
+        .insert(schema.accounts)
+        .values({
+          organizationId: orgA,
+          code: "1090",
+          name: "Edit Bank",
+          type: "asset",
+          subtype: "cash_bank",
+          currency: "CAD",
+        })
+        .returning(),
+    );
+    const bankId = bank?.id as string;
+    const other = (await inA((tx) => tx.select().from(schema.accounts))).find(
+      (a) => a.type === "income" && a.id !== code["4000"] && !a.isArchived,
+    );
+    const otherId = other?.id as string;
+    const make = async (accountId: string, amount: string) =>
+      prepared({ kind: "deposit", moneyAccountId: bankId, splits: [{ accountId, amount }] });
+    const original = await inA(async (tx) =>
+      postJournalEntry(tx, {
+        orgId: orgA,
+        date: "2026-03-10",
+        memo: "Payout",
+        entry: await make(code["4000"] as string, "80"),
+      }),
+    );
+    const rec = await inA((tx) =>
+      startReconciliation(tx, {
+        orgId: orgA,
+        accountId: bankId,
+        statementDate: "2026-03-31",
+        statementBalance: "80",
+      }),
+    );
+    const state = await linesOf(rec.id);
+    await inA((tx) =>
+      setLinesCleared(tx, {
+        orgId: orgA,
+        reconciliationId: rec.id,
+        lineIds: state.lines.map((l) => l.lineId),
+        cleared: true,
+      }),
+    );
+    await inA((tx) => completeReconciliation(tx, { id: rec.id }));
+
+    // A new category and description: allowed, and the tick follows the corrected entry.
+    const recategorized = await inA(async (tx) =>
+      replaceJournalEntry(tx, {
+        orgId: orgA,
+        entryId: original.id,
+        date: "2026-03-10",
+        memo: "Payout from the shop",
+        entry: await make(otherId, "80"),
+      }),
+    );
+    expect(await inA((tx) => entryReconciledThrough(tx, recategorized.id))).toBe("2026-03-31");
+    expect(await inA((tx) => entryReconciledThrough(tx, original.id))).toBeNull();
+    // And a vendor or customer, through the same path.
+    const [customer] = await inA((tx) =>
+      tx
+        .insert(schema.contacts)
+        .values({ organizationId: orgA, type: "customer", name: "Shop Buyer" })
+        .returning(),
+    );
+    const named = await inA((tx) =>
+      setEntryContact(tx, {
+        orgId: orgA,
+        entryId: recategorized.id,
+        contactId: customer?.id as string,
+      }),
+    );
+    expect(await inA((tx) => entryReconciledThrough(tx, named?.id as string))).toBe("2026-03-31");
+
+    // What the statement shows can't change: amount, a date outside the statement, removing it.
+    const current = named?.id as string;
+    const amount = await inA(async (tx) =>
+      replaceJournalEntry(tx, {
+        orgId: orgA,
+        entryId: current,
+        date: "2026-03-10",
+        entry: await make(otherId, "81"),
+      }),
+    ).catch((error: unknown) => error);
+    expect((amount as LedgerError).code).toBe("reconciled");
+    expect((amount as LedgerError).message).toMatch(/You can still change its category/);
+    const moved = await inA(async (tx) =>
+      replaceJournalEntry(tx, {
+        orgId: orgA,
+        entryId: current,
+        date: "2026-04-02",
+        entry: await make(otherId, "80"),
+      }),
+    ).catch((error: unknown) => error);
+    expect((moved as LedgerError).code).toBe("reconciled");
+    expect(
+      await errorOf(inA((tx) => voidJournalEntry(tx, { orgId: orgA, entryId: current }))),
+    ).toMatch(/reconciled/);
+    expect(await inA((tx) => entryReconciledThrough(tx, current))).toBe("2026-03-31");
+
+    // The database holds the line too: reversing without moving the tick fails at commit, and a
+    // tick can't be moved onto different money.
+    expect(
+      await errorOf(
+        inA((tx) =>
+          reverseJournalEntry(tx, {
+            orgId: orgA,
+            entryId: current,
+            date: "2026-03-10",
+            keepReconciled: true,
+          }),
+        ),
+      ),
+    ).toMatch(/reconciled/);
+    const stranger = await deposit("2026-03-12", "80");
+    const [strangerLine] = await inA((tx) =>
+      tx
+        .select()
+        .from(schema.journalLines)
+        .where(eq(schema.journalLines.journalEntryId, stranger.id)),
+    );
+    const [tick] = await inA((tx) =>
+      tx
+        .select()
+        .from(schema.reconciliationLines)
+        .where(eq(schema.reconciliationLines.reconciliationId, rec.id)),
+    );
+    expect(
+      await errorOf(
+        inA((tx) =>
+          tx
+            .update(schema.reconciliationLines)
+            .set({ journalLineId: strangerLine?.id as string })
+            .where(eq(schema.reconciliationLines.journalLineId, tick?.journalLineId as string)),
+        ),
+      ),
+    ).toMatch(/completed/);
   });
 });

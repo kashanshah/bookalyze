@@ -49,7 +49,14 @@ type Ctx = { orgId: string; userId: string | null; baseCurrency: string };
  */
 export async function moveToAccount(
   tx: Transaction,
-  input: { orgId: string; userId: string | null; entryId: string; accountId: string },
+  input: {
+    orgId: string;
+    userId: string | null;
+    entryId: string;
+    accountId: string;
+    /** Put on the transaction if it has no customer or vendor yet (the order's supplier). */
+    contactId?: string | null;
+  },
 ): Promise<string> {
   const [entry] = await tx
     .select({
@@ -101,7 +108,7 @@ export async function moveToAccount(
     date: entry.date,
     reference: entry.reference,
     memo: entry.memo,
-    contactId: entry.contactId,
+    contactId: entry.contactId ?? input.contactId ?? null,
     entry: {
       currency: entry.currency,
       fxRate: entry.fxRate,

@@ -141,11 +141,19 @@ export async function postJournalEntry(tx: Transaction, input: PostEntryInput) {
 
 /**
  * Posts an entry that undoes `entryId` on `date` and links the two. Fails if the entry doesn't
- * exist, is itself a reversal, or was already reversed.
+ * exist, is itself a reversal, or was already reversed. A reconciled entry is refused unless
+ * `keepReconciled`: an edit that moves its ticks to the corrected entry before the transaction
+ * commits (`moveReconciliationTicks`); the database checks that at commit.
  */
 export async function reverseJournalEntry(
   tx: Transaction,
-  input: { orgId: string; userId?: string | null; entryId: string; date: string },
+  input: {
+    orgId: string;
+    userId?: string | null;
+    entryId: string;
+    date: string;
+    keepReconciled?: boolean;
+  },
 ) {
   const [original] = await tx
     .select()
@@ -162,17 +170,22 @@ export async function reverseJournalEntry(
     );
   }
   // The database refuses this too; checking first gives a message that says what to do.
-  const [reconciled] = await tx
-    .select({ statementDate: reconciliations.statementDate, account: accounts.name })
-    .from(journalLines)
-    .innerJoin(reconciliationLines, eq(reconciliationLines.journalLineId, journalLines.id))
-    .innerJoin(reconciliations, eq(reconciliations.id, reconciliationLines.reconciliationId))
-    .innerJoin(accounts, eq(accounts.id, reconciliations.accountId))
-    .where(
-      and(eq(journalLines.journalEntryId, original.id), eq(reconciliations.status, "completed")),
-    )
-    .orderBy(reconciliations.statementDate)
-    .limit(1);
+  const [reconciled] = input.keepReconciled
+    ? []
+    : await tx
+        .select({ statementDate: reconciliations.statementDate, account: accounts.name })
+        .from(journalLines)
+        .innerJoin(reconciliationLines, eq(reconciliationLines.journalLineId, journalLines.id))
+        .innerJoin(reconciliations, eq(reconciliations.id, reconciliationLines.reconciliationId))
+        .innerJoin(accounts, eq(accounts.id, reconciliations.accountId))
+        .where(
+          and(
+            eq(journalLines.journalEntryId, original.id),
+            eq(reconciliations.status, "completed"),
+          ),
+        )
+        .orderBy(reconciliations.statementDate)
+        .limit(1);
   if (reconciled) {
     const on = new Intl.DateTimeFormat("en", { dateStyle: "long", timeZone: "UTC" }).format(
       new Date(`${reconciled.statementDate}T00:00:00Z`),

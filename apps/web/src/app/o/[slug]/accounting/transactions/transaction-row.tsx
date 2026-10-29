@@ -80,9 +80,12 @@ export function TransactionRow({
   const open = () => onEdit(row);
 
   const locked = ctx.lockedThrough;
-  const readOnly = Boolean(row.reconciledThrough) || Boolean(locked && row.date <= locked);
+  const readOnly = Boolean(locked && row.date <= locked);
+  // Reconciled: what the statement shows (date, amount, account) stays; the rest can change.
+  const reconciled = Boolean(row.reconciledThrough);
   // A transaction without its bank or card account has to get one before anything else changes.
   const editable = !readOnly && !row.needsAccount && !saving;
+  const bankEditable = editable && !reconciled;
   const single = row.kind !== "transfer" && row.splits.length === 1;
   const crossCurrency = Boolean(row.receivedCurrency && row.receivedCurrency !== row.currency);
 
@@ -224,7 +227,7 @@ export function TransactionRow({
         }}
       >
         <div className="col-start-1 row-start-2 min-w-0 lg:col-start-auto lg:row-start-auto lg:-mx-2">
-          {editable ? (
+          {bankEditable ? (
             <InlineInput
               type="date"
               label="Date"
@@ -269,7 +272,7 @@ export function TransactionRow({
             <StaticCell onClick={open} label={openLabel} className={mutedCell}>
               —
             </StaticCell>
-          ) : readOnly || saving ? (
+          ) : readOnly || reconciled || saving ? (
             <StaticCell onClick={open} label={openLabel} className={mutedCell}>
               {name(moneyAccountId)}
             </StaticCell>
@@ -322,7 +325,7 @@ export function TransactionRow({
           )}
         </div>
         <div className="col-start-2 row-span-3 row-start-1 min-w-0 self-center lg:col-start-auto lg:row-span-1 lg:row-start-auto lg:-mx-2">
-          {editable && (single || (row.kind === "transfer" && !crossCurrency)) ? (
+          {bankEditable && (single || (row.kind === "transfer" && !crossCurrency)) ? (
             <InlineInput
               label="Amount"
               inputMode="decimal"
@@ -521,7 +524,7 @@ function RowMenu({
         ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          disabled={readOnly}
+          disabled={readOnly || Boolean(row.reconciledThrough)}
           onSelect={onRemove}
           className="text-destructive focus:bg-destructive/10 focus:text-destructive [&_svg]:text-destructive"
         >
@@ -530,9 +533,12 @@ function RowMenu({
         </DropdownMenuItem>
         {readOnly ? (
           <DropdownMenuLabel className="max-w-56 font-normal">
-            {row.reconciledThrough
-              ? "Reconciled, so it can't be changed until that reconciliation is undone."
-              : "In a closed period, so it can't be changed."}
+            In a closed period, so it can't be changed.
+          </DropdownMenuLabel>
+        ) : row.reconciledThrough ? (
+          <DropdownMenuLabel className="max-w-56 font-normal">
+            Reconciled: its date, amount and account stay as the statement shows them, and it can't
+            be removed until that reconciliation is undone.
           </DropdownMenuLabel>
         ) : null}
       </DropdownMenuContent>

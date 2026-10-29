@@ -93,11 +93,14 @@ export type DialogState =
 export function TransactionDialog({
   state,
   onClose,
+  onSaved,
   ctx,
   onCategoryCreated,
 }: {
   state: DialogState;
   onClose: () => void;
+  /** After an edit is saved: the entry now holding the transaction (an edit replaces it). */
+  onSaved?: (id: string) => void;
   ctx: TxFormContext;
   onCategoryCreated?: (category: NewCategory) => void;
 }) {
@@ -110,6 +113,7 @@ export function TransactionDialog({
             state={state}
             ctx={ctx}
             onDone={onClose}
+            onSaved={onSaved}
             onCategoryCreated={onCategoryCreated}
           />
         ) : null}
@@ -122,11 +126,13 @@ function TransactionForm({
   state,
   ctx,
   onDone,
+  onSaved,
   onCategoryCreated,
 }: {
   state: NonNullable<DialogState>;
   ctx: TxFormContext;
   onDone: () => void;
+  onSaved?: (id: string) => void;
   onCategoryCreated?: (category: NewCategory) => void;
 }) {
   const row = state.mode === "edit" ? state.row : null;
@@ -192,8 +198,10 @@ function TransactionForm({
   const locked = ctx.lockedThrough;
   const rowInClosedPeriod = Boolean(row && locked && row.date <= locked);
   const reconciledThrough = row?.reconciledThrough ?? null;
-  // Closed periods and reconciled transactions are shown but can't be changed.
-  const readOnly = rowInClosedPeriod || Boolean(reconciledThrough);
+  // Closed periods are shown but can't be changed. A reconciled transaction keeps what the
+  // statement shows (kind, date, account, amount); its category, description and contact change.
+  const readOnly = rowInClosedPeriod;
+  const bankLocked = Boolean(reconciledThrough) && !rowInClosedPeriod;
   const dateInClosedPeriod = Boolean(locked && date && date <= locked);
   const moneyCurrency = (id: string) =>
     ctx.moneyAccounts.find((a) => a.id === id)?.currency ?? ctx.baseCurrency;
@@ -278,6 +286,7 @@ function TransactionForm({
       });
       if (result.ok) {
         toast.success(row ? "Transaction updated" : "Transaction added");
+        if (row) onSaved?.(result.data.id);
         onDone();
         return;
       }
@@ -359,8 +368,9 @@ function TransactionForm({
         <Alert>
           <Lock className="me-1.5 inline size-4 align-[-3px]" />
           This transaction is reconciled to your statement of{" "}
-          {formatDate(reconciledThrough, ctx.locale, "long")}, so it can't be changed. Undo that
-          reconciliation first if it needs correcting.
+          {formatDate(reconciledThrough, ctx.locale, "long")}, so its date, amount and account stay
+          as the statement shows them. You can still change its category, description and customer
+          or vendor. To change the rest, undo that reconciliation first.
         </Alert>
       ) : null}
       {rowInClosedPeriod && locked ? (
@@ -378,6 +388,7 @@ function TransactionForm({
               key={k.key}
               type="button"
               aria-pressed={kind === k.key}
+              disabled={bankLocked}
               onClick={() => {
                 setKind(k.key);
                 setErrors({});
@@ -410,6 +421,7 @@ function TransactionForm({
               id="tx-date"
               type="date"
               required
+              disabled={bankLocked}
               value={date}
               min={locked ? nextDay(locked) : undefined}
               onChange={(e) => {
@@ -431,6 +443,7 @@ function TransactionForm({
             >
               <Combobox
                 id="tx-money"
+                disabled={bankLocked}
                 value={moneyAccountId}
                 options={moneyOptions()}
                 placeholder="Choose an account…"
@@ -447,6 +460,7 @@ function TransactionForm({
               <Field label="From" htmlFor="tx-from" error={errors.fromAccountId}>
                 <Combobox
                   id="tx-from"
+                  disabled={bankLocked}
                   value={fromAccountId}
                   options={moneyOptions(toAccountId)}
                   placeholder="Choose an account…"
@@ -460,6 +474,7 @@ function TransactionForm({
               <Field label="To" htmlFor="tx-to" error={errors.toAccountId}>
                 <Combobox
                   id="tx-to"
+                  disabled={bankLocked}
                   value={toAccountId}
                   options={moneyOptions(fromAccountId)}
                   placeholder="Choose an account…"
@@ -477,6 +492,7 @@ function TransactionForm({
               >
                 <Input
                   id="tx-amount"
+                  disabled={bankLocked}
                   inputMode="decimal"
                   value={amount}
                   placeholder="0.00"
@@ -501,6 +517,7 @@ function TransactionForm({
                 >
                   <Input
                     id="tx-received"
+                    disabled={bankLocked}
                     inputMode="decimal"
                     value={received}
                     placeholder="0.00"
@@ -614,6 +631,7 @@ function TransactionForm({
                       </label>
                       <Input
                         id={`split-amount-${s.key}`}
+                        disabled={bankLocked && !split}
                         inputMode="decimal"
                         value={s.amount}
                         placeholder="0.00"
@@ -722,7 +740,7 @@ function TransactionForm({
 
       <DialogFooter className="sm:justify-between">
         <div className="flex flex-wrap gap-2">
-          {row && !readOnly ? (
+          {row && !readOnly && !bankLocked ? (
             <Button
               type="button"
               variant={confirmDelete ? "destructive" : "ghost"}
@@ -733,7 +751,7 @@ function TransactionForm({
               {confirmDelete ? "Click again to remove" : "Remove"}
             </Button>
           ) : null}
-          {row?.matchedTransfer && !readOnly ? (
+          {row?.matchedTransfer && !readOnly && !bankLocked ? (
             <Button type="button" variant="ghost" onClick={unmatch} disabled={pending}>
               <SplitIcon />
               Unmatch

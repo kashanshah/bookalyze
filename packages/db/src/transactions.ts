@@ -12,8 +12,10 @@ import {
 import { and, count, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { copyAttachmentLinks, countAttachments } from "./attachments";
 import type { Transaction } from "./client";
+import { entryContactSql } from "./contacts";
 import { carryEntryLinks } from "./duplicates";
 import { LedgerError, postJournalEntry, reverseJournalEntry } from "./ledger";
+import { moveReconciliationTicks } from "./reconciliation";
 import { accounts, journalEntries, journalLines, transactionReviews } from "./schema/accounting";
 import { reconciliationLines, reconciliations } from "./schema/reconciliation";
 import { followTransferEdit } from "./transfers";
@@ -170,7 +172,7 @@ export async function listTransactions(
       )}))`,
     );
   }
-  if (filters.contactId) conditions.push(eq(journalEntries.contactId, filters.contactId));
+  if (filters.contactId) conditions.push(sql`${entryContactSql} = ${filters.contactId}`);
   if (filters.entryIds) {
     if (!filters.entryIds.length) return { rows: [], total: 0 };
     conditions.push(inArray(journalEntries.id, [...filters.entryIds]));
@@ -212,7 +214,7 @@ export async function listTransactions(
       currency: journalEntries.currency,
       fxRate: journalEntries.fxRate,
       source: journalEntries.source,
-      contactId: journalEntries.contactId,
+      contactId: sql<string | null>`${entryContactSql}`,
       reviewed: sql<boolean>`${reviewedSql}`,
       reconciledThrough: sql<string | null>`(select max(rc.statement_date)::text
         from ${journalLines} l
@@ -368,11 +370,14 @@ export async function replaceJournalEntry(
     .select({ id: transactionReviews.journalEntryId })
     .from(transactionReviews)
     .where(eq(transactionReviews.journalEntryId, input.entryId));
+  // A reconciled transaction can be edited where its statement doesn't care: its ticks move to
+  // the corrected entry below, which refuses a different date, amount or account.
   await reverseJournalEntry(tx, {
     orgId: input.orgId,
     userId: input.userId,
     entryId: input.entryId,
     date: original.date,
+    keepReconciled: true,
   });
   const posted = await postJournalEntry(tx, {
     orgId: input.orgId,
@@ -397,6 +402,7 @@ export async function replaceJournalEntry(
     to: posted.id,
   });
   await carryEntryLinks(tx, { from: input.entryId, to: posted.id, userId: input.userId });
+  await moveReconciliationTicks(tx, { from: input.entryId, to: posted.id });
   // Receipts stay with the transaction (the original keeps its links too, for history).
   await copyAttachmentLinks(tx, {
     orgId: input.orgId,
@@ -414,6 +420,66 @@ export async function replaceJournalEntry(
     });
   }
   return posted;
+}
+
+/**
+ * Puts a customer or vendor on a transaction (null takes it off): the same entry is posted again
+ * with the contact, like any edit, so its review tick, receipts, bank link and reconciliation
+ * ticks follow. Transfers have no contact. Returns the entry now holding the transaction, or null
+ * when nothing changed (already that contact, a transfer, no longer current).
+ */
+export async function setEntryContact(
+  tx: Transaction,
+  input: { orgId: string; userId?: string | null; entryId: string; contactId: string | null },
+): Promise<{ id: string } | null> {
+  const [entry] = await tx
+    .select()
+    .from(journalEntries)
+    .where(eq(journalEntries.id, input.entryId));
+  if (!entry || entry.reversedByEntryId || entry.reversesEntryId) return null;
+  if ((entry.contactId ?? null) === input.contactId) return null;
+  const lines = await tx
+    .select({
+      accountId: journalLines.accountId,
+      subtype: accounts.subtype,
+      description: journalLines.description,
+      currency: journalLines.currency,
+      amount: journalLines.amount,
+      baseAmount: journalLines.baseAmount,
+      taxRateId: journalLines.taxRateId,
+    })
+    .from(journalLines)
+    .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+    .where(eq(journalLines.journalEntryId, entry.id))
+    .orderBy(journalLines.lineNo);
+  const money = new Set<string>(MONEY_ACCOUNT_SUBTYPES);
+  if (lines.every((l) => money.has(l.subtype))) return null;
+  const posted = await replaceJournalEntry(tx, {
+    orgId: input.orgId,
+    userId: input.userId,
+    entryId: entry.id,
+    date: entry.date,
+    reference: entry.reference,
+    memo: entry.memo,
+    contactId: input.contactId,
+    entry: {
+      currency: entry.currency,
+      fxRate: entry.fxRate,
+      total: formatDecimal(
+        lines.map((l) => parseDecimal(l.amount)).reduce((t, a) => (a > 0n ? t + a : t), 0n),
+      ),
+      lines: lines.map((l, index) => ({
+        index,
+        accountId: l.accountId,
+        description: l.description,
+        currency: l.currency,
+        amount: l.amount,
+        baseAmount: l.baseAmount,
+        taxRateId: l.taxRateId,
+      })),
+    },
+  });
+  return { id: posted.id };
 }
 
 /** Removes a transaction from the books by reversing it on its own date. */

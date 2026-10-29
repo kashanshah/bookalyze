@@ -1,7 +1,7 @@
-import { formatDecimal, parseDecimal } from "@bookalyze/core";
+import { formatDecimal, isMoneyAccountSubtype, parseDecimal } from "@bookalyze/core";
 import { formatEntryNumber, getContact, listAttachmentsFor, schema } from "@bookalyze/db";
 import { eq, inArray } from "drizzle-orm";
-import { ArrowLeft, Lock, Plus, Undo2 } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, Lock, Plus, Undo2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -89,6 +89,11 @@ export default async function JournalEntryPage({
       }, 0n),
     );
   const journalHref = `/o/${slug}/accounting/journal`;
+  // A current entry through a bank, card or cash account is a transaction: it opens there too.
+  const isTransaction =
+    !entry.reversedByEntryId &&
+    !entry.reversesEntryId &&
+    lines.some(({ account }) => isMoneyAccountSubtype(account.subtype));
   const cols = foreign
     ? "md:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_8rem_8rem_8rem]"
     : "md:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)_8rem_8rem]";
@@ -143,6 +148,14 @@ export default async function JournalEntryPage({
                   locale={locale}
                 />
               </>
+            ) : null}
+            {isTransaction ? (
+              <Button asChild variant="outline">
+                <Link href={`/o/${slug}/accounting/transactions?entry=${entry.id}`}>
+                  <ArrowLeftRight />
+                  Open transaction
+                </Link>
+              </Button>
             ) : null}
             <Button asChild>
               <Link href={`${journalHref}/new`}>

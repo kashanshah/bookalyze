@@ -8,6 +8,7 @@ import {
   journalEntries,
   journalLines,
 } from "./schema/accounting";
+import { purchasePayments } from "./schema/inventory";
 
 /** Customers and vendors, with how much money moved with each. Run inside `withOrg()`. */
 
@@ -18,6 +19,15 @@ export type ContactWithTotals = ContactRow & {
   paid: string;
   transactions: number;
 };
+
+/**
+ * Who a transaction was with: its own customer or vendor, or, when it has none, whoever it paid
+ * as a payment on a purchase order (bank payments to suppliers often arrive without one).
+ */
+export const entryContactSql = sql<string | null>`coalesce(${journalEntries.contactId}, (
+  select pp.contact_id from ${purchasePayments} pp
+  where pp.journal_entry_id = ${journalEntries.id}
+  order by pp.created_at limit 1))`;
 
 const moneySubtypes = sql.raw(MONEY_ACCOUNT_SUBTYPES.map((s) => `'${s}'`).join(", "));
 
@@ -32,7 +42,7 @@ function totalsQuery(tx: Transaction, range: { from?: string | null; to?: string
   if (range.to) conditions.push(sql`${journalEntries.date} <= ${range.to}`);
   return tx
     .select({
-      contactId: journalEntries.contactId,
+      contactId: sql<string | null>`${entryContactSql}`.as("contact_id"),
       received:
         sql<string>`coalesce(sum(case when ${journalLines.baseAmount} > 0 then ${journalLines.baseAmount} end), 0)::numeric(20,4)::text`.as(
           "received",
@@ -46,7 +56,7 @@ function totalsQuery(tx: Transaction, range: { from?: string | null; to?: string
     .innerJoin(journalLines, eq(journalLines.journalEntryId, journalEntries.id))
     .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
     .where(and(...conditions))
-    .groupBy(journalEntries.contactId)
+    .groupBy(entryContactSql)
     .as("totals");
 }
 
