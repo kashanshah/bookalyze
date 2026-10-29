@@ -937,6 +937,8 @@ test("reconcile: tick to the statement balance, lock, undo and cancel", async ({
   await page.locator("#tx-memo").fill("Website sale, shop");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Transaction updated")).toBeVisible();
+  // Let the toast go, so it doesn't cover the reconciliation's buttons further on.
+  await expect(page.getByText("Transaction updated")).toBeHidden({ timeout: 10_000 });
   await openTransaction(page, "Website sale, shop");
   await expect(page.getByText(/This transaction is reconciled to your statement/)).toBeVisible();
   await page.keyboard.press("Escape");
