@@ -1211,6 +1211,12 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
     (`components/site/`, on `/terms` and `/privacy-policy` through `LegalPage`) read them; the
     auth pages' footer line uses the same Terms, Privacy and Contact links, and their logo goes to
     the site. The app finds the site at `NEXT_PUBLIC_SITE_URL` (default https://bookalyze.com).
+  - **Features opens a menu** of every feature page (core `SITE_FEATURES`, a nav item's `menu`):
+    a panel under it from lg (two columns: name and a one-line hint, then "All features"),
+    across the header below lg, and a list that opens in the phone menu (`NavMenu`,
+    `NavMenuList` in `components/nav-menu.tsx`, the app's copy in `components/site/`). It opens
+    on click or hover and closes on Escape, a click elsewhere or leaving it. The site's
+    `features.test.ts` checks `SITE_FEATURES` matches its feature pages, in order and by name.
 - **Pictures of the app** are drawn in code with the app's tokens (`previews.tsx`), made-up
   companies and amounts, so they follow light and dark mode and hold no real data. They move
   like short GIFs (CSS loops, `anim-*` utilities in `globals.css`). Charts draw when scrolled into

@@ -7,10 +7,89 @@
 
 export type SiteLink = { label: string; on: "site" | "app"; path: string };
 
+/** A link in a header menu, with a short line saying what's there. */
+export type SiteMenuLink = SiteLink & { hint: string };
+
+/** A top navigation item; one with a `menu` opens it (its own page is the menu's last link). */
+export type SiteNavItem = SiteLink & { menu?: readonly SiteMenuLink[] };
+
+/**
+ * One link per feature page (`/features/<slug>` on the site), in the site's order. The site's
+ * test checks these match its feature pages exactly.
+ */
+export const SITE_FEATURES: readonly SiteMenuLink[] = [
+  {
+    label: "Amazon review requests",
+    on: "site",
+    path: "/features/review-requests",
+    hint: "Ask every buyer for a review, automatically",
+  },
+  {
+    label: "Amazon invoices",
+    on: "site",
+    path: "/features/amazon-invoices",
+    hint: "Tax invoices in English and Arabic, in seconds",
+  },
+  {
+    label: "Settlements and payouts",
+    on: "site",
+    path: "/features/settlements-and-payouts",
+    hint: "Every payout posted and matched to your bank",
+  },
+  {
+    label: "Banking and reconciliation",
+    on: "site",
+    path: "/features/bank-reconciliation",
+    hint: "Every account agreeing with its statement",
+  },
+  {
+    label: "Stock and cost of goods sold",
+    on: "site",
+    path: "/features/stock-and-cost-of-goods",
+    hint: "What each sale really cost, freight included",
+  },
+  {
+    label: "Reorder planning",
+    on: "site",
+    path: "/features/reorder",
+    hint: "When to reorder each product, and how many",
+  },
+  {
+    label: "Channel profit",
+    on: "site",
+    path: "/features/channel-profit",
+    hint: "What each marketplace makes after every fee",
+  },
+  {
+    label: "Profit after ads",
+    on: "site",
+    path: "/features/profit-after-ads",
+    hint: "Each product's profit after fees, cost and ads",
+  },
+  {
+    label: "Listing watch",
+    on: "site",
+    path: "/features/listing-watch",
+    hint: "An email when a listing's price or rank changes",
+  },
+  {
+    label: "Bookkeeping",
+    on: "site",
+    path: "/features/bookkeeping",
+    hint: "Real books, without debits and credits",
+  },
+  {
+    label: "Every company you run",
+    on: "site",
+    path: "/features/multi-company",
+    hint: "One login for all of your businesses",
+  },
+];
+
 /** The site's top navigation. */
-export const SITE_NAV: readonly SiteLink[] = [
+export const SITE_NAV: readonly SiteNavItem[] = [
   { label: "Marketplaces", on: "site", path: "/marketplaces" },
-  { label: "Features", on: "site", path: "/features" },
+  { label: "Features", on: "site", path: "/features", menu: SITE_FEATURES },
   { label: "Pricing", on: "site", path: "/pricing" },
   { label: "Guides", on: "site", path: "/guides" },
   { label: "Help", on: "site", path: "/help" },

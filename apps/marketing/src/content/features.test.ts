@@ -1,4 +1,4 @@
-import { BILLING_PACKAGES } from "@bookalyze/core";
+import { BILLING_PACKAGES, SITE_FEATURES } from "@bookalyze/core";
 import { describe, expect, it } from "vitest";
 import { FEATURES } from "./features";
 import { guide } from "./guides";
@@ -21,5 +21,12 @@ describe("feature pages", () => {
       expect(f.sections.length).toBeGreaterThan(0);
       expect(f.faq.length).toBeGreaterThan(0);
     }
+  });
+
+  it("are all in the header's Features menu, in the same order and with the same names", () => {
+    expect(SITE_FEATURES.map((l) => [l.path, l.label])).toEqual(
+      FEATURES.map((f) => [`/features/${f.slug}`, f.name]),
+    );
+    for (const l of SITE_FEATURES) expect(l.hint.length, l.path).toBeLessThanOrEqual(52);
   });
 });

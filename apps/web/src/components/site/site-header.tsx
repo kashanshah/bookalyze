@@ -8,8 +8,13 @@ import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import { LINK_URLS, SITE_URL } from "@/lib/site";
 import { cn } from "@/lib/utils";
+import { NavMenu, NavMenuList } from "./nav-menu";
 
-const NAV = SITE_NAV.map((l) => ({ label: l.label, href: siteHref(l, "app", LINK_URLS) }));
+const NAV = SITE_NAV.map((l) => ({
+  label: l.label,
+  href: siteHref(l, "app", LINK_URLS),
+  menu: l.menu?.map((m) => ({ label: m.label, hint: m.hint, href: siteHref(m, "app", LINK_URLS) })),
+}));
 
 /**
  * The public site's header, on the app's public pages (terms, privacy), so leaving bookalyze.com
@@ -39,15 +44,26 @@ export function SiteHeader() {
           <Brand className="h-7" />
         </a>
         <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
-          {NAV.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              className="rounded-md px-3 py-2 text-muted-foreground text-sm transition-colors hover:text-foreground"
-            >
-              {item.label}
-            </a>
-          ))}
+          {NAV.map((item) =>
+            item.menu ? (
+              <NavMenu
+                key={item.href}
+                label={item.label}
+                href={item.href}
+                allLabel={`All ${item.label.toLowerCase()}`}
+                items={item.menu}
+                current={false}
+              />
+            ) : (
+              <a
+                key={item.href}
+                href={item.href}
+                className="rounded-md px-2 py-2 text-muted-foreground text-sm transition-colors hover:text-foreground lg:px-3"
+              >
+                {item.label}
+              </a>
+            ),
+          )}
         </nav>
         <div className="ms-auto flex items-center gap-2">
           <Button asChild variant="ghost" size="sm" className="hidden h-9 sm:inline-flex">
@@ -74,15 +90,25 @@ export function SiteHeader() {
           aria-label="Main"
           className="fade-in-0 slide-in-from-top-1 grid animate-in gap-1 border-t px-4 py-3 duration-200 md:hidden"
         >
-          {NAV.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              className="rounded-md px-3 py-2.5 font-medium text-base hover:bg-accent"
-            >
-              {item.label}
-            </a>
-          ))}
+          {NAV.map((item) =>
+            item.menu ? (
+              <NavMenuList
+                key={item.href}
+                label={item.label}
+                href={item.href}
+                allLabel={`All ${item.label.toLowerCase()}`}
+                items={item.menu}
+              />
+            ) : (
+              <a
+                key={item.href}
+                href={item.href}
+                className="rounded-md px-3 py-2.5 font-medium text-base hover:bg-accent"
+              >
+                {item.label}
+              </a>
+            ),
+          )}
           <Link
             href={SIGN_IN.path}
             className="rounded-md px-3 py-2.5 font-medium text-base hover:bg-accent"

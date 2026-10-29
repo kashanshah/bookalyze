@@ -8,8 +8,17 @@ import { useEffect, useState } from "react";
 import { cn, LINK_URLS } from "@/lib/site";
 import { Brand } from "./brand";
 import { ButtonLink } from "./button";
+import { NavMenu, NavMenuList } from "./nav-menu";
 
-const NAV = SITE_NAV.map((l) => ({ label: l.label, href: siteHref(l, "site", LINK_URLS) }));
+const NAV = SITE_NAV.map((l) => ({
+  label: l.label,
+  href: siteHref(l, "site", LINK_URLS),
+  menu: l.menu?.map((m) => ({
+    label: m.label,
+    hint: m.hint,
+    href: siteHref(m, "site", LINK_URLS),
+  })),
+}));
 const SIGN_IN_URL = siteHref(SIGN_IN, "site", LINK_URLS);
 const SIGN_UP_URL = siteHref(START_FREE, "site", LINK_URLS);
 
@@ -41,18 +50,31 @@ export function Header() {
           <Brand className="h-7" />
         </Link>
         <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={
-                pathname === item.href || pathname.startsWith(`${item.href}/`) ? "page" : undefined
-              }
-              className="rounded-md px-3 py-2 text-muted-foreground text-sm transition-colors hover:text-foreground aria-[current=page]:text-foreground"
-            >
-              {item.label}
-            </Link>
-          ))}
+          {NAV.map((item) =>
+            item.menu ? (
+              <NavMenu
+                key={item.href}
+                label={item.label}
+                href={item.href}
+                allLabel={`All ${item.label.toLowerCase()}`}
+                items={item.menu}
+                current={pathname === item.href || pathname.startsWith(`${item.href}/`)}
+              />
+            ) : (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={
+                  pathname === item.href || pathname.startsWith(`${item.href}/`)
+                    ? "page"
+                    : undefined
+                }
+                className="rounded-md px-2 py-2 text-muted-foreground text-sm transition-colors hover:text-foreground aria-[current=page]:text-foreground lg:px-3"
+              >
+                {item.label}
+              </Link>
+            ),
+          )}
         </nav>
         <div className="ms-auto flex items-center gap-2">
           <ButtonLink
@@ -84,15 +106,25 @@ export function Header() {
           aria-label="Main"
           className="fade-in-0 slide-in-from-top-1 grid animate-in gap-1 border-t px-4 py-3 duration-200 md:hidden"
         >
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-md px-3 py-2.5 font-medium text-base hover:bg-accent"
-            >
-              {item.label}
-            </Link>
-          ))}
+          {NAV.map((item) =>
+            item.menu ? (
+              <NavMenuList
+                key={item.href}
+                label={item.label}
+                href={item.href}
+                allLabel={`All ${item.label.toLowerCase()}`}
+                items={item.menu}
+              />
+            ) : (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="rounded-md px-3 py-2.5 font-medium text-base hover:bg-accent"
+              >
+                {item.label}
+              </Link>
+            ),
+          )}
           <a
             href={SIGN_IN_URL}
             className="rounded-md px-3 py-2.5 font-medium text-base hover:bg-accent"
