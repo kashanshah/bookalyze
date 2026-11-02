@@ -10,11 +10,14 @@ import {
   InventoryError,
   linkBundle,
   linkSku,
+  listDropshipSkus,
   listProducts,
+  markSkuDropship,
   saveChannelSkus,
   setProductArchived,
   unlinkedSkus,
   unlinkSku,
+  unmarkSkuDropship,
   updateProduct,
 } from "../inventory";
 import * as schema from "../schema";
@@ -368,6 +371,45 @@ describe("products", () => {
         }),
       ),
     ).rejects.toThrow(/two or more/);
+  });
+
+  it("marks a SKU as dropship: off the not-linked list until it's linked or unmarked", async () => {
+    const unlinked = async () =>
+      (await scoped((tx) => unlinkedSkus(tx, { limit: 10 }))).rows.map((r) => r.sku);
+    expect(await unlinked()).toContain("MUG-100");
+    const before = (await scoped((tx) => unlinkedSkus(tx, { limit: 10 }))).total;
+    await scoped((tx) => markSkuDropship(tx, { orgId, userId: null, channelId, sku: "MUG-100" }));
+    // Marking twice is harmless.
+    await scoped((tx) => markSkuDropship(tx, { orgId, userId: null, channelId, sku: "MUG-100" }));
+    expect(await unlinked()).not.toContain("MUG-100");
+    expect((await scoped((tx) => unlinkedSkus(tx, { limit: 10 }))).total).toBe(before - 1);
+    expect(await scoped((tx) => listDropshipSkus(tx))).toEqual([
+      { channelId, channelName: "Amazon.ca", sku: "MUG-100", title: "Maple mug, 100ml", orders: 0 },
+    ]);
+    expect(await scoped((tx) => listDropshipSkus(tx), otherOrgId)).toEqual([]);
+
+    // A linked SKU ships from stock, so it can't be marked.
+    await expect(
+      scoped((tx) => markSkuDropship(tx, { orgId, userId: null, channelId, sku: "MUG-500" })),
+    ).rejects.toThrow(/Unlink it there first/);
+
+    // Unmarking puts it back; linking it to a product clears the mark too.
+    expect(await scoped((tx) => unmarkSkuDropship(tx, { channelId, sku: "MUG-100" }))).toBe(true);
+    expect(await unlinked()).toContain("MUG-100");
+    await scoped((tx) => markSkuDropship(tx, { orgId, userId: null, channelId, sku: "MUG-100" }));
+    const mug = (await scoped((tx) => listProducts(tx))).find((p) => p.name === "Maple mug");
+    const link = await scoped((tx) =>
+      linkSku(tx, {
+        orgId,
+        userId: null,
+        productId: mug?.id ?? "",
+        channelId,
+        sku: "MUG-100",
+        units: 1,
+      }),
+    );
+    expect(await scoped((tx) => listDropshipSkus(tx))).toEqual([]);
+    await scoped((tx) => unlinkSku(tx, link.id));
   });
 
   it("keeps products to their own company", async () => {

@@ -1,13 +1,17 @@
 "use client";
 
-import { PackagePlus } from "lucide-react";
+import { PackagePlus, Truck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Spinner } from "@/components/ui/spinner";
-import { createProductFromSkuAction, linkSkuFromOrdersAction } from "./actions";
+import {
+  createProductFromSkuAction,
+  linkSkuFromOrdersAction,
+  setSkuDropshipAction,
+} from "./actions";
 import { AmazonSkusButton } from "./amazon-skus-button";
 import { BundleDialog } from "./bundle-dialog";
 
@@ -47,7 +51,8 @@ export function UnlinkedSkus({
           <p className="mt-1 max-w-2xl text-muted-foreground text-sm leading-relaxed">
             From your orders and your Amazon inventory, so variations that haven't sold yet but have
             stock at Amazon or on its way are here too (listings with no orders and nothing in stock
-            aren't). Make a new product from one in one click, or link it to one you already have.
+            aren't). Make a new product from one in one click, link it to one you already have, or
+            mark it as dropship if a partner ships it.
           </p>
         </div>
         <AmazonSkusButton slug={slug} />
@@ -146,6 +151,33 @@ function UnlinkedRow({
             wrapperClassName="min-w-0 flex-1 sm:w-48 sm:flex-none"
           />
         ) : null}
+        <Button
+          variant="ghost"
+          disabled={pending}
+          title="A partner ships it: leave it out of stock and cost of goods sold"
+          onClick={() =>
+            startTransition(async () => {
+              const result = await setSkuDropshipAction(slug, input, true);
+              if (result.ok) {
+                toast.success(`${row.sku} marked as dropship`, {
+                  description: "It's left out of stock and cost of goods sold.",
+                  action: {
+                    label: "Undo",
+                    onClick: async () => {
+                      const undone = await setSkuDropshipAction(slug, input, false);
+                      if (undone.ok) router.refresh();
+                      else toast.error(undone.message);
+                    },
+                  },
+                });
+                router.refresh();
+              } else toast.error(result.message);
+            })
+          }
+        >
+          <Truck />
+          Dropship
+        </Button>
         {products.length >= 2 ? (
           <BundleDialog
             slug={slug}

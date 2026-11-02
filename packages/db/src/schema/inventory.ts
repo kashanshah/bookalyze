@@ -126,6 +126,35 @@ export const productSkus = pgTable(
   ],
 );
 
+/**
+ * A marketplace SKU that's dropshipped: a partner ships it and is paid as you go, so it isn't
+ * linked to a product, and cost of goods sold and the "not linked" list leave it out. The rest
+ * of its channel still ships from stock. Linking the SKU to a product takes it off this list.
+ */
+export const dropshipSkus = pgTable(
+  "dropship_skus",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id").notNull(),
+    sku: text("sku").notNull(),
+    createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("dropship_skus_channel_sku_key").on(t.organizationId, t.channelId, t.sku),
+    foreignKey({
+      name: "dropship_skus_channel_fk",
+      columns: [t.organizationId, t.channelId],
+      foreignColumns: [salesChannels.organizationId, salesChannels.id],
+    }).onDelete("cascade"),
+    check("dropship_skus_sku_present", sql`length(trim(${t.sku})) > 0`),
+    tenantIsolationPolicy("dropship_skus", t.organizationId),
+  ],
+);
+
 export const PURCHASE_ORDER_STATUSES = [
   "draft",
   "ordered",

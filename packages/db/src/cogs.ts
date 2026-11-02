@@ -207,6 +207,9 @@ const costedChannel = sql`(sc.is_active and (sc.connection_id is null or exists 
   select 1 from connections c where c.id = sc.connection_id and c.status <> 'disconnected')))`;
 /** Its orders go out of your stock (not a dropship channel). */
 const fromStock = sql`sc.ships_from_stock`;
+/** The order or ledger row's SKU is dropshipped (a partner ships it), so it isn't costed. */
+const dropship = (channelId: SQL, sku: SQL) =>
+  sql`exists (select 1 from dropship_skus d where d.channel_id = ${channelId} and d.sku = ${sku})`;
 const postedMonth = (month: SQL) =>
   sql`exists (select 1 from cogs_periods p where p.channel_id = sc.id and p.month = ${month})`;
 
@@ -234,6 +237,7 @@ export async function salesByMonth(
     join sales_channels sc on sc.id = o.channel_id
     left join product_skus ps on ps.channel_id = o.channel_id and ps.sku = oi.sku
     where oi.quantity_shipped > 0 and o.status not in (${cancelled})
+      and not (ps.id is null and ${dropship(sql`o.channel_id`, sql`oi.sku`)})
       and ((${costedChannel} and ${fromStock}) or ${postedMonth(orderMonth)})
     group by o.channel_id, sc.name, 3`);
   const moved = await tx.execute<{
@@ -252,6 +256,7 @@ export async function salesByMonth(
     join sales_channels sc on sc.id = e.channel_id
     left join product_skus ps on ps.channel_id = e.channel_id and ps.sku = e.sku
     where e.event_type in ('CustomerReturns', 'Adjustments')
+      and not (ps.id is null and ${dropship(sql`e.channel_id`, sql`e.sku`)})
       and ((${costedChannel} and ${fromStock}) or ${postedMonth(ledgerMonth)})
     group by e.channel_id, sc.name, 3`);
   const map = new Map<string, MonthSales>();

@@ -8,9 +8,11 @@ import {
   inventoryChannels,
   linkBundle,
   linkSku,
+  markSkuDropship,
   schema,
   setProductArchived,
   unlinkSku,
+  unmarkSkuDropship,
   updateProduct,
 } from "@bookalyze/db";
 import { eq } from "drizzle-orm";
@@ -247,6 +249,46 @@ export async function createProductFromSkuAction(
     });
     revalidatePath(path(slug));
     return { ok: true, id: product.id, name: product.name };
+  } catch (error) {
+    return friendly(error);
+  }
+}
+
+/**
+ * Marks a SKU as dropshipped (a partner ships it), or takes the mark off (`dropship: false`): a
+ * dropship SKU leaves the "not linked" list and cost of goods sold.
+ */
+export async function setSkuDropshipAction(
+  slug: string,
+  input: unknown,
+  dropship: boolean,
+): Promise<InventoryActionResult> {
+  const ctx = await getInventoryContext(slug);
+  const parsed = skuFromOrdersSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "This SKU couldn't be found on your orders." };
+  try {
+    await inOrg(ctx, async (tx) => {
+      if (dropship) {
+        await markSkuDropship(tx, {
+          ...parsed.data,
+          orgId: ctx.org.id,
+          userId: ctx.session.user.id,
+        });
+      } else if (!(await unmarkSkuDropship(tx, parsed.data))) {
+        throw new InventoryError(`${parsed.data.sku} isn't marked as dropship any more.`);
+      }
+      await audit(tx, {
+        orgId: ctx.org.id,
+        actorUserId: ctx.session.user.id,
+        action: dropship ? "sku.dropship" : "sku.ships_from_stock",
+        entityType: "sales_channel",
+        entityId: parsed.data.channelId,
+        after: { sku: parsed.data.sku, dropship },
+      });
+    });
+    revalidatePath(path(slug));
+    revalidatePath(`/o/${slug}`);
+    return { ok: true };
   } catch (error) {
     return friendly(error);
   }
