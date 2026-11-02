@@ -4,6 +4,7 @@ import { Brand } from "@/components/brand";
 import { referenceOptions } from "@/lib/reference-options";
 import { listUserOrgs } from "@/server/org";
 import { requireSession } from "@/server/session";
+import { OnboardingAccountMenu, WrongAccountHint } from "./account-menu";
 import { OnboardingForm } from "./onboarding-form";
 
 export const metadata: Metadata = { title: "Set up your company" };
@@ -17,14 +18,17 @@ export default async function OnboardingPage() {
       <header className="border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
           <Brand className="h-7" />
-          {orgs.length ? (
-            <Link
-              href="/"
-              className="text-muted-foreground text-sm transition-colors hover:text-foreground"
-            >
-              Cancel
-            </Link>
-          ) : null}
+          <div className="flex items-center gap-4">
+            {orgs.length ? (
+              <Link
+                href="/"
+                className="text-muted-foreground text-sm transition-colors hover:text-foreground"
+              >
+                Cancel
+              </Link>
+            ) : null}
+            <OnboardingAccountMenu name={session.user.name} email={session.user.email} />
+          </div>
         </div>
       </header>
       <main className="mx-auto grid max-w-5xl gap-10 px-6 py-10 lg:py-14">
@@ -36,6 +40,7 @@ export default async function OnboardingPage() {
             Let's set up {orgs.length ? "its" : "your first company's"} books. It takes about a
             minute, and each company keeps its own books, settings and team.
           </p>
+          {orgs.length ? null : <WrongAccountHint email={session.user.email} />}
         </div>
         <div className="fade-in-0 animate-in fill-mode-both delay-100 duration-500">
           <OnboardingForm {...referenceOptions()} />

@@ -86,6 +86,9 @@ Real company details are entered in the app and never committed.
 - **Org setup:**
   - Onboarding wizard covering name, business type, country and region, main currency, timezone
     and locale.
+  - Onboarding has an account menu (Account & security, Sign out), and a first-time user sees
+    "Signed in as …" with a sign-out link, for someone who came in with the wrong Google account.
+    No skip: without a company there is nothing to show.
   - Financial year end (any month and day) and a short first year.
   - Company settings, team members, and audit log (append-only).
 - **Modules:**

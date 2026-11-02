@@ -22,8 +22,18 @@ const THEMES = [
   { value: "system", label: "Auto", icon: Monitor },
 ] as const;
 
-export function UserMenu({ name, email }: { name: string; email: string }) {
+/** Signs out and goes back to the sign-in page. */
+export function useSignOut() {
   const router = useRouter();
+  return async () => {
+    await authClient.signOut();
+    router.push("/sign-in");
+    router.refresh();
+  };
+}
+
+export function UserMenu({ name, email }: { name: string; email: string }) {
+  const signOut = useSignOut();
   const { theme, setTheme } = useTheme();
   return (
     <DropdownMenu>
@@ -68,13 +78,7 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
           </div>
         </div>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={async () => {
-            await authClient.signOut();
-            router.push("/sign-in");
-            router.refresh();
-          }}
-        >
+        <DropdownMenuItem onSelect={signOut}>
           <LogOut />
           Sign out
         </DropdownMenuItem>

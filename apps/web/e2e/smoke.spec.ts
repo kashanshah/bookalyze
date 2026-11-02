@@ -45,6 +45,13 @@ test("owner signs up, verifies email and sets up a company with the wizard", asy
   await verifyEmail(page, owner.email);
 
   await expect(page).toHaveURL(/\/onboarding/);
+  // The wrong account can leave before setting anything up.
+  await expect(page.getByText(`Signed in as ${owner.email}`)).toBeVisible();
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/sign-in/);
+  await signIn(page, owner.email, owner.password);
+  await expect(page).toHaveURL(/\/onboarding/);
   // Step 1: company. Continuing without a name shows a friendly error.
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByText("Give your company a name.")).toBeVisible();
