@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import "./load-env";
 import { appendFileSync, readFileSync } from "node:fs";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -74,7 +75,7 @@ try {
       );
     } else {
       await migrate(drizzle(client), {
-        migrationsFolder: new URL("../drizzle", import.meta.url).pathname,
+        migrationsFolder: fileURLToPath(new URL("../drizzle", import.meta.url)),
       });
       await grantAppRole(client, url);
       summary(`### Migrations applied\n${pending.map((e) => `- \`${e.tag}\``).join("\n")}`);
