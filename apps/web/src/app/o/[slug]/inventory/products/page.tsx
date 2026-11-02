@@ -1,5 +1,6 @@
 import {
   inventoryChannels,
+  listDropshipSkus,
   listProducts,
   UNITS_SOLD_DAYS,
   unitsOnOrder,
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { inOrg } from "@/server/accounting";
 import { getInventoryContext } from "@/server/inventory";
 import { AmazonSkusButton } from "./amazon-skus-button";
+import { DropshipSkus } from "./dropship-skus";
 import { ProductDialog } from "./product-dialog";
 import { SkuBadges } from "./sku-badges";
 import { UnlinkedSkus } from "./unlinked-skus";
@@ -37,15 +39,19 @@ export default async function ProductsPage({
   const showArchived = sp.archived === "1";
   const ctx = await getInventoryContext(slug);
   const { locale } = ctx.profile;
-  const { products, channels, unlinked, active, onOrder } = await inOrg(ctx, async (tx) => {
-    const channels = await inventoryChannels(tx);
-    const [products, unlinked, active] = [
-      await listProducts(tx, { search: q || null, includeArchived: showArchived }),
-      await unlinkedSkus(tx, { limit: UNLINKED_SHOWN }),
-      q || showArchived ? await listProducts(tx) : null,
-    ];
-    return { products, channels, unlinked, active, onOrder: await unitsOnOrder(tx) };
-  });
+  const { products, channels, unlinked, dropship, active, onOrder } = await inOrg(
+    ctx,
+    async (tx) => {
+      const channels = await inventoryChannels(tx);
+      const [products, unlinked, dropship, active] = [
+        await listProducts(tx, { search: q || null, includeArchived: showArchived }),
+        await unlinkedSkus(tx, { limit: UNLINKED_SHOWN }),
+        await listDropshipSkus(tx),
+        q || showArchived ? await listProducts(tx) : null,
+      ];
+      return { products, channels, unlinked, dropship, active, onOrder: await unitsOnOrder(tx) };
+    },
+  );
   const linkable = (active ?? products).filter((p) => !p.isArchived);
   const channelChoices = channels
     .filter((c) => c.isActive)
@@ -97,6 +103,8 @@ export default async function ProductsPage({
           products={linkable.map((p) => ({ id: p.id, name: p.name }))}
         />
       ) : null}
+
+      {dropship.length ? <DropshipSkus slug={slug} rows={dropship} /> : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <form className="relative w-full sm:w-72" action={base}>

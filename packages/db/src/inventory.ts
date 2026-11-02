@@ -3,7 +3,7 @@ import { and, asc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Transaction } from "./client";
 import { connections } from "./schema/banking";
 import { channelSkus, orderItems, orders, salesChannels } from "./schema/commerce";
-import { productSkus, products } from "./schema/inventory";
+import { dropshipSkus, productSkus, products } from "./schema/inventory";
 
 /**
  * Products and the marketplace SKUs linked to them (phase 5, slice 1). Run inside `withOrg()`.
@@ -316,6 +316,10 @@ export async function linkSku(
       "linked",
     );
   }
+  // Linked to a product means it ships from stock, so it's no longer a dropship SKU.
+  await tx
+    .delete(dropshipSkus)
+    .where(and(eq(dropshipSkus.channelId, input.channelId), eq(dropshipSkus.sku, input.sku)));
   try {
     if (existing) {
       const [row] = await tx
@@ -461,6 +465,9 @@ export async function unlinkedSkus(
       )
       and not exists (
         select 1 from ${productSkus} ps where ps.channel_id = c.channel_id and ps.sku = c.sku
+      )
+      and not exists (
+        select 1 from ${dropshipSkus} d where d.channel_id = c.channel_id and d.sku = c.sku
       )`;
   const rows = await tx.execute<{
     channel_id: string;
@@ -492,6 +499,90 @@ export async function unlinkedSkus(
     })),
     total: Number(count.rows[0]?.total ?? 0),
   };
+}
+
+export type DropshipSku = {
+  channelId: string;
+  channelName: string;
+  sku: string;
+  title: string | null;
+  orders: number;
+};
+
+/**
+ * Marks a marketplace SKU as dropshipped: a partner ships it, so it stays unlinked and cost of
+ * goods sold leaves it out. Refused while it's linked to a product (unlink it there first).
+ */
+export async function markSkuDropship(
+  tx: Transaction,
+  input: { orgId: string; userId: string | null; channelId: string; sku: string },
+) {
+  const sku = input.sku.trim();
+  if (!sku) throw new InventoryError("Choose a SKU.");
+  const [linked] = await tx
+    .select({ name: products.name })
+    .from(productSkus)
+    .innerJoin(products, eq(products.id, productSkus.productId))
+    .where(and(eq(productSkus.channelId, input.channelId), eq(productSkus.sku, sku)));
+  if (linked) {
+    throw new InventoryError(
+      `${sku} is linked to ${linked.name}, so it ships from your stock. Unlink it there first.`,
+      "linked",
+    );
+  }
+  await tx
+    .insert(dropshipSkus)
+    .values({
+      organizationId: input.orgId,
+      channelId: input.channelId,
+      sku,
+      createdBy: input.userId,
+    })
+    .onConflictDoNothing();
+}
+
+/** Takes a SKU off the dropship list: it shows under "not linked" again. */
+export async function unmarkSkuDropship(
+  tx: Transaction,
+  input: { channelId: string; sku: string },
+): Promise<boolean> {
+  const rows = await tx
+    .delete(dropshipSkus)
+    .where(and(eq(dropshipSkus.channelId, input.channelId), eq(dropshipSkus.sku, input.sku)))
+    .returning({ id: dropshipSkus.id });
+  return rows.length > 0;
+}
+
+/** The SKUs marked as dropshipped, with their latest title and orders, by channel then title. */
+export async function listDropshipSkus(tx: Transaction): Promise<DropshipSku[]> {
+  const rows = await tx.execute<{
+    channel_id: string;
+    channel_name: string;
+    sku: string;
+    title: string | null;
+    orders: number;
+  }>(sql`
+    select * from (
+    select d.channel_id, sc.name as channel_name, d.sku,
+      coalesce(
+        (select oi.title from ${orderItems} oi join ${orders} o on o.id = oi.order_id
+          where o.channel_id = d.channel_id and oi.sku = d.sku and oi.title is not null
+          order by o.purchased_at desc limit 1),
+        (select l.title from ${channelSkus} l where l.channel_id = d.channel_id and l.sku = d.sku)
+      ) as title,
+      (select count(distinct o.id) from ${orderItems} oi join ${orders} o on o.id = oi.order_id
+        where o.channel_id = d.channel_id and oi.sku = d.sku)::int as orders
+    from ${dropshipSkus} d
+    join ${salesChannels} sc on sc.id = d.channel_id
+    ) x
+    order by channel_name, lower(coalesce(title, sku)), sku`);
+  return rows.rows.map((r) => ({
+    channelId: r.channel_id,
+    channelName: r.channel_name,
+    sku: r.sku,
+    title: r.title,
+    orders: Number(r.orders),
+  }));
 }
 
 export type ListedSku = {

@@ -25,7 +25,14 @@ import {
   setChannelShipsFromStock,
   upsertOrders,
 } from "../commerce";
-import { createProduct, getProduct, linkSku, updateProduct } from "../inventory";
+import {
+  createProduct,
+  getProduct,
+  linkSku,
+  markSkuDropship,
+  unmarkSkuDropship,
+  updateProduct,
+} from "../inventory";
 import { importLedgerEvents } from "../inventory-ledger";
 import { listLots } from "../landed-costs";
 import { accountBalances, createDefaultChart } from "../ledger";
@@ -202,6 +209,17 @@ describe("cost of goods sold", () => {
     const months = await scoped((tx) => salesByMonth(tx, { timezone: where.timezone }));
     expect(months.filter((m) => m.channelId === channelId)).toEqual([]);
     await scoped((tx) => setChannelShipsFromStock(tx, channelId, true));
+  });
+
+  it("leaves out a dropship SKU while the rest of its channel ships from stock", async () => {
+    await scoped((tx) => markSkuDropship(tx, { orgId, userId: null, channelId, sku: "CANDLE" }));
+    const months = await scoped((tx) => salesByMonth(tx, { timezone: where.timezone }));
+    // October only had the candle, so it's gone; the mugs' months stay.
+    expect(months.map((m) => [m.month, m.units, m.unlinkedUnits, m.unlinkedSkus])).toEqual([
+      ["2026-09", 4, 0, []],
+      ["2026-08", 5, 0, []],
+    ]);
+    await scoped((tx) => unmarkSkuDropship(tx, { channelId, sku: "CANDLE" }));
   });
 
   it("books opening stock against opening balance equity", async () => {

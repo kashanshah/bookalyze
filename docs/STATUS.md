@@ -3216,6 +3216,21 @@ line** (`/commerce/profit/products/pnl`; one SKU at `…/pnl/[sku]`).
   `setChannelShipsFromStock`; web `setChannelShipsFromStockAction` (audited
   `channel.dropship` / `channel.ships_from_stock`), `StockSwitch`. Test: db `cogs.test.ts`.
 
+### Dropship SKUs: one listing at a time
+
+- A channel can mix stock and dropship (Kazomo CA's eBay sites list both), so a single SKU can be
+  marked **Dropship** from Products → "SKUs that aren't linked" (toast with Undo). It leaves that
+  list and the Home count (`unlinkedSkus`), and cost of goods sold leaves its units and ledger
+  moves out (`salesByMonth`: `dropship(...)`), so a month with only dropship sales disappears.
+  Stock and Reorder follow linked SKUs only, so they leave it out already. Its cost is the
+  partner's payment, booked as an expense. A folded "Dropship SKUs (N)" section on Products lists
+  them, each with "Ships from my stock" to undo. Linking a dropship SKU to a product clears the
+  mark; a linked SKU can't be marked (unlink first). The channel's "Ships from your stock" switch
+  stays for channels that are dropship from top to bottom.
+  `dropship_skus` (migration `0098_dropship_skus`). db `markSkuDropship`, `unmarkSkuDropship`,
+  `listDropshipSkus`; web `setSkuDropshipAction` (audited `sku.dropship` /
+  `sku.ships_from_stock`), `dropship-skus.tsx`. Tests: db `inventory.test.ts`, `cogs.test.ts`.
+
 ### eBay: a site added later gets its money rows
 
 - eBay money rows go to the site of their order (`placeEbayTransactionsByOrder`). That ran only
