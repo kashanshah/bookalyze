@@ -6,8 +6,10 @@ import { createDefaultChart, postJournalEntry } from "../ledger";
 import * as schema from "../schema";
 import {
   countNeedsAccount,
+  getTransactionNotes,
   listTransactions,
   replaceJournalEntry,
+  setTransactionNotes,
   setTransactionReviewed,
   voidJournalEntry,
 } from "../transactions";
@@ -212,6 +214,67 @@ describe("transactions", () => {
     expect(entries.some((e) => e.reversesEntryId === software.id && e.date === "2026-07-02")).toBe(
       true,
     );
+  });
+
+  it("keeps notes beside a transaction, finds them in search and carries them through an edit", async () => {
+    const { posted } = await post(
+      {
+        kind: "withdrawal",
+        moneyAccountId: code["2100"] as string,
+        splits: [{ accountId: code["6000"] as string, amount: "49.00" }],
+      },
+      "2026-07-05",
+      "Smart watch",
+    );
+    await scoped((tx) =>
+      setTransactionNotes(tx, {
+        orgId,
+        entryId: posted.id,
+        notes: "  Test device for the fitness app client's watch sync  ",
+      }),
+    );
+    const found = await scoped((tx) =>
+      listTransactions(tx, { limit: 50, offset: 0, search: "watch sync" }),
+    );
+    expect(found.rows.map((r) => [r.id, r.notes])).toEqual([
+      [posted.id, "Test device for the fitness app client's watch sync"],
+    ]);
+
+    const all = await scoped((tx) => tx.select().from(schema.accounts));
+    const corrected = prepareJournalEntry(
+      {
+        currency: "CAD",
+        baseCurrency: "CAD",
+        lines: transactionLines({
+          kind: "withdrawal",
+          moneyAccountId: code["2100"] as string,
+          splits: [{ accountId: code["6000"] as string, amount: "52.00" }],
+        }),
+      },
+      new Map(all.map((a) => [a.id, a])),
+    );
+    if (!corrected.ok) throw new Error("bad");
+    const replaced = await scoped((tx) =>
+      replaceJournalEntry(tx, {
+        orgId,
+        entryId: posted.id,
+        date: "2026-07-05",
+        memo: "Smart watch",
+        entry: corrected.entry,
+      }),
+    );
+    expect(await scoped((tx) => getTransactionNotes(tx, replaced.id))).toBe(
+      "Test device for the fitness app client's watch sync",
+    );
+
+    // Blank notes remove them; overly long ones are refused.
+    await scoped((tx) => setTransactionNotes(tx, { orgId, entryId: replaced.id, notes: "  " }));
+    expect(await scoped((tx) => getTransactionNotes(tx, replaced.id))).toBeNull();
+    await expect(
+      scoped((tx) =>
+        setTransactionNotes(tx, { orgId, entryId: replaced.id, notes: "x".repeat(5001) }),
+      ),
+    ).rejects.toThrow(/5000 characters/);
   });
 
   it("voids a transaction by reversing it on its own date", async () => {

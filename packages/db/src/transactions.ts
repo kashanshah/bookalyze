@@ -16,7 +16,13 @@ import { entryContactSql } from "./contacts";
 import { carryEntryLinks } from "./duplicates";
 import { LedgerError, postJournalEntry, reverseJournalEntry } from "./ledger";
 import { moveReconciliationTicks } from "./reconciliation";
-import { accounts, journalEntries, journalLines, transactionReviews } from "./schema/accounting";
+import {
+  accounts,
+  journalEntries,
+  journalLines,
+  transactionNotes,
+  transactionReviews,
+} from "./schema/accounting";
 import { reconciliationLines, reconciliations } from "./schema/reconciliation";
 import { followTransferEdit } from "./transfers";
 
@@ -109,6 +115,8 @@ export type TransactionRow = {
   entryNumber: number;
   date: string;
   memo: string | null;
+  /** Longer notes kept beside the entry (see `setTransactionNotes`). */
+  notes: string | null;
   reference: string | null;
   currency: string;
   fxRate: string;
@@ -205,6 +213,7 @@ export async function listTransactions(
     conditions.push(sql`(
       ${journalEntries.memo} ilike ${pattern} or ${journalEntries.reference} ilike ${pattern}
       or exists (select 1 from ${journalLines} l where l.journal_entry_id = ${journalEntries.id} and l.description ilike ${pattern})
+      or exists (select 1 from ${transactionNotes} n where n.journal_entry_id = ${journalEntries.id} and n.notes ilike ${pattern})
     )`);
   }
 
@@ -216,6 +225,9 @@ export async function listTransactions(
       entryNumber: journalEntries.entryNumber,
       date: journalEntries.date,
       memo: journalEntries.memo,
+      notes: sql<
+        string | null
+      >`(select n.notes from ${transactionNotes} n where n.journal_entry_id = ${journalEntries.id})`,
       reference: journalEntries.reference,
       currency: journalEntries.currency,
       fxRate: journalEntries.fxRate,
@@ -345,10 +357,52 @@ export async function setTransactionReviewed(
   }
 }
 
+/** The longest notes a transaction can hold. */
+export const TRANSACTION_NOTES_MAX = 5000;
+
+/**
+ * Writes a transaction's notes (blank removes them). Notes sit beside the entry, so this never
+ * reposts it and works in a closed period too.
+ */
+export async function setTransactionNotes(
+  tx: Transaction,
+  input: { orgId: string; entryId: string; notes: string | null; userId?: string | null },
+) {
+  const notes = input.notes?.trim() ?? "";
+  if (!notes) {
+    await tx.delete(transactionNotes).where(eq(transactionNotes.journalEntryId, input.entryId));
+    return;
+  }
+  if (notes.length > TRANSACTION_NOTES_MAX) {
+    throw new LedgerError(`Keep the notes under ${TRANSACTION_NOTES_MAX} characters.`);
+  }
+  await tx
+    .insert(transactionNotes)
+    .values({
+      organizationId: input.orgId,
+      journalEntryId: input.entryId,
+      notes,
+      updatedBy: input.userId ?? null,
+    })
+    .onConflictDoUpdate({
+      target: transactionNotes.journalEntryId,
+      set: { notes, updatedBy: input.userId ?? null, updatedAt: new Date() },
+    });
+}
+
+/** A transaction's notes, or null. */
+export async function getTransactionNotes(tx: Transaction, entryId: string) {
+  const [row] = await tx
+    .select({ notes: transactionNotes.notes })
+    .from(transactionNotes)
+    .where(eq(transactionNotes.journalEntryId, entryId));
+  return row?.notes ?? null;
+}
+
 /**
  * Replaces a posted entry with a corrected one: reverses the original on its own date (so the
  * period it was in is corrected, not a later one) and posts the new entry. Keeps the review
- * status and attached files. Both writes happen in the caller's transaction.
+ * status, notes and attached files. Both writes happen in the caller's transaction.
  */
 export async function replaceJournalEntry(
   tx: Transaction,
@@ -417,6 +471,15 @@ export async function replaceJournalEntry(
     toEntityId: posted.id,
     userId: input.userId,
   });
+  const notes = await getTransactionNotes(tx, input.entryId);
+  if (notes) {
+    await setTransactionNotes(tx, {
+      orgId: input.orgId,
+      entryId: posted.id,
+      notes,
+      userId: input.userId,
+    });
+  }
   if (review) {
     await setTransactionReviewed(tx, {
       orgId: input.orgId,

@@ -19,6 +19,8 @@ export type TxRow = {
   number: string;
   date: string;
   memo: string | null;
+  /** Longer notes kept beside the transaction. */
+  notes: string | null;
   currency: string;
   fxRate: string;
   reviewed: boolean;

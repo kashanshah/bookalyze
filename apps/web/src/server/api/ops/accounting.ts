@@ -39,6 +39,7 @@ import {
   deleteTransactionAction,
   matchTransferAction,
   saveTransactionAction,
+  setNotesAction,
   setReviewedAction,
   unmatchTransferAction,
 } from "@/app/o/[slug]/accounting/transactions/actions";
@@ -61,6 +62,13 @@ const split = z.object({
 const transactionFields = {
   date: isoDate("The transaction's date."),
   memo: z.string().max(500).optional().describe("The description, e.g. the bank's text."),
+  notes: z
+    .string()
+    .max(5000)
+    .optional()
+    .describe(
+      "Longer notes: what it was for, who it was for, anything the receipt doesn't say. Kept beside the entry.",
+    ),
   fxRate: z
     .string()
     .max(30)
@@ -308,7 +316,8 @@ export const accountingOperations = [
     name: "update_transaction",
     title: "Change a transaction (categorise)",
     description: [
-      "Changes a transaction the way editing it on the Transactions screen does: the category (`categoryId` for a one-category transaction, or `splits` to replace all of them), description, contact, date, amount or bank account.",
+      "Changes a transaction the way editing it on the Transactions screen does: the category (`categoryId` for a one-category transaction, or `splits` to replace all of them), description, notes, contact, date, amount or bank account.",
+      "`notes` alone (with nothing else to change) is saved without reposting, so the ID stays and it works for reconciled transactions and closed periods; an empty string removes them.",
       "Use it to categorise bank transactions. Reconciled transactions keep their date, amount and bank account (the statement's fields) but can be recategorised.",
       "Transactions in a closed period can't change. The edit reverses the old entry and posts a corrected one; the ID changes (returned).",
     ].join(" "),
@@ -320,6 +329,11 @@ export const accountingOperations = [
       transactionId: id("transaction"),
       date: isoDate("A new date.").optional(),
       memo: z.string().max(500).optional(),
+      notes: z
+        .string()
+        .max(5000)
+        .optional()
+        .describe("Longer notes; an empty string removes them."),
       amount: amount("A new amount (single-category transactions and transfers).").optional(),
       moneyAccountId: z.uuid().optional(),
       categoryId: z.uuid().optional().describe("The category, for a one-category transaction."),
@@ -329,6 +343,12 @@ export const accountingOperations = [
       received: amount("Transfers between currencies: what arrived.").optional(),
     }),
     run: async ({ input }) => {
+      const { notes, company: _company, transactionId, ...changes } = input;
+      if (notes !== undefined && Object.values(changes).every((v) => v === undefined)) {
+        await findTransaction(input.company, transactionId);
+        unwrap(await setNotesAction(input.company, transactionId, notes));
+        return { id: transactionId, notes: notes.trim() || null };
+      }
       const { ctx, row } = await findTransaction(input.company, input.transactionId);
       if (input.categoryId && !input.splits && row.view.splits.length > 1) {
         throw new ApiError(
@@ -377,6 +397,7 @@ export const accountingOperations = [
       if (input.contactId !== undefined) form.contactId = input.contactId ?? "";
       if (input.fxRate !== undefined) form.fxRate = input.fxRate;
       if (input.received !== undefined) form.received = input.received;
+      if (notes !== undefined) form.notes = notes;
       return unwrap(await saveTransactionAction(input.company, form)).data;
     },
   }),

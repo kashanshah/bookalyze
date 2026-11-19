@@ -12,6 +12,7 @@ import {
   FileX2,
   Lock,
   Pencil,
+  StickyNote,
   Trash2,
   Wand2,
 } from "lucide-react";
@@ -349,6 +350,17 @@ export function TransactionRow({
       </div>
 
       <div className="flex shrink-0 items-center justify-end gap-1.5">
+        {row.notes ? (
+          <button
+            type="button"
+            onClick={open}
+            title={row.notes.length > 200 ? `${row.notes.slice(0, 200)}…` : row.notes}
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted"
+          >
+            <StickyNote className="size-4" />
+            <span className="sr-only">Has notes</span>
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={open}

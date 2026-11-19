@@ -708,6 +708,13 @@
       "when": 1795102430251,
       "tag": "0100_dropship_products",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1795114679858,
+      "tag": "0101_transaction_notes",
+      "breakpoints": true
     }
   ]
 }

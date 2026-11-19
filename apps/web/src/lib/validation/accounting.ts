@@ -107,6 +107,8 @@ export const transactionSchema = z.object({
   kind: z.enum(["deposit", "withdrawal", "transfer"]),
   date: z.string().refine(isIsoDate, "Choose a date."),
   memo: optionalText(500, "Keep the description under 500 characters."),
+  /** Longer notes kept beside the transaction. Left out: the notes don't change. */
+  notes: z.string().max(5000, "Keep the notes under 5,000 characters.").optional(),
   fxRate: z.string().trim().max(30).optional(),
   moneyAccountId: z.string().trim().max(64).optional(),
   splits: z

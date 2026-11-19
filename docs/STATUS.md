@@ -17,7 +17,8 @@ Cursor, Copilot…).
     security@amazon.com within 24 hours): [`docs/SECURITY.md`](SECURITY.md).
   - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
-_Last updated: 2026-11-19, the public API (`/api/v1`) and MCP server (`/api/mcp`) with per-person
+_Last updated: 2026-11-20, transaction notes (a Notes box kept beside each transaction).
+Before that, 2026-11-19, the public API (`/api/v1`) and MCP server (`/api/mcp`) with per-person
 API keys and "Sign in with Bookalyze" (OAuth), and Settings → AI assistants to connect ChatGPT,
 Claude and Gemini in one click._
 
@@ -600,6 +601,17 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   (n)" above the grid; a bar at the bottom deletes the ticked ones after a confirm
   (`deleteAttachmentsAction`, 200 per request; the inbox sends bigger selections in batches; files
    attached to a transaction are skipped and counted).
+
+- **Transaction notes** (`transaction_notes`, migration 0101): a "Notes" box under the
+  transaction dialog's fields for the longer story (what it was for, who it was for, what the
+  receipt doesn't say), up to 5,000 characters; the one-line Description stays the bank's text.
+  Notes sit beside the entry, not on it: `setTransactionNotes()` (db) writes them without
+  reposting, so a notes-only save (`setNotesAction`) keeps the entry's ID and works on reconciled
+  transactions and in closed periods (the read-only dialog shows **Save notes**). Any edit that
+  replaces the entry carries them over (`replaceJournalEntry`), like the review tick. The list
+  shows a note icon (hover for the text) and search matches notes. API/MCP: `notes` on
+  `create_transaction`, `update_transaction` (alone it doesn't repost; "" removes) and in every
+  transaction returned.
 
 ### Simpler like Wave: edit on the list, add categories anywhere
 
