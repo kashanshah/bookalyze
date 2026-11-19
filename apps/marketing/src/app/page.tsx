@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Sparkles,
   Star,
+  Truck,
   UsersRound,
 } from "lucide-react";
 import { ButtonLink } from "@/components/button";
@@ -23,6 +24,7 @@ import { PainsGrid } from "@/components/pains";
 import {
   AssistantChatPreview,
   CompaniesPreview,
+  DropshipPreview,
   InvoicePreview,
   PayoutsPreview,
   ProfitWaterfall,
@@ -50,6 +52,7 @@ const CONNECTS = [
 const HIGHLIGHTS = [
   { icon: Sparkles, label: "Works in ChatGPT, Claude and Gemini", href: "#ai" },
   { icon: Star, label: "Automatic review requests", href: "#reviews" },
+  { icon: Truck, label: "Dropshipping on eBay", href: "#dropshipping" },
   { icon: Landmark, label: "Wise bank sync", href: "#wise" },
   { icon: FileText, label: "Buyer invoices in seconds", href: "#invoices" },
 ] as const;
@@ -123,6 +126,10 @@ const FAQ: Question[] = [
     a: "Amazon (North America, Europe, the Middle East and the Far East), Walmart (the US, Canada and Mexico), Noon (the UAE, Saudi Arabia and Egypt) and eBay (US, Canada, UK, Australia, Germany, France, Italy and Spain).",
   },
   {
+    q: "I dropship. Does Bookalyze work without stock?",
+    a: "Yes. Mark the listings your supplier ships (or a whole channel) as dropship: they stay out of stock and cost of goods, and your supplier payments become the cost, counted against that channel in Channel profit. Listings you ship from your own stock keep working as usual, even on the same eBay site.",
+  },
+  {
     q: "Do I still need a separate bookkeeping app?",
     a: "No. Bookalyze is full double-entry accounting: chart of accounts, bank reconciliation, receipts, sales tax and financial reports. If you use Wave, you can bring your history with you.",
   },
@@ -163,12 +170,13 @@ export default function HomePage() {
               <ArrowRight className="size-3.5 text-muted-foreground rtl:rotate-180" />
             </a>
             <h1 className="text-balance font-semibold text-4xl tracking-tight sm:text-5xl lg:text-6xl">
-              Accounting built for Amazon, Walmart and Noon sellers.
+              Accounting built for Amazon, Walmart, Noon and eBay sellers.
             </h1>
             <p className="max-w-xl text-pretty text-lg text-muted-foreground leading-relaxed">
               For sellers in the United States, Canada, Mexico, the UAE, Saudi Arabia and Egypt.
               Every settlement posted, every payout matched to your bank, and what each channel
-              really earned after fees, refunds, ads and cost of goods. eBay too.
+              really earned after fees, refunds, ads and cost of goods. Selling on eBay, or
+              dropshipping? That too.
             </p>
             <ul className="flex flex-wrap gap-2">
               {HIGHLIGHTS.map((h) => (
@@ -309,6 +317,23 @@ export default function HomePage() {
         />
         <MarketplaceCards />
       </Section>
+
+      {/* Highlight: eBay and dropshipping */}
+      <Highlight
+        id="dropshipping"
+        reverse
+        eyebrow="eBay and dropshipping"
+        title="Dropshipping on eBay? Your books finally make sense"
+        lead="Your supplier ships the order, so there's no stock to count, just a sale on eBay and a payment to the supplier. Bookalyze keeps those listings out of stock and cost of goods, and shows what each one really leaves you."
+        points={[
+          "Every eBay site you sell on: orders, fees, ads, refunds and payouts brought in each day",
+          "Mark a listing as shipped by your supplier, one at a time or the whole channel; mix it with your own stock",
+          "Supplier payments counted against eBay, so its profit is the real one",
+          "Each month posted as one entry, and every eBay payout matched to your bank",
+        ]}
+        guide="dropshipping-on-ebay"
+        picture={<DropshipPreview />}
+      />
 
       {/* Highlight: review requests */}
       <Highlight

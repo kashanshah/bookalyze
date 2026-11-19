@@ -927,3 +927,67 @@ export function AssistantChatPreview() {
     </div>
   );
 }
+
+const DROPSHIP_LISTINGS = [
+  { title: "Memory foam seat cushion", sku: "EB-CUSH-01", partner: true },
+  { title: "Glass coffee mugs, set of 4", sku: "CC-350-P4", partner: false },
+  { title: "LED desk lamp, dimmable", sku: "EB-LAMP-22", partner: true },
+] as const;
+
+const DROPSHIP_PROFIT = [
+  { label: "Sales", amount: "$8,940.00" },
+  { label: "eBay fees and ads", amount: "−$1,251.60" },
+  { label: "Paid to your supplier", amount: "−$5,364.00" },
+] as const;
+
+/**
+ * Inventory → Products: eBay listings marked as shipped by a partner or from your own stock, and
+ * the channel's profit with the partner's payments as a cost instead of stock.
+ */
+export function DropshipPreview() {
+  return (
+    <Frame>
+      <div className="grid gap-4 p-4 sm:p-6">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-muted-foreground text-xs">Inventory · Products · eBay US</p>
+            <p className="font-semibold">Who ships each listing</p>
+          </div>
+          <Pill tone="primary">Stock and dropship</Pill>
+        </div>
+        <ul className="divide-y rounded-xl border">
+          {DROPSHIP_LISTINGS.map((l, i) => (
+            <li key={l.sku} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate font-medium text-sm">{l.title}</p>
+                <p className="font-mono text-muted-foreground text-xs">{l.sku}</p>
+              </div>
+              {l.partner ? (
+                <Swap
+                  className="justify-items-end"
+                  delay={0.5 + i * 0.9}
+                  before={<Pill tone="warning">Not linked</Pill>}
+                  after={<Pill tone="primary">Supplier ships</Pill>}
+                />
+              ) : (
+                <Pill tone="success">Your stock</Pill>
+              )}
+            </li>
+          ))}
+        </ul>
+        <div className="grid gap-2 rounded-xl border bg-sidebar p-4">
+          {DROPSHIP_PROFIT.map((r) => (
+            <div key={r.label} className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-muted-foreground">{r.label}</span>
+              <span className="tabular-nums">{r.amount}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between gap-3 border-t pt-2 font-semibold text-sm">
+            <span>Profit, this month</span>
+            <span className="text-success tabular-nums">$2,324.40</span>
+          </div>
+        </div>
+      </div>
+    </Frame>
+  );
+}

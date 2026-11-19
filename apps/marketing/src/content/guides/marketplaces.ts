@@ -28,6 +28,7 @@ export const MARKETPLACE_GUIDES: readonly Guide[] = [
             list: [
               "**Switch it on or off.** Off, nothing more is brought in from it; what's already in stays.",
               "**Who ships** (Walmart and Noon): the marketplace (WFS, FBN), you, or both.",
+              "**Ships from your stock:** on by default. Switch it off when a partner or supplier ships every order (dropshipping): the channel stays out of stock, reorder and cost of goods sold.",
               "**Its orders:** the Orders list filtered to this channel.",
               "**The account behind it:** test the connection, replace the keys, or disconnect.",
             ],
