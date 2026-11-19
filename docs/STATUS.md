@@ -3313,6 +3313,11 @@ line** (`/commerce/profit/products/pnl`; one SKU at `…/pnl/[sku]`).
   `dropship_skus` (migration `0098_dropship_skus`). db `markSkuDropship`, `unmarkSkuDropship`,
   `listDropshipSkus`; web `setSkuDropshipAction` (audited `sku.dropship` /
   `sku.ships_from_stock`), `dropship-skus.tsx`. Tests: db `inventory.test.ts`, `cogs.test.ts`.
+- **On the public site:** the home page names eBay in the headline and has an "eBay and
+  dropshipping" section (`#dropshipping`, `DropshipPreview`), a hero chip and an FAQ for sellers
+  without stock; the guide `dropshipping-on-ebay` (playbooks) walks through the switch, the
+  per-SKU mark and counting supplier payments against eBay in Channel profit. The Channels guide
+  now lists **Ships from your stock**.
 
 ### eBay: a site added later gets its money rows
 

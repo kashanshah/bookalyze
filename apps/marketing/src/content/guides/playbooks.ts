@@ -391,4 +391,102 @@ export const PLAYBOOK_GUIDES: readonly Guide[] = [
     ],
     related: ["month-end-for-sellers", "reconcile", "stock-overview", "match-payouts"],
   },
+  {
+    slug: "dropshipping-on-ebay",
+    category: "playbooks",
+    title: "Dropshipping on eBay: books without stock",
+    summary:
+      "Your supplier ships the order, so you never hold the stock. Mark those listings as dropship, count your supplier payments against eBay, and Channel profit shows what dropshipping really leaves you.",
+    sections: [
+      {
+        heading: "How dropshipping looks in your books",
+        blocks: [
+          {
+            p: "A dropship sale has two sides: eBay pays you for the order, less its fees, and you pay your supplier to ship it. There's no stock to buy ahead, so nothing goes through Inventory or cost of goods sold. The supplier's payment is the cost of the sale.",
+          },
+          {
+            list: [
+              "**Sales, fees, ads and refunds** come from eBay, each site's month posted as one entry",
+              "**Payouts** from eBay are matched to the deposits in your bank",
+              "**Supplier payments** are expenses, counted against the eBay channel",
+            ],
+          },
+        ],
+      },
+      {
+        heading: "1. Connect eBay",
+        blocks: [
+          { where: "Commerce → Channels → Add a channel → eBay" },
+          {
+            p: "Add each eBay site you sell on, then **Connect eBay** once on eBay's own page, read-only. Orders and eBay's money start coming in every day.",
+          },
+        ],
+      },
+      {
+        heading: "2. Say who ships",
+        blocks: [
+          {
+            table: {
+              head: ["You sell", "Do this"],
+              rows: [
+                [
+                  "Only dropship on this site",
+                  "On the channel's page, switch off **Ships from your stock**",
+                ],
+                [
+                  "Some dropship, some from your own stock",
+                  "Inventory → Products → **SKUs that aren't linked**: choose **Dropship** on each listing your supplier ships, and link the rest to your products",
+                ],
+              ],
+            },
+          },
+          {
+            p: "Dropship listings move to a folded **Dropship SKUs** list on Products. Changed your mind? **Ships from my stock** puts a listing back; linking it to a product does too.",
+          },
+        ],
+      },
+      {
+        heading: "3. Count your supplier payments against eBay",
+        blocks: [
+          { where: "Accounting → Chart of accounts" },
+          {
+            p: "Add an expense category for your supplier, say **Dropship supplier payments**, and categorise their payments to it on Transactions. A bank rule does it for you from then on.",
+          },
+          { where: "Commerce → Channel profit → Your own costs" },
+          {
+            p: "Count that category against your eBay channel. Its profit now sets every supplier payment against eBay's sales and fees.",
+          },
+        ],
+      },
+      {
+        heading: "What you should see",
+        blocks: [
+          {
+            note: "The numbers here are made up to show the steps.",
+            tone: "caution",
+          },
+          {
+            table: {
+              head: ["eBay US, this month", "Amount"],
+              rows: [
+                ["Sales", "$8,940.00"],
+                ["eBay fees and ads", "−$1,251.60"],
+                ["Paid to your supplier", "−$5,364.00"],
+                ["Profit", "$2,324.40"],
+              ],
+            },
+          },
+          {
+            check: [
+              "No unlinked SKUs left on Products: every listing is linked or marked dropship",
+              "Cost of goods sold leaves dropship orders out, so months with only dropship sales don't appear",
+              "Stock and Reorder don't count dropship orders",
+              "Channel profit for eBay includes your supplier payments under Your own costs",
+            ],
+          },
+        ],
+      },
+    ],
+    related: ["connect-ebay", "ebay-months", "channel-profit", "bank-rules"],
+  },
 ];

@@ -9,12 +9,12 @@ import "./globals.css";
 import { Growth } from "@/components/growth";
 
 const DESCRIPTION =
-  "Accounting built for Amazon, Walmart and Noon sellers (and eBay): every settlement posted, every payout matched to your bank, cost of goods and profit per channel, for every company you run. Free for 30 days.";
+  "Accounting built for Amazon, Walmart, Noon and eBay sellers, dropshippers included: every settlement posted, every payout matched to your bank, cost of goods and profit per channel, for every company you run. Free for 30 days.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Bookalyze · Accounting for Amazon, Walmart and Noon sellers",
+    default: "Bookalyze · Accounting for Amazon, Walmart, Noon and eBay sellers",
     template: "%s · Bookalyze",
   },
   description: DESCRIPTION,
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     type: "website",
     siteName: "Bookalyze",
     url: "/",
-    title: "Bookalyze · Accounting built for Amazon, Walmart and Noon sellers",
+    title: "Bookalyze · Accounting built for Amazon, Walmart, Noon and eBay sellers",
     description: DESCRIPTION,
   },
   twitter: { card: "summary_large_image" },
