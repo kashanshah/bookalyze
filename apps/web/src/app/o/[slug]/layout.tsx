@@ -46,7 +46,8 @@ export default async function OrgLayout({
             <SidebarContent ctx={ctx} orgs={orgs} />
           </MobileNav>
         </div>
-        <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8 lg:px-10 lg:py-10 print:max-w-none print:p-0">
+        {/* pb-28: room below the last thing on a page, so it can scroll clear of the Help button. */}
+        <main className="mx-auto w-full max-w-6xl px-4 pt-8 pb-28 sm:px-8 lg:px-10 lg:pt-10 print:max-w-none print:p-0">
           {trialEnding ? (
             <p className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm print:hidden">
               <Gift className="size-4 shrink-0 text-primary" />
