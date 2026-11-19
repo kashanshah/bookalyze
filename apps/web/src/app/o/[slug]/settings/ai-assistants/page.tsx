@@ -3,7 +3,11 @@ import type { Metadata } from "next";
 import { AssistantReminders } from "@/components/ai/assistant-reminders";
 import { ConnectAssistants } from "@/components/ai/connect-assistants";
 import { PageHeader } from "@/components/shell/page-header";
-import { loadAssistantConnections, loadAssistantReminders } from "@/server/ai-assistants";
+import {
+  assistantListings,
+  loadAssistantConnections,
+  loadAssistantReminders,
+} from "@/server/ai-assistants";
 import { requestOrigin } from "@/server/oauth-request";
 import { getOrgContext } from "@/server/org";
 
@@ -33,6 +37,7 @@ export default async function AiAssistantsPage({ params }: { params: Promise<{ s
         origin={origin}
         mcpUrl={mcpUrl(origin)}
         connections={connections}
+        listings={assistantListings()}
         companyName={ctx.org.name}
       />
     </div>

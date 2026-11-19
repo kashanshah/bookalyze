@@ -1,0 +1,94 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "bookalyze",
+  "version": "1.0.0",
+  "description": "Bookalyze in ChatGPT: ask about your books in plain words, and have ChatGPT categorise, reconcile, upload statements and pull reports, under the same rules as the app.",
+  "author": { "name": "Teknoffice Technologies Inc.", "url": "https://bookalyze.com" },
+  "homepage": "https://bookalyze.com/features/ai-assistants",
+  "keywords": ["accounting", "bookkeeping", "ecommerce", "amazon sellers", "reports"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Bookalyze",
+        "shortDescription": "Bookkeeping for online sellers",
+        "longDescription": "Bookalyze is accounting for businesses that sell online. Connect it to ChatGPT and work on your books in conversation.\n\nAsk about your numbers: profit and loss for any period, balance sheet, trial balance, general ledger, sales tax, bank balances, and any transaction or journal entry.\n\nHave ChatGPT do the bookkeeping, if you allow it: categorise transactions, record money in and out and transfers between currencies, post journal entries, upload a bank statement, sync a bank connection and reconcile an account to its statement.\n\nYou stay in control. You choose on Bookalyze's own page whether ChatGPT may only read or also make changes, which companies it may use and for how long. It acts as you, with your role in each company, under the app's own checks: closed periods, reconciled lines and balanced entries are enforced on every change, and each change is recorded in the company's audit log. You can disconnect it at any time in Bookalyze under Settings, AI assistants.\n\nA Bookalyze account is needed (bookalyze.com).",
+        "developerName": "Teknoffice Technologies Inc.",
+        "category": "Productivity",
+        "capabilities": [
+          "Read profit and loss, balance sheet, trial balance and ledgers",
+          "Find and categorise transactions",
+          "Reconcile a bank account to its statement",
+          "Upload bank statements and receipts",
+          "Post journal entries"
+        ],
+        "websiteURL": "https://bookalyze.com",
+        "supportURL": "https://bookalyze.com/contact",
+        "privacyPolicyURL": "https://app.bookalyze.com/privacy-policy",
+        "termsOfServiceURL": "https://app.bookalyze.com/terms",
+        "defaultPrompt": [
+          "What was my profit last month, and what changed from the month before?",
+          "Which Bookalyze transactions are still uncategorised? Suggest a category for each.",
+          "Show my bank balances in Bookalyze."
+        ],
+        "brandColor": "#4C55CA",
+        "brandColorDark": "#606CDD",
+        "logo": "./assets/logo.png"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Lists the companies the person can use",
+              "prompt": "List my Bookalyze companies.",
+              "tools_triggered": "list_companies",
+              "expected_behavior": "Calls list_companies and lists each company's name with its main currency."
+            },
+            {
+              "description": "Reads a profit and loss report",
+              "prompt": "What was Maple Goods' profit in October 2026 in Bookalyze?",
+              "tools_triggered": "list_companies, profit_and_loss",
+              "expected_behavior": "Finds the company, calls profit_and_loss for 2026-10-01 to 2026-10-31 and reports income, expenses and net profit with the company's currency."
+            },
+            {
+              "description": "Finds uncategorised transactions",
+              "prompt": "Which Maple Goods transactions in Bookalyze are still uncategorised?",
+              "tools_triggered": "list_accounts, list_transactions",
+              "expected_behavior": "Calls list_transactions (the uncategorised or unreviewed ones, using list_accounts to find the uncategorised category if needed) and lists date, description and amount for each, without changing anything."
+            },
+            {
+              "description": "Categorises a transaction after confirmation",
+              "prompt": "Categorise the most recent uncategorised Maple Goods transaction as Office expenses.",
+              "tools_triggered": "list_transactions, list_accounts, update_transaction",
+              "expected_behavior": "Looks up the transaction and the Office expenses account, says what it will change, and after the person confirms calls update_transaction. The change appears in the company's audit log."
+            },
+            {
+              "description": "Shows bank balances",
+              "prompt": "Show my Bookalyze bank account balances for Maple Goods.",
+              "tools_triggered": "list_bank_accounts",
+              "expected_behavior": "Calls list_bank_accounts and lists each account with its balance and currency."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Unrelated request: no Bookalyze tool should run",
+              "prompt": "Write a haiku about autumn."
+            },
+            {
+              "description": "General accounting question with no request about the person's own books",
+              "prompt": "In general, what is the difference between cash and accrual accounting?"
+            },
+            {
+              "description": "Asks for something Bookalyze doesn't do (payments)",
+              "prompt": "Send $500 from my bank account to my supplier."
+            }
+          ]
+        },
+        "demo_recording_url": "https://REPLACE-WITH-THE-DEMO-VIDEO-URL"
+      },
+      "publication": {
+        "countries": ["CA", "US"],
+        "release_notes": "First release: read reports and transactions, and with read-and-write access categorise, reconcile, upload statements and post journal entries."
+      }
+    }
+  }
+}

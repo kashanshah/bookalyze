@@ -1930,6 +1930,13 @@ agents: API + MCP").
     (a cookie, `bk_ai_reminders`, no database write); "ends soon" and "has ended" are separate, so
     dismissing the first still warns when it ends. A live connection with the same name clears it.
     Logic: `assistantReminders()` in core (tested).
+  - **App directories** (docs/AI-DIRECTORIES.md): what to submit to Claude's Connectors Directory,
+    ChatGPT's Plugin directory (package in `integrations/chatgpt-plugin/`) and Google's Connected
+    Apps preview. `CLAUDE_/CHATGPT_/GEMINI_DIRECTORY_URL` switch **Connect** to the listing once
+    approved; until then Claude opens its add-connector form prefilled. MCP app actions are two
+    tools (`read_app_action`, `call_app_action`) so each tool is plainly read-only or not.
+    `/.well-known/openai-apps-challenge` serves `OPENAI_APPS_CHALLENGE`. Privacy policy: new "AI
+    assistants and API access" section.
   - The MCP server sends its name, website and icons (`/connector-icon.png`, 256 px, under 10 KB
     for ChatGPT's icon field) in `serverInfo`, and the ChatGPT steps offer the icon to download.
   - One list for the app and the site: `packages/core/src/site/assistants.ts`.

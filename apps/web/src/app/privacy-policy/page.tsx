@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 /** Where privacy questions and deletion requests go (our privacy officer reads it). */
 const CONTACT = "info@bookalyze.com";
-const UPDATED = "October 22, 2026";
+const UPDATED = "November 19, 2026";
 const COMPANY = "Teknoffice Technologies Inc.";
 
 const mail = <a href={`mailto:${CONTACT}`}>{CONTACT}</a>;
@@ -130,6 +130,34 @@ const sections: LegalSection[] = [
           You can disconnect a service at any time from the company's settings in Bookalyze, or from
           the service itself. When a seller closes their eBay account, eBay tells us and we
           disconnect it and delete the eBay access we held.
+        </p>
+      </>
+    ),
+  },
+  {
+    title: "AI assistants and API access",
+    body: (
+      <>
+        <p>
+          You can connect an AI assistant (such as ChatGPT, Claude or Gemini) or another app to
+          Bookalyze, or make an API key. Nothing is shared until you do: you approve each connection
+          on Bookalyze's own page, choosing whether it may only read or also make changes, which of
+          your companies it may use, and for how long.
+        </p>
+        <p>
+          A connected assistant sees what its requests return, such as transactions, balances,
+          contacts and reports, only for the companies you chose and only within your own role. What
+          it receives is then handled by the assistant's provider (for example OpenAI, Anthropic or
+          Google) under that provider's terms and privacy policy, and depending on your settings
+          there it may be kept in your conversation history. We don't send your books to any AI
+          provider unless you connect one.
+        </p>
+        <p>
+          For each connection we keep the app's name and return addresses, what you allowed, when it
+          was made, last used and ends, and only one-way hashes of its keys and tokens. Every change
+          it makes is in the company's audit log, marked with its name. You can disconnect it at any
+          time in Settings → AI assistants (or Account → API keys); it stops working on its next
+          request. A connection's record is deleted with your account.
         </p>
       </>
     ),

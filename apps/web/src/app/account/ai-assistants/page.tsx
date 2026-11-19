@@ -3,7 +3,11 @@ import { Sparkles } from "lucide-react";
 import type { Metadata } from "next";
 import { AssistantReminders } from "@/components/ai/assistant-reminders";
 import { ConnectAssistants } from "@/components/ai/connect-assistants";
-import { loadAssistantConnections, loadAssistantReminders } from "@/server/ai-assistants";
+import {
+  assistantListings,
+  loadAssistantConnections,
+  loadAssistantReminders,
+} from "@/server/ai-assistants";
 import { requestOrigin } from "@/server/oauth-request";
 import { requireSession } from "@/server/session";
 
@@ -32,7 +36,12 @@ export default async function AccountAiAssistantsPage() {
         </div>
       </div>
       <AssistantReminders reminders={reminders} />
-      <ConnectAssistants origin={origin} mcpUrl={mcpUrl(origin)} connections={connections} />
+      <ConnectAssistants
+        origin={origin}
+        mcpUrl={mcpUrl(origin)}
+        connections={connections}
+        listings={assistantListings()}
+      />
     </>
   );
 }

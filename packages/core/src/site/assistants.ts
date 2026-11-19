@@ -29,6 +29,8 @@ export type Assistant = {
   tagline: string;
   /** The page in the assistant where a connector is added (opened in a new tab). */
   openUrl?: string;
+  /** Opens the assistant's add-connector form with Bookalyze's name and link filled in. */
+  prefill?: (link: string) => string;
   /** What to do there, in order. "{link}" is where the Bookalyze link goes. */
   steps: string[];
   /** Who can use it, when the assistant limits it. */
@@ -45,6 +47,11 @@ export type Assistant = {
   /** Recognises the assistant from the name it registered with. */
   matches: RegExp;
 };
+
+/** Where "Connect" sends the person: the prefilled form when there is one. */
+export function openUrlFor(a: Assistant, link: string): string | undefined {
+  return a.prefill?.(link) ?? a.openUrl;
+}
 
 /** The address every assistant connects to. */
 export function mcpUrl(origin: string): string {
@@ -77,10 +84,10 @@ export const ASSISTANTS: readonly Assistant[] = [
     kind: "chat",
     tagline: "Claude on the web, desktop and mobile.",
     openUrl: "https://claude.ai/customize/connectors",
+    prefill: (link) =>
+      `https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Bookalyze&connectorUrl=${encodeURIComponent(link)}`,
     steps: [
-      "On claude.ai this opens Customize → Connectors. In the Claude desktop app, open Plugins in the sidebar instead.",
-      "Select Add (+ Add on the web), then Add custom connector.",
-      "Name it Bookalyze, paste the link and select Continue: {link}",
+      "Claude opens Add custom connector with Bookalyze's name and link filled in. Select Continue. (In the Claude desktop app: Plugins → Add → Add custom connector, and paste the link.) {link}",
       "If Claude asks about the OAuth client, choose Register automatically. Then select Add.",
       "Sign in to Bookalyze when Claude asks, and choose what Claude may do.",
     ],

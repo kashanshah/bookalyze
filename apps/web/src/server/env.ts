@@ -29,6 +29,16 @@ const schema = z.object({
         .map((e) => e.trim().toLowerCase())
         .filter(Boolean),
     ),
+  /**
+   * Bookalyze's listing in each assistant's directory, once approved (e.g.
+   * https://claude.ai/directory/connectors/bookalyze). Set, "Connect" opens the listing, where
+   * one click connects; unset, people add a custom connector. See docs/AI-DIRECTORIES.md.
+   */
+  CLAUDE_DIRECTORY_URL: z.url().optional(),
+  CHATGPT_DIRECTORY_URL: z.url().optional(),
+  GEMINI_DIRECTORY_URL: z.url().optional(),
+  /** OpenAI's domain verification token, served at /.well-known/openai-apps-challenge. */
+  OPENAI_APPS_CHALLENGE: z.string().max(500).optional(),
   /** Production URL that handles OAuth callbacks for preview deployments (Better Auth OAuth proxy). */
   OAUTH_PROXY_PRODUCTION_URL: z.url().optional(),
   /** Receipts and documents. See docs/SETUP.md for the bucket, CORS and IAM setup. */

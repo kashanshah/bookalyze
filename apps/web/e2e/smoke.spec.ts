@@ -409,6 +409,10 @@ test("api keys: make a key, use the REST API and MCP server with it, and revoke 
   expect(writerTools).toEqual(expect.arrayContaining(["create_transaction", "profit_and_loss"]));
   expect(readerTools).toContain("profit_and_loss");
   expect(readerTools).not.toContain("create_transaction");
+  // App actions: reading and changing are separate tools (app directories require it).
+  expect(readerTools).toContain("read_app_action");
+  expect(readerTools).not.toContain("call_app_action");
+  expect(writerTools).toEqual(expect.arrayContaining(["read_app_action", "call_app_action"]));
   const called = await mcp(writer, "tools/call", {
     name: "list_bank_accounts",
     arguments: { company: maple.slug },

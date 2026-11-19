@@ -6,6 +6,7 @@ import {
   CHAT_ASSISTANTS,
   DEVELOPER_TOOLS,
   examplePrompts,
+  openUrlFor,
 } from "@bookalyze/core";
 import {
   Asterisk,
@@ -106,11 +107,14 @@ export function ConnectAssistants({
   mcpUrl,
   connections,
   companyName,
+  listings = {},
 }: {
   origin: string;
   mcpUrl: string;
   connections: AssistantConnection[];
   companyName?: string;
+  /** Bookalyze's page in an assistant's directory, once listed: connecting is one click there. */
+  listings?: Partial<Record<AssistantId, string>>;
 }) {
   const [open, setOpen] = useState<Assistant | null>(null);
   const connectedTo = (id: AssistantId) => connections.find((c) => c.assistant === id);
@@ -263,7 +267,12 @@ export function ConnectAssistants({
         endorse Bookalyze. Signing in happens at {new URL(origin).host}.
       </p>
 
-      <ConnectDialog assistant={open} url={mcpUrl} onClose={() => setOpen(null)} />
+      <ConnectDialog
+        assistant={open}
+        url={mcpUrl}
+        listing={open ? listings[open.id] : undefined}
+        onClose={() => setOpen(null)}
+      />
     </div>
   );
 }
@@ -337,19 +346,32 @@ function DeveloperTool({
 function ConnectDialog({
   assistant: a,
   url,
+  listing,
   onClose,
 }: {
   assistant: Assistant | null;
   url: string;
+  /** Bookalyze's listing in the assistant's directory: no link to paste. */
+  listing?: string;
   onClose: () => void;
 }) {
   const [opened, setOpened] = useState(false);
   async function copyAndOpen() {
-    if (!a?.openUrl) return;
-    await copy(url, "Link");
-    window.open(a.openUrl, "_blank", "noopener,noreferrer");
+    if (!a) return;
+    const target = listing ?? openUrlFor(a, url);
+    if (!target) return;
+    if (!listing) await copy(url, "Link");
+    window.open(target, "_blank", "noopener,noreferrer");
     setOpened(true);
   }
+  const steps = a
+    ? listing
+      ? [
+          `Select Connect on Bookalyze's page in ${a.name}.`,
+          `Sign in to Bookalyze and choose what ${a.name} may do.`,
+        ]
+      : a.steps
+    : [];
   return (
     <Dialog
       open={!!a}
@@ -368,16 +390,25 @@ function ConnectDialog({
               <DialogTitle>Connect {a.name} to Bookalyze</DialogTitle>
             </div>
             <DialogDescription>
-              One click copies your link and opens {a.name}. Paste it there, then sign in to
-              Bookalyze and choose what {a.name} may do.
+              {listing
+                ? `Bookalyze is in ${a.name}'s directory. Open it, select Connect, then sign in to Bookalyze and choose what ${a.name} may do.`
+                : a.prefill
+                  ? `One click opens ${a.name} with Bookalyze filled in. Confirm there, then sign in to Bookalyze and choose what ${a.name} may do.`
+                  : `One click copies your link and opens ${a.name}. Paste it there, then sign in to Bookalyze and choose what ${a.name} may do.`}
             </DialogDescription>
           </DialogHeader>
           <Button size="lg" onClick={copyAndOpen}>
             {opened ? <Check /> : <ExternalLink />}
-            {opened ? `Link copied. ${a.name} is open` : `Copy link and open ${a.name}`}
+            {listing
+              ? opened
+                ? `${a.name} is open`
+                : `Open Bookalyze in ${a.name}`
+              : opened
+                ? `Link copied. ${a.name} is open`
+                : `Copy link and open ${a.name}`}
           </Button>
           <ol className="grid gap-3">
-            {a.steps.map((step, i) => {
+            {steps.map((step, i) => {
               const icon = step.includes("{icon}");
               const [before, after] = step.replace("{icon}", "").split("{link}");
               return (
@@ -408,7 +439,7 @@ function ConnectDialog({
               );
             })}
           </ol>
-          {a.note ? (
+          {a.note && !listing ? (
             <p className="rounded-xl bg-muted/60 px-3 py-2.5 text-muted-foreground text-xs leading-relaxed">
               {a.note}
             </p>

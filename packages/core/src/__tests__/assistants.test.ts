@@ -7,6 +7,7 @@ import {
   DEVELOPER_TOOLS,
   examplePrompts,
   mcpUrl,
+  openUrlFor,
 } from "../site/assistants";
 
 describe("AI assistants", () => {
@@ -55,6 +56,18 @@ describe("AI assistants", () => {
 
   it("suggest questions about the company", () => {
     expect(examplePrompts("Maple Goods").every((p) => p.includes("Maple Goods"))).toBe(true);
+  });
+
+  it("open Claude's add-connector form with Bookalyze filled in", () => {
+    const claude = ASSISTANTS.find((a) => a.id === "claude");
+    const chatgpt = ASSISTANTS.find((a) => a.id === "chatgpt");
+    if (!claude || !chatgpt) throw new Error("missing");
+    const link = "https://app.bookalyze.com/api/mcp";
+    const url = new URL(openUrlFor(claude, link) ?? "");
+    expect(url.searchParams.get("modal")).toBe("add-custom-connector");
+    expect(url.searchParams.get("connectorName")).toBe("Bookalyze");
+    expect(url.searchParams.get("connectorUrl")).toBe(link);
+    expect(openUrlFor(chatgpt, link)).toBe(chatgpt.openUrl);
   });
 
   describe("reminders", () => {

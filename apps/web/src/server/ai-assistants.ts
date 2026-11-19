@@ -8,6 +8,7 @@ import {
 import { getDb, listApiKeys } from "@bookalyze/db";
 import { cookies } from "next/headers";
 import { cache } from "react";
+import { env } from "./env";
 
 /** Reminders the person dismissed on this device (see `reminderKey` in core). */
 export const DISMISSED_REMINDERS_COOKIE = "bk_ai_reminders";
@@ -83,4 +84,16 @@ export async function loadAssistantReminders(
     })),
     recentlyEnded: assistantReminders(keys, now).some((r) => r.kind === "ended"),
   };
+}
+
+/** Bookalyze's approved directory listings, by assistant (none until each is approved). */
+export function assistantListings(): Partial<Record<AssistantId, string>> {
+  const e = env();
+  return Object.fromEntries(
+    [
+      ["claude", e.CLAUDE_DIRECTORY_URL],
+      ["chatgpt", e.CHATGPT_DIRECTORY_URL],
+      ["gemini", e.GEMINI_DIRECTORY_URL],
+    ].filter(([, url]) => url),
+  );
 }

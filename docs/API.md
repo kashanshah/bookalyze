@@ -180,7 +180,7 @@ withdrawal to 3100 Owner drawings and dividends. A loan from the owner goes to t
 
 - `GET /actions` lists the app's server actions that take the company as their first argument
   (about 200). Each entry shows its area, module and whether it only reads.
-- `POST /companies/{company}/actions/{action}` with `{ "args": [...] }` calls one. The company slug
+- `POST /companies/{company}/actions/{action}` with `{ "args": [...] }` calls one. Over MCP it's two tools: `read_app_action` (actions whose access is read) and `call_app_action` (the rest), so each tool is plainly read-only or not. The company slug
   is passed for you; `args` are the rest of the action's arguments.
 - Each call passes the key's access check and the module's billing check. The action then runs its
   own validation, role checks and audit, exactly as in the browser.
