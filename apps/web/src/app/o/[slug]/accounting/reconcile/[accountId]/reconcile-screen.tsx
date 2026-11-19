@@ -300,7 +300,10 @@ export function ReconcileScreen({
         )}
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/85 backdrop-blur-md lg:start-[264px]">
+      <div
+        data-action-bar
+        className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/85 backdrop-blur-md lg:start-[264px]"
+      >
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3 sm:px-8 lg:px-10">
           <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
             <div className="flex items-baseline gap-2">

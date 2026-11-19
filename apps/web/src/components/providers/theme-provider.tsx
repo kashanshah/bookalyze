@@ -47,6 +47,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <PrintInLight />
       <Toaster
         position="bottom-right"
+        // Above the floating Help button on company pages.
+        offset={{ bottom: 80 }}
+        mobileOffset={{ bottom: 72 }}
         richColors
         closeButton
         toastOptions={{ className: "font-sans" }}
