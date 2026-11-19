@@ -45,6 +45,12 @@ export const oauthClients = pgTable("oauth_clients", {
   /** The name the app gave itself. Unverified: the consent screen says so. */
   name: text("name").notNull(),
   redirectUris: text("redirect_uris").array().notNull(),
+  /**
+   * SHA-256 of the client secret, for apps that registered as confidential clients
+   * (client_secret_post / client_secret_basic, as some hosted assistants do). Null: a public
+   * client, protected by PKCE alone.
+   */
+  secretHash: text("secret_hash"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   /** When a person last approved it. Never approved and a day old: removed on the next sign-up. */
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),

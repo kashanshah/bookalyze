@@ -21,13 +21,23 @@ export function Rich({ text }: { text: string }) {
   );
 }
 
-/** One guide block: a paragraph, where in the app, steps, a list, checks, a note or a table. */
+/** One guide block: a paragraph, where in the app, steps, a list, checks, a note, code or a table. */
 export function GuideBlock({ block }: { block: Block }) {
   if ("p" in block) {
     return (
       <p className="text-muted-foreground leading-7">
         <Rich text={block.p} />
       </p>
+    );
+  }
+  if ("code" in block) {
+    return (
+      <pre
+        dir="ltr"
+        className="overflow-x-auto whitespace-pre-wrap rounded-xl border bg-card p-4 text-start font-mono text-[13px] leading-6 shadow-xs [overflow-wrap:anywhere]"
+      >
+        <code>{block.code}</code>
+      </pre>
     );
   }
   if ("where" in block) {
@@ -53,9 +63,11 @@ export function GuideBlock({ block }: { block: Block }) {
               <p className="font-medium">
                 <Rich text={step.title} />
               </p>
-              <p className="text-muted-foreground text-sm leading-6">
-                <Rich text={step.body} />
-              </p>
+              {step.body ? (
+                <p className="text-muted-foreground text-sm leading-6">
+                  <Rich text={step.body} />
+                </p>
+              ) : null}
             </div>
           </li>
         ))}

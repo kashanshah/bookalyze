@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { listApiKeys, resolveApiKey } from "../api-keys";
 import { createDb } from "../client";
 import {
+  authenticateOAuthClient,
   createAuthorizationCode,
   exchangeAuthorizationCode,
   getOAuthClient,
@@ -175,6 +176,33 @@ describe("OAuth connections", () => {
     await expect(
       refreshOAuthTokens(app.db, { refreshToken: second.refreshToken, clientId }),
     ).rejects.toThrow(/invalid/);
+  });
+
+  it("authenticate public apps by id and confidential apps by their secret", async () => {
+    const pub = await authenticateOAuthClient(app.db, { clientId, secret: null });
+    expect(pub.id).toBe(clientId);
+    // A public app has no secret: one sent anyway is ignored, PKCE still protects the code.
+    await expect(authenticateOAuthClient(app.db, { clientId, secret: "x" })).resolves.toBeTruthy();
+
+    const hosted = await registerOAuthClient(app.db, {
+      name: "ChatGPT",
+      redirectUris: ["https://chatgpt.com/connector_platform_oauth_redirect"],
+      confidential: true,
+    });
+    expect(hosted.secret).toMatch(/^bks_[A-Za-z0-9_-]{43}$/);
+    const stored = await getOAuthClient(app.db, hosted.id);
+    expect(stored?.secretHash).not.toContain(hosted.secret);
+    await expect(
+      authenticateOAuthClient(app.db, { clientId: hosted.id, secret: hosted.secret }),
+    ).resolves.toMatchObject({ name: "ChatGPT" });
+    for (const secret of [null, "", `bks_${"A".repeat(43)}`]) {
+      await expect(
+        authenticateOAuthClient(app.db, { clientId: hosted.id, secret }),
+      ).rejects.toMatchObject({ error: "invalid_client" });
+    }
+    await expect(
+      authenticateOAuthClient(app.db, { clientId: `bkc_${"A".repeat(22)}`, secret: null }),
+    ).rejects.toMatchObject({ error: "invalid_client" });
   });
 
   it("keep one live connection per app and person", async () => {

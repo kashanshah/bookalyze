@@ -1,5 +1,5 @@
 import { getDb, listApiKeys } from "@bookalyze/db";
-import { Bot } from "lucide-react";
+import { ArrowRight, Bot, Sparkles } from "lucide-react";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
@@ -36,6 +36,17 @@ export default async function ApiKeysPage() {
           </p>
         </div>
       </div>
+      <Link
+        href="/account/ai-assistants"
+        className="flex items-center gap-3 rounded-2xl border bg-card px-4 py-3 text-sm shadow-xs transition-colors hover:bg-accent"
+      >
+        <Sparkles className="size-4 shrink-0 text-primary" />
+        <span className="flex-1">
+          <span className="font-medium">Connecting ChatGPT, Claude or Gemini?</span>{" "}
+          <span className="text-muted-foreground">No key needed: connect in one click.</span>
+        </span>
+        <ArrowRight className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" />
+      </Link>
       <ApiKeys
         origin={origin}
         companies={orgs.map((o) => ({ id: o.id, name: o.name, slug: o.slug }))}

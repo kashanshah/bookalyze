@@ -1,5 +1,5 @@
 import { modules } from "@bookalyze/core";
-import { Blocks, CreditCard, Home, LifeBuoy, Settings2, Users } from "lucide-react";
+import { Blocks, CreditCard, Home, LifeBuoy, Settings2, Sparkles, Users } from "lucide-react";
 import Link from "next/link";
 import { Brand } from "@/components/brand";
 import type { OrgContext } from "@/server/org";
@@ -68,6 +68,10 @@ export function SidebarContent({ ctx, orgs }: { ctx: OrgContext; orgs: OrgItem[]
           <NavLink href={`${base}/settings/general`}>
             <Settings2 />
             Company settings
+          </NavLink>
+          <NavLink href={`${base}/settings/ai-assistants`}>
+            <Sparkles />
+            AI assistants
           </NavLink>
           <NavLink href={`${base}/settings/modules`}>
             <Blocks />

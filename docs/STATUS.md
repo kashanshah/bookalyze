@@ -18,8 +18,8 @@ Cursor, Copilot…).
   - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
 _Last updated: 2026-11-19, the public API (`/api/v1`) and MCP server (`/api/mcp`) with per-person
-API keys and "Sign in with Bookalyze" (OAuth), so Claude Code and scripts can read and update the
-books._
+API keys and "Sign in with Bookalyze" (OAuth), and Settings → AI assistants to connect ChatGPT,
+Claude and Gemini in one click._
 
 ---
 
@@ -1919,10 +1919,23 @@ agents: API + MCP").
   - Tables `oauth_clients`, `oauth_codes`; SECURITY DEFINER `oauth_refresh`, `oauth_revoke` (all in
     `0099_api_keys`). Code: db `oauth.ts`, web `server/oauth.ts`, `server/oauth-request.ts`,
     `app/oauth/*`, `app/.well-known/*`. Details: `docs/API.md` → Sign in with Bookalyze.
+- **Connect ChatGPT, Claude or Gemini (the headline feature).** **Settings → AI assistants**
+  (`/o/<slug>/settings/ai-assistants`, and `/account/ai-assistants` from the account menu).
+  - A card per assistant: **Connect** copies the MCP link and opens the assistant's connector page,
+    with its steps and who can use it. Developer tools: Add to Cursor and Add to VS Code links, and
+    commands for Claude Code and Gemini CLI.
+  - The page shows which assistants are connected, with **Disconnect**. Home nudges until one is.
+  - One list for the app and the site: `packages/core/src/site/assistants.ts`.
+  - OAuth made to work with hosted assistants: confidential clients (`client_secret_post`/`basic`,
+    a hashed `bks_` secret in `oauth_clients.secret_hash`), Basic client auth, unknown scopes ignored.
+  - Marketing: home hero and an "AI" section with a chat preview, top nav "AI assistants",
+    `/features/ai-assistants`, an "AI assistants" guide category (connect ChatGPT/Claude/Gemini,
+    month-end in conversation, safety), the footer and the FAQ.
 - Tests: db `api-keys.test.ts` (format, hash-only storage, resolve, revoked/expired, RLS privacy,
   cap) and `oauth.test.ts` (PKCE, single-use codes, refresh rotation, expiry, revoke, one
-  connection per app, stale clients); e2e "api keys: …" and "oauth: an MCP client signs in through
-  the browser, refreshes and is disconnected".
+  connection per app, stale clients, confidential clients); core `assistants.test.ts`; e2e
+  "api keys: …" and "ai assistants: connect Claude from settings, sign in with Bookalyze, refresh
+  and disconnect".
 
 ### Advertising, slice 1: profit after ads (Amazon Ads)
 

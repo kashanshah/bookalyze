@@ -1,4 +1,5 @@
 import {
+  authenticateOAuthClient,
   exchangeAuthorizationCode,
   getDb,
   OAuthError,
@@ -7,6 +8,7 @@ import {
 } from "@bookalyze/db";
 import { logError, logInfo } from "@/server/log";
 import {
+  clientCredentials,
   isOurResource,
   oauthError,
   oauthJson,
@@ -24,13 +26,15 @@ export async function POST(request: Request) {
   const params = await readParams(request);
   if (!params) return oauthError("invalid_request", "Send the parameters as a form.");
   const str = (k: string) => (typeof params[k] === "string" ? (params[k] as string) : "");
-  const clientId = str("client_id");
-  if (!clientId) return oauthError("invalid_client", "client_id is required.", 401);
+  const credentials = clientCredentials(request, params);
+  if (!credentials) return oauthError("invalid_client", "client_id is required.", 401);
+  const { clientId } = credentials;
   if (!isOurResource(str("resource") || null, originOf(request))) {
     return oauthError("invalid_target", "Tokens are only issued for Bookalyze.");
   }
   const db = getDb();
   try {
+    await authenticateOAuthClient(db, credentials);
     let tokens: OAuthTokens;
     const grant = str("grant_type");
     if (grant === "authorization_code") {
@@ -58,7 +62,14 @@ export async function POST(request: Request) {
       scope: tokens.access === "write" ? "read write" : "read",
     });
   } catch (error) {
-    if (error instanceof OAuthError) return oauthError(error.error, error.message);
+    if (error instanceof OAuthError) {
+      if (error.error === "invalid_client") {
+        return oauthError(error.error, error.message, 401, {
+          "WWW-Authenticate": 'Basic realm="Bookalyze"',
+        });
+      }
+      return oauthError(error.error, error.message);
+    }
     logError("oauth.token_failed", error, { clientId });
     return oauthError("server_error", "Something went wrong on our side.", 500);
   }

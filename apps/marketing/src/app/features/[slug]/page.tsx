@@ -8,6 +8,7 @@ import { ClosingCta } from "@/components/cta";
 import { Faq } from "@/components/faq";
 import { GuideLinks } from "@/components/guide-links";
 import {
+  AssistantChatPreview,
   BankMatchPreview,
   CompaniesPreview,
   InvoicePreview,
@@ -24,6 +25,7 @@ import { FEATURES, type FeaturePicture, feature } from "@/content/features";
 import { SIGN_UP_URL } from "@/lib/site";
 
 const PICTURES: Record<FeaturePicture, () => React.ReactNode> = {
+  assistant: AssistantChatPreview,
   reviews: ReviewsPreview,
   invoice: InvoicePreview,
   settlement: SettlementPreview,

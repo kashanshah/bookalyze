@@ -6,6 +6,7 @@ import {
   ChartNoAxesCombined,
   Landmark,
   type LucideIcon,
+  Sparkles,
   Star,
   Store,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ClosingCta } from "@/components/cta";
 import {
+  AssistantChatPreview,
   BankMatchPreview,
   CompaniesPreview,
   LotsPreview,
@@ -29,7 +31,7 @@ import { cn } from "@/lib/site";
 export const metadata: Metadata = {
   title: "Features",
   description:
-    "Amazon, Walmart, Noon and eBay connections, double-entry bookkeeping, Wise sync and bank reconciliation, buyer invoices, stock and cost of goods sold, reorder planning, automatic review requests and multi-company accounting.",
+    "Use your books from ChatGPT, Claude and Gemini. Amazon, Walmart, Noon and eBay connections, double-entry bookkeeping, Wise sync and bank reconciliation, buyer invoices, stock and cost of goods sold, reorder planning, automatic review requests and multi-company accounting.",
   alternates: { canonical: "/features" },
 };
 
@@ -46,6 +48,20 @@ type Group = {
 };
 
 const GROUPS: Group[] = [
+  {
+    id: "ai",
+    pages: ["ai-assistants"],
+    picture: AssistantChatPreview,
+    icon: Sparkles,
+    title: "AI assistants",
+    lead: "Your books inside ChatGPT, Claude and Gemini. Ask, and let it do the bookkeeping.",
+    points: [
+      "Connect ChatGPT, Claude or Gemini in a minute, from Settings → AI assistants",
+      "Ask in plain words: profit, payouts, what's uncategorised, any report",
+      "Let it categorise, reconcile, upload statements and post entries",
+      "Read-only or read and write, for the companies you choose, every change audited",
+    ],
+  },
   {
     id: "accounting",
     pages: ["bookkeeping"],

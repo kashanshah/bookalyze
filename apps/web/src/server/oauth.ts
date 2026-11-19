@@ -6,7 +6,8 @@ import "server-only";
  *
  * - /.well-known/oauth-protected-resource[/api/mcp|/api/v1]  (RFC 9728) points at us as the issuer
  * - /.well-known/oauth-authorization-server                 (RFC 8414) lists the endpoints
- * - /oauth/register  dynamic client registration (RFC 7591), public clients only
+ * - /oauth/register  dynamic client registration (RFC 7591): public clients, or confidential ones
+ *                    (a secret) for hosted assistants that ask for it
  * - /oauth/authorize the consent screen: the person picks access, companies and how long
  * - /oauth/token     authorization_code (PKCE S256 required) and refresh_token grants
  * - /oauth/revoke    token revocation (RFC 7009)
@@ -17,6 +18,41 @@ import "server-only";
  */
 
 export const OAUTH_SCOPES = ["read", "write"] as const;
+
+/** How apps authenticate at the token endpoint: PKCE alone, or a secret too (in the body or Basic). */
+export const CLIENT_AUTH_METHODS = ["none", "client_secret_post", "client_secret_basic"] as const;
+
+/**
+ * The app's credentials at the token and revoke endpoints (RFC 6749 §2.3.1): HTTP Basic
+ * (client_id:client_secret, each form-urlencoded) or client_id/client_secret in the body.
+ * Basic wins when both are sent. Null when there's no client_id at all.
+ */
+export function clientCredentials(
+  request: Request,
+  params: Record<string, unknown>,
+): { clientId: string; secret: string | null } | null {
+  const header = request.headers.get("authorization") ?? "";
+  if (/^basic\s+/i.test(header)) {
+    try {
+      const decoded = Buffer.from(header.replace(/^basic\s+/i, ""), "base64").toString("utf8");
+      const colon = decoded.indexOf(":");
+      if (colon > 0) {
+        const formDecode = (v: string) => decodeURIComponent(v.replace(/\+/g, " "));
+        return {
+          clientId: formDecode(decoded.slice(0, colon)),
+          secret: formDecode(decoded.slice(colon + 1)) || null,
+        };
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  const clientId = typeof params.client_id === "string" ? params.client_id : "";
+  if (!clientId) return null;
+  const secret = typeof params.client_secret === "string" ? params.client_secret : "";
+  return { clientId, secret: secret || null };
+}
 
 /** Where the API and MCP server live; tokens are good for both. */
 export const PROTECTED_PATHS = ["/api/mcp", "/api/v1"] as const;
@@ -36,8 +72,8 @@ export function authorizationServerMetadata(origin: string) {
     response_modes_supported: ["query"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256"],
-    token_endpoint_auth_methods_supported: ["none"],
-    revocation_endpoint_auth_methods_supported: ["none"],
+    token_endpoint_auth_methods_supported: CLIENT_AUTH_METHODS,
+    revocation_endpoint_auth_methods_supported: CLIENT_AUTH_METHODS,
     scopes_supported: OAUTH_SCOPES,
     authorization_response_iss_parameter_supported: true,
     service_documentation: "https://bookalyze.com/developers",
@@ -146,8 +182,13 @@ export function oauthJson(body: unknown, status = 200, extra: Record<string, str
   });
 }
 
-export function oauthError(error: string, description: string, status = 400) {
-  return oauthJson({ error, error_description: description }, status);
+export function oauthError(
+  error: string,
+  description: string,
+  status = 400,
+  extra: Record<string, string> = {},
+) {
+  return oauthJson({ error, error_description: description }, status, extra);
 }
 
 export const CORS = {

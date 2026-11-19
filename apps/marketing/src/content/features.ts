@@ -7,6 +7,7 @@
 import type { ModuleKey } from "@bookalyze/core";
 
 export type FeatureSlug =
+  | "ai-assistants"
   | "review-requests"
   | "amazon-invoices"
   | "settlements-and-payouts"
@@ -21,6 +22,7 @@ export type FeatureSlug =
 
 /** Moving pictures of the app (components/previews.tsx) a page can show. */
 export type FeaturePicture =
+  | "assistant"
   | "reviews"
   | "invoice"
   | "settlement"
@@ -53,6 +55,97 @@ export type Feature = {
 };
 
 export const FEATURES: readonly Feature[] = [
+  {
+    slug: "ai-assistants",
+    name: "AI assistants",
+    tagline: "Use your books from ChatGPT, Claude and Gemini: ask, and let it do the bookkeeping.",
+    intro:
+      "Connect ChatGPT, Claude or Gemini to Bookalyze in a minute and talk to your books in plain words. Ask what you really made last month, what's still uncategorised or what each marketplace paid, or have the assistant categorise, reconcile and upload statements for you. It works as you, under the same rules as the app, and only does what you allow.",
+    module: "entity",
+    picture: "assistant",
+    sections: [
+      {
+        title: "Ask anything about your books",
+        body: "Live answers from your real numbers, never a copy.",
+        points: [
+          "Profit and loss, balance sheet, trial balance and sales tax, for any period",
+          "What each marketplace paid, and where the money went",
+          "Bank balances, and when each account was last reconciled",
+          "Search transactions in plain words: “every Amazon storage fee over $50 this year”",
+        ],
+      },
+      {
+        title: "Let it do the work",
+        body: "Everything you can do in the app, in conversation, with you approving.",
+        points: [
+          "Categorise and split transactions, and mark them reviewed",
+          "Reconcile a bank account to its statement",
+          "Sync a bank, upload a statement (with a dry run first), attach receipts",
+          "Post journal entries, owner contributions and drawings, and reverse mistakes",
+        ],
+      },
+      {
+        title: "Safe by design",
+        body: "You stay in charge of what an assistant can touch.",
+        points: [
+          "It signs in to Bookalyze (OAuth). No key or password to copy",
+          "Read-only or read and write, all your companies or just some",
+          "Closed periods, reconciled lines and balanced entries are checked for every change",
+          "Every change in the audit log, marked with the assistant. Disconnect at any time",
+        ],
+      },
+      {
+        title: "Works where you work",
+        body: "Every major assistant, and the coding tools developers use.",
+        points: [
+          "ChatGPT, Claude (web, desktop and mobile) and Gemini (web and mobile)",
+          "Claude Code, Cursor, VS Code and Gemini CLI",
+          "Any other assistant that supports MCP, the open standard for connectors",
+          "A REST API too, for your own scripts",
+        ],
+      },
+    ],
+    steps: [
+      {
+        title: "Open Settings → AI assistants",
+        body: "Choose ChatGPT, Claude or Gemini. One click copies your link and opens it.",
+      },
+      {
+        title: "Paste, and sign in to Bookalyze",
+        body: "Choose what the assistant may do, for which companies, and for how long.",
+      },
+      {
+        title: "Ask in plain words",
+        body: "“Categorise last week's Wise transactions.” “What was our profit in Q3?”",
+      },
+    ],
+    faq: [
+      {
+        q: "Which assistants work with Bookalyze?",
+        a: "ChatGPT, Claude and Gemini, plus Claude Code, Cursor, VS Code and Gemini CLI. Any assistant that supports MCP custom connectors with sign-in works too. Some assistants limit custom connectors by plan or country; Bookalyze's settings page says so next to each one.",
+      },
+      {
+        q: "Does the assistant see all my data?",
+        a: "Only what you allow when you connect: read-only or read and write, all your companies or just some. It acts as you, so it can never do more than your own role allows.",
+      },
+      {
+        q: "Can it make a mistake in my books?",
+        a: "It goes through the same checks as you: closed periods stay closed, reconciled lines stay put and entries must balance. Every change is in the audit log with the assistant's name, and journal entries can be reversed.",
+      },
+      {
+        q: "Does it cost extra?",
+        a: "No. AI assistants are included in every plan. You use your own ChatGPT, Claude or Gemini account.",
+      },
+    ],
+    guides: [
+      "connect-ai-assistant",
+      "connect-chatgpt",
+      "connect-claude",
+      "connect-gemini",
+      "ai-assistant-month-end",
+      "ai-assistant-safety",
+    ],
+  },
   {
     slug: "review-requests",
     name: "Amazon review requests",

@@ -16,12 +16,15 @@ function block(b: Block): string {
   if ("p" in b) return b.p;
   if ("where" in b) return `**Where in Bookalyze:** ${b.where}`;
   if ("steps" in b) {
-    return b.steps.map((s, i) => `${i + 1}. **${s.title}.** ${s.body}`).join("\n");
+    return b.steps
+      .map((s, i) => `${i + 1}. **${s.title.replace(/[.:]$/, "")}.**${s.body ? ` ${s.body}` : ""}`)
+      .join("\n");
   }
   if ("list" in b) return b.list.map((item) => `- ${item}`).join("\n");
   if ("check" in b) {
     return ["What you should see:", ...b.check.map((item) => `- [ ] ${item}`)].join("\n");
   }
+  if ("code" in b) return ["```", b.code, "```"].join("\n");
   if ("note" in b) {
     const label = b.tone === "tip" ? "Tip" : b.tone === "caution" ? "Caution" : "Note";
     return `> **${label}:** ${b.note}`;

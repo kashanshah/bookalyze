@@ -10,8 +10,9 @@ import { type ApiKeyAccess, apiKeys, oauthClients, oauthCodes } from "./schema/a
  * the access token. Access tokens last an hour; the refresh token swaps both for new ones, so a
  * leaked access token is short-lived and a used refresh token stops working.
  *
- * Public clients only, with PKCE (S256) required. Codes, access and refresh tokens are 256-bit
- * random values; only their SHA-256 hashes are stored.
+ * PKCE (S256) is required for every app. Most are public clients (no secret); hosted assistants
+ * that register as confidential clients also get a secret, checked at the token endpoint. Codes,
+ * secrets, access and refresh tokens are 256-bit random values; only SHA-256 hashes are stored.
  */
 
 export const OAUTH_ACCESS_TOKEN_SECONDS = 60 * 60;
@@ -42,8 +43,8 @@ export function isPkceChallenge(value: string): boolean {
 /** Registers an app (RFC 7591). Also clears apps nobody approved within a day. */
 export async function registerOAuthClient(
   db: Database,
-  input: { name: string; redirectUris: string[] },
-): Promise<OAuthClient> {
+  input: { name: string; redirectUris: string[]; confidential?: boolean },
+): Promise<OAuthClient & { secret: string | null }> {
   await db
     .delete(oauthClients)
     .where(
@@ -52,16 +53,38 @@ export async function registerOAuthClient(
         lt(oauthClients.createdAt, sql`now() - interval '1 day'`),
       ),
     );
+  const secret = input.confidential ? `bks_${random()}` : null;
   const [row] = await db
     .insert(oauthClients)
     .values({
       id: `bkc_${randomBytes(16).toString("base64url")}`,
       name: input.name,
       redirectUris: input.redirectUris,
+      secretHash: secret ? hash(secret) : null,
     })
     .returning();
   if (!row) throw new Error("Could not register the app.");
-  return row;
+  return { ...row, secret };
+}
+
+/**
+ * Client authentication at the token endpoint (RFC 6749 §2.3). A confidential app must send its
+ * secret; a public app has none to send (PKCE protects it). Unknown apps are refused.
+ */
+export async function authenticateOAuthClient(
+  db: Database,
+  input: { clientId: string; secret: string | null },
+): Promise<OAuthClient> {
+  const client = await getOAuthClient(db, input.clientId);
+  if (!client) throw new OAuthError("invalid_client", "This app isn't registered with Bookalyze.");
+  if (client.secretHash) {
+    const given = Buffer.from(hash(input.secret ?? ""));
+    const expected = Buffer.from(client.secretHash);
+    if (!input.secret || given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      throw new OAuthError("invalid_client", "The app's client secret is missing or wrong.");
+    }
+  }
+  return client;
 }
 
 export async function getOAuthClient(db: Database, id: string): Promise<OAuthClient | null> {
@@ -114,7 +137,7 @@ export type OAuthTokens = {
 
 export class OAuthError extends Error {
   constructor(
-    public readonly error: "invalid_grant" | "invalid_request",
+    public readonly error: "invalid_grant" | "invalid_request" | "invalid_client",
     message: string,
   ) {
     super(message);

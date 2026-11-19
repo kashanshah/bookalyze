@@ -41,6 +41,7 @@ const REVIEWED_DIRECT_USE = [
   "app/oauth/token/route.ts", // oauth_codes; api_keys via withUser() and oauth_refresh()
   "app/oauth/revoke/route.ts", // oauth_revoke() only
   "server/oauth-request.ts", // oauth_clients only (no tenant data)
+  "server/ai-assistants.ts", // api_keys via listApiKeys() → withUser() (no tenant data)
   "server/billing-webhook.ts", // billing_org_for_customer() to find the company of a Stripe customer; the rest in withBillingWriter()
   "server/ebay-users.ts", // organization, to list connected eBay users once a day; their connections in withOrg()
   "app/admin/growth/page.tsx", // platform_funnel() and platform_signup_sources(): totals only, for platform admins

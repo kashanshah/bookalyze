@@ -13,6 +13,7 @@ import {
   Terminal,
 } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ButtonLink } from "@/components/button";
 import { ClosingCta } from "@/components/cta";
 import { Checklist, Section, SectionHeading } from "@/components/section";
@@ -125,6 +126,16 @@ export default function DevelopersPage() {
               Make an API key
             </ButtonLink>
           </div>
+          <p className="text-muted-foreground text-sm">
+            Using ChatGPT, Claude or Gemini?{" "}
+            <Link
+              href="/features/ai-assistants"
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Connect it in one click, no code
+            </Link>
+            .
+          </p>
         </div>
         <div className="fade-in-0 slide-in-from-bottom-3 grid min-w-0 animate-in gap-5 delay-150 duration-700">
           <Code label="Connect Claude Code">{COMMAND}</Code>

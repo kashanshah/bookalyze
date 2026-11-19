@@ -439,11 +439,34 @@ test("api keys: make a key, use the REST API and MCP server with it, and revoke 
   expect((await request.get("/api/v1/me", { headers: as(writer) })).status()).toBe(200);
 });
 
-test("oauth: an MCP client signs in through the browser, refreshes and is disconnected", async ({
+test("ai assistants: connect Claude from settings, sign in with Bookalyze, refresh and disconnect", async ({
   page,
   request,
 }) => {
   await signIn(page, owner.email, owner.password);
+
+  // Home invites the person to connect an assistant; settings show how, for each one.
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/o\/maple-goods-/);
+  const home = page.url();
+  await expect(
+    page.getByRole("heading", { name: "Ask ChatGPT, Claude or Gemini about your books" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Connect an assistant" }).click();
+  await expect(page.getByRole("heading", { name: "AI assistants", exact: true })).toBeVisible();
+  for (const name of ["ChatGPT", "Claude", "Gemini"]) {
+    await expect(page.getByRole("button", { name: `Connect ${name}`, exact: true })).toBeVisible();
+  }
+  await expect(page.getByRole("link", { name: "Add to Cursor" })).toHaveAttribute(
+    "href",
+    /^cursor:\/\/anysphere\.cursor-deeplink\/mcp\/install\?name=bookalyze&config=/,
+  );
+  await page.getByRole("button", { name: "Connect Claude", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: "Connect Claude to Bookalyze" })).toBeVisible();
+  await expect(dialog.getByText("Add custom connector", { exact: false })).toBeVisible();
+  await expect(dialog.locator("code")).toHaveText(/\/api\/mcp$/);
+  await dialog.getByRole("button", { name: "Done" }).click();
 
   // The MCP server says where to sign in (RFC 9728), and the sign-in server describes itself.
   const challenge = await request.post("/api/mcp", { data: {} });
@@ -455,32 +478,46 @@ test("oauth: an MCP client signs in through the browser, refreshes and is discon
   const meta = await (await request.get("/.well-known/oauth-authorization-server")).json();
   expect(prm.authorization_servers).toEqual([meta.issuer]);
   expect(meta.code_challenge_methods_supported).toEqual(["S256"]);
+  expect(meta.token_endpoint_auth_methods_supported).toContain("client_secret_basic");
 
-  // The app registers itself (RFC 7591) and sends the person to the consent screen with PKCE.
-  const redirectUri = "http://127.0.0.1:43219/callback";
+  // Claude (a hosted assistant) registers itself (RFC 7591) as a confidential client.
+  const redirectUri = "https://claude.ai/api/mcp/auth_callback";
   const registered = await request.post("/oauth/register", {
-    data: { client_name: "E2E agent", redirect_uris: [redirectUri] },
+    data: {
+      client_name: "Claude",
+      redirect_uris: [redirectUri],
+      token_endpoint_auth_method: "client_secret_basic",
+      grant_types: ["authorization_code", "refresh_token"],
+      scope: "read write",
+    },
   });
   expect(registered.status()).toBe(201);
-  const clientId = (await registered.json()).client_id as string;
+  const client = await registered.json();
+  expect(client).toMatchObject({ token_endpoint_auth_method: "client_secret_basic" });
+  expect(client.client_secret).toMatch(/^bks_/);
+  const basic = (secret: string) => ({
+    Authorization: `Basic ${Buffer.from(`${client.client_id}:${secret}`).toString("base64")}`,
+  });
+
+  // The person approves on Bookalyze's consent screen (PKCE; unknown scopes are ignored).
   const verifier = "e2e-verifier-".padEnd(64, "x");
   const authorize = new URL("/oauth/authorize", meta.issuer);
   authorize.search = new URLSearchParams({
     response_type: "code",
-    client_id: clientId,
+    client_id: client.client_id,
     redirect_uri: redirectUri,
     code_challenge: createHash("sha256").update(verifier).digest("base64url"),
     code_challenge_method: "S256",
     state: "e2e-state",
-    scope: "read write",
+    scope: "read write openid",
     resource: prm.resource,
   }).toString();
-  await page.route(`${redirectUri}**`, (route) => route.fulfill({ body: "back in the app" }));
+  await page.route(`${redirectUri}**`, (route) => route.fulfill({ body: "back in Claude" }));
   await page.goto(authorize.toString());
   await expect(
-    page.getByRole("heading", { name: "Connect “E2E agent” to your books?" }),
+    page.getByRole("heading", { name: "Connect “Claude” to your books?" }),
   ).toBeVisible();
-  await expect(page.getByText("127.0.0.1:43219")).toBeVisible();
+  await expect(page.getByText("claude.ai", { exact: true })).toBeVisible();
   await page.getByText("Read only", { exact: true }).click();
   const [back] = await Promise.all([
     page.waitForRequest((r) => r.url().startsWith(redirectUri)),
@@ -491,21 +528,24 @@ test("oauth: an MCP client signs in through the browser, refreshes and is discon
   expect(returned.get("iss")).toBe(meta.issuer);
   const code = returned.get("code") ?? "";
 
-  // The code becomes tokens once, and only with the right verifier.
-  const exchange = (v: string) =>
+  // The code becomes tokens once, only with the app's secret and the right verifier.
+  const exchange = (secret: string) =>
     request.post("/oauth/token", {
+      headers: basic(secret),
       form: {
         grant_type: "authorization_code",
         code,
-        code_verifier: v,
-        client_id: clientId,
+        code_verifier: verifier,
         redirect_uri: redirectUri,
         resource: prm.resource,
       },
     });
-  const tokens = await (await exchange(verifier)).json();
+  const wrongSecret = await exchange("bks_wrong");
+  expect(wrongSecret.status()).toBe(401);
+  expect((await wrongSecret.json()).error).toBe("invalid_client");
+  const tokens = await (await exchange(client.client_secret)).json();
   expect(tokens).toMatchObject({ token_type: "Bearer", expires_in: 3600, scope: "read" });
-  expect((await exchange(verifier)).status()).toBe(400);
+  expect((await exchange(client.client_secret)).status()).toBe(400);
 
   // The token works like a read-only key on the MCP server.
   const tools = await request.post("/api/mcp", {
@@ -523,11 +563,8 @@ test("oauth: an MCP client signs in through the browser, refreshes and is discon
   // Refreshing rotates both tokens; the old ones stop working.
   const refreshed = await (
     await request.post("/oauth/token", {
-      form: {
-        grant_type: "refresh_token",
-        refresh_token: tokens.refresh_token,
-        client_id: clientId,
-      },
+      headers: basic(client.client_secret),
+      form: { grant_type: "refresh_token", refresh_token: tokens.refresh_token },
     })
   ).json();
   expect(refreshed.refresh_token).not.toBe(tokens.refresh_token);
@@ -536,15 +573,18 @@ test("oauth: an MCP client signs in through the browser, refreshes and is discon
   expect((await me(tokens.access_token)).status()).toBe(401);
   expect((await me(refreshed.access_token)).status()).toBe(200);
 
-  // The person sees the app and can disconnect it.
-  await page.goto("/account/api-keys");
-  const row = page.locator("li", { hasText: "E2E agent" });
-  await expect(row).toContainText("Connected app");
-  await row.getByRole("button", { name: "Disconnect" }).click();
-  await page.getByRole("button", { name: "Disconnect now" }).click();
+  // Settings show Claude as connected, home stops asking, and Disconnect stops it at once.
+  await page.goto(home);
   await expect(
-    page.getByText(/“E2E agent” disconnected\. It stops working right away/),
-  ).toBeVisible();
+    page.getByRole("heading", { name: "Ask ChatGPT, Claude or Gemini about your books" }),
+  ).toHaveCount(0);
+  await page.goto(`${home}/settings/ai-assistants`);
+  await expect(page.getByRole("button", { name: "Connect again Claude" })).toBeVisible();
+  const row = page.locator("li", { hasText: "Read only · All your companies" });
+  await expect(row).toContainText("Claude");
+  await row.getByRole("button", { name: "Disconnect" }).click();
+  await row.getByRole("button", { name: "Disconnect now" }).click();
+  await expect(page.getByText(/“Claude” disconnected\. It stops working right away/)).toBeVisible();
   expect((await me(refreshed.access_token)).status()).toBe(401);
 });
 

@@ -4,6 +4,25 @@ Bookalyze has a public REST API at `/api/v1` and an MCP server at `/api/mcp`. Bo
 operations from one registry (`apps/web/src/server/api/ops/`), so a script and an AI agent always
 see and change the same things. Public overview for users: bookalyze.com/developers.
 
+## Connect ChatGPT, Claude or Gemini
+
+**Settings → AI assistants** (`/o/<slug>/settings/ai-assistants`, also `/account/ai-assistants` from
+the account menu) is the place for people. It has one card each for ChatGPT, Claude and Gemini:
+**Connect** copies the MCP link and opens the assistant's connector page in one click, with the
+assistant's own steps. Developer tools are also there: Add to Cursor and Add to VS Code are real
+one-click install links, and Claude Code and Gemini CLI get a command. The page shows which
+assistants are connected, with **Disconnect**. Home shows a nudge until the person connects one.
+
+The list lives in `packages/core/src/site/assistants.ts` (steps, links, install links, and how to
+recognise an assistant from the name it registered with). The app and the marketing guides both
+read it, so check it against each assistant's help page when their menus change.
+
+| Assistant | Where it's added | Notes |
+|---|---|---|
+| ChatGPT | chatgpt.com/plugins → + → Add custom MCP server | Registers by DCR. Redirect `https://chatgpt.com/connector_platform_oauth_redirect` (we meet its RFC 9207 issuer rules) or `…/connector/oauth/{id}` |
+| Claude | claude.ai/customize/connectors → Add custom connector | Callback `https://claude.ai/api/mcp/auth_callback`; needs port 443 |
+| Gemini | gemini.google.com → Settings → Connected apps → Add a custom app | DCR; US, 18+, personal accounts, English |
+
 ## Connect Claude Code
 
 Sign in with Bookalyze (OAuth). No key to copy:
@@ -42,9 +61,9 @@ Bookalyze is its own authorization server, following the MCP authorization spec 
 |---|---|
 | `GET /.well-known/oauth-protected-resource/api/mcp` (and `/api/v1`) | RFC 9728 resource metadata. A 401 from `/api/mcp` or `/api/v1` points here in `WWW-Authenticate: Bearer … resource_metadata="…"` |
 | `GET /.well-known/oauth-authorization-server` | RFC 8414 server metadata |
-| `POST /oauth/register` | RFC 7591 dynamic registration. Public clients only (`token_endpoint_auth_method: none`), 20 an hour per IP |
+| `POST /oauth/register` | RFC 7591 dynamic registration, 20 an hour per IP. `token_endpoint_auth_method` `none` (public, PKCE only) or `client_secret_post`/`client_secret_basic` (also gets a `bks_` secret, stored hashed) |
 | `GET /oauth/authorize` | The consent screen (signs the person in first) |
-| `POST /oauth/token` | `authorization_code` (with PKCE) and `refresh_token` grants, 120 a minute per IP |
+| `POST /oauth/token` | `authorization_code` (with PKCE) and `refresh_token` grants, 120 a minute per IP. Client credentials by HTTP Basic or in the body; a confidential client without its secret gets 401 `invalid_client` |
 | `POST /oauth/revoke` | RFC 7009; always 200 |
 
 - **A grant is an API key.** Approving makes an `api_keys` row with `client_id` set, named after the
@@ -65,7 +84,11 @@ Bookalyze is its own authorization server, following the MCP authorization spec 
   can't be framed (`frame-ancestors 'none'`, `X-Frame-Options: DENY`) and sends no referrer.
   Approving runs only in the browser session, never under an API key or token.
 - **`resource`** (RFC 8707) must be this site's `/api/mcp` or `/api/v1` when sent. Scopes are
-  `read` and `write`; the person can always pick less than the app asked for.
+  `read` and `write`; others (`openid`, `profile`…) are ignored rather than refused, and the person
+  can always pick less than the app asked for. The token response's `scope` says what was granted.
+- **Registration is lenient where it's safe** (RFC 7591 §3.2.1): unknown fields are dropped, and so
+  are extra grant and response types, as long as `authorization_code`/`code` are there. PKCE is
+  required for every client, confidential ones too.
 - The issuer is the request's origin, so preview deployments work. Responses carry `iss` (RFC 9207)
   and `Cache-Control: no-store`. Unused registrations are deleted after a day, on the next
   registration. Nothing polls.
@@ -188,7 +211,9 @@ withdrawal to 3100 Owner drawings and dividends. A loan from the owner goes to t
 |---|---|
 | `packages/db/src/schema/api-keys.ts`, `drizzle/0099_api_keys.sql` | Tables (`api_keys`, `oauth_clients`, `oauth_codes`), RLS policy, lookup, touch, refresh and revoke functions, `audit_logs.api_key_id` |
 | `packages/db/src/api-keys.ts` | Generate, hash, resolve, list, create, revoke |
-| `packages/db/src/oauth.ts` | Clients, codes, PKCE, token exchange, refresh rotation, revoke |
+| `packages/db/src/oauth.ts` | Clients (public or with a secret), client authentication, codes, PKCE, token exchange, refresh rotation, revoke |
+| `packages/core/src/site/assistants.ts` | ChatGPT, Claude, Gemini and developer tools: steps, links, install links, name matching |
+| `apps/web/src/components/ai/connect-assistants.tsx`, `server/ai-assistants.ts` | Settings → AI assistants (both pages) and the person's connections |
 | `apps/web/src/server/oauth.ts`, `oauth-request.ts` | Metadata, redirect URI rules, authorize request checks |
 | `apps/web/src/app/.well-known/*`, `app/oauth/*` | Discovery, register, token, revoke routes and the consent screen |
 | `apps/web/src/server/api/principal.ts` | AsyncLocalStorage principal; `getSession()` returns the key's person inside it |

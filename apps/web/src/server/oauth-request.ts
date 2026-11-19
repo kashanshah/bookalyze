@@ -80,10 +80,9 @@ export async function checkAuthorizeRequest(params: AuthorizeParams): Promise<Ch
   if (!isOurResource(params.resource, origin)) {
     return back("invalid_target", "Tokens are only issued for Bookalyze.");
   }
+  // Scopes we don't know (openid, profile…) are ignored, not refused: the person chooses the
+  // access on the consent screen, and the token response says what was granted.
   const scopes = (params.scope ?? "").split(/\s+/).filter(Boolean);
-  if (scopes.some((s) => s !== "read" && s !== "write")) {
-    return back("invalid_scope", 'Ask for the scopes "read" and/or "write".');
-  }
   return {
     ok: true,
     client,
