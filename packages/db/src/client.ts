@@ -76,6 +76,24 @@ export async function withOrg<T>(
 }
 
 /**
+ * Runs `fn` as one person, outside any company: row-level security applies (app_runtime) and
+ * `app.user_id` is set, so person-level tables (API keys) show only that person's rows. No
+ * tenant table opens (no `app.org_id`).
+ */
+export async function withUser<T>(
+  db: Database,
+  ctx: { userId: string },
+  fn: (tx: Transaction) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('role', 'app_runtime', true), set_config('app.user_id', ${ctx.userId}, true)`,
+    );
+    return fn(tx);
+  });
+}
+
+/**
  * Runs `fn` as the support desk: row-level security still applies (app_runtime), and the
  * support tables' policies show every company's tickets and the internal notes. No other tenant
  * table opens. Callers must have checked the person is a platform admin, or be the website

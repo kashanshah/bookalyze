@@ -108,6 +108,8 @@ export const auditLogs = pgTable(
     entityId: text("entity_id"),
     before: jsonb("before"),
     after: jsonb("after"),
+    /** The API key the change was made with (public API or MCP), or null for the app itself. */
+    apiKeyId: uuid("api_key_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

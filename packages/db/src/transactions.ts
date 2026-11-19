@@ -9,7 +9,7 @@ import {
   type TransactionKind,
   type TransactionView,
 } from "@bookalyze/core";
-import { and, count, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lte, type SQL, sql } from "drizzle-orm";
 import { copyAttachmentLinks, countAttachments } from "./attachments";
 import type { Transaction } from "./client";
 import { entryContactSql } from "./contacts";
@@ -86,6 +86,10 @@ export type TransactionFilters = {
   /** Only these entries (e.g. the ones in a suggested transfer). */
   entryIds?: readonly string[] | null;
   search?: string | null;
+  /** Only transactions dated on or after this day (YYYY-MM-DD). */
+  from?: string | null;
+  /** Only transactions dated on or before this day (YYYY-MM-DD). */
+  to?: string | null;
   limit: number;
   offset: number;
 };
@@ -173,6 +177,8 @@ export async function listTransactions(
     );
   }
   if (filters.contactId) conditions.push(sql`${entryContactSql} = ${filters.contactId}`);
+  if (filters.from) conditions.push(gte(journalEntries.date, filters.from));
+  if (filters.to) conditions.push(lte(journalEntries.date, filters.to));
   if (filters.entryIds) {
     if (!filters.entryIds.length) return { rows: [], total: 0 };
     conditions.push(inArray(journalEntries.id, [...filters.entryIds]));

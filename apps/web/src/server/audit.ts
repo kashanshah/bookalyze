@@ -1,5 +1,6 @@
 import "server-only";
 import { schema, type Transaction } from "@bookalyze/db";
+import { currentApiPrincipal } from "./api/principal";
 
 /** Records a write in the organization's append-only audit log (inside a withOrg transaction). */
 export async function audit(
@@ -23,5 +24,7 @@ export async function audit(
     entityId: entry.entityId ?? null,
     before: entry.before ?? null,
     after: entry.after ?? null,
+    // Changes made through the public API or MCP name the key that made them.
+    apiKeyId: currentApiPrincipal()?.key.id ?? null,
   });
 }
