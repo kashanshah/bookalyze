@@ -20,7 +20,7 @@ read it, so check it against each assistant's help page when their menus change.
 | Assistant | Where it's added | Notes |
 |---|---|---|
 | ChatGPT | chatgpt.com/plugins → + → Add custom MCP server | Registers by DCR. Redirect `https://chatgpt.com/connector_platform_oauth_redirect` (we meet its RFC 9207 issuer rules) or `…/connector/oauth/{id}` |
-| Claude | claude.ai/customize/connectors → Add custom connector | Callback `https://claude.ai/api/mcp/auth_callback`; needs port 443 |
+| Claude | claude.ai Customize → Connectors (desktop app: Plugins) → Add → Add custom connector; OAuth client "Register automatically" (we don't support CIMD yet) | Callback `https://claude.ai/api/mcp/auth_callback`; needs port 443 |
 | Gemini | gemini.google.com → Settings → Connected apps → Add a custom app | DCR; US, 18+, personal accounts, English |
 
 ## Connect Claude Code
