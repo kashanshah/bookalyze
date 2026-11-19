@@ -1,6 +1,7 @@
 import "server-only";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { resourceMetadataUrl } from "../oauth";
 import { ApiError, authenticate, toApiError } from "./core";
 import { execute } from "./execute";
 import { errorResponse, json } from "./http";
@@ -54,7 +55,10 @@ export async function handleMcp(request: Request): Promise<Response> {
   try {
     principal = await authenticate(request);
   } catch (error) {
-    return errorResponse(toApiError(error, { route: "mcp" }));
+    return errorResponse(
+      toApiError(error, { route: "mcp" }),
+      resourceMetadataUrl(origin, "/api/mcp"),
+    );
   }
 
   const server = new McpServer(

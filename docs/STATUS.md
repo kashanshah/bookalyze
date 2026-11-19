@@ -18,7 +18,8 @@ Cursor, Copilot…).
   - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
 _Last updated: 2026-11-19, the public API (`/api/v1`) and MCP server (`/api/mcp`) with per-person
-API keys, so Claude Code and scripts can read and update the books._
+API keys and "Sign in with Bookalyze" (OAuth), so Claude Code and scripts can read and update the
+books._
 
 ---
 
@@ -1908,8 +1909,20 @@ agents: API + MCP").
   - Every write is audited with `audit_logs.api_key_id`.
 - **Neon free plan:** no polling, crons or background work. Everything runs on request, and
   `last_used_at` is written at most once a minute per key.
+- **Sign in with Bookalyze (OAuth 2.1, MCP authorization 2025-06-18).** `claude mcp add --transport
+  http bookalyze …/api/mcp`, then `/mcp` → sign in: no key to copy.
+  - Discovery (RFC 9728 `/.well-known/oauth-protected-resource/api/mcp`, RFC 8414), dynamic
+    registration (public clients), PKCE S256 only, `resource` checked, refresh rotation, revoke.
+  - Consent screen `/oauth/authorize`: read/write, companies, lifetime; can't be framed; approving
+    only in the browser session. A grant is an `api_keys` row with `client_id` (1-hour access
+    token, rotating `bkr_` refresh token), shown as a connected app with **Disconnect**.
+  - Tables `oauth_clients`, `oauth_codes`; SECURITY DEFINER `oauth_refresh`, `oauth_revoke` (all in
+    `0099_api_keys`). Code: db `oauth.ts`, web `server/oauth.ts`, `server/oauth-request.ts`,
+    `app/oauth/*`, `app/.well-known/*`. Details: `docs/API.md` → Sign in with Bookalyze.
 - Tests: db `api-keys.test.ts` (format, hash-only storage, resolve, revoked/expired, RLS privacy,
-  cap); e2e "api keys: make a key, use the REST API and MCP server with it, and revoke it".
+  cap) and `oauth.test.ts` (PKCE, single-use codes, refresh rotation, expiry, revoke, one
+  connection per app, stale clients); e2e "api keys: …" and "oauth: an MCP client signs in through
+  the browser, refreshes and is disconnected".
 
 ### Advertising, slice 1: profit after ads (Amazon Ads)
 

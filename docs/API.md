@@ -6,18 +6,69 @@ see and change the same things. Public overview for users: bookalyze.com/develop
 
 ## Connect Claude Code
 
-1. In Bookalyze, open the account menu → **API keys for AI agents** (`/account/api-keys`) → **New key**.
-2. Choose read-only or read and write, all companies or some, and an expiry. Copy the key. It's
-   shown once.
-3. Run the command the page shows:
+Sign in with Bookalyze (OAuth). No key to copy:
+
+```bash
+claude mcp add --transport http bookalyze https://app.bookalyze.com/api/mcp
+```
+
+Then type `/mcp` in Claude Code, choose **bookalyze** and sign in. The browser opens Bookalyze's
+consent screen, where the person chooses read-only or read and write, all companies or some, and
+how long. Claude Code keeps the tokens and refreshes them itself. The connection shows in
+**Account → API keys** as a connected app, and **Disconnect** stops it at once.
+
+Then ask Claude, for example "List my Bookalyze companies" or "Reconcile Wise CAD to today's
+balance". Any MCP client that supports MCP authorization (2025-06-18) works the same way.
+
+**With a key instead** (scripts, CI, clients without OAuth): make one at **Account → API keys** →
+**New key**, then
 
 ```bash
 claude mcp add --transport http bookalyze https://app.bookalyze.com/api/mcp --header "Authorization: Bearer bka_…"
 ```
 
-Then ask Claude, for example "List my Bookalyze companies" or "Reconcile Wise CAD to today's
-balance". Any other MCP client works the same way: Streamable HTTP at `/api/mcp`, with the key as a
-Bearer token.
+or in a project's `.mcp.json`, keeping the key out of the file:
+
+```json
+{ "mcpServers": { "bookalyze": { "type": "http", "url": "https://app.bookalyze.com/api/mcp",
+  "headers": { "Authorization": "Bearer ${BOOKALYZE_API_KEY}" } } } }
+```
+
+## Sign in with Bookalyze (OAuth 2.1)
+
+Bookalyze is its own authorization server, following the MCP authorization spec (2025-06-18).
+
+| Endpoint | What |
+|---|---|
+| `GET /.well-known/oauth-protected-resource/api/mcp` (and `/api/v1`) | RFC 9728 resource metadata. A 401 from `/api/mcp` or `/api/v1` points here in `WWW-Authenticate: Bearer … resource_metadata="…"` |
+| `GET /.well-known/oauth-authorization-server` | RFC 8414 server metadata |
+| `POST /oauth/register` | RFC 7591 dynamic registration. Public clients only (`token_endpoint_auth_method: none`), 20 an hour per IP |
+| `GET /oauth/authorize` | The consent screen (signs the person in first) |
+| `POST /oauth/token` | `authorization_code` (with PKCE) and `refresh_token` grants, 120 a minute per IP |
+| `POST /oauth/revoke` | RFC 7009; always 200 |
+
+- **A grant is an API key.** Approving makes an `api_keys` row with `client_id` set, named after the
+  app, with the access, companies and lifetime the person chose. Everything under **Keys** below
+  applies: per person, scope, companies, audit, the 25 cap, RLS.
+- **Tokens.** The access token is a `bka_…` key secret that works for 1 hour (`token_expires_at`).
+  The refresh token (`bkr_…`) lasts as long as the grant (30/90/365 days or until disconnected).
+  Only SHA-256 hashes are stored. Each refresh replaces both tokens (rotation, in the SECURITY
+  DEFINER `oauth_refresh`), so the old pair stops working.
+- **Codes** are single use (deleted as they're read, even on failure), live 5 minutes, are stored
+  hashed, and need the PKCE S256 verifier, the same client and the same redirect URI.
+- **One connection per app and person.** Approving the same app again revokes its earlier tokens.
+- **Redirect URIs** must be registered. `https` anywhere, `http` only for loopback (`localhost`,
+  `127.0.0.1`, `[::1]`, any port per RFC 8252), or an app's own scheme (`cursor://…`). No
+  fragments, credentials or `javascript:`/`data:`/`file:`. Until the client and redirect are known
+  good the authorize page shows the problem itself and never redirects (no open redirects).
+- **The consent screen** says where the person goes back to and that the app named itself. It
+  can't be framed (`frame-ancestors 'none'`, `X-Frame-Options: DENY`) and sends no referrer.
+  Approving runs only in the browser session, never under an API key or token.
+- **`resource`** (RFC 8707) must be this site's `/api/mcp` or `/api/v1` when sent. Scopes are
+  `read` and `write`; the person can always pick less than the app asked for.
+- The issuer is the request's origin, so preview deployments work. Responses carry `iss` (RFC 9207)
+  and `Cache-Control: no-store`. Unused registrations are deleted after a day, on the next
+  registration. Nothing polls.
 
 ## Keys
 
@@ -119,7 +170,8 @@ withdrawal to 3100 Owner drawings and dividends. A loan from the owner goes to t
 ## MCP
 
 - Streamable HTTP, stateless, with JSON responses (`POST /api/mcp`). GET and DELETE return 405.
-- Authentication is the same Bearer key as REST.
+- Authentication is the same Bearer key as REST, or an OAuth access token. A 401 carries
+  `resource_metadata` so MCP clients find the sign-in on their own.
 - Requests with an `Origin` header other than the app's own get 403, which guards against DNS
   rebinding.
 - Each operation is a tool with the same name as its `operationId`.
@@ -134,8 +186,11 @@ withdrawal to 3100 Owner drawings and dividends. A loan from the owner goes to t
 
 | Path | What |
 |---|---|
-| `packages/db/src/schema/api-keys.ts`, `drizzle/0099_api_keys.sql` | Table, RLS policy, lookup and touch functions, `audit_logs.api_key_id` |
+| `packages/db/src/schema/api-keys.ts`, `drizzle/0099_api_keys.sql` | Tables (`api_keys`, `oauth_clients`, `oauth_codes`), RLS policy, lookup, touch, refresh and revoke functions, `audit_logs.api_key_id` |
 | `packages/db/src/api-keys.ts` | Generate, hash, resolve, list, create, revoke |
+| `packages/db/src/oauth.ts` | Clients, codes, PKCE, token exchange, refresh rotation, revoke |
+| `apps/web/src/server/oauth.ts`, `oauth-request.ts` | Metadata, redirect URI rules, authorize request checks |
+| `apps/web/src/app/.well-known/*`, `app/oauth/*` | Discovery, register, token, revoke routes and the consent screen |
 | `apps/web/src/server/api/principal.ts` | AsyncLocalStorage principal; `getSession()` returns the key's person inside it |
 | `apps/web/src/server/api/core.ts`, `execute.ts` | Auth, rate limit, scope, company and module checks, error mapping |
 | `apps/web/src/server/api/ops/*` | The operations (one list for REST and MCP) |

@@ -29,7 +29,7 @@ export function looksLikeApiKey(value: string): boolean {
 }
 
 export type ApiKeyRow = typeof apiKeys.$inferSelect;
-export type ApiKeySummary = Omit<ApiKeyRow, "keyHash">;
+export type ApiKeySummary = Omit<ApiKeyRow, "keyHash" | "refreshHash" | "tokenExpiresAt">;
 
 export type ResolvedApiKey = {
   id: string;
@@ -61,6 +61,7 @@ export async function resolveApiKey(
       organization_ids: string[] | null;
       expires_at: Date | string | null;
       revoked_at: Date | string | null;
+      token_expires_at: Date | string | null;
     }>(sql`select * from api_key_lookup(${hash})`);
     return result.rows;
   });
@@ -68,6 +69,10 @@ export async function resolveApiKey(
   if (!row) return { ok: false, reason: "unknown" };
   if (row.revoked_at) return { ok: false, reason: "revoked" };
   if (row.expires_at && new Date(row.expires_at).getTime() <= now.getTime()) {
+    return { ok: false, reason: "expired" };
+  }
+  // An app connected with OAuth: this access token lasts an hour, then the app refreshes it.
+  if (row.token_expires_at && new Date(row.token_expires_at).getTime() <= now.getTime()) {
     return { ok: false, reason: "expired" };
   }
   return {
@@ -102,6 +107,7 @@ export async function listApiKeys(db: Database, userId: string): Promise<ApiKeyS
         expiresAt: apiKeys.expiresAt,
         lastUsedAt: apiKeys.lastUsedAt,
         revokedAt: apiKeys.revokedAt,
+        clientId: apiKeys.clientId,
         createdAt: apiKeys.createdAt,
       })
       .from(apiKeys)

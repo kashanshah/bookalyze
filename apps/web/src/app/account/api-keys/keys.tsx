@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Copy, KeyRound, PencilLine, Plus, ShieldCheck } from "lucide-react";
+import { BookOpen, Bot, Copy, KeyRound, PencilLine, Plus, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -34,6 +34,8 @@ type Key = {
   lastUsedAt: string | null;
   expiresAt: string | null;
   revokedAt: string | null;
+  /** Set when an app connected by signing in (OAuth) rather than with a key made here. */
+  clientId: string | null;
 };
 
 const day = (iso: string) =>
@@ -64,6 +66,11 @@ function CopyBlock({ text, what }: { text: string; what: string }) {
   );
 }
 
+/** Claude Code signs in with Bookalyze (OAuth) the first time it's used: no key to copy. */
+export function claudeSignInCommand(origin: string) {
+  return `claude mcp add --transport http bookalyze ${origin}/api/mcp`;
+}
+
 export function claudeCommand(origin: string, secret: string) {
   return `claude mcp add --transport http bookalyze ${origin}/api/mcp --header "Authorization: Bearer ${secret}"`;
 }
@@ -89,10 +96,11 @@ export function ApiKeys({
           <div className="grid gap-1.5">
             <CardTitle className="flex items-center gap-2">
               <KeyRound className="size-4 text-muted-foreground" />
-              Your keys
+              Keys and connected apps
             </CardTitle>
             <CardDescription>
-              Each key is shown once, when you make it. Keep it like a password.
+              Apps you connected by signing in, and keys for scripts. Each key is shown once, when
+              you make it. Keep it like a password.
             </CardDescription>
           </div>
           <Button onClick={() => setCreating(true)}>
@@ -104,9 +112,9 @@ export function ApiKeys({
           {live.length === 0 ? (
             <div className="rounded-xl border border-dashed p-8 text-center">
               <KeyRound className="mx-auto size-7 text-muted-foreground" />
-              <p className="mt-3 font-medium">No keys yet</p>
+              <p className="mt-3 font-medium">Nothing connected yet</p>
               <p className="mt-1 text-muted-foreground text-sm">
-                Make one to connect Claude Code or a script to your books.
+                Connect Claude Code below, or make a key for a script.
               </p>
             </div>
           ) : (
@@ -119,13 +127,13 @@ export function ApiKeys({
           {revoked.length ? (
             <details className="mt-4 text-sm">
               <summary className="cursor-pointer text-muted-foreground">
-                {revoked.length} revoked {revoked.length === 1 ? "key" : "keys"}
+                {revoked.length} revoked or disconnected
               </summary>
               <ul className="mt-2 grid gap-1 text-muted-foreground">
                 {revoked.map((k) => (
                   <li key={k.id} className="flex flex-wrap gap-x-2">
                     <span className="line-through">{k.name}</span>
-                    <span className="font-mono text-xs">{k.prefix}…</span>
+                    {k.clientId ? null : <span className="font-mono text-xs">{k.prefix}…</span>}
                     <span>revoked {day(k.revokedAt ?? k.createdAt)}</span>
                   </li>
                 ))}
@@ -142,15 +150,17 @@ export function ApiKeys({
             Connect Claude Code
           </CardTitle>
           <CardDescription>
-            Make a key, then run this once in a terminal. Claude can then list your companies,
-            categorise transactions, reconcile accounts and pull reports for you.
+            Run this once in a terminal. Then type <code>/mcp</code> in Claude Code, choose
+            Bookalyze and sign in: you choose here what it may do. Claude can then list your
+            companies, categorise transactions, reconcile accounts and pull reports for you.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3">
-          <CopyBlock text={claudeCommand(origin, "bka_your_key")} what="Command" />
+          <CopyBlock text={claudeSignInCommand(origin)} what="Command" />
           <p className="text-muted-foreground text-xs">
-            Any MCP client works the same way: the server is <code>{origin}/api/mcp</code>{" "}
-            (Streamable HTTP) with your key as a Bearer token. Scripts can use the REST API at{" "}
+            Any MCP client that supports sign-in works the same way, with the server at{" "}
+            <code>{origin}/api/mcp</code> (Streamable HTTP). For scripts, or a client without
+            sign-in, make a key and send it as a Bearer token; the REST API is at{" "}
             <code>{origin}/api/v1</code>.
           </p>
         </CardContent>
@@ -180,7 +190,11 @@ function KeyRow({ apiKey: k, companyNames }: { apiKey: Key; companyNames: Map<st
     start(async () => {
       const result = await revokeApiKeyAction(k.id);
       if (result.ok) {
-        toast.success(`“${k.name}” revoked. It stops working right away.`);
+        toast.success(
+          k.clientId
+            ? `“${k.name}” disconnected. It stops working right away.`
+            : `“${k.name}” revoked. It stops working right away.`,
+        );
         router.refresh();
       } else toast.error(result.message ?? "Couldn't revoke the key.");
       setConfirming(false);
@@ -203,14 +217,22 @@ function KeyRow({ apiKey: k, companyNames }: { apiKey: Key; companyNames: Map<st
               Read only
             </Badge>
           )}
+          {k.clientId ? (
+            <Badge variant="secondary">
+              <Bot className="size-3" />
+              Connected app
+            </Badge>
+          ) : null}
           {expired ? <Badge variant="destructive">Expired</Badge> : null}
         </div>
         <p className="text-muted-foreground text-xs">
-          <span className="font-mono">{k.prefix}…</span> · {companies}
+          {k.clientId ? "Signed in with Bookalyze" : <span className="font-mono">{k.prefix}…</span>}{" "}
+          · {companies}
         </p>
         <p className="text-muted-foreground text-xs">
-          Made {day(k.createdAt)} · {k.lastUsedAt ? `Last used ${day(k.lastUsedAt)}` : "Never used"}{" "}
-          · {k.expiresAt ? `${expired ? "Expired" : "Expires"} ${day(k.expiresAt)}` : "No expiry"}
+          {k.clientId ? "Connected" : "Made"} {day(k.createdAt)} ·{" "}
+          {k.lastUsedAt ? `Last used ${day(k.lastUsedAt)}` : "Never used"} ·{" "}
+          {k.expiresAt ? `${expired ? "Expired" : "Expires"} ${day(k.expiresAt)}` : "No expiry"}
         </p>
       </div>
       {confirming ? (
@@ -220,12 +242,12 @@ function KeyRow({ apiKey: k, companyNames }: { apiKey: Key; companyNames: Map<st
           </Button>
           <Button size="sm" variant="destructive" onClick={revoke} disabled={pending}>
             {pending ? <Spinner /> : null}
-            Revoke now
+            {k.clientId ? "Disconnect now" : "Revoke now"}
           </Button>
         </div>
       ) : (
         <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
-          Revoke
+          {k.clientId ? "Disconnect" : "Revoke"}
         </Button>
       )}
     </li>

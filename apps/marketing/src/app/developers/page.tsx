@@ -27,17 +27,16 @@ export const metadata: Metadata = {
 
 const MCP_URL = `${APP_URL}/api/mcp`;
 const API_URL = `${APP_URL}/api/v1`;
-const COMMAND = `claude mcp add --transport http bookalyze ${MCP_URL} \\
-  --header "Authorization: Bearer bka_your_key"`;
+const COMMAND = `claude mcp add --transport http bookalyze ${MCP_URL}`;
 
 const STEPS = [
   {
-    title: "Make a key",
-    body: "In Bookalyze, open your account menu → API keys. Choose read-only or read and write, all your companies or just some, and when it stops working.",
+    title: "Add Bookalyze to Claude Code",
+    body: "Run one command in a terminal. There's no key to copy.",
   },
   {
-    title: "Add it to Claude Code",
-    body: "Run one command. The key is shown once, with the command filled in, ready to copy.",
+    title: "Sign in and choose",
+    body: "Type /mcp in Claude Code and sign in to Bookalyze. Choose read-only or read and write, all your companies or just some, and for how long.",
   },
   {
     title: "Ask in plain words",
@@ -79,12 +78,12 @@ const CAN_DO: { icon: LucideIcon; title: string; body: string }[] = [
 ];
 
 const SAFETY = [
-  "Keys act as you, with your role in each company, and never more",
-  "Read-only keys can't change anything, and agents don't even see the tools that would",
-  "Limit a key to some companies; the others don't exist for it",
+  "Claude signs in as you, with your role in each company, and never more",
+  "Read-only access can't change anything, and agents don't even see the tools that would",
+  "Limit access to some companies; the others don't exist for it",
   "Every change runs through the same checks as the app: closed periods, reconciled lines, balanced entries",
-  "Each change is in the company's audit log, marked with the key that made it",
-  "Keys are stored only as a fingerprint, expire when you choose, and can be revoked at once",
+  "Each change is in the company's audit log, marked with the app or key that made it",
+  "Short-lived tokens, stored only as a fingerprint; access ends when you choose, or the moment you disconnect",
 ] as const;
 
 function Code({ children, label }: { children: string; label: string }) {
@@ -196,7 +195,7 @@ export default function DevelopersPage() {
             <div>
               <h3 className="font-medium">Read-only to start</h3>
               <p className="text-muted-foreground text-sm">
-                Most people begin with a read-only key for reports and questions.
+                Most people begin with read-only access for reports and questions.
               </p>
             </div>
           </div>
@@ -207,7 +206,7 @@ export default function DevelopersPage() {
             <div>
               <h3 className="font-medium">Every change in the audit log</h3>
               <p className="text-muted-foreground text-sm">
-                Each one says which key made it, so nothing happens behind your back.
+                Each one says which app or key made it, so nothing happens behind your back.
               </p>
             </div>
           </div>
@@ -218,7 +217,7 @@ export default function DevelopersPage() {
         <SectionHeading
           eyebrow="For developers"
           title="A plain REST API, too"
-          lead="JSON over HTTPS with the same key as a Bearer token. Amounts are exact decimal strings, dates are YYYY-MM-DD."
+          lead="JSON over HTTPS, with an API key from your account as a Bearer token. Amounts are exact decimal strings, dates are YYYY-MM-DD."
         />
         <div className="mx-auto grid w-full max-w-3xl gap-5">
           <Code label="List companies">
@@ -243,7 +242,7 @@ export default function DevelopersPage() {
       <div className="pt-4 sm:pt-8">
         <ClosingCta
           title="Put an agent on your bookkeeping"
-          lead="Try everything free for 30 days. Set up a company, make a key, and ask Claude what your profit was last month."
+          lead="Try everything free for 30 days. Set up a company, connect Claude Code, and ask Claude what your profit was last month."
         />
       </div>
     </>

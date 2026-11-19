@@ -31,8 +31,8 @@ export default async function ApiKeysPage() {
           <h1 className="font-semibold text-2xl tracking-tight">API keys</h1>
           <p className="mt-1 max-w-xl text-muted-foreground text-sm">
             Let AI agents like Claude Code, and your own scripts, read and update your books without
-            the browser. A key acts as you, with your role in each company, and never more: it can
-            be read-only, limited to some companies, and revoked at any time.
+            the browser. A connected app or key acts as you, with your role in each company, and
+            never more: it can be read-only, limited to some companies, and revoked at any time.
           </p>
         </div>
       </div>
@@ -49,6 +49,7 @@ export default async function ApiKeysPage() {
           lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
           expiresAt: k.expiresAt?.toISOString() ?? null,
           revokedAt: k.revokedAt?.toISOString() ?? null,
+          clientId: k.clientId,
         }))}
       />
       <p className="text-muted-foreground text-sm">

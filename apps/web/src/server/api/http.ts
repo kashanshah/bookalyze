@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { resourceMetadataUrl } from "../oauth";
 import { ApiError, authenticate, type Operation, toApiError } from "./core";
 import { execute } from "./execute";
 import { OPERATIONS } from "./ops";
@@ -52,7 +53,19 @@ export function json(body: unknown, status = 200, extra: Record<string, string> 
   });
 }
 
-export function errorResponse(error: ApiError) {
+/**
+ * An error as JSON. A 401 says how to authenticate (RFC 6750), and where to find the sign-in
+ * (RFC 9728 `resource_metadata`), which is how MCP clients discover OAuth.
+ */
+export function errorResponse(error: ApiError, resourceMetadata?: string) {
+  const challenge = [
+    'Bearer realm="Bookalyze"',
+    // RFC 6750 §3.1: no error code when the request carried no credentials at all.
+    error.code === "missing_api_key" ? null : 'error="invalid_token"',
+    resourceMetadata ? `resource_metadata="${resourceMetadata}"` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
   return json(
     {
       error: {
@@ -62,15 +75,7 @@ export function errorResponse(error: ApiError) {
       },
     },
     error.status,
-    error.status === 401
-      ? {
-          // RFC 6750 §3.1: no error code when the request carried no credentials at all.
-          "WWW-Authenticate":
-            error.code === "missing_api_key"
-              ? 'Bearer realm="Bookalyze"'
-              : 'Bearer realm="Bookalyze", error="invalid_token"',
-        }
-      : {},
+    error.status === 401 ? { "WWW-Authenticate": challenge } : {},
   );
 }
 
@@ -120,7 +125,10 @@ export async function handleRest(request: Request, segments: string[]): Promise<
     const data = await execute(found.route.op, principal, input, new URL(request.url).origin);
     return json({ data: data ?? null });
   } catch (error) {
-    return errorResponse(toApiError(error, { route: segments.join("/"), method }));
+    return errorResponse(
+      toApiError(error, { route: segments.join("/"), method }),
+      resourceMetadataUrl(new URL(request.url).origin, "/api/v1"),
+    );
   }
 }
 
