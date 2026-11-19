@@ -13,7 +13,8 @@ const owner = createDb(ownerUrl, { max: 1 });
 const app = createDb(appUrl, { max: 2 });
 
 // "Now" is in 1999, before every other test's rows (made today, or dated 2000 onwards), so they
-// are all in its future and don't count, whatever order the test files run in.
+// are all in its future and don't count, whatever order the test files run in. Keep other tests'
+// rows after mid-1999 (platform-people uses August 2000, growth March 2001).
 const now = new Date("1999-06-30T12:00:00Z");
 const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
 const exclude = ["Admin@Overview.test"];

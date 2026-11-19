@@ -144,3 +144,109 @@ export async function platformDaily(
     newCompanies: Number(row.new_companies),
   }));
 }
+
+export type PersonRow = {
+  userId: string;
+  name: string;
+  email: string;
+  signedUpAt: Date;
+  emailVerified: boolean;
+  /** "email", "google", or both ("email, google"); null if neither (shouldn't happen). */
+  signIn: string | null;
+  source: string | null;
+  medium: string | null;
+  campaign: string | null;
+  /** The landing page, else the referring site. */
+  landing: string | null;
+  companies: number;
+  companyName: string | null;
+  companyCountry: string | null;
+  companyCreatedAt: Date | null;
+  planStatus: string | null;
+  planEnding: boolean;
+  lastSeenAt: Date | null;
+  changes30d: number;
+};
+
+export type PeopleQuery = {
+  from: Date;
+  to: Date;
+  exclude: readonly string[];
+  search?: string;
+  limit: number;
+  offset: number;
+};
+
+const date = (v: unknown) => (v == null ? null : new Date(v as string | Date));
+const text = (v: unknown) => (v == null || v === "" ? null : String(v));
+
+/**
+ * The people who signed up in the period, newest first, for platform admins (the People page).
+ * Each with their first company's name, country and plan, never any of its books.
+ */
+export async function platformPeople(
+  db: Database,
+  q: PeopleQuery,
+): Promise<{ rows: PersonRow[]; total: number }> {
+  // % and _ in a search are literal characters, not wildcards.
+  const search = (q.search ?? "").trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+  const result = await db.execute<Record<string, unknown>>(
+    sql`select * from platform_people(${q.from.toISOString()}::timestamptz, ${q.to.toISOString()}::timestamptz, ${emails(q.exclude)}, ${search}, ${q.limit}::int, ${q.offset}::int)`,
+  );
+  const rows = result.rows.map((r) => ({
+    userId: String(r.user_id),
+    name: String(r.name ?? ""),
+    email: String(r.email ?? ""),
+    signedUpAt: new Date(r.signed_up_at as string | Date),
+    emailVerified: Boolean(r.email_verified),
+    signIn: text(r.sign_in),
+    source: text(r.source),
+    medium: text(r.medium),
+    campaign: text(r.campaign),
+    landing: text(r.landing),
+    companies: Number(r.companies ?? 0),
+    companyName: text(r.company_name),
+    companyCountry: text(r.company_country),
+    companyCreatedAt: date(r.company_created_at),
+    planStatus: text(r.plan_status),
+    planEnding: Boolean(r.plan_ending),
+    lastSeenAt: date(r.last_seen_at),
+    changes30d: Number(r.changes_30d ?? 0),
+  }));
+  return { rows, total: Number(result.rows[0]?.total ?? 0) };
+}
+
+export type PeopleSummary = {
+  people: number;
+  verified: number;
+  withCompany: number;
+  /** Sign-in methods, most first ("email", "google", "email, google", "none"). */
+  methods: { label: string; people: number }[];
+  /** Country of each person's first company, most first ("–" for a company without one). */
+  countries: { label: string; people: number }[];
+};
+
+/** Totals for the same people as `platformPeople` (without the search). */
+export async function platformPeopleSummary(
+  db: Database,
+  q: Pick<PeopleQuery, "from" | "to" | "exclude">,
+): Promise<PeopleSummary> {
+  const result = await db.execute<{ kind: string; label: string; people: string | number }>(
+    sql`select * from platform_people_summary(${q.from.toISOString()}::timestamptz, ${q.to.toISOString()}::timestamptz, ${emails(q.exclude)})`,
+  );
+  const rows = result.rows.map((r) => ({ kind: r.kind, label: r.label, people: Number(r.people) }));
+  const total = (label: string) =>
+    rows.find((r) => r.kind === "total" && r.label === label)?.people ?? 0;
+  const of = (kind: string) =>
+    rows
+      .filter((r) => r.kind === kind)
+      .map(({ label, people }) => ({ label, people }))
+      .sort((a, b) => b.people - a.people || a.label.localeCompare(b.label));
+  return {
+    people: total("People"),
+    verified: total("Confirmed their email"),
+    withCompany: total("Set up a company"),
+    methods: of("method"),
+    countries: of("country"),
+  };
+}

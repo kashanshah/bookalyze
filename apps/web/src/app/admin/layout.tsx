@@ -7,19 +7,26 @@ export const metadata: Metadata = {
   title: { template: "%s · Admin", default: "Admin" },
 };
 
-/** Overview, the support desk and Growth, for platform admins only (everyone else gets a 404). */
+/** Overview, People, the support desk and Growth, for platform admins only (everyone else gets a 404). */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   await requireSupportAgent();
   return (
     <div className="min-h-dvh bg-sidebar">
       <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-4">
-          <Link href="/admin" className="flex items-center gap-3">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-4 px-4 sm:h-14 sm:flex-nowrap">
+          <Link href="/admin" className="flex h-12 items-center gap-3 sm:h-auto">
             <Brand className="h-7" />
           </Link>
-          <nav className="flex items-center gap-3 text-sm sm:gap-4" aria-label="Admin">
+          {/* Phones: the links get their own row, scrolling sideways if they don't fit. */}
+          <nav
+            className="-mx-4 flex w-[calc(100%+2rem)] items-center gap-4 overflow-x-auto whitespace-nowrap border-t px-4 py-2.5 text-sm sm:mx-0 sm:w-auto sm:overflow-visible sm:border-0 sm:p-0"
+            aria-label="Admin"
+          >
             <Link href="/admin" className="text-muted-foreground hover:text-foreground">
               Overview
+            </Link>
+            <Link href="/admin/people" className="text-muted-foreground hover:text-foreground">
+              People
             </Link>
             <Link href="/admin/support" className="text-muted-foreground hover:text-foreground">
               <span className="sm:hidden">Support</span>
@@ -29,8 +36,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               Growth
             </Link>
             <Link href="/" className="text-muted-foreground hover:text-foreground">
-              <span className="sm:hidden">App</span>
-              <span className="hidden sm:inline">Back to app</span>
+              Back to app
             </Link>
           </nav>
         </div>

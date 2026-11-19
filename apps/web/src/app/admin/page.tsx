@@ -1,4 +1,4 @@
-import { getDb, platformDaily, platformOverview } from "@bookalyze/db";
+import { getDb, platformDaily, platformOverview, platformPeople } from "@bookalyze/db";
 import {
   Activity,
   BarChart3,
@@ -20,6 +20,14 @@ import { DailyChart } from "./daily-chart";
 export const metadata: Metadata = { title: "Overview" };
 
 const count = new Intl.NumberFormat("en-CA");
+const signedUp = new Intl.DateTimeFormat("en-CA", {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "UTC",
+  timeZoneName: "short",
+});
 
 /** The platform at a glance, for platform admins. Totals only, never a person or a company. */
 export default async function AdminOverviewPage({
@@ -31,9 +39,16 @@ export default async function AdminOverviewPage({
   const { all } = await searchParams;
   const includeAdmins = all === "1";
   const at = { now: new Date(), exclude: includeAdmins ? [] : env().PLATFORM_ADMIN_EMAILS };
-  const [o, daily] = await Promise.all([
+  const [o, daily, latest] = await Promise.all([
     platformOverview(getDb(), at),
     platformDaily(getDb(), { ...at, days: 30 }),
+    platformPeople(getDb(), {
+      from: new Date(0),
+      to: at.now,
+      exclude: at.exclude,
+      limit: 8,
+      offset: 0,
+    }),
   ]);
   const analyticsOn = Boolean(process.env.NEXT_PUBLIC_POSTHOG_KEY);
 
@@ -119,6 +134,7 @@ export default async function AdminOverviewPage({
           rows={daily}
           value={(r) => r.signups}
           unit="sign-ups"
+          href={(r) => `/admin/people?day=${r.day}${includeAdmins ? "&all=1" : ""}`}
         />
         <DailyChart
           title="Active people"
@@ -128,6 +144,42 @@ export default async function AdminOverviewPage({
           unit="people"
         />
       </div>
+
+      <section className="grid gap-3">
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="font-semibold">Latest sign-ups</h2>
+          <Link
+            href={includeAdmins ? "/admin/people?all=1" : "/admin/people"}
+            className="font-medium text-primary text-sm underline-offset-4 hover:underline"
+          >
+            See everyone
+          </Link>
+        </div>
+        {latest.rows.length ? (
+          <ul className="divide-y rounded-2xl border bg-card text-sm shadow-xs">
+            {latest.rows.map((r) => (
+              <li
+                key={r.userId}
+                className="flex flex-wrap items-center gap-x-4 gap-y-0.5 px-4 py-2.5"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{r.name || "No name"}</span>
+                  <span className="block truncate text-muted-foreground">{r.email}</span>
+                </span>
+                <span className="text-muted-foreground">
+                  {r.companyName ?? "No company yet"}
+                  {r.emailVerified ? "" : " · email not confirmed"}
+                </span>
+                <span className="w-full text-muted-foreground tabular-nums sm:w-44 sm:text-end">
+                  {signedUp.format(r.signedUpAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground text-sm">No one has signed up yet.</p>
+        )}
+      </section>
 
       <section className="grid gap-3 sm:grid-cols-3">
         <Link
