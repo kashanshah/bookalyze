@@ -6,6 +6,7 @@ import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
 import { SITE_URL } from "@/lib/site";
 import "./globals.css";
+import { ContactButton } from "@/components/contact-button";
 import { Growth } from "@/components/growth";
 
 const DESCRIPTION =
@@ -69,6 +70,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </main>
         <Footer />
         <Analytics />
+        <ContactButton />
         <Growth />
       </body>
     </html>

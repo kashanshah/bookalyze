@@ -1258,6 +1258,13 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   bookalyze.com/guides), popular guides, **Contact support** (topic, subject, message; the page
   the person came from with `?from=`), **Your tickets**. A ticket's page has the thread, a reply
   box and **Mark as solved** / **Open again**. Every member of the company sees its tickets.
+- **Floating Help button** (`components/support/help-button.tsx`, in the company layout): bottom
+  corner of every company page except Help & support itself; a short form (topic, subject,
+  message) that calls `openTicketAction` with the current page, so it lands on the desk and
+  emails the admins like Contact support; then "Sent" with a link to the conversation, plus
+  links to the guides and to the person's tickets. Toasts sit above it (`offset` on the
+  Toaster). The site has its own "Questions? Talk to us" button (`components/contact-button.tsx`)
+  opening `/contact` (hidden there), whose form also feeds the desk.
 - **The desk** (`/admin/support`, platform admins in `PLATFORM_ADMIN_EMAILS`, a 404 for anyone
   else): tabs Needs a reply / Waiting on the customer / Solved and closed / All, each ticket's
   company (or "Website"), requester, page and topic, reply or **internal note** (never shown or

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { AnalyticsIdentity } from "@/components/growth/product-analytics";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { Sidebar, SidebarContent } from "@/components/shell/sidebar";
+import { HelpButton } from "@/components/support/help-button";
 import { readOnlyLabels } from "@/server/billing";
 import { getOrgContext, listUserOrgs } from "@/server/org";
 import { isSupportAgent } from "@/server/support";
@@ -29,6 +30,7 @@ export default async function OrgLayout({
     !ctx.billing.state.subscription?.status.match(/^(active|trialing)$/);
   return (
     <div className="flex min-h-dvh">
+      <HelpButton slug={slug} />
       <AnalyticsIdentity
         userId={ctx.session.user.id}
         internal={isSupportAgent(ctx.session.user.email)}
