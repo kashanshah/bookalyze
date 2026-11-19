@@ -1402,6 +1402,17 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   "Include my accounts" (`?all=1`) counts everyone. Totals come from security-definer
   `platform_overview()` and `platform_daily()` (migration `0102_platform_overview`), which never
   return a person or a company.
+- **Admin → People** (`/admin/people`): who signed up, newest first: name and email, when (UTC),
+  sign-in method (email / google), whether they confirmed their email, their first company (owned
+  first) with its country and plan, where they came from (`signup_sources`: source · medium ·
+  campaign, and the landing page or referring site), when they were last here (latest session or
+  change) and how many changes they made in 30 days. Periods 7 / 30 / 90 days or Everyone, or one
+  day (`?day=YYYY-MM-DD`; each bar of the Overview's sign-up chart links there), search by name or
+  email, 50 a page, "Include my accounts". A summary above: people, confirmed, with a company, by
+  sign-in method and by company country. From security-definer `platform_people()` and
+  `platform_people_summary()` (migration `0103_platform_people`): a person's account details and
+  their company's name, country and plan, never any of a company's books. The Overview also lists
+  the latest 8 sign-ups. On phones the admin links get their own scrolling row.
 - **PostHog (product analytics)**, on when `NEXT_PUBLIC_POSTHOG_KEY` is set (both Vercel
   projects, production). Bookalyze shares the PostHog project with 3D Box Studio (the free plan
   allows one), so every event carries `product: bookalyze` and `surface: site|app`: filter on it.

@@ -1,4 +1,5 @@
 import type { DailyRow } from "@bookalyze/db";
+import Link from "next/link";
 
 const count = new Intl.NumberFormat("en-CA");
 const dayLabel = new Intl.DateTimeFormat("en-CA", {
@@ -18,12 +19,15 @@ export function DailyChart({
   rows,
   value,
   unit,
+  href,
 }: {
   title: string;
   hint: string;
   rows: DailyRow[];
   value: (row: DailyRow) => number;
   unit: string;
+  /** Where a bar leads (its day's details), for days with something to show. */
+  href?: (row: DailyRow) => string;
 }) {
   const values = rows.map(value);
   const max = Math.max(1, ...values);
@@ -48,8 +52,8 @@ export function DailyChart({
         <div className="flex h-32 items-end gap-[2px] border-b" aria-hidden="true">
           {rows.map((row) => {
             const v = value(row);
-            return (
-              <div key={row.day} className="group relative flex h-full flex-1 items-end">
+            const inner = (
+              <>
                 <div
                   className="w-full rounded-t-[4px] bg-primary transition-colors group-hover:bg-primary/80"
                   style={{ height: v ? `${Math.max(4, (v / max) * 100)}%` : "0" }}
@@ -59,7 +63,24 @@ export function DailyChart({
                   <span className="font-medium tabular-nums">
                     {count.format(v)} {unit}
                   </span>
+                  {href && v ? (
+                    <span className="text-muted-foreground"> · click to see</span>
+                  ) : null}
                 </div>
+              </>
+            );
+            return href && v ? (
+              <Link
+                key={row.day}
+                href={href(row)}
+                tabIndex={-1}
+                className="group relative flex h-full flex-1 cursor-pointer items-end"
+              >
+                {inner}
+              </Link>
+            ) : (
+              <div key={row.day} className="group relative flex h-full flex-1 items-end">
+                {inner}
               </div>
             );
           })}
@@ -90,7 +111,18 @@ export function DailyChart({
             <tbody className="divide-y tabular-nums">
               {[...rows].reverse().map((row) => (
                 <tr key={row.day}>
-                  <td className="px-3 py-1.5">{label(row.day)}</td>
+                  <td className="px-3 py-1.5">
+                    {href && value(row) ? (
+                      <Link
+                        href={href(row)}
+                        className="text-primary underline-offset-4 hover:underline"
+                      >
+                        {label(row.day)}
+                      </Link>
+                    ) : (
+                      label(row.day)
+                    )}
+                  </td>
                   <td className="px-3 py-1.5 text-end">{count.format(value(row))}</td>
                 </tr>
               ))}
