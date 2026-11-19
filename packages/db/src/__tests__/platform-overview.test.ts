@@ -12,8 +12,9 @@ const appUrl =
 const owner = createDb(ownerUrl, { max: 1 });
 const app = createDb(appUrl, { max: 2 });
 
-// "Now" is in 2002, so other tests' rows (made today) are in its future and don't count.
-const now = new Date("2002-06-30T12:00:00Z");
+// "Now" is in 1999, before every other test's rows (made today, or dated 2000 onwards), so they
+// are all in its future and don't count, whatever order the test files run in.
+const now = new Date("1999-06-30T12:00:00Z");
 const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
 const exclude = ["Admin@Overview.test"];
 
@@ -131,12 +132,12 @@ describe("platform overview", () => {
   it("lists each day, oldest first", async () => {
     const days = await platformDaily(app.db, { now, days: 7, exclude });
     expect(days).toHaveLength(7);
-    expect(days[0]?.day).toBe("2002-06-24");
-    expect(days.at(-1)?.day).toBe("2002-06-30");
+    expect(days[0]?.day).toBe("1999-06-24");
+    expect(days.at(-1)?.day).toBe("1999-06-30");
     const on = (day: string) => days.find((d) => d.day === day);
-    expect(on("2002-06-25")).toEqual({ day: "2002-06-25", signups: 1, active: 1, newCompanies: 1 });
-    expect(on("2002-06-27")).toEqual({ day: "2002-06-27", signups: 0, active: 1, newCompanies: 0 });
-    expect(on("2002-06-30")).toEqual({ day: "2002-06-30", signups: 0, active: 1, newCompanies: 0 });
-    expect(on("2002-06-29")).toEqual({ day: "2002-06-29", signups: 0, active: 0, newCompanies: 0 });
+    expect(on("1999-06-25")).toEqual({ day: "1999-06-25", signups: 1, active: 1, newCompanies: 1 });
+    expect(on("1999-06-27")).toEqual({ day: "1999-06-27", signups: 0, active: 1, newCompanies: 0 });
+    expect(on("1999-06-30")).toEqual({ day: "1999-06-30", signups: 0, active: 1, newCompanies: 0 });
+    expect(on("1999-06-29")).toEqual({ day: "1999-06-29", signups: 0, active: 0, newCompanies: 0 });
   });
 });

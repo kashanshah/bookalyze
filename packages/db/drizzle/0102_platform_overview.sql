@@ -15,7 +15,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
     WHERE lower(u.email) <> ALL (p_exclude)
   ), companies AS (
     SELECT o.id, o.created_at FROM organization o
-    WHERE NOT EXISTS (
+    WHERE o.created_at <= p_now AND NOT EXISTS (
       SELECT 1 FROM member m JOIN "user" u ON u.id = m.user_id
       WHERE m.organization_id = o.id AND m.role = 'owner' AND lower(u.email) = ANY (p_exclude)
     )
@@ -41,8 +41,8 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
     (SELECT count(*) FROM active WHERE last_at > p_now - interval '1 day'),
     (SELECT count(*) FROM active WHERE last_at > p_now - interval '7 days'),
     (SELECT count(*) FROM active),
-    (SELECT count(*) FROM companies WHERE created_at <= p_now),
-    (SELECT count(*) FROM companies WHERE created_at > p_now - interval '30 days' AND created_at <= p_now),
+    (SELECT count(*) FROM companies),
+    (SELECT count(*) FROM companies WHERE created_at > p_now - interval '30 days'),
     (SELECT count(DISTINCT a.organization_id) FROM audit_logs a JOIN companies c ON c.id = a.organization_id
       WHERE a.created_at > p_now - interval '30 days' AND a.created_at <= p_now),
     (SELECT count(*) FROM latest_sub WHERE status = 'trialing' AND NOT ending),
