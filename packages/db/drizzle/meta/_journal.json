@@ -715,6 +715,13 @@
       "when": 1795114679858,
       "tag": "0101_transaction_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1795116533440,
+      "tag": "0102_platform_overview",
+      "breakpoints": true
     }
   ]
 }

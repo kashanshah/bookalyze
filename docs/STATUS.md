@@ -1392,6 +1392,29 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   payment failed, or cancelled (or cancelling); and the same by source. It reads totals through
   security-definer `platform_funnel()` and `platform_signup_sources()`, which never return a
   person or a company, and leave out `PLATFORM_ADMIN_EMAILS`.
+- **Admin → Overview** (`/admin`, the admin area's home; "Admin dashboard" in a platform admin's
+  account menu): people (new this week and in 30 days), active today / this week / in 30 days (a
+  person is active on a day they signed in, by `session`, or changed something, by
+  `audit_logs`), companies (new, and with changes in 30 days), paying / in the trial / payment
+  failed / cancelled by each company's latest subscription, sign-ups and active people per day for
+  30 days (UTC, bars with a table view), open support tickets, and AI or API keys used in 30
+  days. "Customers only" (default) leaves out `PLATFORM_ADMIN_EMAILS` and the companies they own;
+  "Include my accounts" (`?all=1`) counts everyone. Totals come from security-definer
+  `platform_overview()` and `platform_daily()` (migration `0102_platform_overview`), which never
+  return a person or a company.
+- **PostHog (product analytics)**, on when `NEXT_PUBLIC_POSTHOG_KEY` is set (both Vercel
+  projects, production). Bookalyze shares the PostHog project with 3D Box Studio (the free plan
+  allows one), so every event carries `product: bookalyze` and `surface: site|app`: filter on it.
+  Events go through `/ingest` on our own domain (rewrites in each `next.config.ts`).
+  - **App** (`components/growth/product-analytics.tsx`): nothing stored in the browser
+    (`persistence: "memory"`); the org layout identifies the person by user ID only, with
+    `internal: true` for platform admins; pageviews on route changes, autocapture with all text
+    and attributes masked, no session recording, surveys or heatmaps; query strings are dropped
+    from URLs.
+  - **Site** (`apps/marketing/src/lib/posthog.ts`, started from `growth.tsx`): a visitor ID in
+    local storage only where `maySetSource` allows (otherwise memory, each page on its own),
+    never a cookie; session recordings with inputs masked; `start_free_clicked` with the page and
+    where on it.
 - **Vercel Analytics events** (custom events need Vercel Pro; otherwise they're ignored):
   `Start free` on the site (any link to `/sign-up`, with the page and header/footer/page),
   `Sign up` (email form), `Plan chosen` (plan, interval) and `Card given` (back from Checkout).

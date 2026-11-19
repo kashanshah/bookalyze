@@ -65,8 +65,9 @@ const sections: LegalSection[] = [
         <li>
           <strong>Usage and security:</strong> sign-in sessions with IP address and browser, a log
           of changes made in each company, anonymous counts of page views and of steps such as
-          signing up, and, if you allow it, which link, ad or website first brought you to us (see
-          Cookies).
+          signing up, which pages and buttons of the app you use (linked to your account's ID, never
+          to the text on the screen or what you type), and, if you allow it, which link, ad or
+          website first brought you to us (see Cookies).
         </li>
       </ul>
     ),
@@ -172,6 +173,11 @@ const sections: LegalSection[] = [
             Vercel: hosting the app and the website, and anonymous counts of page views and of steps
             such as signing up (it sets no cookies).
           </li>
+          <li>
+            PostHog: how the website and the app are used (pages, buttons, where people stop). In
+            the app it sees your account's ID, never your name, email, company or anything you
+            enter, and it records no screens. It sets no cookies.
+          </li>
           <li>Neon: the database.</li>
           <li>Amazon Web Services: storing receipts and documents.</li>
           <li>Resend: sending email, and receiving the emails forwarded to Bookalyze.</li>
@@ -228,6 +234,11 @@ const sections: LegalSection[] = [
           In the EU, the EEA, the UK and Switzerland, we ask first, and set it only if you agree; a
           small cookie, <code>bkz_consent</code>, remembers your answer for 180 days. You can change
           it any time with Cookie choices at the foot of bookalyze.com.
+        </p>
+        <p>
+          Where we may set <code>bkz_src</code>, bookalyze.com also keeps a random visitor ID in
+          your browser's local storage, so that the pages of one visit count as one visit. Where we
+          ask first, it's kept only if you agree.
         </p>
         <p>There are no advertising cookies, and no one else's tracking cookies.</p>
       </>

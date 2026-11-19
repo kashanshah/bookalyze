@@ -78,3 +78,69 @@ export async function platformSignupSources(db: Database, period: Period): Promi
     paying: Number(row.paying),
   }));
 }
+
+export type PlatformOverview = {
+  users: number;
+  verifiedUsers: number;
+  signups7d: number;
+  signups30d: number;
+  active1d: number;
+  active7d: number;
+  active30d: number;
+  companies: number;
+  companiesNew30d: number;
+  companiesActive30d: number;
+  trialing: number;
+  paying: number;
+  paymentFailed: number;
+  cancelled: number;
+  apiKeysUsed30d: number;
+  openTickets: number;
+};
+
+export type DailyRow = { day: string; signups: number; active: number; newCompanies: number };
+
+type AsOf = { now: Date; exclude: readonly string[] };
+
+/** The admin Overview's totals as of `now`. Platform admins and their companies aren't counted. */
+export async function platformOverview(db: Database, at: AsOf): Promise<PlatformOverview> {
+  const result = await db.execute<Record<string, string | number>>(
+    sql`select * from platform_overview(${at.now.toISOString()}::timestamptz, ${emails(at.exclude)})`,
+  );
+  const row = result.rows[0] ?? {};
+  const n = (key: string) => Number(row[key] ?? 0);
+  return {
+    users: n("users"),
+    verifiedUsers: n("verified_users"),
+    signups7d: n("signups_7d"),
+    signups30d: n("signups_30d"),
+    active1d: n("active_1d"),
+    active7d: n("active_7d"),
+    active30d: n("active_30d"),
+    companies: n("companies"),
+    companiesNew30d: n("companies_new_30d"),
+    companiesActive30d: n("companies_active_30d"),
+    trialing: n("trialing"),
+    paying: n("paying"),
+    paymentFailed: n("payment_failed"),
+    cancelled: n("cancelled"),
+    apiKeysUsed30d: n("api_keys_used_30d"),
+    openTickets: n("open_tickets"),
+  };
+}
+
+/** Sign-ups, active people and new companies for each of the last `days` days (UTC), oldest first. */
+export async function platformDaily(
+  db: Database,
+  at: AsOf & { days: number },
+): Promise<DailyRow[]> {
+  const result = await db.execute<Record<string, string | number | Date>>(
+    sql`select day::text as day, signups, active, new_companies from platform_daily(${at.now.toISOString()}::timestamptz, ${at.days}::int, ${emails(at.exclude)})`,
+  );
+  return result.rows.map((row) => ({
+    day: String(row.day),
+    signups: Number(row.signups),
+    active: Number(row.active),
+    newCompanies: Number(row.new_companies),
+  }));
+}

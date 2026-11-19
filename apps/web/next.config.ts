@@ -11,6 +11,17 @@ config({ path: resolve(process.cwd(), "../../.env"), quiet: true });
 const nextConfig: NextConfig = {
   transpilePackages: ["@bookalyze/core", "@bookalyze/db"],
   poweredByHeader: false,
+  // Product analytics (PostHog) through our own domain, so ad blockers don't drop it.
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return [
+      {
+        source: "/ingest/static/:path*",
+        destination: "https://us-assets.i.posthog.com/static/:path*",
+      },
+      { source: "/ingest/:path*", destination: "https://us.i.posthog.com/:path*" },
+    ];
+  },
   // Invoice PDFs read their Arabic font from disk (src/server/pdf-text.ts); ship it with every
   // server function.
   outputFileTracingIncludes: { "/**": ["./src/server/fonts/**"] },

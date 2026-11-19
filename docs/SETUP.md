@@ -273,6 +273,14 @@ Test mode until the owner decides otherwise. Nothing is gated before `BILLING_ST
 Users who signed up with Google can add a password under **Account & security**, then sign in
 either way. Signing in with Google using an existing account's email links the two.
 
+## Product analytics (PostHog)
+
+Set `NEXT_PUBLIC_POSTHOG_KEY` (the PostHog project's API key, `phc_…`; public) on both Vercel
+projects, `bookalyze` and `bookalyze-site`, for Production, then redeploy: it's read at build
+time. Without it nothing is sent. Events reach PostHog (US cloud) through `/ingest` on each
+domain. The project is shared with 3D Box Studio, so filter reports on `product = bookalyze`. For
+privacy settings and what's captured, see STATUS → "Growth: sign-up analytics (admin)".
+
 ## Resend (email)
 
 1. resend.com → **Domains → Add domain** `bookalyze.com`, then add the DNS records it shows (SPF,

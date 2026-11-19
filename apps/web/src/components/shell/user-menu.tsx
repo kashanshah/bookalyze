@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, LogOut, Monitor, Moon, ShieldCheck, Sparkles, Sun } from "lucide-react";
+import { Bot, Gauge, LogOut, Monitor, Moon, ShieldCheck, Sparkles, Sun } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -32,7 +32,16 @@ export function useSignOut() {
   };
 }
 
-export function UserMenu({ name, email }: { name: string; email: string }) {
+/** `admin`: a platform admin, who also gets a way into the admin area. */
+export function UserMenu({
+  name,
+  email,
+  admin = false,
+}: {
+  name: string;
+  email: string;
+  admin?: boolean;
+}) {
   const signOut = useSignOut();
   const { theme, setTheme } = useTheme();
   return (
@@ -67,6 +76,14 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
             API keys for AI agents
           </Link>
         </DropdownMenuItem>
+        {admin ? (
+          <DropdownMenuItem asChild>
+            <Link href="/admin">
+              <Gauge />
+              Admin dashboard
+            </Link>
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <div className="px-2 py-1.5">
           <p className="mb-1.5 text-muted-foreground text-xs">Appearance</p>

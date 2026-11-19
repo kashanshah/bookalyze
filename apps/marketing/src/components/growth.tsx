@@ -16,6 +16,7 @@ import {
 } from "@bookalyze/core";
 import { track } from "@vercel/analytics";
 import { useEffect, useState } from "react";
+import { siteEvent, startSiteAnalytics } from "@/lib/posthog";
 import { buttonClass } from "./button";
 
 const REOPEN = "bkz:cookie-choices";
@@ -55,7 +56,9 @@ function rememberSource() {
  *   bookalyze.com, which the app keeps with the account made at sign-up; visitors in the EU, the
  *   EEA, the UK and Switzerland are asked first, and nothing is set unless they agree;
  * - counts clicks on any "Start free" link (to the app's /sign-up) in Vercel Analytics (no
- *   cookies), by page and by where on the page.
+ *   cookies) and PostHog, by page and by where on the page;
+ * - starts PostHog (lib/posthog.ts), which keeps a visitor ID in local storage only under the
+ *   same rule as the cookie, and never sets a cookie.
  */
 export function Growth() {
   const [asking, setAsking] = useState(false);
@@ -66,8 +69,10 @@ export function Growth() {
       const needed = await consentNeeded();
       if (gone) return;
       const choice = readConsent(document.cookie);
+      const remember = maySetSource(needed, choice);
+      startSiteAnalytics(remember);
       if (needed && (reopen || !choice)) setAsking(true);
-      else if (maySetSource(needed, choice)) rememberSource();
+      else if (remember) rememberSource();
     };
     decide();
     const onReopen = () => decide(true);
@@ -85,6 +90,7 @@ export function Growth() {
       if (path !== "/sign-up") return;
       const where = link.closest("header") ? "header" : link.closest("footer") ? "footer" : "page";
       track("Start free", { page: window.location.pathname, where });
+      siteEvent("start_free_clicked", { page: window.location.pathname, where });
     };
     document.addEventListener("click", onClick);
     return () => {
@@ -96,6 +102,7 @@ export function Growth() {
 
   const answer = (choice: ConsentChoice) => {
     setCookie(CONSENT_COOKIE, choice, CONSENT_COOKIE_DAYS);
+    startSiteAnalytics(choice === "yes");
     if (choice === "yes") rememberSource();
     // A "no" also forgets a source remembered before.
     else setCookie(SOURCE_COOKIE, "", 0);

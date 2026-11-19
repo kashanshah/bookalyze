@@ -3,6 +3,7 @@ import { Blocks, CreditCard, Home, LifeBuoy, Settings2, Sparkles, Users } from "
 import Link from "next/link";
 import { Brand } from "@/components/brand";
 import type { OrgContext } from "@/server/org";
+import { isSupportAgent } from "@/server/support";
 import { MODULE_ICONS } from "./module-icons";
 import { NavLink } from "./nav-link";
 import { OrgSwitcher } from "./org-switcher";
@@ -92,7 +93,11 @@ export function SidebarContent({ ctx, orgs }: { ctx: OrgContext; orgs: OrgItem[]
         </div>
       </nav>
       <div className="border-t pt-3">
-        <UserMenu name={ctx.session.user.name} email={ctx.session.user.email} />
+        <UserMenu
+          name={ctx.session.user.name}
+          email={ctx.session.user.email}
+          admin={isSupportAgent(ctx.session.user.email)}
+        />
       </div>
     </div>
   );

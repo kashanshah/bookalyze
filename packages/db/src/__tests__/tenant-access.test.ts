@@ -45,6 +45,7 @@ const REVIEWED_DIRECT_USE = [
   "server/billing-webhook.ts", // billing_org_for_customer() to find the company of a Stripe customer; the rest in withBillingWriter()
   "server/ebay-users.ts", // organization, to list connected eBay users once a day; their connections in withOrg()
   "app/admin/growth/page.tsx", // platform_funnel() and platform_signup_sources(): totals only, for platform admins
+  "app/admin/page.tsx", // platform_overview() and platform_daily(): totals only, for platform admins
 ];
 
 const webSrc = fileURLToPath(new URL("../../../../apps/web/src", import.meta.url));
