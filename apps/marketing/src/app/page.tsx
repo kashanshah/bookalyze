@@ -27,6 +27,7 @@ import {
   DropshipPreview,
   InvoicePreview,
   PayoutsPreview,
+  ProductProfitPreview,
   ProfitWaterfall,
   ReviewsPreview,
   timing,
@@ -50,11 +51,11 @@ const CONNECTS = [
 
 /** The things the owner wants every visitor to see, in the hero and in their own sections. */
 const HIGHLIGHTS = [
-  { icon: Sparkles, label: "Works in ChatGPT, Claude and Gemini", href: "#ai" },
-  { icon: Star, label: "Automatic review requests", href: "#reviews" },
+  { icon: Sparkles, label: "In ChatGPT, Claude and Gemini", href: "#ai" },
+  { icon: Star, label: "Automatic reviews", href: "#reviews" },
   { icon: Truck, label: "Dropshipping on eBay", href: "#dropshipping" },
   { icon: Landmark, label: "Wise bank sync", href: "#wise" },
-  { icon: FileText, label: "Buyer invoices in seconds", href: "#invoices" },
+  { icon: FileText, label: "Buyer invoices", href: "#invoices" },
 ] as const;
 
 /** What an assistant can do once it's connected: the home page's AI section. */
@@ -150,14 +151,14 @@ const FAQ: Question[] = [
 export default function HomePage() {
   return (
     <>
-      {/* Hero */}
+      {/* Hero: the message centred, the product below it */}
       <section className="relative overflow-hidden">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 -top-40 mx-auto h-[36rem] max-w-5xl rounded-full bg-primary/15 blur-3xl"
         />
-        <div className="relative mx-auto grid max-w-6xl gap-14 px-4 pt-16 pb-24 sm:px-6 sm:pt-24 sm:pb-32 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:gap-12">
-          <div className="fade-in-0 slide-in-from-bottom-3 grid animate-in justify-items-start gap-6 duration-700">
+        <div className="relative mx-auto grid max-w-6xl gap-14 px-4 pt-16 pb-24 sm:px-6 sm:pt-24 sm:pb-28">
+          <div className="fade-in-0 slide-in-from-bottom-3 mx-auto grid max-w-3xl animate-in justify-items-center gap-6 text-center duration-700">
             <a
               href="#ai"
               className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 font-medium text-sm shadow-xs transition-colors hover:border-primary/40"
@@ -172,26 +173,11 @@ export default function HomePage() {
             <h1 className="text-balance font-semibold text-4xl tracking-tight sm:text-5xl lg:text-6xl">
               Accounting built for Amazon, Walmart, Noon and eBay sellers.
             </h1>
-            <p className="max-w-xl text-pretty text-lg text-muted-foreground leading-relaxed">
-              For sellers in the United States, Canada, Mexico, the UAE, Saudi Arabia and Egypt.
-              Every settlement posted, every payout matched to your bank, and what each channel
-              really earned after fees, refunds, ads and cost of goods. Selling on eBay, or
-              dropshipping? That too.
+            <p className="max-w-2xl text-pretty text-lg text-muted-foreground leading-relaxed">
+              Every payout posted and matched to your bank, and what each channel really earned.
+              From your own stock or dropshipped.
             </p>
-            <ul className="flex flex-wrap gap-2">
-              {HIGHLIGHTS.map((h) => (
-                <li key={h.href}>
-                  <a
-                    href={h.href}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 font-medium text-accent-foreground text-sm transition-colors hover:bg-primary hover:text-primary-foreground"
-                  >
-                    <h.icon className="size-3.5" />
-                    {h.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap justify-center gap-3">
               <ButtonLink href={SIGN_UP_URL} size="lg">
                 Start free
                 <ArrowRight className="rtl:rotate-180" />
@@ -204,9 +190,27 @@ export default function HomePage() {
               30 days free, then from $9 a month. Cancel any time.
             </p>
           </div>
-          <div className="fade-in-0 slide-in-from-bottom-6 animate-in fill-mode-both delay-150 duration-700">
+          <div className="fade-in-0 slide-in-from-bottom-6 mx-auto grid w-full max-w-5xl animate-in gap-6 fill-mode-both delay-150 duration-700 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:items-start">
             <PayoutsPreview />
+            <div className="hidden lg:mt-16 lg:block">
+              <ProductProfitPreview />
+            </div>
           </div>
+          <ul className="mx-auto mt-8 flex w-full flex-wrap justify-center gap-3">
+            {HIGHLIGHTS.map((h) => (
+              <li key={h.href}>
+                <a
+                  href={h.href}
+                  className="group flex items-center gap-2.5 rounded-xl border bg-card py-2 ps-2 pe-4 font-medium text-sm shadow-xs transition-colors hover:border-primary/40"
+                >
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                    <h.icon className="size-4" />
+                  </span>
+                  {h.label}
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
