@@ -5,12 +5,15 @@ const urls = { site: "https://bookalyze.com", app: "https://app.bookalyze.com/" 
 
 describe("shared site links", () => {
   it("are relative where they live and absolute from the other side", () => {
-    expect(siteHref(SITE_NAV[0] ?? SIGN_IN, "site", urls)).toBe("/marketplaces");
-    expect(siteHref(SITE_NAV[0] ?? SIGN_IN, "app", urls)).toBe(
-      "https://bookalyze.com/marketplaces",
-    );
+    const marketplaces = SITE_NAV.find((l) => l.path === "/marketplaces") ?? SIGN_IN;
+    expect(siteHref(marketplaces, "site", urls)).toBe("/marketplaces");
+    expect(siteHref(marketplaces, "app", urls)).toBe("https://bookalyze.com/marketplaces");
     expect(siteHref(SIGN_IN, "app", urls)).toBe("/sign-in");
     expect(siteHref(TERMS, "site", urls)).toBe("https://app.bookalyze.com/terms");
+  });
+
+  it("lead with AI assistants, the headline feature", () => {
+    expect(SITE_NAV[0]?.path).toBe("/features/ai-assistants");
   });
 
   it("have no duplicate labels within a column", () => {

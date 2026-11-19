@@ -2,7 +2,13 @@
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
-    "includes": ["**", "!**/drizzle/meta", "!**/src/reference-data/*.json", "!**/next-env.d.ts"]
+    "includes": [
+      "**",
+      "!**/drizzle/meta",
+      "!**/src/reference-data/*.json",
+      "!**/next-env.d.ts",
+      "!**/*.generated.ts"
+    ]
   },
   "formatter": {
     "enabled": true,

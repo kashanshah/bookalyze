@@ -18,11 +18,14 @@ export type Block =
   | { check: readonly string[] }
   /** A tip or a caution. */
   | { note: string; tone?: "tip" | "caution" }
+  /** A command or snippet to copy, shown as code. */
+  | { code: string }
   /** A small table. */
   | { table: { head: readonly string[]; rows: readonly (readonly string[])[] } };
 
 export type CategoryId =
   | "start"
+  | "ai"
   | "marketplaces"
   | "payouts"
   | "banking"

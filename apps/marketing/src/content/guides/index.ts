@@ -1,5 +1,6 @@
 import { ACCOUNTING_GUIDES } from "./accounting";
 import { ADVERTISING_GUIDES } from "./advertising";
+import { AI_GUIDES } from "./ai";
 import { BANKING_GUIDES } from "./banking";
 import { COMPANY_GUIDES } from "./company";
 import { CONNECTION_GUIDES } from "./connections";
@@ -19,6 +20,11 @@ export type { Block, CategoryId, Guide } from "./types";
 /** The guide categories, in the order the index shows them. */
 export const CATEGORIES: readonly { id: CategoryId; title: string; lead: string }[] = [
   { id: "start", title: "Getting started", lead: "How Bookalyze works, and your first week." },
+  {
+    id: "ai",
+    title: "AI assistants",
+    lead: "Use Bookalyze from ChatGPT, Claude, Gemini and coding assistants.",
+  },
   {
     id: "marketplaces",
     title: "Marketplaces",
@@ -71,6 +77,7 @@ export const CATEGORIES: readonly { id: CategoryId; title: string; lead: string 
 /** Every guide, grouped by category in the order above. */
 export const GUIDES: readonly Guide[] = [
   ...START_GUIDES,
+  ...AI_GUIDES,
   ...CONNECTION_GUIDES,
   ...MARKETPLACE_GUIDES,
   ...PAYOUT_GUIDES,
@@ -93,6 +100,7 @@ export const GUIDES: readonly Guide[] = [
 /** The guides people need most, first (Help's "Popular guides"). */
 export const POPULAR_GUIDES: readonly string[] = [
   "how-bookalyze-works",
+  "connect-ai-assistant",
   "connect-amazon",
   "how-payouts-post",
   "match-payouts",

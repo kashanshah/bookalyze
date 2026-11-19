@@ -8,6 +8,7 @@ import {
   LockKeyhole,
   ScrollText,
   ShieldCheck,
+  Sparkles,
   Star,
   UsersRound,
 } from "lucide-react";
@@ -20,6 +21,7 @@ import { InView } from "@/components/in-view";
 import { MarketplaceCards } from "@/components/marketplaces";
 import { PainsGrid } from "@/components/pains";
 import {
+  AssistantChatPreview,
   CompaniesPreview,
   InvoicePreview,
   PayoutsPreview,
@@ -32,6 +34,9 @@ import { Checklist, Section, SectionHeading } from "@/components/section";
 import { cn, SIGN_UP_URL } from "@/lib/site";
 
 const CONNECTS = [
+  "ChatGPT",
+  "Claude",
+  "Gemini",
   "Amazon",
   "Walmart",
   "Noon",
@@ -41,14 +46,37 @@ const CONNECTS = [
   "Wave (import)",
 ];
 
-/** The three things the owner wants every visitor to see, in the hero and in their own sections. */
+/** The things the owner wants every visitor to see, in the hero and in their own sections. */
 const HIGHLIGHTS = [
+  { icon: Sparkles, label: "Works in ChatGPT, Claude and Gemini", href: "#ai" },
   { icon: Star, label: "Automatic review requests", href: "#reviews" },
   { icon: Landmark, label: "Wise bank sync", href: "#wise" },
   { icon: FileText, label: "Buyer invoices in seconds", href: "#invoices" },
 ] as const;
 
+/** What an assistant can do once it's connected: the home page's AI section. */
+const AI_CAN = [
+  "Ask in plain words: profit last month, what each marketplace really paid, what's still uncategorised",
+  "Let it do the work: categorise transactions, reconcile a bank account, upload a statement, post a journal entry",
+  "Every report on request: profit and loss, balance sheet, trial balance, sales tax",
+  "Never more than you allow: read-only or read and write, all companies or just some, disconnect any time",
+] as const;
+
+const ASSISTANT_NAMES = [
+  "ChatGPT",
+  "Claude",
+  "Gemini",
+  "Claude Code",
+  "Cursor",
+  "VS Code",
+] as const;
+
 const FEATURES = [
+  {
+    icon: Sparkles,
+    title: "Works in your AI assistant",
+    body: "Connect ChatGPT, Claude or Gemini in a minute and ask about your books, or have it categorise and reconcile for you, under the same rules as the app.",
+  },
   {
     icon: BookOpenCheck,
     title: "Proper bookkeeping",
@@ -82,6 +110,10 @@ const FEATURES = [
 ] as const;
 
 const FAQ: Question[] = [
+  {
+    q: "Can I use Bookalyze from ChatGPT, Claude or Gemini?",
+    a: "Yes. Open Settings → AI assistants in Bookalyze and connect your assistant in a minute: it signs in to Bookalyze and you choose what it may do, read-only or read and write, for all your companies or just some. Then ask in plain words, or have it categorise and reconcile for you. Every change is checked like one you'd make yourself and recorded in the audit log. Claude Code, Cursor, VS Code and Gemini CLI work too.",
+  },
   {
     q: "What does it cost?",
     a: "Plans start at $9 a month per company; see Pricing. Your first company gets 30 days free with every feature included. We take a card when you sign up and charge it on day 31; cancel any time before then and nothing is charged.",
@@ -119,10 +151,17 @@ export default function HomePage() {
         />
         <div className="relative mx-auto grid max-w-6xl gap-14 px-4 pt-16 pb-24 sm:px-6 sm:pt-24 sm:pb-32 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:gap-12">
           <div className="fade-in-0 slide-in-from-bottom-3 grid animate-in justify-items-start gap-6 duration-700">
-            <p className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 font-medium text-sm shadow-xs">
-              <span className="size-2 rounded-full bg-success" />
-              30 days free on every plan
-            </p>
+            <a
+              href="#ai"
+              className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 font-medium text-sm shadow-xs transition-colors hover:border-primary/40"
+            >
+              <span className="relative flex size-2">
+                <span className="anim-ping absolute inline-flex size-full rounded-full bg-primary/60" />
+                <span className="relative inline-flex size-2 rounded-full bg-primary" />
+              </span>
+              New: your books inside ChatGPT, Claude and Gemini
+              <ArrowRight className="size-3.5 text-muted-foreground rtl:rotate-180" />
+            </a>
             <h1 className="text-balance font-semibold text-4xl tracking-tight sm:text-5xl lg:text-6xl">
               Accounting built for Amazon, Walmart and Noon sellers.
             </h1>
@@ -176,6 +215,42 @@ export default function HomePage() {
           </ul>
         </div>
       </div>
+
+      {/* AI assistants: the headline feature */}
+      <Section
+        id="ai"
+        className="grid gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center"
+      >
+        <div className="grid gap-8">
+          <SectionHeading
+            align="start"
+            eyebrow="Bookalyze in your AI assistant"
+            title="Ask ChatGPT, Claude or Gemini. Bookalyze does the bookkeeping."
+            lead="Connect your assistant once and talk to your books in plain words. It reads your real numbers and can do the work, from categorising to reconciling, under the same rules as the app. You decide what it may touch."
+          />
+          <Checklist items={AI_CAN} />
+          <ul className="flex flex-wrap gap-2" aria-label="Works with">
+            {ASSISTANT_NAMES.map((name) => (
+              <li
+                key={name}
+                className="rounded-full border bg-card px-3 py-1 font-medium text-sm shadow-xs"
+              >
+                {name}
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap gap-3">
+            <ButtonLink href={SIGN_UP_URL} size="lg">
+              Start free and connect
+              <ArrowRight className="rtl:rotate-180" />
+            </ButtonLink>
+            <ButtonLink href="/features/ai-assistants" variant="outline" size="lg">
+              How it works
+            </ButtonLink>
+          </div>
+        </div>
+        <AssistantChatPreview />
+      </Section>
 
       {/* The losing-money message */}
       <Section id="losing-money" className="grid gap-14 lg:grid-cols-2 lg:items-center">

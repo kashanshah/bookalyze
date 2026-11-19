@@ -19,6 +19,12 @@ export type SiteNavItem = SiteLink & { menu?: readonly SiteMenuLink[] };
  */
 export const SITE_FEATURES: readonly SiteMenuLink[] = [
   {
+    label: "AI assistants",
+    on: "site",
+    path: "/features/ai-assistants",
+    hint: "Your books inside ChatGPT, Claude and Gemini",
+  },
+  {
     label: "Amazon review requests",
     on: "site",
     path: "/features/review-requests",
@@ -88,6 +94,7 @@ export const SITE_FEATURES: readonly SiteMenuLink[] = [
 
 /** The site's top navigation. */
 export const SITE_NAV: readonly SiteNavItem[] = [
+  { label: "AI assistants", on: "site", path: "/features/ai-assistants" },
   { label: "Marketplaces", on: "site", path: "/marketplaces" },
   { label: "Features", on: "site", path: "/features", menu: SITE_FEATURES },
   { label: "Pricing", on: "site", path: "/pricing" },
@@ -115,6 +122,7 @@ export const SITE_FOOTER_COLUMNS: readonly { title: string; links: readonly Site
   {
     title: "Product",
     links: [
+      { label: "AI assistants", on: "site", path: "/features/ai-assistants" },
       { label: "Marketplaces", on: "site", path: "/marketplaces" },
       { label: "Features", on: "site", path: "/features" },
       { label: "Review requests", on: "site", path: "/features/review-requests" },
@@ -128,6 +136,12 @@ export const SITE_FOOTER_COLUMNS: readonly { title: string; links: readonly Site
     title: "Resources",
     links: [
       { label: "Guides", on: "site", path: "/guides" },
+      {
+        label: "Connect ChatGPT, Claude or Gemini",
+        on: "site",
+        path: "/guides/connect-ai-assistant",
+      },
+      { label: "API + MCP for AI agents", on: "site", path: "/developers" },
       { label: "Help & support", on: "site", path: "/help" },
       CONTACT,
     ],
@@ -144,7 +158,7 @@ export const SITE_FOOTER_COLUMNS: readonly { title: string; links: readonly Site
 ];
 
 export const SITE_TAGLINE =
-  "Accounting built for Amazon, Walmart and Noon sellers, and eBay too, for every company you run.";
+  "Accounting built for Amazon, Walmart and Noon sellers, and eBay too, for every company you run. Works inside ChatGPT, Claude and Gemini.";
 
 export const SITE_TRADEMARKS =
   "Amazon, Walmart, Noon, eBay and Wise are trademarks of their owners; Bookalyze isn't made or endorsed by them.";
@@ -158,3 +172,4 @@ export function siteHref(
   if (link.on === here) return link.path;
   return `${(link.on === "site" ? urls.site : urls.app).replace(/\/$/, "")}${link.path}`;
 }
+export * from "./assistants";

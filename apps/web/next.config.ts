@@ -14,6 +14,19 @@ const nextConfig: NextConfig = {
   // Invoice PDFs read their Arabic font from disk (src/server/pdf-text.ts); ship it with every
   // server function.
   outputFileTracingIncludes: { "/**": ["./src/server/fonts/**"] },
+  // The "connect an app" consent screen can't be shown inside another site (clickjacking).
+  async headers() {
+    return [
+      {
+        source: "/oauth/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

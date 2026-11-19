@@ -1,4 +1,14 @@
-import { ArrowRight, Building2, Check, FileText, Landmark, RefreshCw, Send } from "lucide-react";
+import {
+  ArrowRight,
+  Building2,
+  Check,
+  FileText,
+  Landmark,
+  RefreshCw,
+  Send,
+  Sparkles,
+  Wrench,
+} from "lucide-react";
 import { cn } from "@/lib/site";
 import { InView } from "./in-view";
 
@@ -829,5 +839,91 @@ export function InvoicePreview() {
         />
       </div>
     </Frame>
+  );
+}
+
+const ASSISTANT_TOOLS = ["list_bank_accounts", "profit_and_loss", "list_transactions"] as const;
+
+const ASSISTANT_ANSWER = [
+  { label: "Net sales", value: "$48,210.40" },
+  { label: "Marketplace fees", value: "−$9,904.12" },
+  { label: "Ads", value: "−$3,120.55" },
+  { label: "Cost of goods", value: "−$17,466.00" },
+  { label: "Profit", value: "$17,719.73", strong: true },
+] as const;
+
+/**
+ * An AI assistant (ChatGPT, Claude or Gemini: drawn generically, none of their own designs)
+ * answering from the books through Bookalyze's MCP server, then fixing what it found.
+ */
+export function AssistantChatPreview() {
+  return (
+    <div
+      aria-hidden="true"
+      className="select-none overflow-hidden rounded-2xl border bg-card text-start shadow-2xl shadow-primary/10"
+    >
+      <div className="flex items-center gap-2 border-b bg-sidebar px-4 py-2.5">
+        <Sparkles className="size-3.5 text-primary" />
+        <span className="font-medium text-xs">Your AI assistant</span>
+        <span className="ms-auto inline-flex items-center gap-1.5 rounded-full bg-success/12 px-2 py-0.5 font-medium text-[11px] text-success">
+          <span className="size-1.5 rounded-full bg-success" />
+          Bookalyze connected
+        </span>
+      </div>
+      <InView className="grid gap-3 p-4 sm:p-6">
+        <p
+          className="on-view-rise ms-auto max-w-[85%] rounded-2xl rounded-ee-md bg-primary px-4 py-2.5 text-primary-foreground text-sm"
+          style={timing(0.1)}
+        >
+          How did Maple Goods do in October after fees, ads and cost of goods? Anything to fix?
+        </p>
+        <div className="on-view-rise flex flex-wrap gap-1.5" style={timing(0.6)}>
+          {ASSISTANT_TOOLS.map((t) => (
+            <span
+              key={t}
+              className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+            >
+              <Wrench className="size-3" />
+              Bookalyze · {t}
+            </span>
+          ))}
+        </div>
+        <div
+          className="on-view-rise grid max-w-[92%] gap-3 rounded-2xl rounded-es-md border bg-background p-4 text-sm"
+          style={timing(1.1)}
+        >
+          <p>October was profitable. Here it is, straight from your books:</p>
+          <ul className="grid gap-1 rounded-xl border bg-card p-3">
+            {ASSISTANT_ANSWER.map((r) => (
+              <li
+                key={r.label}
+                className={cn(
+                  "flex justify-between gap-3 tabular-nums",
+                  "strong" in r && "mt-1 border-t pt-1.5 font-semibold",
+                )}
+              >
+                <span className={"strong" in r ? undefined : "text-muted-foreground"}>
+                  {r.label}
+                </span>
+                <span>{r.value}</span>
+              </li>
+            ))}
+          </ul>
+          <p>
+            3 Wise transactions aren't categorised yet. Want me to file them as shipping, like last
+            month?
+          </p>
+        </div>
+        <p
+          className="on-view-rise ms-auto max-w-[85%] rounded-2xl rounded-ee-md bg-primary px-4 py-2.5 text-primary-foreground text-sm"
+          style={timing(1.8)}
+        >
+          Yes, go ahead.
+        </p>
+        <span className="on-view-rise" style={timing(2.3)}>
+          <Pill tone="success">3 transactions categorised · in the audit log</Pill>
+        </span>
+      </InView>
+    </div>
   );
 }

@@ -20,6 +20,7 @@ import { timezoneLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { dueIn, loadCalendar } from "@/server/compliance";
 import { fiscalConfigOf, getOrgContext, isOrgAdmin } from "@/server/org";
+import { AssistantsNudge } from "./assistants-nudge";
 import { Attention, AttentionSkeleton } from "./attention";
 import { HideGettingStarted } from "./hide-getting-started";
 import { SalesGlance } from "./sales-glance";
@@ -200,6 +201,10 @@ export default async function OrgHomePage({
           <p className="mt-1 text-muted-foreground text-sm">Plan: {ctx.plan.name}</p>
         </StatCard>
       </div>
+
+      <Suspense fallback={null}>
+        <AssistantsNudge userId={ctx.session.user.id} base={base} company={ctx.org.name} />
+      </Suspense>
 
       {showCommerce && p ? (
         <SalesGlance

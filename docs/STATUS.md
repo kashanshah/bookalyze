@@ -12,12 +12,14 @@ Cursor, Copilot…).
   - Product plan, roadmap and decision log: [`docs/PLAN.md`](PLAN.md), the "why" and long-term "what".
   - Environments, Neon, Vercel, Google and Resend: [`docs/SETUP.md`](SETUP.md).
   - Colours and logo: [`docs/BRAND.md`](BRAND.md).
+  - Public API and MCP server for AI agents (keys, routes, tools, security): [`docs/API.md`](API.md).
   - Security: access, passwords, credentials and the incident response plan (incl. reporting to
     security@amazon.com within 24 hours): [`docs/SECURITY.md`](SECURITY.md).
   - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
-_Last updated: 2026-10-26, advertising slice 5: Amazon Sponsored Display, ad spend per SKU per
-day from a third Amazon Ads report, in Profit by product and the SKU profit and loss._
+_Last updated: 2026-11-19, the public API (`/api/v1`) and MCP server (`/api/mcp`) with per-person
+API keys and "Sign in with Bookalyze" (OAuth), and Settings → AI assistants to connect ChatGPT,
+Claude and Gemini in one click._
 
 ---
 
@@ -1867,6 +1869,73 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   they're met (`components/auth/password-rules.tsx`). Existing passwords keep working.
 - Tests: core `password.test.ts`; e2e "a Google-only user can set a password…" (a common password
   and one made of the person's name are refused).
+
+### Public API and MCP server for AI agents (2026-11-19)
+
+Full reference: [`docs/API.md`](API.md). Public page: bookalyze.com/developers ("Bookalyze for AI
+agents: API + MCP").
+
+- **API keys, per person** (`api_keys`, migration `0099_api_keys`; `packages/db/src/api-keys.ts`).
+  Made, named and revoked at **Account → API keys for AI agents** (`/account/api-keys`, also in
+  the account menu).
+  - Each key is read-only or read and write, for all companies or chosen ones, and expires after
+    30/90/365 days or never.
+  - The secret (`bka_` + 43 characters) is shown once with the `claude mcp add` command. Only its
+    SHA-256 hash is stored.
+  - RLS keeps the rows private to their owner (`withUser`). Lookups go through the SECURITY DEFINER
+    `api_key_lookup` and `api_key_touch`.
+  - The cap is 25 active keys per person. Keys can't manage keys: the actions refuse under an API
+    key.
+- **One operation registry, two front doors** (`apps/web/src/server/api/`). The ~45 operations in
+  `ops/*.ts` serve both REST at `/api/v1` (OpenAPI at `/api/v1/openapi.json`) and MCP tools at
+  `/api/mcp` (Streamable HTTP, stateless, JSON responses).
+  - They cover: companies; chart of accounts; transactions (list/search, add, edit/categorise,
+    delete, reviewed, transfer match/unmatch); journal entries (incl. multi-currency and owner
+    contributions/drawings) and reversals; contacts; bank accounts with balances and last
+    reconciled; reconciliation start/tick/finish/cancel/undo; bank feed sync; CSV statement upload
+    (dry run first); receipts; every report; purchase orders and their payments.
+  - **Everything else the browser does:** `GET /actions` and `call_app_action` call any of the
+    ~200 org server actions, from a generated catalog.
+- **Security.**
+  - A key runs *as its person*: `runAsApiKey` puts a principal in AsyncLocalStorage, and
+    `getSession()` returns that person. So every server action, role check, closed period,
+    reconciliation lock and `audit()` applies unchanged.
+  - On top of that: the key's scope (403 `insufficient_scope`; MCP hides write tools from read-only
+    keys), its companies (others are 404), and the plan's read-only modules (403
+    `module_read_only`; `guardWrites` only covers browser POSTs, so the API checks `mayChange`
+    itself).
+  - Also: zod on every input, 300 requests a minute per key, a 4.5 MB body limit, `no-store`
+    responses, and an Origin check on MCP.
+  - Every write is audited with `audit_logs.api_key_id`.
+- **Neon free plan:** no polling, crons or background work. Everything runs on request, and
+  `last_used_at` is written at most once a minute per key.
+- **Sign in with Bookalyze (OAuth 2.1, MCP authorization 2025-06-18).** `claude mcp add --transport
+  http bookalyze …/api/mcp`, then `/mcp` → sign in: no key to copy.
+  - Discovery (RFC 9728 `/.well-known/oauth-protected-resource/api/mcp`, RFC 8414), dynamic
+    registration (public clients), PKCE S256 only, `resource` checked, refresh rotation, revoke.
+  - Consent screen `/oauth/authorize`: read/write, companies, lifetime; can't be framed; approving
+    only in the browser session. A grant is an `api_keys` row with `client_id` (1-hour access
+    token, rotating `bkr_` refresh token), shown as a connected app with **Disconnect**.
+  - Tables `oauth_clients`, `oauth_codes`; SECURITY DEFINER `oauth_refresh`, `oauth_revoke` (all in
+    `0099_api_keys`). Code: db `oauth.ts`, web `server/oauth.ts`, `server/oauth-request.ts`,
+    `app/oauth/*`, `app/.well-known/*`. Details: `docs/API.md` → Sign in with Bookalyze.
+- **Connect ChatGPT, Claude or Gemini (the headline feature).** **Settings → AI assistants**
+  (`/o/<slug>/settings/ai-assistants`, and `/account/ai-assistants` from the account menu).
+  - A card per assistant: **Connect** copies the MCP link and opens the assistant's connector page,
+    with its steps and who can use it. Developer tools: Add to Cursor and Add to VS Code links, and
+    commands for Claude Code and Gemini CLI.
+  - The page shows which assistants are connected, with **Disconnect**. Home nudges until one is.
+  - One list for the app and the site: `packages/core/src/site/assistants.ts`.
+  - OAuth made to work with hosted assistants: confidential clients (`client_secret_post`/`basic`,
+    a hashed `bks_` secret in `oauth_clients.secret_hash`), Basic client auth, unknown scopes ignored.
+  - Marketing: home hero and an "AI" section with a chat preview, top nav "AI assistants",
+    `/features/ai-assistants`, an "AI assistants" guide category (connect ChatGPT/Claude/Gemini,
+    month-end in conversation, safety), the footer and the FAQ.
+- Tests: db `api-keys.test.ts` (format, hash-only storage, resolve, revoked/expired, RLS privacy,
+  cap) and `oauth.test.ts` (PKCE, single-use codes, refresh rotation, expiry, revoke, one
+  connection per app, stale clients, confidential clients); core `assistants.test.ts`; e2e
+  "api keys: …" and "ai assistants: connect Claude from settings, sign in with Bookalyze, refresh
+  and disconnect".
 
 ### Advertising, slice 1: profit after ads (Amazon Ads)
 
@@ -3992,6 +4061,15 @@ screenshots work well).
   `packages/db/scripts/load-env.ts` reads them for the database scripts. A repo-root `.env` /
   `.env.local` still works (`apps/web/next.config.ts` and the scripts load it after the app's own).
   The public site reads only `apps/marketing/.env*`.
+- **The API's action catalog is generated.** `apps/web/scripts/gen-action-catalog.mjs` writes
+  `src/server/api/action-catalog.generated.ts` from every `"use server"` file under
+  `app/o/[slug]` whose exported function takes `slug` first. `dev`/`build` regenerate it,
+  `typecheck` fails when it's stale (`pnpm -C apps/web gen:actions` to refresh). A new action
+  that only reads belongs in `READ_ONLY` in `ops/app-actions.ts`, or read-only keys can't call it.
+- **Code that reads the session works under API keys too.** `getSession()` returns the key's
+  person inside `runAsApiKey`, with a synthetic session id `api-key:<id>`. Don't treat
+  `session.session.id` as a Better Auth row there, and keep anything that must stay browser-only
+  (key management, password, sign-in methods) behind a `currentApiPrincipal()` check.
 - **Local e2e and migrations follow `.env`**, which may point at the live database. Shell
   variables win over `.env`, so export `DATABASE_URL`, `DATABASE_URL_MIGRATOR` and
   `DATABASE_URL_UNPOOLED` for the local Docker database (as in CI) before `pnpm db:setup`,

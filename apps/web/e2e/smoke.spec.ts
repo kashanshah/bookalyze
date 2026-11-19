@@ -292,6 +292,302 @@ test("bookkeeping: chart of accounts, journal entries, reversal and reports", as
   await expect(page.getByText("All periods are open.")).toBeVisible();
 });
 
+test("api keys: make a key, use the REST API and MCP server with it, and revoke it", async ({
+  page,
+  request,
+}) => {
+  await signIn(page, owner.email, owner.password);
+
+  // Keys are made from the account menu, and each is shown once.
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await page.getByRole("menuitem", { name: "API keys for AI agents" }).click();
+  await expect(page.getByRole("heading", { name: "API keys" })).toBeVisible();
+  await expect(page.getByText("Nothing connected yet")).toBeVisible();
+  const makeKey = async (name: string, access: "Read only" | "Read and write") => {
+    await page.getByRole("button", { name: "New key" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Name").fill(name);
+    await dialog.getByText(access, { exact: true }).click();
+    await dialog.getByRole("button", { name: "Make key" }).click();
+    await expect(dialog.getByText("Your new key")).toBeVisible();
+    const text = (await dialog.textContent()) ?? "";
+    const secret = text.match(/bka_[A-Za-z0-9_-]{43}/)?.[0] ?? "";
+    expect(secret).not.toBe("");
+    await expect(dialog.getByText(`claude mcp add --transport http bookalyze`)).toBeVisible();
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await expect(page.locator("li", { hasText: name })).toContainText(secret.slice(0, 12));
+    return secret;
+  };
+  const writer = await makeKey("Claude Code", "Read and write");
+  const reader = await makeKey("Read-only script", "Read only");
+  const as = (key: string) => ({ Authorization: `Bearer ${key}` });
+
+  // No key, or a wrong one: refused, saying what to send.
+  const anonymous = await request.get("/api/v1/companies");
+  expect(anonymous.status()).toBe(401);
+  expect(anonymous.headers()["www-authenticate"]).toMatch(
+    /^Bearer realm="Bookalyze", resource_metadata="[^"]+\/\.well-known\/oauth-protected-resource\/api\/v1"$/,
+  );
+  expect((await anonymous.json()).error.code).toBe("missing_api_key");
+  const forged = await request.get("/api/v1/companies", {
+    headers: as(`bka_${"A".repeat(43)}`),
+  });
+  expect(forged.status()).toBe(401);
+  expect(forged.headers()["www-authenticate"]).toContain('error="invalid_token"');
+
+  // The key sees the owner's companies and their books.
+  const companies = await request.get("/api/v1/companies", { headers: as(writer) });
+  expect(companies.status()).toBe(200);
+  expect(companies.headers()["cache-control"]).toBe("no-store");
+  const [maple] = (await companies.json()).data;
+  expect(maple).toMatchObject({ name: `Maple Goods ${run}`, role: "owner", baseCurrency: "CAD" });
+  const books = `/api/v1/companies/${maple.slug}`;
+  const accounts = (await (await request.get(`${books}/accounts`, { headers: as(reader) })).json())
+    .data as { id: string; code: string; balance: string }[];
+  expect(accounts.find((a) => a.code === "1010")?.balance).toBe("5000.0000");
+  const tb = await request.get(`${books}/reports/trial-balance`, { headers: as(reader) });
+  expect(JSON.stringify(await tb.json())).toContain("RBC Chequing");
+  expect(
+    (await request.get("/api/v1/companies/not-ours/accounts", { headers: as(writer) })).status(),
+  ).toBe(404);
+
+  // Writes go through the app's own validation and rules.
+  const bad = await request.post(`${books}/accounts`, {
+    headers: as(writer),
+    data: { name: "", type: "asset", subtype: "cash_bank", currency: "CAD" },
+  });
+  expect(bad.status()).toBe(422);
+  expect((await bad.json()).error.details.fields.name).toBe("Give the account a name.");
+  const made = await request.post(`${books}/accounts`, {
+    headers: as(writer),
+    data: {
+      name: "Agent float",
+      code: "1095",
+      type: "asset",
+      subtype: "cash_bank",
+      currency: "CAD",
+    },
+  });
+  expect(made.status()).toBe(200);
+  const floatId = (await made.json()).data.id as string;
+  const archived = await request.patch(`${books}/accounts/${floatId}`, {
+    headers: as(writer),
+    data: { archived: true },
+  });
+  expect(archived.status()).toBe(200);
+  // A read-only key can look but not change anything.
+  const refused = await request.post(`${books}/accounts`, {
+    headers: as(reader),
+    data: { name: "Nope", type: "asset", subtype: "cash_bank", currency: "CAD" },
+  });
+  expect(refused.status()).toBe(403);
+  expect((await refused.json()).error.code).toBe("insufficient_scope");
+
+  // The MCP server offers the same operations as tools; a read-only key only sees reading ones.
+  const mcp = (key: string, method: string, params: object = {}, headers = {}) =>
+    request.post("/api/mcp", {
+      headers: {
+        ...as(key),
+        Accept: "application/json, text/event-stream",
+        "MCP-Protocol-Version": "2025-06-18",
+        ...headers,
+      },
+      data: { jsonrpc: "2.0", id: 1, method, params },
+    });
+  const init = await mcp(writer, "initialize", {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "e2e", version: "1" },
+  });
+  expect((await init.json()).result.serverInfo.name).toBe("bookalyze");
+  const toolNames = async (key: string) =>
+    ((await (await mcp(key, "tools/list")).json()).result.tools as { name: string }[]).map(
+      (t) => t.name,
+    );
+  const writerTools = await toolNames(writer);
+  const readerTools = await toolNames(reader);
+  expect(writerTools).toEqual(expect.arrayContaining(["create_transaction", "profit_and_loss"]));
+  expect(readerTools).toContain("profit_and_loss");
+  expect(readerTools).not.toContain("create_transaction");
+  const called = await mcp(writer, "tools/call", {
+    name: "list_bank_accounts",
+    arguments: { company: maple.slug },
+  });
+  expect((await called.json()).result.content[0].text).toContain("RBC Chequing");
+  // Other websites can't drive it from someone's browser.
+  expect((await mcp(writer, "tools/list", {}, { Origin: "https://evil.example" })).status()).toBe(
+    403,
+  );
+
+  // What a key changed is in the audit log, marked with the key.
+  const audited = await withOwnerDb((db) =>
+    db.query(
+      `select count(*)::int as n from audit_logs where api_key_id is not null and organization_id = $1`,
+      [maple.id],
+    ),
+  );
+  expect(audited.rows[0].n).toBeGreaterThan(0);
+
+  // Revoked keys stop working at once.
+  await page
+    .locator("li", { hasText: "Read-only script" })
+    .getByRole("button", { name: "Revoke" })
+    .click();
+  await page.getByRole("button", { name: "Revoke now" }).click();
+  await expect(page.getByText(/revoked\. It stops working right away/)).toBeVisible();
+  expect((await request.get("/api/v1/me", { headers: as(reader) })).status()).toBe(401);
+  expect((await request.get("/api/v1/me", { headers: as(writer) })).status()).toBe(200);
+});
+
+test("ai assistants: connect Claude from settings, sign in with Bookalyze, refresh and disconnect", async ({
+  page,
+  request,
+}) => {
+  await signIn(page, owner.email, owner.password);
+
+  // Home invites the person to connect an assistant; settings show how, for each one.
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/o\/maple-goods-/);
+  const home = page.url();
+  await expect(
+    page.getByRole("heading", { name: "Ask ChatGPT, Claude or Gemini about your books" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Connect an assistant" }).click();
+  await expect(page.getByRole("heading", { name: "AI assistants", exact: true })).toBeVisible();
+  for (const name of ["ChatGPT", "Claude", "Gemini"]) {
+    await expect(page.getByRole("button", { name: `Connect ${name}`, exact: true })).toBeVisible();
+  }
+  await expect(page.getByRole("link", { name: "Add to Cursor" })).toHaveAttribute(
+    "href",
+    /^cursor:\/\/anysphere\.cursor-deeplink\/mcp\/install\?name=bookalyze&config=/,
+  );
+  await page.getByRole("button", { name: "Connect Claude", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: "Connect Claude to Bookalyze" })).toBeVisible();
+  await expect(dialog.getByText("Add custom connector", { exact: false })).toBeVisible();
+  await expect(dialog.locator("code")).toHaveText(/\/api\/mcp$/);
+  await dialog.getByRole("button", { name: "Done" }).click();
+
+  // The MCP server says where to sign in (RFC 9728), and the sign-in server describes itself.
+  const challenge = await request.post("/api/mcp", { data: {} });
+  expect(challenge.status()).toBe(401);
+  expect(challenge.headers()["www-authenticate"]).toMatch(
+    /resource_metadata="https?:\/\/[^"]+\/\.well-known\/oauth-protected-resource\/api\/mcp"/,
+  );
+  const prm = await (await request.get("/.well-known/oauth-protected-resource/api/mcp")).json();
+  const meta = await (await request.get("/.well-known/oauth-authorization-server")).json();
+  expect(prm.authorization_servers).toEqual([meta.issuer]);
+  expect(meta.code_challenge_methods_supported).toEqual(["S256"]);
+  expect(meta.token_endpoint_auth_methods_supported).toContain("client_secret_basic");
+
+  // Claude (a hosted assistant) registers itself (RFC 7591) as a confidential client.
+  const redirectUri = "https://claude.ai/api/mcp/auth_callback";
+  const registered = await request.post("/oauth/register", {
+    data: {
+      client_name: "Claude",
+      redirect_uris: [redirectUri],
+      token_endpoint_auth_method: "client_secret_basic",
+      grant_types: ["authorization_code", "refresh_token"],
+      scope: "read write",
+    },
+  });
+  expect(registered.status()).toBe(201);
+  const client = await registered.json();
+  expect(client).toMatchObject({ token_endpoint_auth_method: "client_secret_basic" });
+  expect(client.client_secret).toMatch(/^bks_/);
+  const basic = (secret: string) => ({
+    Authorization: `Basic ${Buffer.from(`${client.client_id}:${secret}`).toString("base64")}`,
+  });
+
+  // The person approves on Bookalyze's consent screen (PKCE; unknown scopes are ignored).
+  const verifier = "e2e-verifier-".padEnd(64, "x");
+  const authorize = new URL("/oauth/authorize", meta.issuer);
+  authorize.search = new URLSearchParams({
+    response_type: "code",
+    client_id: client.client_id,
+    redirect_uri: redirectUri,
+    code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+    code_challenge_method: "S256",
+    state: "e2e-state",
+    scope: "read write openid",
+    resource: prm.resource,
+  }).toString();
+  await page.route(`${redirectUri}**`, (route) => route.fulfill({ body: "back in Claude" }));
+  await page.goto(authorize.toString());
+  await expect(
+    page.getByRole("heading", { name: "Connect “Claude” to your books?" }),
+  ).toBeVisible();
+  await expect(page.getByText("claude.ai", { exact: true })).toBeVisible();
+  await page.getByText("Read only", { exact: true }).click();
+  const [back] = await Promise.all([
+    page.waitForRequest((r) => r.url().startsWith(redirectUri)),
+    page.getByRole("button", { name: "Allow access" }).click(),
+  ]);
+  const returned = new URL(back.url()).searchParams;
+  expect(returned.get("state")).toBe("e2e-state");
+  expect(returned.get("iss")).toBe(meta.issuer);
+  const code = returned.get("code") ?? "";
+
+  // The code becomes tokens once, only with the app's secret and the right verifier.
+  const exchange = (secret: string) =>
+    request.post("/oauth/token", {
+      headers: basic(secret),
+      form: {
+        grant_type: "authorization_code",
+        code,
+        code_verifier: verifier,
+        redirect_uri: redirectUri,
+        resource: prm.resource,
+      },
+    });
+  const wrongSecret = await exchange("bks_wrong");
+  expect(wrongSecret.status()).toBe(401);
+  expect((await wrongSecret.json()).error).toBe("invalid_client");
+  const tokens = await (await exchange(client.client_secret)).json();
+  expect(tokens).toMatchObject({ token_type: "Bearer", expires_in: 3600, scope: "read" });
+  expect((await exchange(client.client_secret)).status()).toBe(400);
+
+  // The token works like a read-only key on the MCP server.
+  const tools = await request.post("/api/mcp", {
+    headers: {
+      Authorization: `Bearer ${tokens.access_token}`,
+      Accept: "application/json, text/event-stream",
+      "MCP-Protocol-Version": "2025-06-18",
+    },
+    data: { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} },
+  });
+  const names = ((await tools.json()).result.tools as { name: string }[]).map((t) => t.name);
+  expect(names).toContain("list_companies");
+  expect(names).not.toContain("create_transaction");
+
+  // Refreshing rotates both tokens; the old ones stop working.
+  const refreshed = await (
+    await request.post("/oauth/token", {
+      headers: basic(client.client_secret),
+      form: { grant_type: "refresh_token", refresh_token: tokens.refresh_token },
+    })
+  ).json();
+  expect(refreshed.refresh_token).not.toBe(tokens.refresh_token);
+  const me = (token: string) =>
+    request.get("/api/v1/me", { headers: { Authorization: `Bearer ${token}` } });
+  expect((await me(tokens.access_token)).status()).toBe(401);
+  expect((await me(refreshed.access_token)).status()).toBe(200);
+
+  // Settings show Claude as connected, home stops asking, and Disconnect stops it at once.
+  await page.goto(home);
+  await expect(
+    page.getByRole("heading", { name: "Ask ChatGPT, Claude or Gemini about your books" }),
+  ).toHaveCount(0);
+  await page.goto(`${home}/settings/ai-assistants`);
+  await expect(page.getByRole("button", { name: "Connect again Claude" })).toBeVisible();
+  const row = page.locator("li", { hasText: "Read only · All your companies" });
+  await expect(row).toContainText("Claude");
+  await row.getByRole("button", { name: "Disconnect" }).click();
+  await row.getByRole("button", { name: "Disconnect now" }).click();
+  await expect(page.getByText(/“Claude” disconnected\. It stops working right away/)).toBeVisible();
+  expect((await me(refreshed.access_token)).status()).toBe(401);
+});
+
 test("transactions: money in, split expense, review, edit and remove", async ({ page }) => {
   await signIn(page, owner.email, owner.password);
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
