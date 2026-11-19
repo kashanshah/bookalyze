@@ -29,6 +29,7 @@ import {
   replaceJournalEntry,
   schema,
   setEntryContact,
+  setTransactionNotes,
   setTransactionReviewed,
   TransferError,
   unmatchTransfer,
@@ -280,6 +281,15 @@ export async function saveTransactionAction(
       const result = value.id
         ? await replaceJournalEntry(tx, { ...common, entryId: value.id })
         : await postJournalEntry(tx, common);
+      // An edit carries the notes over; a new value replaces them.
+      if (value.notes !== undefined) {
+        await setTransactionNotes(tx, {
+          orgId: ctx.org.id,
+          entryId: result.id,
+          notes: value.notes,
+          userId: ctx.session.user.id,
+        });
+      }
       if (!value.id && value.attachmentIds?.length) {
         await linkAttachments(tx, {
           orgId: ctx.org.id,
@@ -340,6 +350,48 @@ export async function setReviewedAction(
       entityId: entryId,
     });
   });
+  revalidate(slug);
+  return { ok: true };
+}
+
+/**
+ * Writes a transaction's notes on their own: the entry isn't reposted, so this works for
+ * reconciled transactions and in closed periods too. Blank notes are removed.
+ */
+export async function setNotesAction(
+  slug: string,
+  entryId: string,
+  notes: string,
+): Promise<SimpleResult> {
+  const parsed = z.object({ entryId: z.uuid(), notes: z.string().max(5000) }).safeParse({
+    entryId,
+    notes,
+  });
+  if (!parsed.success) return { ok: false, message: "Keep the notes under 5,000 characters." };
+  const ctx = await getAccountingContext(slug);
+  const found = await inOrg(ctx, async (tx) => {
+    const [entry] = await tx
+      .select({ reversedBy: schema.journalEntries.reversedByEntryId })
+      .from(schema.journalEntries)
+      .where(eq(schema.journalEntries.id, parsed.data.entryId));
+    if (!entry || entry.reversedBy) return false;
+    await setTransactionNotes(tx, {
+      orgId: ctx.org.id,
+      entryId: parsed.data.entryId,
+      notes: parsed.data.notes,
+      userId: ctx.session.user.id,
+    });
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "transaction.notes_updated",
+      entityType: "journal_entry",
+      entityId: parsed.data.entryId,
+      after: { notes: parsed.data.notes.trim() || null },
+    });
+    return true;
+  });
+  if (!found) return { ok: false, message: "This transaction has changed. Refresh and try again." };
   revalidate(slug);
   return { ok: true };
 }

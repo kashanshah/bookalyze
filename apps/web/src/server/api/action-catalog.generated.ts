@@ -332,6 +332,14 @@ export const ACTION_CATALOG: CatalogAction[] = [
     fn: m6.setReviewedAction as unknown as ActionFn,
   },
   {
+    name: "setNotesAction",
+    area: "accounting/transactions",
+    module: "accounting",
+    params: ["entryId: string","notes: string"],
+    doc: "Writes a transaction's notes on their own: the entry isn't reposted, so this works for reconciled transactions and in closed periods too. Blank notes are removed.",
+    fn: m6.setNotesAction as unknown as ActionFn,
+  },
+  {
     name: "deleteTransactionAction",
     area: "accounting/transactions",
     module: "accounting",

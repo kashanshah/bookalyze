@@ -51,6 +51,7 @@ export function transactionOut(row: TransactionRow) {
     currency: row.currency,
     fxRate: row.fxRate,
     memo: row.memo,
+    notes: row.notes,
     reference: row.reference,
     source: row.source,
     contactId: row.contactId,

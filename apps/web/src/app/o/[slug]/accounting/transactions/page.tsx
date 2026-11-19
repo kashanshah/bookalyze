@@ -219,6 +219,7 @@ export default async function TransactionsPage({
       number: formatEntryNumber(r.entryNumber),
       date: r.date,
       memo: r.memo,
+      notes: r.notes,
       currency: r.currency,
       fxRate: r.fxRate,
       reviewed: r.reviewed,

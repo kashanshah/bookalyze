@@ -41,6 +41,7 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
 import type { AttachmentSummary } from "@/lib/attachments";
 import { formatDate, nextDay } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -48,6 +49,7 @@ import { entryAttachmentsAction } from "../receipts/actions";
 import {
   deleteTransactionAction,
   saveTransactionAction,
+  setNotesAction,
   type TransactionErrors,
   unmatchTransferAction,
 } from "./actions";
@@ -144,6 +146,7 @@ function TransactionForm({
   );
   const [date, setDate] = useState(row?.date ?? ctx.today);
   const [memo, setMemo] = useState(source?.memo ?? "");
+  const [notes, setNotes] = useState(source?.notes ?? "");
   const [contactId, setContactId] = useState(source?.contactId ?? "");
   const [contacts, setContacts] = useState(ctx.contacts);
   const [moneyAccountId, setMoneyAccountId] = useState(
@@ -261,28 +264,55 @@ function TransactionForm({
     if (errors[key]) setErrors(({ [key]: _, ...rest }) => rest);
   }
 
+  // Everything the save sends but the notes, to tell a notes-only edit (which needn't repost the
+  // entry) from a real one.
+  function entryInput() {
+    return {
+      id: row?.id,
+      kind,
+      date,
+      memo,
+      fxRate: needsRate ? fxRate : undefined,
+      received: crossCurrency ? received : undefined,
+      attachmentIds: row ? undefined : (files ?? []).map((f) => f.id),
+      contactId: kind === "transfer" ? "" : contactId,
+      moneyAccountId,
+      splits: splits.map(({ accountId, amount, description, taxRateId }) => ({
+        accountId,
+        amount,
+        description,
+        taxRateId: kind === "transfer" ? "" : taxRateId,
+      })),
+      fromAccountId,
+      toAccountId,
+      amount,
+    };
+  }
+  const [startingInput] = useState(() => JSON.stringify(entryInput()));
+  const notesChanged = notes.trim() !== (row?.notes ?? "").trim();
+
+  function saveNotes() {
+    if (!row) return;
+    setFormError(null);
+    startTransition(async () => {
+      const result = await setNotesAction(ctx.slug, row.id, notes);
+      if (result.ok) {
+        toast.success("Notes saved");
+        onDone();
+      } else setFormError(result.message);
+    });
+  }
+
   function save() {
+    if (row && JSON.stringify(entryInput()) === startingInput) {
+      if (notesChanged) return saveNotes();
+      return onDone();
+    }
     setFormError(null);
     startTransition(async () => {
       const result = await saveTransactionAction(ctx.slug, {
-        id: row?.id,
-        kind,
-        date,
-        memo,
-        fxRate: needsRate ? fxRate : undefined,
-        received: crossCurrency ? received : undefined,
-        attachmentIds: row ? undefined : (files ?? []).map((f) => f.id),
-        contactId: kind === "transfer" ? "" : contactId,
-        moneyAccountId,
-        splits: splits.map(({ accountId, amount, description, taxRateId }) => ({
-          accountId,
-          amount,
-          description,
-          taxRateId: kind === "transfer" ? "" : taxRateId,
-        })),
-        fromAccountId,
-        toAccountId,
-        amount,
+        ...entryInput(),
+        notes: row && !notesChanged ? undefined : notes,
       });
       if (result.ok) {
         toast.success(row ? "Transaction updated" : "Transaction added");
@@ -721,6 +751,26 @@ function TransactionForm({
         {formError ? <Alert variant="destructive">{formError}</Alert> : null}
       </fieldset>
 
+      <Field
+        label="Notes"
+        htmlFor="tx-notes"
+        hint={
+          readOnly || bankLocked
+            ? "Notes can still be added here: they don't change the transaction."
+            : "What it was for, who it was for, anything the receipt doesn't say. Only your team sees these."
+        }
+      >
+        <Textarea
+          id="tx-notes"
+          value={notes}
+          maxLength={5000}
+          rows={3}
+          disabled={pending}
+          placeholder="e.g. Test device for the fitness app client's watch sync"
+          onChange={(e) => setNotes(e.target.value)}
+        />
+      </Field>
+
       <div className="grid gap-2">
         <span className="font-medium text-sm">Receipts and files</span>
         {files === null ? (
@@ -783,6 +833,12 @@ function TransactionForm({
           <Button type="button" variant="outline" onClick={onDone} disabled={pending}>
             {readOnly ? "Close" : "Cancel"}
           </Button>
+          {readOnly && notesChanged ? (
+            <Button type="button" onClick={saveNotes} disabled={pending}>
+              {pending ? <Spinner /> : null}
+              Save notes
+            </Button>
+          ) : null}
           {readOnly ? null : (
             <Button type="submit" disabled={pending || (dateInClosedPeriod && !row)}>
               {pending ? <Spinner /> : null}

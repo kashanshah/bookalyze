@@ -303,6 +303,34 @@ export const transactionReviews = pgTable(
   ],
 );
 
+/**
+ * Longer notes on a transaction: why it was bought, who it was for, what a receipt doesn't say.
+ * Kept beside the entry rather than on it, so writing them never reposts the entry and works in a
+ * closed period. They follow the transaction when an edit replaces its entry.
+ */
+export const transactionNotes = pgTable(
+  "transaction_notes",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    journalEntryId: uuid("journal_entry_id").primaryKey(),
+    notes: text("notes").notNull(),
+    updatedBy: uuid("updated_by").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({
+      name: "transaction_notes_entry_fk",
+      columns: [t.organizationId, t.journalEntryId],
+      foreignColumns: [journalEntries.organizationId, journalEntries.id],
+    }).onDelete("cascade"),
+    check("transaction_notes_present", sql`length(trim(${t.notes})) > 0`),
+    check("transaction_notes_length", sql`length(${t.notes}) <= 5000`),
+    tenantIsolationPolicy("transaction_notes", t.organizationId),
+  ],
+);
+
 export const DUPLICATE_STATUSES = ["open", "merged", "dismissed"] as const;
 export type DuplicateStatus = (typeof DUPLICATE_STATUSES)[number];
 
