@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, Monitor, Moon, ShieldCheck, Sun } from "lucide-react";
+import { Bot, LogOut, Monitor, Moon, ShieldCheck, Sun } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -53,6 +53,12 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
           <Link href="/account/security">
             <ShieldCheck />
             Account & security
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/account/api-keys">
+            <Bot />
+            API keys for AI agents
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

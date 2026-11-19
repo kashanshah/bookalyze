@@ -63,7 +63,13 @@ export function errorResponse(error: ApiError) {
     },
     error.status,
     error.status === 401
-      ? { "WWW-Authenticate": 'Bearer realm="Bookalyze", error="invalid_token"' }
+      ? {
+          // RFC 6750 §3.1: no error code when the request carried no credentials at all.
+          "WWW-Authenticate":
+            error.code === "missing_api_key"
+              ? 'Bearer realm="Bookalyze"'
+              : 'Bearer realm="Bookalyze", error="invalid_token"',
+        }
       : {},
   );
 }
@@ -77,6 +83,10 @@ async function inputOf(request: Request, method: string): Promise<Record<string,
     throw new ApiError(413, "too_large", "The request body is over 4.5 MB.");
   }
   const text = await request.text();
+  // Content-Length can be missing (chunked) or wrong, so check what actually arrived too.
+  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
+    throw new ApiError(413, "too_large", "The request body is over 4.5 MB.");
+  }
   if (!text.trim()) return {};
   if (!(request.headers.get("content-type") ?? "").includes("application/json")) {
     throw new ApiError(

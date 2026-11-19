@@ -19,6 +19,7 @@ export function sitemapEntries(base = SITE_URL): SitemapEntry[] {
     ...COUNTRIES.map((c) => ({ path: `/sellers/${c.slug}`, priority: 0.8 })),
     { path: "/guides", priority: 0.7 },
     ...GUIDES.map((g) => ({ path: `/guides/${g.slug}`, priority: 0.6 })),
+    { path: "/developers", priority: 0.6 },
     { path: "/help", priority: 0.6 },
     { path: "/contact", priority: 0.5 },
   ];

@@ -94,7 +94,7 @@ export async function authenticate(request: Request): Promise<ApiPrincipal> {
   if (!token) {
     throw new ApiError(
       401,
-      "unauthorized",
+      "missing_api_key",
       "Send your Bookalyze API key as `Authorization: Bearer bka_…`. Create one in Bookalyze → Account → API keys.",
     );
   }

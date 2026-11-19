@@ -33,6 +33,9 @@ const REVIEWED_DIRECT_USE = [
   "app/api/ebay/account-deletion/route.ts", // organization, to find who connected the eBay user; the rest in withOrg()
   "server/reviews.ts", // review_request_orgs() for the hourly job; the rest in withOrg()
   "server/inbound-email.ts", // invoice_inbox_org() to find the company of a forwarded email; the rest in withOrg()
+  "app/account/api-keys/page.tsx", // api_keys via withUser(); listUserOrgs()
+  "app/account/api-keys/actions.ts", // api_keys via withUser(); listUserOrgs()
+  "server/api/core.ts", // api_key_lookup()/api_key_touch(), user; company data via getOrgContext() and withOrg()
   "server/billing-webhook.ts", // billing_org_for_customer() to find the company of a Stripe customer; the rest in withBillingWriter()
   "server/ebay-users.ts", // organization, to list connected eBay users once a day; their connections in withOrg()
   "app/admin/growth/page.tsx", // platform_funnel() and platform_signup_sources(): totals only, for platform admins

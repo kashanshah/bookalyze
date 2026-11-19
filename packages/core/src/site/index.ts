@@ -128,6 +128,7 @@ export const SITE_FOOTER_COLUMNS: readonly { title: string; links: readonly Site
     title: "Resources",
     links: [
       { label: "Guides", on: "site", path: "/guides" },
+      { label: "API + MCP for AI agents", on: "site", path: "/developers" },
       { label: "Help & support", on: "site", path: "/help" },
       CONTACT,
     ],
