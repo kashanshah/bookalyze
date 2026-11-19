@@ -36,6 +36,7 @@ export const INVENTORY_GUIDES: readonly Guide[] = [
             list: [
               "Name, your own SKU (optional) and notes.",
               "Its marketplace SKUs: link, unlink, or change units.",
+              "**Who ships it**: from your stock (counted in stock and cost of goods sold), made to order, or your supplier (dropship). A dropship product names its supplier and **their price for one**, which becomes its cost in Profit after ads, SKU profit and loss and Prices; it's never counted in stock.",
               "Optional **weight of one**, for splitting freight by weight.",
               "Reorder settings: lead time, minimum order, units in a carton.",
               "Archive one you've stopped selling.",

@@ -54,6 +54,15 @@ export const products = pgTable(
     tracksStock: boolean("tracks_stock").notNull().default(true),
     /** A product not counted in stock: whether it can be ordered now. */
     inStock: boolean("in_stock").notNull().default(true),
+    /**
+     * Dropshipped: a supplier ships each order straight to the buyer, so it's never in stock
+     * (`tracksStock` is off). Its cost per unit is the supplier's price for one.
+     */
+    dropship: boolean("dropship").notNull().default(false),
+    /** Who supplies it (a vendor): the dropship supplier, or who it's usually bought from. */
+    supplierId: uuid("supplier_id"),
+    /** A dropship product: what the supplier charges for one, shipping included, in the main currency. */
+    supplierUnitCost: numeric("supplier_unit_cost", { precision: 24, scale: 4 }),
     isArchived: boolean("is_archived").notNull().default(false),
     createdBy: uuid("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -70,6 +79,17 @@ export const products = pgTable(
     check("products_name_present", sql`length(trim(${t.name})) > 0`),
     check("products_sku_present", sql`${t.sku} is null or length(trim(${t.sku})) > 0`),
     check("products_weight_positive", sql`${t.unitWeight} is null or ${t.unitWeight} > 0`),
+    check(
+      "products_supplier_cost_valid",
+      sql`${t.supplierUnitCost} is null or ${t.supplierUnitCost} >= 0`,
+    ),
+    check("products_dropship_not_stocked", sql`not (${t.dropship} and ${t.tracksStock})`),
+    index("products_supplier_idx").on(t.organizationId, t.supplierId),
+    foreignKey({
+      name: "products_supplier_fk",
+      columns: [t.organizationId, t.supplierId],
+      foreignColumns: [contacts.organizationId, contacts.id],
+    }),
     check(
       "products_reorder_valid",
       sql`(${t.leadTimeDays} is null or ${t.leadTimeDays} between 0 and 730)

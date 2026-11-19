@@ -30,6 +30,15 @@ export type ProductInput = {
   tracksStock?: boolean;
   /** Not counted in stock: whether it can be ordered now. Left as is when undefined. */
   inStock?: boolean;
+  /**
+   * A supplier ships it to the buyer (never counted in stock). Left as is when undefined; when
+   * true, `tracksStock` is saved off whatever it says.
+   */
+  dropship?: boolean;
+  /** Who supplies it (a vendor). Left as is when undefined. */
+  supplierId?: string | null;
+  /** Dropship: the supplier's price for one, in the main currency. Left as is when undefined. */
+  supplierUnitCost?: string | null;
 };
 
 export type LinkedSku = {
@@ -50,6 +59,10 @@ export type ProductRow = {
   unitWeight: string | null;
   tracksStock: boolean;
   inStock: boolean;
+  dropship: boolean;
+  supplierId: string | null;
+  supplierName: string | null;
+  supplierUnitCost: string | null;
   isArchived: boolean;
   createdAt: Date;
   skus: LinkedSku[];
@@ -158,6 +171,12 @@ const productColumns = {
   unitWeight: products.unitWeight,
   tracksStock: products.tracksStock,
   inStock: products.inStock,
+  dropship: products.dropship,
+  supplierId: products.supplierId,
+  supplierName: sql<
+    string | null
+  >`(select c.name from contacts c where c.id = ${products.supplierId})`,
+  supplierUnitCost: products.supplierUnitCost,
   isArchived: products.isArchived,
   createdAt: products.createdAt,
 };
@@ -230,8 +249,11 @@ export async function createProduct(
         sku: input.sku,
         notes: input.notes,
         unitWeight: input.unitWeight ?? null,
-        tracksStock: input.tracksStock ?? true,
+        tracksStock: input.dropship ? false : (input.tracksStock ?? true),
         inStock: input.inStock ?? true,
+        dropship: input.dropship ?? false,
+        supplierId: input.supplierId ?? null,
+        supplierUnitCost: input.dropship ? (input.supplierUnitCost ?? null) : null,
         createdBy: input.userId,
       })
       .returning();
@@ -253,8 +275,19 @@ export async function updateProduct(tx: Transaction, input: ProductInput & { id:
         sku: input.sku,
         notes: input.notes,
         ...(input.unitWeight !== undefined ? { unitWeight: input.unitWeight } : {}),
-        ...(input.tracksStock !== undefined ? { tracksStock: input.tracksStock } : {}),
+        ...(input.tracksStock !== undefined && !input.dropship
+          ? { tracksStock: input.tracksStock }
+          : {}),
         ...(input.inStock !== undefined ? { inStock: input.inStock } : {}),
+        ...(input.dropship !== undefined
+          ? input.dropship
+            ? { dropship: true, tracksStock: false }
+            : { dropship: false, supplierUnitCost: null }
+          : {}),
+        ...(input.supplierId !== undefined ? { supplierId: input.supplierId } : {}),
+        ...(input.supplierUnitCost !== undefined && input.dropship !== false
+          ? { supplierUnitCost: input.supplierUnitCost }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(products.id, input.id))

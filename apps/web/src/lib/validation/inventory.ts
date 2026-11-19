@@ -26,6 +26,22 @@ export const productSchema = z.object({
     ),
   tracksStock: z.boolean().optional(),
   inStock: z.boolean().optional(),
+  /** A supplier ships it straight to the buyer. */
+  dropship: z.boolean().optional(),
+  supplierId: z
+    .string()
+    .optional()
+    .transform((v) => v || null)
+    .refine((v) => v === null || z.uuid().safeParse(v).success, "Choose a supplier."),
+  supplierUnitCost: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => v?.replace(/[,\s]/g, "") || null)
+    .refine(
+      (v) => v === null || (/^\d+(\.\d{1,4})?$/.test(v) && Number(v) < 1e12),
+      "Enter a price like 12.50, or leave it empty.",
+    ),
 });
 export type ProductFormInput = z.input<typeof productSchema>;
 

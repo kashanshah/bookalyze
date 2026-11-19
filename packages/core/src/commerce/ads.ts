@@ -133,7 +133,7 @@ export const AD_VERDICT_LABELS: Record<AdVerdict, { label: string; hint: string 
   },
   cost_missing: {
     label: "Cost missing",
-    hint: "Link the SKU to a product with a cost (Products, and a purchase order or opening stock) to see its profit.",
+    hint: "Link the SKU to a product with a cost (Products, and a purchase order or opening stock) to see its profit. Dropshipped? Link it to a product your supplier ships, with their price for one.",
   },
   healthy: {
     label: "Healthy",

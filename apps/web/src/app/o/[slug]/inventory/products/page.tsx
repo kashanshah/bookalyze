@@ -1,7 +1,9 @@
+import { formatMoney } from "@bookalyze/core";
 import {
   inventoryChannels,
   listDropshipSkus,
   listProducts,
+  supplierOptions,
   UNITS_SOLD_DAYS,
   unitsOnOrder,
   unlinkedSkus,
@@ -38,8 +40,8 @@ export default async function ProductsPage({
   const q = (sp.q ?? "").trim().slice(0, 100);
   const showArchived = sp.archived === "1";
   const ctx = await getInventoryContext(slug);
-  const { locale } = ctx.profile;
-  const { products, channels, unlinked, dropship, active, onOrder } = await inOrg(
+  const { locale, baseCurrency } = ctx.profile;
+  const { products, channels, unlinked, dropship, active, onOrder, suppliers } = await inOrg(
     ctx,
     async (tx) => {
       const channels = await inventoryChannels(tx);
@@ -49,7 +51,15 @@ export default async function ProductsPage({
         await listDropshipSkus(tx),
         q || showArchived ? await listProducts(tx) : null,
       ];
-      return { products, channels, unlinked, dropship, active, onOrder: await unitsOnOrder(tx) };
+      return {
+        products,
+        channels,
+        unlinked,
+        dropship,
+        active,
+        onOrder: await unitsOnOrder(tx),
+        suppliers: await supplierOptions(tx),
+      };
     },
   );
   const linkable = (active ?? products).filter((p) => !p.isArchived);
@@ -66,6 +76,7 @@ export default async function ProductsPage({
     return `${base}${p.size ? `?${p}` : ""}`;
   };
   const number = new Intl.NumberFormat(locale);
+  const supply = { suppliers, currency: baseCurrency };
 
   return (
     <div className="grid gap-6">
@@ -77,6 +88,7 @@ export default async function ProductsPage({
           <ProductDialog
             slug={slug}
             channels={channelChoices}
+            supply={supply}
             trigger={
               <Button>
                 <Plus />
@@ -104,7 +116,13 @@ export default async function ProductsPage({
         />
       ) : null}
 
-      {dropship.length ? <DropshipSkus slug={slug} rows={dropship} /> : null}
+      {dropship.length ? (
+        <DropshipSkus
+          slug={slug}
+          rows={dropship}
+          products={linkable.map((p) => ({ id: p.id, name: p.name, dropship: p.dropship }))}
+        />
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <form className="relative w-full sm:w-72" action={base}>
@@ -176,7 +194,15 @@ export default async function ProductsPage({
                         Archived
                       </Badge>
                     ) : null}
-                    {p.tracksStock ? null : (
+                    {p.dropship ? (
+                      <Badge
+                        variant={p.inStock ? "outline" : "secondary"}
+                        className="shrink-0 font-normal"
+                        title="Your supplier ships it: never counted in stock"
+                      >
+                        {p.inStock ? "Dropship" : "Supplier out of stock"}
+                      </Badge>
+                    ) : p.tracksStock ? null : (
                       <Badge
                         variant={p.inStock ? "outline" : "secondary"}
                         className="shrink-0 font-normal"
@@ -188,6 +214,15 @@ export default async function ProductsPage({
                   </p>
                   {p.sku ? (
                     <p className="truncate text-muted-foreground text-xs">Your SKU {p.sku}</p>
+                  ) : null}
+                  {p.dropship ? (
+                    <p className="truncate text-muted-foreground text-xs">
+                      {p.supplierName ?? "No supplier chosen"}
+                      {" · "}
+                      {p.supplierUnitCost
+                        ? `${formatMoney(p.supplierUnitCost, baseCurrency, locale)} a unit`
+                        : "add their price for one to see its profit"}
+                    </p>
                   ) : null}
                 </div>
                 <div className="col-span-3 row-start-2 min-w-0 md:col-span-1 md:row-start-auto">
@@ -230,6 +265,7 @@ export default async function ProductsPage({
                   <ProductDialog
                     slug={slug}
                     channels={channelChoices}
+                    supply={supply}
                     product={{
                       id: p.id,
                       name: p.name,
@@ -238,6 +274,9 @@ export default async function ProductsPage({
                       unitWeight: p.unitWeight,
                       tracksStock: p.tracksStock,
                       inStock: p.inStock,
+                      dropship: p.dropship,
+                      supplierId: p.supplierId,
+                      supplierUnitCost: p.supplierUnitCost,
                       isArchived: p.isArchived,
                       skus: p.skus,
                     }}
