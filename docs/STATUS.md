@@ -1925,6 +1925,13 @@ agents: API + MCP").
     with its steps and who can use it. Developer tools: Add to Cursor and Add to VS Code links, and
     commands for Claude Code and Gemini CLI.
   - The page shows which assistants are connected, with **Disconnect**. Home nudges until one is.
+  - **Reconnect reminders**: a week before an assistant's access ends, and for 30 days after it has
+    ended, home and Settings → AI assistants say so, with how to reconnect. Each can be dismissed
+    (a cookie, `bk_ai_reminders`, no database write); "ends soon" and "has ended" are separate, so
+    dismissing the first still warns when it ends. A live connection with the same name clears it.
+    Logic: `assistantReminders()` in core (tested).
+  - The MCP server sends its name, website and icons (`/connector-icon.png`, 256 px, under 10 KB
+    for ChatGPT's icon field) in `serverInfo`, and the ChatGPT steps offer the icon to download.
   - One list for the app and the site: `packages/core/src/site/assistants.ts`.
   - OAuth made to work with hosted assistants: confidential clients (`client_secret_post`/`basic`,
     a hashed `bks_` secret in `oauth_clients.secret_hash`), Basic client auth, unknown scopes ignored.

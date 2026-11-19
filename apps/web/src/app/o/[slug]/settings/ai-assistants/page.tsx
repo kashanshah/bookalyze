@@ -1,8 +1,9 @@
 import { mcpUrl } from "@bookalyze/core";
 import type { Metadata } from "next";
+import { AssistantReminders } from "@/components/ai/assistant-reminders";
 import { ConnectAssistants } from "@/components/ai/connect-assistants";
 import { PageHeader } from "@/components/shell/page-header";
-import { loadAssistantConnections } from "@/server/ai-assistants";
+import { loadAssistantConnections, loadAssistantReminders } from "@/server/ai-assistants";
 import { requestOrigin } from "@/server/oauth-request";
 import { getOrgContext } from "@/server/org";
 
@@ -16,9 +17,10 @@ export const metadata: Metadata = { title: "AI assistants" };
 export default async function AiAssistantsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const ctx = await getOrgContext(slug);
-  const [origin, connections] = await Promise.all([
+  const [origin, connections, { reminders }] = await Promise.all([
     requestOrigin(),
     loadAssistantConnections(ctx.session.user.id),
+    loadAssistantReminders(ctx.session.user.id),
   ]);
   return (
     <div className="grid gap-8">
@@ -26,6 +28,7 @@ export default async function AiAssistantsPage({ params }: { params: Promise<{ s
         title="AI assistants"
         description="Use Bookalyze from ChatGPT, Claude, Gemini and coding assistants. Each one signs in as you and only does what you allow."
       />
+      <AssistantReminders reminders={reminders} />
       <ConnectAssistants
         origin={origin}
         mcpUrl={mcpUrl(origin)}

@@ -6,6 +6,8 @@ see and change the same things. Public overview for users: bookalyze.com/develop
 
 ## Connect ChatGPT, Claude or Gemini
 
+When a connection's chosen time runs out, the assistant's next request gets 401 and its refresh fails, so the assistant asks to sign in again. Bookalyze also reminds the person (home and Settings → AI assistants) a week before and for 30 days after, until they reconnect or dismiss it.
+
 **Settings → AI assistants** (`/o/<slug>/settings/ai-assistants`, also `/account/ai-assistants` from
 the account menu) is the place for people. It has one card each for ChatGPT, Claude and Gemini:
 **Connect** copies the MCP link and opens the assistant's connector page in one click, with the

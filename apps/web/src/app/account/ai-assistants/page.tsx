@@ -1,8 +1,9 @@
 import { mcpUrl } from "@bookalyze/core";
 import { Sparkles } from "lucide-react";
 import type { Metadata } from "next";
+import { AssistantReminders } from "@/components/ai/assistant-reminders";
 import { ConnectAssistants } from "@/components/ai/connect-assistants";
-import { loadAssistantConnections } from "@/server/ai-assistants";
+import { loadAssistantConnections, loadAssistantReminders } from "@/server/ai-assistants";
 import { requestOrigin } from "@/server/oauth-request";
 import { requireSession } from "@/server/session";
 
@@ -11,9 +12,10 @@ export const metadata: Metadata = { title: "AI assistants" };
 /** The same as each company's Settings → AI assistants, outside any one company. */
 export default async function AccountAiAssistantsPage() {
   const session = await requireSession("/account/ai-assistants");
-  const [origin, connections] = await Promise.all([
+  const [origin, connections, { reminders }] = await Promise.all([
     requestOrigin(),
     loadAssistantConnections(session.user.id),
+    loadAssistantReminders(session.user.id),
   ]);
   return (
     <>
@@ -29,6 +31,7 @@ export default async function AccountAiAssistantsPage() {
           </p>
         </div>
       </div>
+      <AssistantReminders reminders={reminders} />
       <ConnectAssistants origin={origin} mcpUrl={mcpUrl(origin)} connections={connections} />
     </>
   );

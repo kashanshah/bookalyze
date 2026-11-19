@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ASSISTANTS,
   assistantFor,
+  assistantReminders,
   CHAT_ASSISTANTS,
   DEVELOPER_TOOLS,
   examplePrompts,
@@ -54,5 +55,68 @@ describe("AI assistants", () => {
 
   it("suggest questions about the company", () => {
     expect(examplePrompts("Maple Goods").every((p) => p.includes("Maple Goods"))).toBe(true);
+  });
+
+  describe("reminders", () => {
+    const now = new Date("2026-11-19T12:00:00Z");
+    const day = 24 * 60 * 60 * 1000;
+    const conn = (id: string, name: string, days: number | null, extra = {}) => ({
+      id,
+      name,
+      clientId: `client-${id}`,
+      revokedAt: null,
+      expiresAt: days === null ? null : new Date(now.getTime() + days * day),
+      ...extra,
+    });
+
+    it("warn a week before access ends and for 30 days after", () => {
+      const r = assistantReminders(
+        [
+          conn("a", "Claude", 3.5),
+          conn("b", "ChatGPT", -2),
+          conn("c", "Gemini", 8),
+          conn("d", "Cursor", -31),
+        ],
+        now,
+      );
+      expect(r.map((x) => [x.name, x.kind, x.daysLeft])).toEqual([
+        ["ChatGPT", "ended", 1],
+        ["Claude", "ending", 4],
+      ]);
+    });
+
+    it("skip API keys, revoked connections and ones without an end", () => {
+      expect(
+        assistantReminders(
+          [
+            conn("a", "My script", 2, { clientId: null }),
+            conn("b", "Claude", -1, { revokedAt: now }),
+            conn("c", "ChatGPT", null),
+          ],
+          now,
+        ),
+      ).toEqual([]);
+    });
+
+    it("stop once the app is connected again, or the reminder is dismissed", () => {
+      expect(assistantReminders([conn("a", "Claude", -3), conn("b", "claude ", 90)], now)).toEqual(
+        [],
+      );
+      expect(assistantReminders([conn("a", "Claude", 2), conn("b", "Claude", null)], now)).toEqual(
+        [],
+      );
+      const [ended] = assistantReminders([conn("a", "Claude", -3)], now);
+      expect(
+        assistantReminders([conn("a", "Claude", -3)], now, new Set([ended?.key ?? ""])),
+      ).toEqual([]);
+      // Dismissing "ends soon" doesn't hide "has ended" later.
+      const [ending] = assistantReminders([conn("a", "Claude", 2)], now);
+      expect(ending?.key).not.toBe(ended?.key);
+    });
+
+    it("show one reminder per app, the latest", () => {
+      const r = assistantReminders([conn("a", "Claude", -10), conn("b", "Claude", -2)], now);
+      expect(r.map((x) => x.id)).toEqual(["b"]);
+    });
   });
 });

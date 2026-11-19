@@ -9,6 +9,7 @@ import type { Block, Guide } from "./types";
  */
 
 const LINK = mcpUrl(APP_URL);
+const ICON = `${APP_URL.replace(/\/$/, "")}/connector-icon.png`;
 
 function assistant(id: AssistantId) {
   const a = ASSISTANTS.find((x) => x.id === id);
@@ -27,7 +28,10 @@ function connectSteps(id: AssistantId): Block[] {
           title: `Copy the link and open ${a.name}`,
           body: `In Bookalyze, **Connect ${a.name}** copies your connection link (${LINK}) and opens ${a.name}'s connector settings in a new tab.`,
         },
-        ...a.steps.map((s) => ({ title: s.replace("{link}", LINK), body: "" })),
+        ...a.steps.map((s) => ({
+          title: s.replace("{link}", LINK).replace("{icon}", `(${ICON})`),
+          body: "",
+        })),
       ],
     },
     ...(a.note ? [{ note: a.note }] : []),

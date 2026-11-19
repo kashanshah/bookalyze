@@ -12,6 +12,7 @@ import {
   Check,
   Code2,
   Copy,
+  Download,
   ExternalLink,
   History,
   type LucideIcon,
@@ -377,7 +378,8 @@ function ConnectDialog({
           </Button>
           <ol className="grid gap-3">
             {a.steps.map((step, i) => {
-              const [before, after] = step.split("{link}");
+              const icon = step.includes("{icon}");
+              const [before, after] = step.replace("{icon}", "").split("{link}");
               return (
                 <li key={step} className="flex gap-3 text-sm">
                   <span className="tabular flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary text-xs">
@@ -389,6 +391,18 @@ function ConnectDialog({
                       {after ?? ""}
                     </span>
                     {after !== undefined ? <LinkField url={url} compact /> : null}
+                    {icon ? (
+                      <a
+                        href="/connector-icon.png"
+                        download="bookalyze-icon.png"
+                        className="inline-flex w-fit items-center gap-2 rounded-lg border bg-card px-2.5 py-1.5 font-medium text-xs shadow-xs transition-colors hover:bg-muted"
+                      >
+                        {/* biome-ignore lint/performance/noImgElement: a tiny static icon */}
+                        <img src="/connector-icon.png" alt="" className="size-5 rounded" />
+                        Download the Bookalyze icon
+                        <Download className="size-3.5 text-muted-foreground" />
+                      </a>
+                    ) : null}
                   </span>
                 </li>
               );

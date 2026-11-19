@@ -62,7 +62,29 @@ export async function handleMcp(request: Request): Promise<Response> {
   }
 
   const server = new McpServer(
-    { name: "bookalyze", title: "Bookalyze", version: "1.0.0" },
+    {
+      name: "bookalyze",
+      title: "Bookalyze",
+      version: "1.0.0",
+      websiteUrl: "https://bookalyze.com",
+      // Assistants that show a connector's icon take it from here (MCP 2025-11-25).
+      icons: [
+        { src: `${origin}/connector-icon.png`, mimeType: "image/png", sizes: ["256x256"] },
+        { src: `${origin}/icon-512.png`, mimeType: "image/png", sizes: ["512x512"] },
+        {
+          src: `${origin}/favicon-light.svg`,
+          mimeType: "image/svg+xml",
+          sizes: ["any"],
+          theme: "light",
+        },
+        {
+          src: `${origin}/favicon-dark.svg`,
+          mimeType: "image/svg+xml",
+          sizes: ["any"],
+          theme: "dark",
+        },
+      ],
+    },
     { instructions: INSTRUCTIONS, capabilities: { tools: {} } },
   );
   const writable = principal.key.access === "write";

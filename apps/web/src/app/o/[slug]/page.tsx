@@ -20,6 +20,7 @@ import { timezoneLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { dueIn, loadCalendar } from "@/server/compliance";
 import { fiscalConfigOf, getOrgContext, isOrgAdmin } from "@/server/org";
+import { AssistantRemindersSlot } from "./assistant-reminders-slot";
 import { AssistantsNudge } from "./assistants-nudge";
 import { Attention, AttentionSkeleton } from "./attention";
 import { HideGettingStarted } from "./hide-getting-started";
@@ -168,6 +169,15 @@ export default async function OrgHomePage({
           <p className="mt-1 text-muted-foreground text-sm">{p.legalName}</p>
         ) : null}
       </div>
+
+      <Suspense fallback={null}>
+        <AssistantRemindersSlot
+          userId={ctx.session.user.id}
+          base={base}
+          locale={p?.locale}
+          timeZone={p?.timezone}
+        />
+      </Suspense>
 
       {p ? (
         <Suspense fallback={<AttentionSkeleton />}>

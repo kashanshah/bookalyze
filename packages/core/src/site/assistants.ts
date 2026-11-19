@@ -37,6 +37,7 @@ export type Assistant = {
   installLink?: (mcpUrl: string) => string;
   /** A command to run in a terminal. */
   command?: (mcpUrl: string) => string;
+  // In steps, {link} marks where the connection link goes and {icon} a download of our icon.
   /** What to do after the install link or command. */
   after?: string;
   /** The assistant's own help page for custom connectors. */
@@ -59,9 +60,10 @@ export const ASSISTANTS: readonly Assistant[] = [
     tagline: "Ask about your books in any ChatGPT chat.",
     openUrl: "https://chatgpt.com/plugins",
     steps: [
-      "Select + and then Add custom MCP server.",
-      "Name it Bookalyze and paste the link: {link}",
-      "Choose OAuth to sign in, confirm, and create it.",
+      "Select Add (top right), then Add custom MCP server.",
+      "Name it Bookalyze and paste the link under Server URL: {link}",
+      "Optional: add the icon so Bookalyze is easy to spot. {icon}",
+      "Keep Authentication as OAuth, tick I understand and want to continue, and select Create as a plugin.",
       "Sign in to Bookalyze when asked and choose what ChatGPT may do.",
     ],
     note: "Custom connectors depend on your ChatGPT plan and workspace settings. If you don't see the option, ask your workspace admin.",
@@ -185,4 +187,84 @@ function encodeBase64(text: string): string {
   let binary = "";
   for (const b of bytes) binary += String.fromCharCode(b);
   return btoa(binary);
+}
+
+/** A connection as the reminders need it (an API key row that an app got by signing in). */
+export type ReminderSource = {
+  id: string;
+  name: string;
+  clientId: string | null;
+  revokedAt: Date | null;
+  expiresAt: Date | null;
+};
+
+/** "Ends soon" or "has ended": the assistant will stop (or has stopped) reaching the books. */
+export type AssistantReminder = {
+  /** What a dismissal remembers: the connection and which of the two reminders it was. */
+  key: string;
+  id: string;
+  name: string;
+  kind: "ending" | "ended";
+  /** When access ends or ended. */
+  at: Date;
+  /** Whole days left, at least 1 (only for "ending"). */
+  daysLeft: number;
+};
+
+const DAY = 24 * 60 * 60 * 1000;
+/** Remind this many days before access ends… */
+export const REMIND_BEFORE_DAYS = 7;
+/** …and for this long after, unless the person reconnects or dismisses it. */
+export const REMIND_AFTER_DAYS = 30;
+
+export function reminderKey(id: string, kind: AssistantReminder["kind"]): string {
+  return `${id}~${kind === "ending" ? "s" : "e"}`;
+}
+
+/**
+ * Connections whose access ends within a week, or ended in the last 30 days, that haven't
+ * been reconnected (a live connection with the same name, lasting longer, replaces it) or
+ * dismissed. One per app, the ended ones first. Plain API keys (no clientId) aren't included:
+ * the person made those themselves and the API keys page shows when they end.
+ */
+export function assistantReminders(
+  keys: readonly ReminderSource[],
+  now: Date,
+  dismissed: ReadonlySet<string> = new Set(),
+): AssistantReminder[] {
+  const t = now.getTime();
+  const apps = keys.filter((k) => k.clientId && !k.revokedAt);
+  const live = apps.filter((k) => !k.expiresAt || k.expiresAt.getTime() > t);
+  const sameApp = (a: { name: string }, b: { name: string }) =>
+    a.name.trim().toLowerCase() === b.name.trim().toLowerCase();
+  const replaced = (k: ReminderSource) =>
+    live.some(
+      (o) =>
+        o.id !== k.id &&
+        sameApp(o, k) &&
+        (!o.expiresAt || (k.expiresAt !== null && o.expiresAt.getTime() > k.expiresAt.getTime())),
+    );
+
+  const found: AssistantReminder[] = [];
+  for (const k of apps) {
+    if (!k.expiresAt || replaced(k)) continue;
+    const left = k.expiresAt.getTime() - t;
+    const kind = left > 0 ? "ending" : "ended";
+    if (kind === "ending" && left > REMIND_BEFORE_DAYS * DAY) continue;
+    if (kind === "ended" && -left > REMIND_AFTER_DAYS * DAY) continue;
+    const key = reminderKey(k.id, kind);
+    if (dismissed.has(key)) continue;
+    found.push({
+      key,
+      id: k.id,
+      name: k.name,
+      kind,
+      at: k.expiresAt,
+      daysLeft: Math.max(1, Math.ceil(left / DAY)),
+    });
+  }
+  found.sort((a, b) =>
+    a.kind === b.kind ? b.at.getTime() - a.at.getTime() : a.kind === "ended" ? -1 : 1,
+  );
+  return found.filter((r, i) => found.findIndex((o) => sameApp(o, r)) === i);
 }
