@@ -1263,7 +1263,9 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   message) that calls `openTicketAction` with the current page, so it lands on the desk and
   emails the admins like Contact support; then "Sent" with a link to the conversation, plus
   links to the guides and to the person's tickets. Toasts sit above it (`offset` on the
-  Toaster). The site has its own "Questions? Talk to us" button (`components/contact-button.tsx`)
+  Toaster). Bars fixed along the bottom (journal entry, reconciliation, unsaved company settings)
+  carry `data-action-bar`; the button rises above the tallest one showing. Mark any new bottom
+  bar the same way, or the button covers its buttons. The site has its own "Questions? Talk to us" button (`components/contact-button.tsx`)
   opening `/contact` (hidden there), whose form also feeds the desk.
 - **The desk** (`/admin/support`, platform admins in `PLATFORM_ADMIN_EMAILS`, a 404 for anyone
   else): tabs Needs a reply / Waiting on the customer / Solved and closed / All, each ticket's

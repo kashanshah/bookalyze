@@ -4,7 +4,7 @@ import { SUPPORT_TOPIC_LABELS } from "@bookalyze/core";
 import { BookOpen, CircleCheck, Inbox, LifeBuoy, Send } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { openTicketAction } from "@/app/o/[slug]/help/actions";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,10 @@ const GUIDES_URL = "https://bookalyze.com/guides";
  * The floating "Help" button on every company page: a short form that opens a support ticket
  * (the same as Help & support → Contact support), sent to the support desk and its email, with
  * the page the person was on. Hidden on the Help pages themselves and when printing.
+ *
+ * Pages with an action bar fixed along the bottom (journal entry, reconciliation, unsaved
+ * settings) mark it `data-action-bar`; the button then sits just above the tallest one showing,
+ * so it never covers their buttons.
  */
 export function HelpButton({ slug }: { slug: string }) {
   const pathname = usePathname();
@@ -37,6 +41,7 @@ export function HelpButton({ slug }: { slug: string }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sent, setSent] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const lift = useActionBarHeight();
   const help = `/o/${slug}/help`;
   if (pathname.startsWith(help)) return null;
 
@@ -58,7 +63,8 @@ export function HelpButton({ slug }: { slug: string }) {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="fade-in-0 fixed end-4 bottom-4 z-40 flex h-11 animate-in items-center gap-2 rounded-full bg-primary ps-3.5 pe-4 font-medium text-primary-foreground text-sm shadow-lg ring-1 ring-black/5 transition-transform duration-300 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 sm:end-6 sm:bottom-6 print:hidden"
+          style={lift ? { bottom: lift + 12 } : undefined}
+          className="fade-in-0 fixed end-4 bottom-4 z-40 flex h-11 animate-in items-center gap-2 rounded-full bg-primary ps-3.5 pe-4 font-medium text-primary-foreground text-sm shadow-lg ring-1 ring-black/5 transition-[transform,bottom] duration-300 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 sm:end-6 sm:bottom-6 print:hidden"
         >
           <LifeBuoy className="size-4.5" />
           Help
@@ -183,4 +189,37 @@ export function HelpButton({ slug }: { slug: string }) {
       </DialogContent>
     </Dialog>
   );
+}
+
+/** The height of the tallest `data-action-bar` on the page, kept up to date (0 when none). */
+function useActionBarHeight(): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        let tallest = 0;
+        for (const bar of document.querySelectorAll<HTMLElement>("[data-action-bar]")) {
+          tallest = Math.max(tallest, Math.ceil(bar.getBoundingClientRect().height));
+        }
+        setHeight(tallest);
+      });
+    };
+    measure();
+    const changes = new MutationObserver(measure);
+    changes.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-action-bar"],
+    });
+    window.addEventListener("resize", measure);
+    return () => {
+      cancelAnimationFrame(frame);
+      changes.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  return height;
 }
