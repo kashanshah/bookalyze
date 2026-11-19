@@ -17,7 +17,8 @@ export function ChoiceCards({
   value: string;
   onChange: (value: string) => void;
   choices: Choice[];
-  columns?: 2 | 3 | 4;
+  /** 1 stacks them (for a dialog); otherwise this many side by side from small screens up. */
+  columns?: 1 | 2 | 3 | 4;
 }) {
   return (
     <div

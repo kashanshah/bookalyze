@@ -4,7 +4,7 @@ import { createConnection } from "../banking";
 import { createDb, type Transaction, withOrg } from "../client";
 import { addOpeningStock } from "../cogs";
 import { saveAmazonChannels } from "../commerce";
-import { createProduct, linkSku } from "../inventory";
+import { createProduct, linkSku, updateProduct } from "../inventory";
 import { createDefaultChart } from "../ledger";
 import {
   amazonSellerId,
@@ -260,6 +260,66 @@ describe("listing prices", () => {
     expect(await scoped((tx) => nextUnitCosts(tx, [mugId, coasterId]))).toEqual(
       new Map([[mugId, { cost: "3.0000", currency: "CAD", source: "stock" }]]),
     );
+  });
+
+  it("costs a dropship product at its supplier's price for one, in the main currency", async () => {
+    await owner.db
+      .insert(schema.countries)
+      .values({ code: "CA", name: "Canada", currencyCode: "CAD" })
+      .onConflictDoNothing();
+    await owner.db
+      .insert(schema.organizationProfiles)
+      .values({
+        organizationId: orgId,
+        legalName: "Prices Org Inc.",
+        countryCode: "CA",
+        baseCurrency: "CAD",
+        timezone: "America/Toronto",
+        locale: "en-CA",
+      })
+      .onConflictDoNothing();
+    const [supplier] = await scoped((tx) =>
+      tx
+        .insert(schema.contacts)
+        .values({ organizationId: orgId, type: "vendor", name: "Dropship Partner Co" })
+        .returning(),
+    );
+    const cushion = await scoped((tx) =>
+      createProduct(tx, {
+        orgId,
+        userId: null,
+        name: "Seat cushion",
+        sku: null,
+        notes: null,
+        tracksStock: true,
+        dropship: true,
+        supplierId: supplier?.id ?? null,
+        supplierUnitCost: "12.5",
+      }),
+    );
+    // A dropship product is never counted in stock, whatever the form said.
+    expect(cushion).toMatchObject({
+      dropship: true,
+      tracksStock: false,
+      supplierUnitCost: "12.5000",
+    });
+    expect((await scoped((tx) => nextUnitCosts(tx, [cushion.id]))).get(cushion.id)).toEqual({
+      cost: "12.5000",
+      currency: "CAD",
+      source: "dropship",
+    });
+    // Back to stock: the supplier's price is dropped, and with no lots there's no cost.
+    await scoped((tx) =>
+      updateProduct(tx, {
+        id: cushion.id,
+        name: "Seat cushion",
+        sku: null,
+        notes: null,
+        tracksStock: true,
+        dropship: false,
+      }),
+    );
+    expect((await scoped((tx) => nextUnitCosts(tx, [cushion.id]))).size).toBe(0);
   });
 
   it("keeps the seller ID on the connection, and each company's prices to itself", async () => {

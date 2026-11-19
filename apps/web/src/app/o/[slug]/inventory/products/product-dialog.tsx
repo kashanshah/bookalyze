@@ -1,11 +1,12 @@
 "use client";
 
-import { Archive, ArchiveRestore, Link2, X } from "lucide-react";
+import { Archive, ArchiveRestore, Factory, Link2, Package, Truck, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ChoiceCards } from "@/components/ui/choice-card";
 import { Combobox } from "@/components/ui/combobox";
 import {
   Dialog,
@@ -48,21 +49,45 @@ export type EditableProduct = {
   unitWeight: string | null;
   tracksStock: boolean;
   inStock: boolean;
+  dropship: boolean;
+  supplierId: string | null;
+  supplierUnitCost: string | null;
   isArchived: boolean;
   skus: LinkedSkuView[];
 };
 
 export type ChannelChoice = { id: string; name: string };
 
+/** Vendors to choose a supplier from, and the main currency a supplier's price is in. */
+export type SupplierChoices = { suppliers: { id: string; name: string }[]; currency: string };
+
+type Shipping = "stock" | "made_to_order" | "dropship";
+
+function shippingOf(product?: EditableProduct): Shipping {
+  if (!product) return "stock";
+  if (product.dropship) return "dropship";
+  return product.tracksStock ? "stock" : "made_to_order";
+}
+
+/** "12.5000" → "12.50": a stored price as it's typed. */
+function priceInput(value: string | null) {
+  if (!value) return "";
+  const [whole, fraction = ""] = value.split(".");
+  const trimmed = fraction.replace(/0+$/, "");
+  return `${whole}.${trimmed.padEnd(2, "0")}`;
+}
+
 export function ProductDialog({
   slug,
   product,
   channels,
+  supply,
   trigger,
 }: {
   slug: string;
   product?: EditableProduct;
   channels: ChannelChoice[];
+  supply: SupplierChoices;
   trigger: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -72,7 +97,12 @@ export function ProductDialog({
       <DialogContent className="max-h-[90dvh] overflow-y-auto">
         {open ? (
           <div className="grid gap-6">
-            <ProductForm slug={slug} product={product} onDone={() => setOpen(false)} />
+            <ProductForm
+              slug={slug}
+              product={product}
+              supply={supply}
+              onDone={() => setOpen(false)}
+            />
             {product ? (
               <>
                 <Separator />
@@ -89,18 +119,22 @@ export function ProductDialog({
 function ProductForm({
   slug,
   product,
+  supply,
   onDone,
 }: {
   slug: string;
   product?: EditableProduct;
+  supply: SupplierChoices;
   onDone: () => void;
 }) {
   const router = useRouter();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
   const [archiving, startArchive] = useTransition();
-  const [tracksStock, setTracksStock] = useState(product?.tracksStock ?? true);
+  const [shipping, setShipping] = useState<Shipping>(shippingOf(product));
   const [inStock, setInStock] = useState(product?.inStock ?? true);
+  const [supplierId, setSupplierId] = useState(product?.supplierId ?? "");
+  const tracksStock = shipping === "stock";
 
   return (
     <form
@@ -119,6 +153,9 @@ function ProductForm({
               unitWeight: text("unitWeight"),
               tracksStock,
               inStock,
+              dropship: shipping === "dropship",
+              supplierId,
+              supplierUnitCost: shipping === "dropship" ? text("supplierUnitCost") : "",
             },
             product?.id,
           );
@@ -186,30 +223,91 @@ function ProductForm({
             aria-invalid={Boolean(errors.unitWeight)}
           />
         </Field>
-        <div className="grid gap-3 rounded-xl border p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <Label htmlFor="product-tracks-stock">Count its stock</Label>
-              <p className="text-muted-foreground text-xs leading-relaxed">
-                {tracksStock
-                  ? "Stock lots, cost of goods sold, the stock and reorder pages count it."
-                  : "Made to order: its costs go in your books as you pay them, and it's only in or out of stock."}
-              </p>
-            </div>
-            <Switch
-              id="product-tracks-stock"
-              checked={tracksStock}
-              onCheckedChange={setTracksStock}
-            />
+        <div className="grid gap-3">
+          <div>
+            <p className="font-medium text-sm">Who ships it</p>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              Decides whether it's counted in stock and where its cost comes from.
+            </p>
           </div>
+          <ChoiceCards
+            name="shipping"
+            columns={1}
+            value={shipping}
+            onChange={(v) => setShipping(v as Shipping)}
+            choices={[
+              {
+                value: "stock",
+                label: "From my stock",
+                description:
+                  "Stock lots, cost of goods sold, the stock and reorder pages count it.",
+                icon: <Package />,
+              },
+              {
+                value: "made_to_order",
+                label: "Made to order",
+                description: "Not counted in stock: its costs go in your books as you pay them.",
+                icon: <Factory />,
+              },
+              {
+                value: "dropship",
+                label: "My supplier ships it (dropship)",
+                description:
+                  "Never in your stock: its cost is the supplier's price for one, in your profit reports.",
+                icon: <Truck />,
+              },
+            ]}
+          />
+          {shipping === "dropship" ? (
+            <div className="fade-in-0 grid animate-in gap-4 rounded-xl border bg-muted/30 p-3 sm:grid-cols-2">
+              <Field
+                label="Supplier"
+                htmlFor="product-supplier"
+                error={errors.supplierId}
+                hint={
+                  supply.suppliers.length
+                    ? undefined
+                    : "Add them as a vendor under Customers & vendors."
+                }
+              >
+                <Combobox
+                  id="product-supplier"
+                  value={supplierId}
+                  onChange={setSupplierId}
+                  placeholder="Choose a supplier…"
+                  searchPlaceholder="Search vendors"
+                  searchable
+                  emptyText="No vendor by that name."
+                  invalid={Boolean(errors.supplierId)}
+                  options={supply.suppliers.map((v) => ({ value: v.id, label: v.name }))}
+                />
+              </Field>
+              <Field
+                label={`Their price for one (${supply.currency})`}
+                htmlFor="product-supplier-cost"
+                error={errors.supplierUnitCost}
+                hint="What you pay them per unit, shipping to the buyer included."
+              >
+                <Input
+                  id="product-supplier-cost"
+                  name="supplierUnitCost"
+                  inputMode="decimal"
+                  defaultValue={priceInput(product?.supplierUnitCost ?? null)}
+                  placeholder="e.g. 12.50"
+                  className="tabular-nums"
+                  aria-invalid={Boolean(errors.supplierUnitCost)}
+                />
+              </Field>
+            </div>
+          ) : null}
           {tracksStock ? null : (
-            <div className="flex items-start justify-between gap-3 border-t pt-3">
+            <div className="flex items-start justify-between gap-3 rounded-xl border p-3">
               <div className="min-w-0">
-                <Label htmlFor="product-in-stock">In stock</Label>
+                <Label htmlFor="product-in-stock">
+                  {shipping === "dropship" ? "Supplier has it" : "In stock"}
+                </Label>
                 <p className="text-muted-foreground text-xs leading-relaxed">
-                  {inStock
-                    ? "You can make it: orders can come in."
-                    : "Out of stock: you can't make it for now."}
+                  {inStock ? "Orders can come in." : "Out of stock: it can't be sent for now."}
                 </p>
               </div>
               <Switch id="product-in-stock" checked={inStock} onCheckedChange={setInStock} />

@@ -286,11 +286,17 @@ export type UnitCost = {
   /** Cost of one, in `currency` (the company's main currency). */
   cost: string;
   currency: string;
-  /** "stock": the oldest lot with units left (the next to sell, FIFO); "last": none left, so the latest lot. */
-  source: "stock" | "last";
+  /**
+   * "stock": the oldest lot with units left (the next to sell, FIFO); "last": none left, so the
+   * latest lot; "dropship": the supplier's price for one, for a product a supplier ships.
+   */
+  source: "stock" | "last" | "dropship";
 };
 
-/** What the next unit of each product costs: its oldest lot with stock left, else its latest. */
+/**
+ * What the next unit of each product costs: its oldest lot with stock left, else its latest. A
+ * dropship product costs its supplier's price for one, in the company's main currency.
+ */
 export async function nextUnitCosts(
   tx: Transaction,
   productIds: readonly string[],
@@ -313,12 +319,21 @@ export async function nextUnitCosts(
       case when l.quantity > coalesce((select sum(c.quantity) from lot_consumptions c where c.lot_id = l.id), 0)
         then l.received_on end asc,
       l.received_on desc, l.created_at desc`);
-  return new Map(
+  const costs = new Map<string, UnitCost>(
     rows.rows.map((r) => [
       r.product_id,
       { cost: r.cost, currency: r.currency, source: r.has_stock ? "stock" : "last" },
     ]),
   );
+  const dropship = await tx.execute<{ product_id: string; cost: string; currency: string }>(sql`
+    select p.id as product_id, p.supplier_unit_cost::text as cost, op.base_currency as currency
+    from products p
+    join organization_profiles op on op.organization_id = p.organization_id
+    where p.id in ${[...productIds]} and p.dropship and p.supplier_unit_cost is not null`);
+  for (const r of dropship.rows) {
+    costs.set(r.product_id, { cost: r.cost, currency: r.currency, source: "dropship" });
+  }
+  return costs;
 }
 
 /** Recent changes for one SKU, newest first. */

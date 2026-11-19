@@ -3323,6 +3323,26 @@ line** (`/commerce/profit/products/pnl`; one SKU at `…/pnl/[sku]`).
   (`syncEbayTransactions`), even with nothing new to read. A posted month whose rows moved shows
   as changed, to post again.
 
+### Dropship products: the supplier's price as the cost
+
+- A product's **Who ships it** (Edit product) replaces the "Count its stock" switch: **From my
+  stock**, **Made to order**, or **My supplier ships it (dropship)**. Dropship asks for the
+  supplier (a vendor) and **their price for one** in the main currency, shipping included, and
+  keeps the product out of stock like made to order (`tracks_stock` off, enforced by a check).
+- Its cost comes from db `nextUnitCosts` (source `dropship`), so **Profit after ads**, **SKU
+  profit and loss** (as the estimate, since no lots are consumed) and **Prices** show a dropship
+  listing's profit. Cost of goods sold, Stock and Reorder leave it out as before; supplier
+  payments stay expenses as they're paid (count them under Channel profit → Your own costs).
+- Products shows a **Dropship** badge with the supplier and price; the folded **Dropship SKUs**
+  list can now link a marked SKU to a product (dropship products first), which clears the mark.
+  The "Cost missing" hint names the dropship route.
+- `products.dropship`, `products.supplier_id` (FK to contacts), `products.supplier_unit_cost`
+  (migration `0100_dropship_products`). db `ProductInput`/`ProductRow`, `createProduct`,
+  `updateProduct`, `nextUnitCosts`; web product dialog, products page, `dropship-skus.tsx`.
+  Test: db `prices.test.ts`.
+- Next: post a dropship month's cost of goods at supplier prices against a supplier payable, so
+  supplier payments clear it and Channel profit gets the cost without counting own costs.
+
 ### Products made to order: not counted in stock
 
 - A product's **Count its stock** switch (Edit product). Off for something made to order (e.g.

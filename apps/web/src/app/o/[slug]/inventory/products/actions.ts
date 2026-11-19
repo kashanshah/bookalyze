@@ -92,6 +92,9 @@ export async function saveProductAction(
               unitWeight: before.unitWeight,
               tracksStock: before.tracksStock,
               inStock: before.inStock,
+              dropship: before.dropship,
+              supplierId: before.supplierId,
+              supplierUnitCost: before.supplierUnitCost,
             }
           : undefined,
         after: {
@@ -101,6 +104,9 @@ export async function saveProductAction(
           unitWeight: saved.unitWeight,
           tracksStock: saved.tracksStock,
           inStock: saved.inStock,
+          dropship: saved.dropship,
+          supplierId: saved.supplierId,
+          supplierUnitCost: saved.supplierUnitCost,
         },
       });
       return saved;
