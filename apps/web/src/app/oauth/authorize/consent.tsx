@@ -60,7 +60,7 @@ export function Consent({
           </h1>
           <p className="text-muted-foreground text-sm">
             It will act as you ({email}), with your role in each company, and never more. You can
-            disconnect it at any time in Account → API keys.
+            disconnect it at any time in Settings → AI assistants.
           </p>
         </div>
         <div className="grid gap-2 rounded-xl border bg-muted/40 p-3 text-sm">
@@ -73,8 +73,8 @@ export function Consent({
           <p className="flex items-start gap-2 text-muted-foreground">
             <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
             <span>
-              The app named itself. Only continue if you just started connecting it, for example
-              from Claude Code.
+              The app named itself. Only continue if you just started connecting Bookalyze from it
+              yourself.
             </span>
           </p>
         </div>

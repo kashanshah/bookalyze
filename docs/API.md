@@ -6,6 +6,8 @@ see and change the same things. Public overview for users: bookalyze.com/develop
 
 ## Connect ChatGPT, Claude or Gemini
 
+When a connection's chosen time runs out, the assistant's next request gets 401 and its refresh fails, so the assistant asks to sign in again. Bookalyze also reminds the person (home and Settings → AI assistants) a week before and for 30 days after, until they reconnect or dismiss it.
+
 **Settings → AI assistants** (`/o/<slug>/settings/ai-assistants`, also `/account/ai-assistants` from
 the account menu) is the place for people. It has one card each for ChatGPT, Claude and Gemini:
 **Connect** copies the MCP link and opens the assistant's connector page in one click, with the
@@ -20,7 +22,7 @@ read it, so check it against each assistant's help page when their menus change.
 | Assistant | Where it's added | Notes |
 |---|---|---|
 | ChatGPT | chatgpt.com/plugins → + → Add custom MCP server | Registers by DCR. Redirect `https://chatgpt.com/connector_platform_oauth_redirect` (we meet its RFC 9207 issuer rules) or `…/connector/oauth/{id}` |
-| Claude | claude.ai/customize/connectors → Add custom connector | Callback `https://claude.ai/api/mcp/auth_callback`; needs port 443 |
+| Claude | claude.ai Customize → Connectors (desktop app: Plugins) → Add → Add custom connector; OAuth client "Register automatically" (we don't support CIMD yet) | Callback `https://claude.ai/api/mcp/auth_callback`; needs port 443 |
 | Gemini | gemini.google.com → Settings → Connected apps → Add a custom app | DCR; US, 18+, personal accounts, English |
 
 ## Connect Claude Code
@@ -178,7 +180,7 @@ withdrawal to 3100 Owner drawings and dividends. A loan from the owner goes to t
 
 - `GET /actions` lists the app's server actions that take the company as their first argument
   (about 200). Each entry shows its area, module and whether it only reads.
-- `POST /companies/{company}/actions/{action}` with `{ "args": [...] }` calls one. The company slug
+- `POST /companies/{company}/actions/{action}` with `{ "args": [...] }` calls one. Over MCP it's two tools: `read_app_action` (actions whose access is read) and `call_app_action` (the rest), so each tool is plainly read-only or not. The company slug
   is passed for you; `args` are the rest of the action's arguments.
 - Each call passes the key's access check and the module's billing check. The action then runs its
   own validation, role checks and audit, exactly as in the browser.

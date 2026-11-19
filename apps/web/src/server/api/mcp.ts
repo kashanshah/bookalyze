@@ -2,10 +2,12 @@ import "server-only";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { resourceMetadataUrl } from "../oauth";
-import { ApiError, authenticate, toApiError } from "./core";
+import { ACTION_CATALOG } from "./action-catalog.generated";
+import { type Access, ApiError, authenticate, type Operation, toApiError } from "./core";
 import { execute } from "./execute";
 import { errorResponse, json } from "./http";
 import { OPERATIONS } from "./ops";
+import { actionAccess } from "./ops/app-actions";
 
 /**
  * The MCP server (Streamable HTTP, stateless: one server per request, no sessions kept, nothing
@@ -21,9 +23,77 @@ Start with list_companies; every other tool takes the company's slug as \`compan
 - Bookkeeping: create_transaction (money in/out, transfers incl. between currencies, owner contributions and drawings), update_transaction (categorise), create_journal_entry, upload_bank_statement (CSV; try dryRun first), sync_bank_connection, upload_receipt.
 - Reconcile: get_reconciliation → start_reconciliation → set_reconciliation_cleared → finish_reconciliation.
 - Reports: profit_and_loss, balance_sheet, trial_balance, general_ledger, sales_tax_report.
-- Anything else a screen can do: list_app_actions, then call_app_action.
+- Anything else a screen can do: list_app_actions, then read_app_action (for actions whose access is read) or call_app_action (for actions that change something).
 
 Amounts are decimal strings in the account's currency ("1250.00"); dates are YYYY-MM-DD. Nothing on or before the company's booksLockedThrough date can change. When a write is refused, the error says which field and why: fix that and try again rather than working around it.`;
+
+/** One MCP tool: an operation, or one half of the app-action operation. */
+type Tool = {
+  op: Operation;
+  name: string;
+  title: string;
+  description: string;
+  access: Access;
+  destructive: boolean;
+  /** For the app-action tools: only actions with this access. */
+  actions?: Access;
+};
+
+/**
+ * Tools from operations. Running a screen's action is one REST route, but two tools: app
+ * directories (Claude, ChatGPT, Gemini) require every tool to be clearly read-only or not, so
+ * reads and changes can't share a tool.
+ */
+function toolsFor(op: Operation): Tool[] {
+  if (op.name !== "call_app_action") {
+    return [
+      {
+        op,
+        name: op.name,
+        title: op.title,
+        description: op.description,
+        access: op.access,
+        destructive: Boolean(op.destructive),
+      },
+    ];
+  }
+  const how =
+    "`args` are its arguments after the company, in order, as JSON (objects as the screen's form sends them). Validation errors come back with the same messages the screen shows. Prefer a dedicated tool when one fits.";
+  return [
+    {
+      op,
+      name: "read_app_action",
+      title: "Look something up with an app action",
+      description: `Runs one action from list_app_actions whose access is "read", exactly as the screen that offers it would, for one company. It changes nothing. ${how}`,
+      access: "read",
+      destructive: false,
+      actions: "read",
+    },
+    {
+      op,
+      name: "call_app_action",
+      title: "Change something with an app action",
+      description: `Runs one action from list_app_actions whose access is "write", exactly as the screen that offers it would, for one company. It can create, change or remove records, so tell the person what it will do first. ${how}`,
+      access: "write",
+      destructive: true,
+      actions: "write",
+    },
+  ];
+}
+
+/** The app-action tools only run actions of their own kind. */
+function checkActionKind(tool: Tool, args: Record<string, unknown>) {
+  if (!tool.actions) return;
+  const action = ACTION_CATALOG.find((a) => a.name === args.action);
+  if (!action || actionAccess(action) === tool.actions) return;
+  throw new ApiError(
+    400,
+    "invalid_request",
+    tool.actions === "read"
+      ? `${action.name} changes things. Use call_app_action for it.`
+      : `${action.name} only reads. Use read_app_action for it.`,
+  );
+}
 
 /** A tool result's text is capped so one call can't flood the conversation. */
 const MAX_TEXT = 400_000;
@@ -62,32 +132,56 @@ export async function handleMcp(request: Request): Promise<Response> {
   }
 
   const server = new McpServer(
-    { name: "bookalyze", title: "Bookalyze", version: "1.0.0" },
+    {
+      name: "bookalyze",
+      title: "Bookalyze",
+      version: "1.0.0",
+      websiteUrl: "https://bookalyze.com",
+      // Assistants that show a connector's icon take it from here (MCP 2025-11-25).
+      icons: [
+        { src: `${origin}/connector-icon.png`, mimeType: "image/png", sizes: ["256x256"] },
+        { src: `${origin}/icon-512.png`, mimeType: "image/png", sizes: ["512x512"] },
+        {
+          src: `${origin}/favicon-light.svg`,
+          mimeType: "image/svg+xml",
+          sizes: ["any"],
+          theme: "light",
+        },
+        {
+          src: `${origin}/favicon-dark.svg`,
+          mimeType: "image/svg+xml",
+          sizes: ["any"],
+          theme: "dark",
+        },
+      ],
+    },
     { instructions: INSTRUCTIONS, capabilities: { tools: {} } },
   );
   const writable = principal.key.access === "write";
-  for (const op of OPERATIONS) {
+  for (const tool of OPERATIONS.flatMap(toolsFor)) {
     // A read-only key isn't offered tools it could never use.
-    if (op.access === "write" && !writable) continue;
+    if (tool.access === "write" && !writable) continue;
+    const op = tool.op;
     server.registerTool(
-      op.name,
+      tool.name,
       {
-        title: op.title,
-        description: op.description,
+        title: tool.title,
+        description: tool.description,
         inputSchema: op.input.shape,
         annotations: {
-          title: op.title,
-          readOnlyHint: op.access === "read" && op.name !== "call_app_action",
-          destructiveHint: Boolean(op.destructive),
+          title: tool.title,
+          readOnlyHint: tool.access === "read",
+          destructiveHint: tool.destructive,
           openWorldHint: false,
         },
       },
       async (args: Record<string, unknown>) => {
         try {
+          checkActionKind(tool, args);
           const data = await execute(op, principal, args, origin);
           return { content: [{ type: "text" as const, text: text(data) }] };
         } catch (error) {
-          const failure = toApiError(error, { tool: op.name });
+          const failure = toApiError(error, { tool: tool.name });
           return {
             isError: true,
             content: [

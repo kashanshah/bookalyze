@@ -1,7 +1,7 @@
 import { examplePrompts } from "@bookalyze/core";
 import { ArrowRight, Asterisk, MessagesSquare, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { loadAssistantConnections } from "@/server/ai-assistants";
+import { loadAssistantConnections, loadAssistantReminders } from "@/server/ai-assistants";
 
 /**
  * On the home page until the person connects an assistant: Bookalyze works inside ChatGPT,
@@ -16,8 +16,12 @@ export async function AssistantsNudge({
   base: string;
   company: string;
 }) {
-  const connections = await loadAssistantConnections(userId);
-  if (connections.length) return null;
+  const [connections, { recentlyEnded }] = await Promise.all([
+    loadAssistantConnections(userId),
+    loadAssistantReminders(userId),
+  ]);
+  // Connected already, or one just ended (its reconnect reminder says what to do).
+  if (connections.length || recentlyEnded) return null;
   const [ask] = examplePrompts(company);
   return (
     <section className="fade-in-0 relative animate-in overflow-hidden rounded-2xl border bg-card shadow-xs duration-500">
