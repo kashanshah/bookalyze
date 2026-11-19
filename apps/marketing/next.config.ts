@@ -8,9 +8,16 @@ const nextConfig: NextConfig = {
   // The header and footer links come from @bookalyze/core, shared with the app's public pages.
   transpilePackages: ["@bookalyze/core"],
   poweredByHeader: false,
+  // Analytics (PostHog) through our own domain, so ad blockers don't drop it.
+  skipTrailingSlashRedirect: true,
   // Each guide and feature page as Markdown at its own address plus ".md" (for AI assistants).
   async rewrites() {
     return [
+      {
+        source: "/ingest/static/:path*",
+        destination: "https://us-assets.i.posthog.com/static/:path*",
+      },
+      { source: "/ingest/:path*", destination: "https://us.i.posthog.com/:path*" },
       { source: "/guides/:slug.md", destination: "/guides-md/:slug" },
       { source: "/features/:slug.md", destination: "/features-md/:slug" },
     ];

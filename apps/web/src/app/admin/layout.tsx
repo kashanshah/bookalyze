@@ -7,19 +7,23 @@ export const metadata: Metadata = {
   title: { template: "%s · Admin", default: "Admin" },
 };
 
-/** The support desk and Growth, for platform admins only (everyone else gets a 404). */
+/** Overview, the support desk and Growth, for platform admins only (everyone else gets a 404). */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   await requireSupportAgent();
   return (
     <div className="min-h-dvh bg-sidebar">
       <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-4">
-          <Link href="/admin/support" className="flex items-center gap-3">
+          <Link href="/admin" className="flex items-center gap-3">
             <Brand className="h-7" />
           </Link>
           <nav className="flex items-center gap-3 text-sm sm:gap-4" aria-label="Admin">
+            <Link href="/admin" className="text-muted-foreground hover:text-foreground">
+              Overview
+            </Link>
             <Link href="/admin/support" className="text-muted-foreground hover:text-foreground">
-              Support desk
+              <span className="sm:hidden">Support</span>
+              <span className="hidden sm:inline">Support desk</span>
             </Link>
             <Link href="/admin/growth" className="text-muted-foreground hover:text-foreground">
               Growth

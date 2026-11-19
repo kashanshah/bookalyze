@@ -2,6 +2,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import type { Metadata, Viewport } from "next";
+import { ProductAnalytics } from "@/components/growth/product-analytics";
 import { Providers } from "@/components/providers/theme-provider";
 import "./globals.css";
 
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-dvh">
         <Providers>{children}</Providers>
         <Analytics />
+        <ProductAnalytics />
       </body>
     </html>
   );

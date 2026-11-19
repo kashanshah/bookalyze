@@ -2,10 +2,12 @@ import { trialDaysLeft } from "@bookalyze/core";
 import { Gift, Lock } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AnalyticsIdentity } from "@/components/growth/product-analytics";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { Sidebar, SidebarContent } from "@/components/shell/sidebar";
 import { readOnlyLabels } from "@/server/billing";
 import { getOrgContext, listUserOrgs } from "@/server/org";
+import { isSupportAgent } from "@/server/support";
 
 export default async function OrgLayout({
   children,
@@ -27,6 +29,10 @@ export default async function OrgLayout({
     !ctx.billing.state.subscription?.status.match(/^(active|trialing)$/);
   return (
     <div className="flex min-h-dvh">
+      <AnalyticsIdentity
+        userId={ctx.session.user.id}
+        internal={isSupportAgent(ctx.session.user.email)}
+      />
       {/* Printouts (and saved PDFs) are just the page: no navigation. */}
       <div className="contents print:hidden">
         <Sidebar ctx={ctx} orgs={orgs} />
