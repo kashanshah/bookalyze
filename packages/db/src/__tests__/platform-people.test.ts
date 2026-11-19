@@ -12,13 +12,15 @@ const appUrl =
 const owner = createDb(ownerUrl, { max: 1 });
 const app = createDb(appUrl, { max: 2 });
 
-// A month in 1998, before every other test's rows, so only these people are in it.
+// August 2000: after platform-overview's "now" (June 1999, which counts everyone before it), and
+// apart from growth's March 2001, so only these people are in the period and they're in no
+// other test's totals, whatever order the files run in.
 const period = {
-  from: new Date("1998-03-01T00:00:00Z"),
-  to: new Date("1998-04-01T00:00:00Z"),
+  from: new Date("2000-08-01T00:00:00Z"),
+  to: new Date("2000-09-01T00:00:00Z"),
   exclude: ["Admin@People.test"],
 };
-const day = (d: number, h = 12) => new Date(Date.UTC(1998, 2, d, h));
+const day = (d: number, h = 12) => new Date(Date.UTC(2000, 7, d, h));
 
 async function person(key: string, at: Date, opts: { verified?: boolean; google?: boolean } = {}) {
   const [row] = await owner.db
@@ -104,7 +106,7 @@ beforeAll(async () => {
   await person("ben", day(10), { google: true });
   await person("cara", day(20), { verified: false });
   await person("admin", day(15));
-  await person("later", new Date("1998-04-02T00:00:00Z"));
+  await person("later", new Date("2000-09-02T00:00:00Z"));
 });
 
 afterAll(async () => {
