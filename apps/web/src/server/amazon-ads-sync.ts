@@ -2,7 +2,8 @@ import "server-only";
 import {
   AMAZON_ADS_PENDING_LIMIT_MS,
   AMAZON_ADS_REPORTS,
-  type AmazonAdsProfile,
+  amazonAdsAssignment,
+  amazonAdsChannelProfiles,
   can,
   getPlan,
   isAmazonRegion,
@@ -21,9 +22,10 @@ import {
   recordConnectionSync,
   replaceAdMetrics,
   schema,
+  type Transaction,
   withOrg,
 } from "@bookalyze/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { nowIn } from "@/lib/dates";
 import {
   type AmazonAdsAccount,
@@ -37,8 +39,8 @@ import { suggestRate } from "./fx";
 import { logInfo, logWarn } from "./log";
 
 /**
- * Bringing Amazon's ad spend in (docs/ADS.md §5). For each ads profile that matches one of the
- * company's Amazon channels, and each ad type (Sponsored Products per SKU, Sponsored Brands per
+ * Bringing Amazon's ad spend in (docs/ADS.md §5). For each of the company's Amazon channels this
+ * connection serves (its assigned store), and each ad type (Sponsored Products per SKU, Sponsored Brands per
  * campaign): collect the reports Amazon has finished, then ask for the next window (60 days back
  * at first, then the last 15 days every day, as attribution changes for 14). A finished report
  * replaces the channel's rows for its days.
@@ -53,11 +55,6 @@ export type AdsSyncResult = {
   pending: number;
   error: string | null;
 };
-
-/** Saved profiles on a connection's settings (from the last time Amazon listed them). */
-export function savedProfiles(settings: Record<string, unknown>): AmazonAdsProfile[] {
-  return Array.isArray(settings.profiles) ? (settings.profiles as AmazonAdsProfile[]) : [];
-}
 
 const day = (date: Date, timezone: string) =>
   new Intl.DateTimeFormat("en-CA", {
@@ -82,24 +79,20 @@ export async function syncAmazonAdsConnection(
     const connection = await getConnection(tx, connectionId);
     if (!connection?.secret || connection.status === "disconnected") return null;
     const [profile] = await tx.select().from(schema.organizationProfiles).limit(1);
-    const profiles = savedProfiles(connection.settings).filter(
-      (p) => p.accountType === "seller" && p.marketplaceId,
-    );
-    const channels = profiles.length
-      ? await tx
-          .select()
-          .from(schema.salesChannels)
-          .where(
-            and(
-              eq(schema.salesChannels.kind, "amazon"),
-              inArray(
-                schema.salesChannels.marketplaceId,
-                profiles.map((p) => p.marketplaceId),
-              ),
-            ),
-          )
-      : [];
-    return { connection, profile, profiles, channels };
+    // Each Amazon channel's ads come from the one store assigned to it (core
+    // amazonAdsAssignment), so two stores one login sees never land on the same channel.
+    const all = await listAmazonAdsConnections(tx);
+    const channels = await tx
+      .select()
+      .from(schema.salesChannels)
+      .where(eq(schema.salesChannels.kind, "amazon"));
+    const served = channels.flatMap((channel) => {
+      const a = amazonAdsAssignment(all, channel, channels);
+      return a.kind === "assigned" && a.connectionId === connectionId
+        ? [{ channel, profile: a.profile }]
+        : [];
+    });
+    return { connection, profile, served };
   });
   if (!setup?.profile) return result;
   const region = String(setup.connection.settings.region ?? "");
@@ -123,9 +116,7 @@ export async function syncAmazonAdsConnection(
   }
 
   try {
-    for (const profile of setup.profiles) {
-      const channel = setup.channels.find((c) => c.marketplaceId === profile.marketplaceId);
-      if (!channel) continue;
+    for (const { channel, profile } of setup.served) {
       if (options.channelId && channel.id !== options.channelId) continue;
       // A switched-off channel keeps what it has but isn't synced, like its orders.
       if (!channel.isActive) continue;
@@ -239,6 +230,28 @@ export async function syncAmazonAdsConnection(
     recordConnectionSync(tx, connectionId, { at: new Date(), error: result.error }),
   );
   return result;
+}
+
+/**
+ * Removes a channel's chosen store from every Ads connection but `keep`, so the channel takes its
+ * ads from one store only.
+ */
+export async function unpinChannelElsewhere(
+  tx: Transaction,
+  connections: Awaited<ReturnType<typeof listAmazonAdsConnections>>,
+  channelId: string,
+  keep: string,
+) {
+  for (const c of connections) {
+    if (c.id === keep) continue;
+    const pins = amazonAdsChannelProfiles(c.settings);
+    if (!(channelId in pins)) continue;
+    delete pins[channelId];
+    await tx
+      .update(schema.connections)
+      .set({ settings: { ...c.settings, channelProfiles: pins } })
+      .where(eq(schema.connections.id, c.id));
+  }
 }
 
 /**

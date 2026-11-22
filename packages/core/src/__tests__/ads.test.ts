@@ -4,8 +4,10 @@ import {
   type AdMetricRow,
   accountCosts,
   addSettlementLines,
+  amazonAdsAssignment,
   amazonAdsConsentUrl,
   amazonAdsErrorDetail,
+  amazonAdsProfileLabel,
   amazonAdsReportRequest,
   channelAdSummary,
   duplicateAmazonAdsReportId,
@@ -478,7 +480,12 @@ describe("Amazon Ads API", () => {
         countryCode: "CA",
         currencyCode: "CAD",
         timezone: "America/Los_Angeles",
-        accountInfo: { marketplaceStringId: "A2EUQ1WTGCTBG2", name: "Kazomo", type: "seller" },
+        accountInfo: {
+          marketplaceStringId: "A2EUQ1WTGCTBG2",
+          name: "Kazomo",
+          type: "seller",
+          id: "A1SELLERCA",
+        },
       },
       { countryCode: "US" },
     ]);
@@ -490,9 +497,93 @@ describe("Amazon Ads API", () => {
         timezone: "America/Los_Angeles",
         marketplaceId: "A2EUQ1WTGCTBG2",
         accountName: "Kazomo",
+        accountId: "A1SELLERCA",
         accountType: "seller",
       },
     ]);
+  });
+
+  describe("which ads account serves which channel", () => {
+    const CA = "A2EUQ1WTGCTBG2";
+    const US = "ATVPDKIKX0DER";
+    const profile = (profileId: string, marketplaceId = CA, accountType = "seller") => ({
+      profileId,
+      countryCode: marketplaceId === CA ? "CA" : "US",
+      currency: marketplaceId === CA ? "CAD" : "USD",
+      timezone: "America/Los_Angeles",
+      marketplaceId,
+      accountName: `Store ${profileId}`,
+      accountId: `SELLER${profileId}`,
+      accountType,
+    });
+    const conn = (
+      id: string,
+      profiles: ReturnType<typeof profile>[],
+      channelProfiles: Record<string, string> = {},
+      status = "active",
+    ) => ({ id, status, settings: { region: "na", profiles, channelProfiles } });
+    const ca1 = { id: "ch-ca-1", marketplaceId: CA };
+    const ca2 = { id: "ch-ca-2", marketplaceId: CA };
+
+    it("uses the one store that fits, with no choice", () => {
+      const a = amazonAdsAssignment([conn("c1", [profile("1"), profile("2", US)])], ca1);
+      expect(a).toMatchObject({ kind: "assigned", connectionId: "c1", pinned: false });
+      expect(a.kind === "assigned" && a.profile.profileId).toBe("1");
+    });
+
+    it("asks to choose when one login sees two stores in the marketplace", () => {
+      const a = amazonAdsAssignment([conn("c1", [profile("1"), profile("2")])], ca1);
+      expect(a.kind).toBe("choose");
+      expect(a.kind === "choose" && a.choices.map((c) => c.profile.profileId)).toEqual(["1", "2"]);
+    });
+
+    it("keeps a chosen store, and leaves it out of other channels' choices", () => {
+      const connections = [conn("c1", [profile("1"), profile("2")], { [ca2.id]: "2" })];
+      expect(amazonAdsAssignment(connections, ca2, [ca1, ca2])).toMatchObject({
+        kind: "assigned",
+        pinned: true,
+        profile: { profileId: "2" },
+      });
+      // Store 2 is ca2's, so store 1 is the only one left for ca1.
+      expect(amazonAdsAssignment(connections, ca1, [ca1, ca2])).toMatchObject({
+        kind: "assigned",
+        pinned: false,
+        profile: { profileId: "1" },
+      });
+    });
+
+    it("doesn't give one store to two channels of the same marketplace", () => {
+      const a = amazonAdsAssignment([conn("c1", [profile("1")])], ca1, [ca1, ca2]);
+      expect(a.kind).toBe("choose");
+    });
+
+    it("finds stores across logins, counts a shared store once, skips disconnected ones", () => {
+      const connections = [
+        conn("new", [profile("1")]),
+        conn("old", [profile("1"), profile("3")]),
+        conn("gone", [profile("4")], {}, "disconnected"),
+      ];
+      const a = amazonAdsAssignment(connections, ca1);
+      expect(
+        a.kind === "choose" && a.choices.map((c) => [c.connectionId, c.profile.profileId]),
+      ).toEqual([
+        ["new", "1"],
+        ["old", "3"],
+      ]);
+    });
+
+    it("ignores a choice whose store the login no longer lists, and vendor profiles", () => {
+      expect(
+        amazonAdsAssignment([conn("c1", [profile("2")], { [ca1.id]: "9" })], ca1),
+      ).toMatchObject({ kind: "assigned", pinned: false, profile: { profileId: "2" } });
+      expect(amazonAdsAssignment([conn("c1", [profile("5", CA, "vendor")])], ca1)).toEqual({
+        kind: "none",
+      });
+    });
+
+    it("names a store by account, country and ID", () => {
+      expect(amazonAdsProfileLabel(profile("1"))).toBe("Store 1 (CA, SELLER1)");
+    });
   });
 
   it("asks for the advertised-product report daily, as gzipped JSON", () => {

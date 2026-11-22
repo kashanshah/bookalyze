@@ -121,6 +121,13 @@ Login with Amazon clients. Design: `docs/ADS.md`.
 Reports: the daily job asks for each channel's last 15 days (60 on first connect); the 5-minute job
 collects them when Amazon has made them. Limits are per app and shared by every connected account.
 
+**Many stores and clients, one app.** The same Client ID and Secret serve every company: each
+company connects with its own Amazon login, and its token is sealed to that company. When one login
+manages several stores in a marketplace (an agency, or an owner with more than one seller
+account), the channel's page asks **Which ads account is this store?**; a company can also connect
+a second login in the same region from another channel. Offering the app to companies outside
+your own may need Amazon's partner (tool provider) approval: check what Amazon approved.
+
 ## Walmart Connect (Sponsored Search ads)
 
 Walmart's ad spend per item comes from **Walmart Connect's Sponsored Search API**, which only

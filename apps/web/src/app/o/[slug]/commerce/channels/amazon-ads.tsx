@@ -15,8 +15,10 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Spinner } from "@/components/ui/spinner";
 import {
+  chooseAmazonAdsProfileAction,
   disconnectAmazonAdsAction,
   startAmazonAdsConnectAction,
   syncAmazonAdsAction,
@@ -24,10 +26,16 @@ import {
 
 export type AmazonAdsView = {
   status: "active" | "error" | "disconnected";
-  /** The ads account's name for this marketplace, when Amazon listed one. */
+  /** The store this channel takes its ads from (name, country, Amazon's ID). */
   accountName: string | null;
-  /** Whether the login has an ads account for this marketplace. */
+  /** Whether the company's logins have an ads account for this marketplace. */
   matches: boolean;
+  /** The chosen store's profile, when one is chosen or the only one. */
+  profileId: string | null;
+  /** Stores to choose between, when the logins see more than one in this marketplace. */
+  choices: { value: string; label: string }[];
+  /** How many Amazon logins the company has connected in this region. */
+  logins: number;
   /** Other marketplaces the same login advertises in (countries). */
   others: string[];
   lastSyncedAt: string | null;
@@ -69,6 +77,7 @@ export function AmazonAdsPanel({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [choice, setChoice] = useState(c?.profileId ?? "");
   const [pendingTransition, start] = useTransition();
   const live = c && c.status !== "disconnected" ? c : null;
   const run = (id: string, task: () => Promise<void>) =>
@@ -100,6 +109,15 @@ export function AmazonAdsPanel({
         });
       }
     });
+  const choose = () =>
+    run("choose", async () => {
+      const result = await chooseAmazonAdsProfileAction(slug, channelId, { profileId: choice });
+      if (!result.ok) return void toast.error(result.message);
+      toast.success("Ads account chosen", {
+        description: `${channelName} now brings in this account's ad spend. The first reports are on their way.`,
+      });
+    });
+  const choosing = Boolean(live?.choices.length && !live.profileId);
   const disconnect = () =>
     run("disconnect", async () => {
       const result = await disconnectAmazonAdsAction(slug, channelId);
@@ -114,11 +132,13 @@ export function AmazonAdsPanel({
 
   const summary = live
     ? [
-        live.matches
-          ? live.accountName
-            ? `Ads account ${live.accountName}`
-            : "Connected"
-          : `This login has no ads account for ${channelName}`,
+        !live.matches
+          ? `This login has no ads account for ${channelName}`
+          : choosing
+            ? `Your Amazon logins see ${live.choices.length} stores on ${channelName}: choose which one is this store`
+            : live.accountName
+              ? `Ads account ${live.accountName}`
+              : "Connected",
         through
           ? `Ad spend in through ${dateOf(through)}`
           : pending
@@ -143,7 +163,7 @@ export function AmazonAdsPanel({
           <h2 id="ads-heading" className="flex flex-wrap items-center gap-2 font-semibold">
             Amazon Ads
             {live ? (
-              live.status === "error" || !live.matches ? (
+              live.status === "error" || !live.matches || choosing ? (
                 <Badge variant="warning">Needs attention</Badge>
               ) : (
                 <Badge variant="success">Connected</Badge>
@@ -160,7 +180,12 @@ export function AmazonAdsPanel({
         <div className="ms-13 flex flex-wrap gap-2 sm:ms-0">
           {live ? (
             <>
-              <Button variant="outline" size="sm" onClick={sync} disabled={pendingTransition}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={sync}
+                disabled={pendingTransition || choosing}
+              >
                 {busy === "sync" ? <Spinner /> : <DownloadCloud />}
                 Bring in ads now
               </Button>
@@ -190,6 +215,36 @@ export function AmazonAdsPanel({
           ) : null}
         </div>
       </div>
+      {live && canManage && live.choices.length ? (
+        <div className="flex flex-wrap items-end gap-2 border-t bg-muted/30 px-5 py-3.5">
+          <div className="min-w-0 flex-1 basis-64">
+            <label htmlFor="ads-store" className="font-medium text-sm">
+              Which ads account is this store?
+            </label>
+            <p id="ads-store-hint" className="text-muted-foreground text-xs">
+              One Amazon login can manage several stores. Pick the one that sells on {channelName}{" "}
+              for this company, so its ad spend isn't mixed with another store's.
+            </p>
+            <Combobox
+              id="ads-store"
+              aria-describedby="ads-store-hint"
+              wrapperClassName="mt-2"
+              options={live.choices}
+              value={choice}
+              onChange={setChoice}
+              placeholder="Choose an ads account"
+            />
+          </div>
+          <Button
+            size="sm"
+            onClick={choose}
+            disabled={pendingTransition || !choice || choice === live.profileId}
+          >
+            {busy === "choose" ? <Spinner /> : null}
+            Use this account
+          </Button>
+        </div>
+      ) : null}
       {live?.lastError || reportError ? (
         <p className="flex items-start gap-2 border-t bg-warning/10 px-5 py-3 text-sm">
           <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
@@ -235,7 +290,11 @@ export function AmazonAdsConnectNotice({
   useEffect(() => {
     if (!result || shown.current) return;
     shown.current = true;
-    if (result === "connected") {
+    if (result === "choose") {
+      toast.success("Amazon Ads connected", {
+        description: "This login manages more than one store here. Choose which one is this store.",
+      });
+    } else if (result === "connected") {
       toast.success("Amazon Ads connected", {
         description: "The first reports are on their way: about 60 days of ad spend, in minutes.",
       });

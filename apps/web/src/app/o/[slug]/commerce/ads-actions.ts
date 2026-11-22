@@ -2,6 +2,9 @@
 
 import {
   AMAZON_MARKETPLACES,
+  amazonAdsAssignment,
+  amazonAdsChannelProfiles,
+  amazonAdsStoreOptions,
   CONNECTION_AREA,
   parseWalmartAdvertiserId,
   walmartMarketplace,
@@ -12,9 +15,13 @@ import {
   getChannel,
   listAmazonAdsConnections,
   listWalmartAdsConnections,
+  schema,
+  type Transaction,
 } from "@bookalyze/db";
+import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
+import { after } from "next/server";
 import { z } from "zod";
 import { inOrg } from "@/server/accounting";
 import {
@@ -24,9 +31,10 @@ import {
   amazonAdsConsentLink,
   signAmazonAdsState,
 } from "@/server/amazon-ads";
-import { syncAmazonAdsConnection } from "@/server/amazon-ads-sync";
+import { syncAmazonAdsConnection, unpinChannelElsewhere } from "@/server/amazon-ads-sync";
 import { audit } from "@/server/audit";
 import { getCommerceContext } from "@/server/commerce";
+import { logWarn } from "@/server/log";
 import { isOrgAdmin } from "@/server/org";
 import { checkWalmartAdvertiser, WalmartAdsError, walmartAdsApp } from "@/server/walmart-ads";
 import { syncWalmartAdsConnection } from "@/server/walmart-ads-sync";
@@ -53,6 +61,26 @@ async function amazonChannel(ctx: Awaited<ReturnType<typeof getCommerceContext>>
   if (channel?.kind !== "amazon") return null;
   const region = AMAZON_MARKETPLACES.find((m) => m.id === channel.marketplaceId)?.region;
   return region ? { channel, region } : null;
+}
+
+/** The company's Amazon channels and Ads connections, for the store assignment. */
+async function amazonAdsState(tx: Transaction) {
+  const channels = await tx
+    .select({ id: schema.salesChannels.id, marketplaceId: schema.salesChannels.marketplaceId })
+    .from(schema.salesChannels)
+    .where(eq(schema.salesChannels.kind, "amazon"));
+  return { channels, connections: await listAmazonAdsConnections(tx) };
+}
+
+/** The live Ads connection that brings in this channel's ads, if one does. */
+async function servingConnection(
+  tx: Transaction,
+  channel: { id: string; marketplaceId: string | null },
+) {
+  const { channels, connections } = await amazonAdsState(tx);
+  const a = amazonAdsAssignment(connections, channel, channels);
+  if (a.kind !== "assigned") return null;
+  return connections.find((c) => c.id === a.connectionId) ?? null;
 }
 
 /** Sends the admin to Amazon's consent page for the channel's Ads region. */
@@ -98,10 +126,20 @@ export async function syncAmazonAdsAction(
   const ctx = await getCommerceContext(slug, CONNECTION_AREA);
   const found = await amazonChannel(ctx, channelId);
   if (!found) return { ok: false, message: "Unknown channel." };
-  const connection = (await inOrg(ctx, (tx) => listAmazonAdsConnections(tx))).find(
-    (c) => c.settings.region === found.region && c.hasSecret && c.status !== "disconnected",
-  );
-  if (!connection) return { ok: false, message: "Amazon Ads isn't connected. Connect it first." };
+  const connection = await inOrg(ctx, async (tx) => {
+    const c = await servingConnection(tx, found.channel);
+    if (c) return c;
+    const { channels, connections } = await amazonAdsState(tx);
+    return amazonAdsAssignment(connections, found.channel, channels).kind === "choose"
+      ? "choose"
+      : null;
+  });
+  if (connection === "choose") {
+    return { ok: false, message: "Choose which ads account is this store's first." };
+  }
+  if (!connection?.hasSecret) {
+    return { ok: false, message: "Amazon Ads isn't connected. Connect it first." };
+  }
   const deadline = Date.now() + 45_000;
   const total = { collected: 0, rows: 0, pending: 0 };
   try {
@@ -138,9 +176,7 @@ export async function disconnectAmazonAdsAction(
   const found = await amazonChannel(ctx, channelId);
   if (!found) return { ok: false, message: "Unknown channel." };
   const done = await inOrg(ctx, async (tx) => {
-    const connection = (await listAmazonAdsConnections(tx)).find(
-      (c) => c.settings.region === found.region && c.status !== "disconnected",
-    );
+    const connection = await servingConnection(tx, found.channel);
     if (!connection) return false;
     await disconnectConnection(tx, connection.id);
     await audit(tx, {
@@ -154,6 +190,67 @@ export async function disconnectAmazonAdsAction(
     return true;
   });
   if (!done) return { ok: false, message: "Amazon Ads isn't connected." };
+  revalidatePath(`/o/${slug}/commerce`, "layout");
+  return { ok: true };
+}
+
+/**
+ * Chooses which store's ads a channel brings in, when the company's Amazon logins see more than
+ * one store in its marketplace. A store another channel already uses can't be chosen twice.
+ */
+export async function chooseAmazonAdsProfileAction(
+  slug: string,
+  channelId: string,
+  input: { profileId: string },
+): Promise<CommerceResult> {
+  const { ctx, denied } = await adminContext(slug);
+  if (denied) return denied;
+  const parsed = z.object({ profileId: z.string().trim().min(1).max(40) }).safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Choose an ads account." };
+  const found = await amazonChannel(ctx, channelId);
+  if (!found) return { ok: false, message: "Unknown channel." };
+  const outcome = await inOrg(ctx, async (tx) => {
+    const { connections } = await amazonAdsState(tx);
+    const pick = amazonAdsStoreOptions(connections, found.channel).find(
+      (o) => o.profile.profileId === parsed.data.profileId,
+    );
+    if (!pick) return null;
+    const connection = connections.find((c) => c.id === pick.connectionId);
+    if (!connection) return null;
+    const pins = amazonAdsChannelProfiles(connection.settings);
+    pins[found.channel.id] = pick.profile.profileId;
+    await tx
+      .update(schema.connections)
+      .set({ settings: { ...connection.settings, channelProfiles: pins } })
+      .where(eq(schema.connections.id, connection.id));
+    await unpinChannelElsewhere(tx, connections, found.channel.id, connection.id);
+    await audit(tx, {
+      orgId: ctx.org.id,
+      actorUserId: ctx.session.user.id,
+      action: "connection.updated",
+      entityType: "connection",
+      entityId: connection.id,
+      after: {
+        provider: "amazon_ads",
+        channelId: found.channel.id,
+        profileId: pick.profile.profileId,
+      },
+    });
+    return connection.id;
+  });
+  if (!outcome) {
+    return { ok: false, message: "That ads account isn't one this store can use. Connect again." };
+  }
+  // Bring the chosen store's ads in once the page is back.
+  after(() =>
+    syncAmazonAdsConnection({ orgId: ctx.org.id, userId: null }, outcome, {
+      requestNew: true,
+      channelId: found.channel.id,
+      deadline: Date.now() + 25_000,
+    }).catch((error) =>
+      logWarn("amazon_ads.first_sync_failed", { orgId: ctx.org.id, connectionId: outcome }, error),
+    ),
+  );
   revalidatePath(`/o/${slug}/commerce`, "layout");
   return { ok: true };
 }
