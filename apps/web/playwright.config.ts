@@ -37,6 +37,12 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
     {
+      // A stand-in for the Bank of Canada (e2e/bank-of-canada-mock.mjs): no rates published.
+      command: "node e2e/bank-of-canada-mock.mjs",
+      url: "http://localhost:4017/health",
+      reuseExistingServer: true,
+    },
+    {
       // A stand-in for the Wise API (e2e/wise-mock.mjs); the app talks to it via WISE_API_URL.
       command: "node e2e/wise-mock.mjs",
       url: "http://localhost:4010/health",
@@ -84,6 +90,7 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         WISE_API_URL: process.env.WISE_API_URL ?? "http://localhost:4010",
+        BANK_OF_CANADA_URL: process.env.BANK_OF_CANADA_URL ?? "http://localhost:4017",
         AMAZON_LWA_URL: process.env.AMAZON_LWA_URL ?? "http://localhost:4011/auth/o2/token",
         AMAZON_SPAPI_URL: process.env.AMAZON_SPAPI_URL ?? "http://localhost:4011",
         NOON_API_URL: process.env.NOON_API_URL ?? "http://localhost:4012",

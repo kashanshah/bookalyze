@@ -1259,6 +1259,11 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   bookalyze.com/guides), popular guides, **Contact support** (topic, subject, message; the page
   the person came from with `?from=`), **Your tickets**. A ticket's page has the thread, a reply
   box and **Mark as solved** / **Open again**. Every member of the company sees its tickets.
+- **E2E and exchange rates:** the end-to-end tests talk to a Bank of Canada stand-in
+  (`e2e/bank-of-canada-mock.mjs`, through `BANK_OF_CANADA_URL`) that publishes no rates, so tests
+  use only the rates they store. With the real API, today's rate (published about 4:30 p.m.
+  Toronto time) replaced a stored test rate each evening, and the Wise correction test failed
+  until midnight.
 - **Floating Help button** (`components/support/help-button.tsx`, in the company layout): bottom
   corner of every company page except Help & support itself; a short form (topic, subject,
   message) that calls `openTicketAction` with the current page, so it lands on the desk and

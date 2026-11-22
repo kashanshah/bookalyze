@@ -53,6 +53,8 @@ const schema = z.object({
   /** Amazon's Login with Amazon token URL and SP-API base URL. Tests point them at a stand-in. */
   AMAZON_LWA_URL: z.url().optional(),
   AMAZON_SPAPI_URL: z.url().optional(),
+  /** The Bank of Canada's Valet API base URL. Tests point it at a stand-in; leave unset in production. */
+  BANK_OF_CANADA_URL: z.url().optional(),
   /** Noon's partner API base URL. Tests point it at a stand-in; leave unset in production. */
   NOON_API_URL: z.url().optional(),
   /** Walmart's Marketplace API base URL. Tests point it at a stand-in; leave unset in production. */

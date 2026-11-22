@@ -1,6 +1,7 @@
 import "server-only";
 import { BANK_OF_CANADA_CURRENCIES, parseBankOfCanada } from "@bookalyze/core";
 import { fxRateOn, fxRatesForDays, getDb, missingCadRates, upsertFxRates } from "@bookalyze/db";
+import { env } from "./env";
 import { logWarn } from "./log";
 
 /**
@@ -8,7 +9,7 @@ import { logWarn } from "./log";
  * recent rates current; older dates (back-dated entries, imports) are fetched on demand.
  */
 
-const VALET = "https://www.bankofcanada.ca/valet/observations";
+const VALET = "https://www.bankofcanada.ca";
 
 function shift(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00Z`);
@@ -19,7 +20,8 @@ function shift(date: string, days: number): string {
 /** Fetches and stores Bank of Canada rates for [start, end]. Returns how many were stored. */
 export async function syncBankOfCanada(start: string, end: string): Promise<number> {
   const series = BANK_OF_CANADA_CURRENCIES.map((c) => `FX${c}CAD`).join(",");
-  const url = `${VALET}/${series}/json?start_date=${start}&end_date=${end}`;
+  const base = env().BANK_OF_CANADA_URL ?? VALET;
+  const url = `${base}/valet/observations/${series}/json?start_date=${start}&end_date=${end}`;
   const response = await fetch(url, {
     headers: { Accept: "application/json" },
     cache: "no-store",
