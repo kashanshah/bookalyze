@@ -108,6 +108,12 @@ export type AmazonAdsProfile = {
   /** Amazon's marketplace ID (e.g. A2EUQ1WTGCTBG2): how a profile finds its channel. */
   marketplaceId: string;
   accountName: string;
+  /**
+   * Amazon's ID for the account behind the profile (a seller's merchant ID). Tells two stores
+   * apart when one login sees several in the same marketplace. Missing on profiles saved before
+   * it was read.
+   */
+  accountId?: string;
   /** "seller", "vendor" or "agency": only seller profiles map to channels. */
   accountType: string;
 };
@@ -128,10 +134,139 @@ export function parseAmazonAdsProfiles(json: unknown): AmazonAdsProfile[] {
         timezone: text(p.timezone),
         marketplaceId: text(info.marketplaceStringId),
         accountName: text(info.name),
+        accountId: text(info.id),
         accountType: text(info.type).toLowerCase(),
       },
     ];
   });
+}
+
+// --- Which ads account serves which channel ------------------------------------------------------
+
+/**
+ * An Amazon Ads connection as the assignment needs it: its settings hold the profiles Amazon
+ * listed for the login (`profiles`) and which profile each channel uses (`channelProfiles`,
+ * channel ID → profile ID). One Bookalyze Ads app serves every company; each company can hold
+ * several connections in a region (one per Amazon login), and one login can see several stores.
+ */
+export type AmazonAdsConnectionLike = {
+  id: string;
+  status: string;
+  settings: Record<string, unknown>;
+};
+
+export type AmazonAdsChannelLike = { id: string; marketplaceId: string | null };
+
+/** The profiles saved on a connection's settings. */
+export function amazonAdsSavedProfiles(settings: Record<string, unknown>): AmazonAdsProfile[] {
+  return Array.isArray(settings.profiles) ? (settings.profiles as AmazonAdsProfile[]) : [];
+}
+
+/** Channel ID → profile ID, as chosen (or found) for each of the company's channels. */
+export function amazonAdsChannelProfiles(
+  settings: Record<string, unknown>,
+): Record<string, string> {
+  const raw = record(settings.channelProfiles);
+  return Object.fromEntries(
+    Object.entries(raw).filter((e): e is [string, string] => typeof e[1] === "string" && !!e[1]),
+  );
+}
+
+/** A store's profile a channel could use: a seller profile in the channel's marketplace. */
+const fits = (p: AmazonAdsProfile, marketplaceId: string | null) =>
+  !!marketplaceId && p.accountType === "seller" && p.marketplaceId === marketplaceId;
+
+export type AmazonAdsAssignment =
+  | { kind: "assigned"; connectionId: string; profile: AmazonAdsProfile; pinned: boolean }
+  /** More than one store fits and none is chosen yet: the admin picks one. */
+  | { kind: "choose"; choices: { connectionId: string; profile: AmazonAdsProfile }[] }
+  | { kind: "none" };
+
+/**
+ * Which connection and profile bring in a channel's ads. A channel's chosen profile wins (when its
+ * connection is live and still lists it). Otherwise, when exactly one store in the company's live
+ * connections fits the channel's marketplace and no other channel uses it, that one is used, so a
+ * single store needs no choice. Two or more fitting stores need the admin to choose: their reports
+ * would otherwise land on the same channel and replace each other. Connections are newest first;
+ * the same profile seen through two logins counts once (the newest login).
+ */
+export function amazonAdsAssignment(
+  connections: readonly AmazonAdsConnectionLike[],
+  channel: AmazonAdsChannelLike,
+  allChannels: readonly AmazonAdsChannelLike[] = [channel],
+): AmazonAdsAssignment {
+  const live = connections.filter((c) => c.status !== "disconnected");
+  for (const c of live) {
+    const pinned = amazonAdsChannelProfiles(c.settings)[channel.id];
+    if (!pinned) continue;
+    const profile = amazonAdsSavedProfiles(c.settings).find(
+      (p) => p.profileId === pinned && fits(p, channel.marketplaceId),
+    );
+    if (profile) return { kind: "assigned", connectionId: c.id, profile, pinned: true };
+  }
+  // Profiles other channels have chosen are theirs.
+  const taken = new Set<string>();
+  for (const c of live) {
+    for (const [channelId, profileId] of Object.entries(amazonAdsChannelProfiles(c.settings))) {
+      if (channelId !== channel.id) taken.add(profileId);
+    }
+  }
+  const seen = new Set<string>();
+  const choices: { connectionId: string; profile: AmazonAdsProfile }[] = [];
+  for (const c of live) {
+    for (const p of amazonAdsSavedProfiles(c.settings)) {
+      if (!fits(p, channel.marketplaceId) || taken.has(p.profileId) || seen.has(p.profileId)) {
+        continue;
+      }
+      seen.add(p.profileId);
+      choices.push({ connectionId: c.id, profile: p });
+    }
+  }
+  if (choices.length === 1) {
+    // A second channel in the same marketplace with nothing chosen would take the same store.
+    const rivals = allChannels.filter(
+      (other) =>
+        other.id !== channel.id &&
+        other.marketplaceId === channel.marketplaceId &&
+        !live.some((c) => amazonAdsChannelProfiles(c.settings)[other.id]),
+    );
+    const [only] = choices;
+    if (only && !rivals.length) {
+      return {
+        kind: "assigned",
+        connectionId: only.connectionId,
+        profile: only.profile,
+        pinned: false,
+      };
+    }
+  }
+  return choices.length ? { kind: "choose", choices } : { kind: "none" };
+}
+
+/**
+ * Every store a channel could take its ads from: the seller profiles in its marketplace across the
+ * company's live connections, less those other channels have chosen (this channel's own choice is
+ * one of them). The channel's page offers these when more than one exists.
+ */
+export function amazonAdsStoreOptions(
+  connections: readonly AmazonAdsConnectionLike[],
+  channel: AmazonAdsChannelLike,
+): { connectionId: string; profile: AmazonAdsProfile }[] {
+  const withoutMine = connections.map((c) => {
+    const pins = amazonAdsChannelProfiles(c.settings);
+    delete pins[channel.id];
+    return { ...c, settings: { ...c.settings, channelProfiles: pins } };
+  });
+  const a = amazonAdsAssignment(withoutMine, channel);
+  if (a.kind === "choose") return a.choices;
+  return a.kind === "assigned" ? [{ connectionId: a.connectionId, profile: a.profile }] : [];
+}
+
+/** How a profile is named in a choice: the account's name, its country and its ID. */
+export function amazonAdsProfileLabel(p: AmazonAdsProfile): string {
+  const name = p.accountName || "Ads account";
+  const id = p.accountId || p.profileId;
+  return `${name} (${p.countryCode || "?"}, ${id})`;
 }
 
 /** The ad types Bookalyze asks Amazon for, and each one's v3 report. */

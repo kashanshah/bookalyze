@@ -1,6 +1,9 @@
 import {
   AMAZON_MARKETPLACES,
-  type AmazonAdsProfile,
+  amazonAdsAssignment,
+  amazonAdsProfileLabel,
+  amazonAdsSavedProfiles,
+  amazonAdsStoreOptions,
   CONNECTION_AREA,
   can,
   isFulfilmentMode,
@@ -83,6 +86,16 @@ export default async function ChannelPage({
           ? ((await listAmazonConnections(tx)).find((c) => c.id === channel.connectionId) ?? null)
           : null,
       ads: channel.kind === "amazon" ? await listAmazonAdsConnections(tx) : [],
+      amazonChannels:
+        channel.kind === "amazon"
+          ? await tx
+              .select({
+                id: schema.salesChannels.id,
+                marketplaceId: schema.salesChannels.marketplaceId,
+              })
+              .from(schema.salesChannels)
+              .where(eq(schema.salesChannels.kind, "amazon"))
+          : [],
       adsThrough:
         channel.kind === "amazon" || channel.kind === "walmart"
           ? (await adsBroughtInThrough(tx)).get(channel.id)
@@ -268,7 +281,7 @@ export default async function ChannelPage({
             channelId={ch.id}
             channelName={ch.name}
             configured={Boolean(amazonAdsApp())}
-            connection={adsView(data.ads, ch.marketplaceId)}
+            connection={adsView(data.ads, ch, data.amazonChannels)}
             through={data.adsThrough?.through ?? null}
             pending={data.adsThrough?.pending ?? 0}
             reportError={data.adsThrough?.lastError ?? null}
@@ -456,25 +469,43 @@ function LinkRow({
   );
 }
 
-/** The Ads connection for the marketplace's region, and what it says about this marketplace. */
+/**
+ * What the channel's page says about Amazon Ads: the store this channel takes its ads from (core
+ * amazonAdsAssignment), or the stores to choose between when the company's logins see several.
+ */
 function adsView(
   connections: Awaited<ReturnType<typeof listAmazonAdsConnections>>,
-  marketplaceId: string | null,
+  channel: { id: string; marketplaceId: string | null },
+  channels: { id: string; marketplaceId: string | null }[],
 ): AmazonAdsView | null {
-  const region = AMAZON_MARKETPLACES.find((m) => m.id === marketplaceId)?.region;
-  const c = connections.find((x) => x.settings.region === region);
+  const region = AMAZON_MARKETPLACES.find((m) => m.id === channel.marketplaceId)?.region;
+  const inRegion = connections.filter((x) => x.settings.region === region);
+  if (!inRegion.length) return null;
+  const a = amazonAdsAssignment(inRegion, channel, channels);
+  const c =
+    (a.kind === "assigned" ? inRegion.find((x) => x.id === a.connectionId) : undefined) ??
+    inRegion.find((x) => x.status !== "disconnected") ??
+    inRegion[0];
   if (!c) return null;
-  const profiles = (
-    Array.isArray(c.settings.profiles) ? c.settings.profiles : []
-  ) as AmazonAdsProfile[];
-  const mine = profiles.find((p) => p.marketplaceId === marketplaceId);
+  const mine = a.kind === "assigned" ? a.profile : null;
+  const options = amazonAdsStoreOptions(inRegion, channel);
   return {
     status: c.status,
-    accountName: mine?.accountName || null,
-    matches: Boolean(mine),
-    others: profiles
-      .filter((p) => p.marketplaceId !== marketplaceId && p.accountType === "seller")
-      .map((p) => AMAZON_MARKETPLACES.find((m) => m.id === p.marketplaceId)?.name ?? p.countryCode),
+    accountName: mine ? amazonAdsProfileLabel(mine) : null,
+    matches: a.kind !== "none",
+    profileId: mine?.profileId ?? null,
+    choices:
+      options.length > 1 || a.kind === "choose"
+        ? options.map((o) => ({
+            value: o.profile.profileId,
+            label: amazonAdsProfileLabel(o.profile),
+          }))
+        : [],
+    others: amazonAdsSavedProfiles(c.settings)
+      .filter((p) => p.marketplaceId !== channel.marketplaceId && p.accountType === "seller")
+      .map((p) => AMAZON_MARKETPLACES.find((m) => m.id === p.marketplaceId)?.name ?? p.countryCode)
+      .filter((name, i, all) => all.indexOf(name) === i),
+    logins: inRegion.filter((x) => x.status !== "disconnected").length,
     lastSyncedAt: c.lastSyncedAt?.toISOString() ?? null,
     lastError: c.lastError,
   };

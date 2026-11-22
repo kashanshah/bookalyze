@@ -764,6 +764,14 @@ export const ACTION_CATALOG: CatalogAction[] = [
     fn: m10.disconnectAmazonAdsAction as unknown as ActionFn,
   },
   {
+    name: "chooseAmazonAdsProfileAction",
+    area: "commerce",
+    module: "commerce",
+    params: ["channelId: string","input: { profileId: string }"],
+    doc: "Chooses which store's ads a channel brings in, when the company's Amazon logins see more than one store in its marketplace. A store another channel already uses can't be chosen twice.",
+    fn: m10.chooseAmazonAdsProfileAction as unknown as ActionFn,
+  },
+  {
     name: "connectWalmartAdsAction",
     area: "commerce",
     module: "commerce",

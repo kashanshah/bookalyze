@@ -17,8 +17,9 @@ Cursor, Copilot…).
     security@amazon.com within 24 hours): [`docs/SECURITY.md`](SECURITY.md).
   - The public site, pricing, billing and support tickets (in progress): [`docs/GROWTH-PLAN.md`](GROWTH-PLAN.md).
 
-_Last updated: 2026-11-20, transaction notes (a Notes box kept beside each transaction).
-Before that, 2026-11-19, the public API (`/api/v1`) and MCP server (`/api/mcp`) with per-person
+_Last updated: 2026-11-22, Amazon Ads for many stores: each Amazon channel takes its ads from one
+chosen store, and a company can connect several Amazon logins per Ads region. Before that,
+2026-11-20, transaction notes (a Notes box kept beside each transaction). Before that, 2026-11-19, the public API (`/api/v1`) and MCP server (`/api/mcp`) with per-person
 API keys and "Sign in with Bookalyze" (OAuth), and Settings → AI assistants to connect ChatGPT,
 Claude and Gemini in one click._
 
@@ -1845,6 +1846,33 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   vault (encryption key) problems, member and password errors.
 - Tests: core `log-format.test.ts` (credentials scrubbed, keys redacted, emails masked, package
   paths kept, cause chains, Postgres codes and digests).
+
+### Advertising: Amazon Ads for many stores and clients
+
+Bookalyze keeps **one** Amazon Ads app (`AMAZON_ADS_CLIENT_ID`/`SECRET`) for every company; each
+company signs in on Amazon's page and its refresh token is sealed to that company and connection.
+Two gaps for agencies, bookkeepers and sellers with several stores are closed:
+
+- **One store per channel** (core `amazonAdsAssignment`): a connection's settings keep
+  `channelProfiles` (channel ID → profile ID) beside `profiles`. A channel's chosen store wins;
+  otherwise the only seller profile in its marketplace across the company's live logins is used
+  (no choice needed, as before), unless another channel of the same marketplace could take it
+  too. Two or more fitting stores need a choice, so their reports never land on one channel and
+  replace each other (`replaceAdMetrics` replaces a channel's days). A store one channel chose is
+  left out of the others' choices. The sync (`syncAmazonAdsConnection`) brings in only the
+  channels each connection serves; "Bring in ads now" and Disconnect use the serving connection.
+- **Several logins per region**: connecting again replaces a connection only when it's the same
+  login (its stores overlap) or the connection serves just this channel; otherwise a new
+  connection is kept beside the others (named with the store). Connecting pins the channel's store
+  when one fits and removes the channel's pin from other logins (`unpinChannelElsewhere`).
+- **The channel's page**: the store's name, country and Amazon ID ("Ads account Kazomo (CA,
+  A1…)"), and when there's a choice, **Which ads account is this store?** with Use this account
+  (`chooseAmazonAdsProfileAction`, owners and admins; brings that store's ads in straight away).
+  Amazon sending the admin back with several stores says to choose.
+- Profiles now keep `accountId` (`accountInfo.id`, the seller's merchant ID); old saved profiles
+  get it at the next Connect again.
+- Tests: core `ads.test.ts` ("which ads account serves which channel"). The e2e stand-in has one
+  Amazon.ca store, so the existing "ads: connect Amazon Ads…" test still connects without a choice.
 
 ### Advertising, slice 5: Amazon Sponsored Display
 
