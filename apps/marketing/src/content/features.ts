@@ -82,6 +82,7 @@ export const FEATURES: readonly Feature[] = [
           "Reconcile a bank account to its statement",
           "Sync a bank, upload a statement (with a dry run first), attach receipts",
           "Post journal entries, owner contributions and drawings, and reverse mistakes",
+          "Create a buyer's invoice from an Amazon order number and send it through Amazon, in one message",
         ],
       },
       {
@@ -143,6 +144,7 @@ export const FEATURES: readonly Feature[] = [
       "connect-claude",
       "connect-gemini",
       "ai-assistant-month-end",
+      "ai-invoice-in-one-prompt",
       "ai-assistant-safety",
     ],
   },
@@ -251,6 +253,16 @@ export const FEATURES: readonly Feature[] = [
         ],
       },
       {
+        title: "One prompt, from your AI assistant",
+        body: "Tell ChatGPT, Claude or Gemini the Amazon order number and the buyer's name. It drafts the invoice, shows it to you and sends it through Amazon when you say so.",
+        points: [
+          "“Generate and send the invoice for Amazon order 402-1234567-7654321”",
+          "Finds the order by its number, in the right company",
+          "Shows you the draft first; nothing goes to the buyer until you say send",
+          "Same invoice, number and brand as on the order page, and on the audit log",
+        ],
+      },
+      {
         title: "Your brand and numbering",
         body: "Your logo, accent colour, Arabic name, footer and letterhead on every invoice, with a live preview.",
         points: [
@@ -284,11 +296,20 @@ export const FEATURES: readonly Feature[] = [
         a: "Buyer Communication to send through Amazon, and Tax Invoicing to fill in the buyer's details for you. Without Tax Invoicing you type them yourself.",
       },
       {
+        q: "Can my AI assistant send invoices for me?",
+        a: "Yes. Connect ChatGPT, Claude or Gemini with read and write, then give it the Amazon order number and the buyer's details in one message. It shows you the draft and sends it through Amazon when you say so.",
+      },
+      {
         q: "What about Walmart, Noon or eBay orders?",
         a: "Create and download the invoice the same way, and send it through the marketplace yourself; sending from Bookalyze is Amazon only for now.",
       },
     ],
-    guides: ["buyer-invoices", "invoice-requests", "brand-and-invoice-numbers"],
+    guides: [
+      "buyer-invoices",
+      "ai-invoice-in-one-prompt",
+      "invoice-requests",
+      "brand-and-invoice-numbers",
+    ],
   },
   {
     slug: "settlements-and-payouts",

@@ -107,6 +107,7 @@ export const POPULAR_GUIDES: readonly string[] = [
   "connect-wise",
   "automatic-review-requests",
   "buyer-invoices",
+  "ai-invoice-in-one-prompt",
   "channel-profit",
   "profit-after-ads",
 ];
