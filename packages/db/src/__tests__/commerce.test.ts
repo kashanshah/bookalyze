@@ -8,6 +8,7 @@ import {
   amazonConnectionsForRegion,
   countOrdersNeedingItems,
   disconnectAmazon,
+  findOrderIdsByExternalId,
   getOrder,
   listOrders,
   liveChannels,
@@ -264,6 +265,15 @@ describe("orders", () => {
 
     const detail = await scoped((tx) => getOrder(tx, all.rows[1]?.id ?? ""));
     expect(detail?.items.map((i) => i.sku)).toEqual(["MAPLE-MUG"]);
+
+    // By the marketplace's order number (what the API and AI agents are given), only in its company.
+    expect(await scoped((tx) => findOrderIdsByExternalId(tx, " 702-0000001-0000001 "))).toEqual([
+      all.rows[1]?.id,
+    ]);
+    expect(await scoped((tx) => findOrderIdsByExternalId(tx, "702-9999999-9999999"))).toEqual([]);
+    expect(
+      await scoped((tx) => findOrderIdsByExternalId(tx, "702-0000001-0000001"), otherOrgId),
+    ).toEqual([]);
   });
 
   it("keeps refunds against their orders once, and totals what was given back", async () => {
