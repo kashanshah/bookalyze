@@ -258,6 +258,118 @@ export const AI_GUIDES: readonly Guide[] = [
     related: ["connect-ai-assistant", "ai-assistant-safety", "month-end-for-sellers"],
   },
   {
+    slug: "ai-invoice-in-one-prompt",
+    category: "ai",
+    title: "Send a buyer's invoice with one prompt",
+    summary:
+      "Give your AI assistant an Amazon order number and the buyer's name, and it drafts the invoice, shows it to you, saves it and sends it to the buyer through Amazon. No screens, no copying.",
+    sections: [
+      {
+        heading: "What it is",
+        blocks: [
+          {
+            p: "A buyer asks for an invoice. Instead of finding the order, opening it and filling in the form, you tell your assistant the **Amazon order number**. It finds the order in the right company, draws the invoice from it, shows you the draft and, when you say so, sends it to the buyer through Amazon's messaging.",
+          },
+          {
+            p: "It's the same invoice you'd make on the order page: your company's details, brand and numbering, a tax invoice when you're registered and a plain invoice when you're not, in English and Arabic.",
+          },
+        ],
+      },
+      {
+        heading: "Before you start",
+        blocks: [
+          {
+            list: [
+              "Your assistant connected with **read and write** for the company that sold the order (see Use Bookalyze from ChatGPT, Claude or Gemini). You need to be an owner or admin there.",
+              "Amazon connected, with the **Buyer Communication** role for sending. With **Tax Invoicing** too, Bookalyze fills in the buyer's name and tax number from Amazon.",
+              "Your company's registered address in Entity & compliance → Profile.",
+            ],
+          },
+        ],
+      },
+      {
+        heading: "The prompt",
+        blocks: [
+          { p: "One message is enough:" },
+          {
+            code: "Generate and send the invoice for Amazon order 402-1234567-7654321 in Bookalyze for Maple Goods UAE.\nBuyer: Sara Ahmed, Business Bay, Dubai, United Arab Emirates.",
+          },
+          {
+            p: "Leave the buyer out if Amazon has their details, or if the buyer didn't give any. The assistant tells you when Amazon had nothing.",
+          },
+        ],
+      },
+      {
+        heading: "What the assistant does",
+        blocks: [
+          {
+            steps: [
+              {
+                title: "Finds the order",
+                body: "By its Amazon order number, in the company you named. If the order isn't there yet, it syncs your orders and tries again. If two orders share the number, it asks which one you mean.",
+              },
+              {
+                title: "Shows you the draft",
+                body: "Your company's details, the buyer, each line with its SKU and price, any shipping or discount, tax and the total, and whether it will be a tax invoice. Change anything in plain words: “Add her company, Al Noor Trading.”",
+              },
+              {
+                title: "Saves it",
+                body: "The invoice takes your next number (INV-0001, or your own format) and the PDF is kept on the order. Saving again later corrects it and keeps the number.",
+              },
+              {
+                title: "Sends it, when you say so",
+                body: "The PDF goes to the buyer through Amazon's invoice message. The order shows when it was sent and by whom, and the buyer's open invoice request closes.",
+              },
+            ],
+          },
+          {
+            note: "Assistants ask before sending anything on your behalf. Say “send” when the draft looks right, or ask to see the draft first and decide then.",
+            tone: "tip",
+          },
+          {
+            note: "To see the PDF itself, open the order in Bookalyze (Commerce → Orders) and select Download. The assistant shows you what's on it, line by line.",
+          },
+        ],
+      },
+      {
+        heading: "More you can ask",
+        blocks: [
+          {
+            list: [
+              "“Invoice these orders and show me each one before sending: 402-…, 403-…, 405-….”",
+              "“Correct the invoice for order 402-1234567-7654321: her address is Al Barsha 1, Dubai.” It keeps its number.",
+              "“Show me the invoice for order 402-1234567-7654321.”",
+            ],
+          },
+        ],
+      },
+      {
+        heading: "What you should see",
+        blocks: [
+          {
+            check: [
+              "The assistant replies with the invoice number and when it was sent",
+              "The order in Commerce → Orders shows the invoice, a Download button and **Sent**",
+              "The company's audit log records the invoice and the send, marked with the assistant",
+            ],
+          },
+        ],
+      },
+      {
+        heading: "Not yet",
+        blocks: [
+          {
+            list: [
+              "Sending through Walmart, Noon or eBay: the assistant can save the invoice, then download it from the order and send it there.",
+              "Showing the PDF itself inside the chat.",
+            ],
+          },
+        ],
+      },
+    ],
+    related: ["buyer-invoices", "connect-ai-assistant", "invoice-requests", "ai-assistant-safety"],
+  },
+  {
     slug: "ai-assistant-safety",
     category: "ai",
     title: "What an AI assistant can and can't do in your books",

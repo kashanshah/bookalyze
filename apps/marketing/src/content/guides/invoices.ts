@@ -59,6 +59,10 @@ export const INVOICE_GUIDES: readonly Guide[] = [
             note: "Without the Tax Invoicing role the form still works: type the buyer's details yourself. Sending needs the **Buyer Communication** role.",
             tone: "tip",
           },
+          {
+            note: "Or ask your AI assistant: “Generate and send the invoice for Amazon order 402-1234567-7654321.” See Send a buyer's invoice with one prompt.",
+            tone: "tip",
+          },
         ],
       },
       {
@@ -105,7 +109,13 @@ export const INVOICE_GUIDES: readonly Guide[] = [
         ],
       },
     ],
-    related: ["invoice-requests", "brand-and-invoice-numbers", "sales-tax", "connect-amazon"],
+    related: [
+      "ai-invoice-in-one-prompt",
+      "invoice-requests",
+      "brand-and-invoice-numbers",
+      "sales-tax",
+      "connect-amazon",
+    ],
   },
   {
     slug: "invoice-requests",
