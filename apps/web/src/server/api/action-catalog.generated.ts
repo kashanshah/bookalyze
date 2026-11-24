@@ -944,7 +944,7 @@ export const ACTION_CATALOG: CatalogAction[] = [
     area: "commerce/orders/[id]",
     module: "commerce",
     params: ["orderId: string"],
-    doc: "Opens the invoice dialog: order lines, the company, and Amazon's name and tax number when it has them.",
+    doc: "Opens the invoice dialog: order lines, the company, and Amazon's name and tax number when it has them. `orderId` is the order's id or its marketplace order number (e.g. 402-1234567-1234567).",
     fn: m13.loadInvoiceDraftAction as unknown as ActionFn,
   },
   {
@@ -952,7 +952,7 @@ export const ACTION_CATALOG: CatalogAction[] = [
     area: "commerce/orders/[id]",
     module: "commerce",
     params: ["orderId: string","input: z.infer<typeof buyerSchema>"],
-    doc: "Saves the invoice PDF. The first save assigns INV-0001; correcting it keeps that number.",
+    doc: "Saves the invoice PDF. The first save assigns INV-0001; correcting it keeps that number. `orderId` is the order's id or its marketplace order number; `input` is { name, company, taxNumber, address } (empty strings for blanks), as loadInvoiceDraftAction suggests.",
     fn: m13.saveOrderInvoiceAction as unknown as ActionFn,
   },
   {
@@ -960,7 +960,7 @@ export const ACTION_CATALOG: CatalogAction[] = [
     area: "commerce/orders/[id]",
     module: "commerce",
     params: ["orderId: string"],
-    doc: "Sends the saved invoice to the buyer through Amazon's invoice message.",
+    doc: "Sends the saved invoice to the buyer through Amazon's invoice message. `orderId` is the order's id or its marketplace order number.",
     fn: m13.sendInvoiceToAmazonAction as unknown as ActionFn,
   },
   {

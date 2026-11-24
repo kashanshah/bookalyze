@@ -1028,6 +1028,19 @@ export async function listOrders(
   };
 }
 
+/**
+ * The ids of the orders (on connected marketplaces) with this marketplace order number, e.g.
+ * Amazon's 402-1234567-1234567. Usually one; two channels of one company could share a number.
+ */
+export async function findOrderIdsByExternalId(tx: Transaction, externalId: string) {
+  const rows = await tx
+    .select({ id: orders.id })
+    .from(orders)
+    .where(and(eq(orders.externalId, externalId.trim()), connectedOrder))
+    .limit(5);
+  return rows.map((r) => r.id);
+}
+
 /** One order with its channel and items (null when its marketplace isn't connected). */
 export async function getOrder(tx: Transaction, orderId: string) {
   const [row] = await tx

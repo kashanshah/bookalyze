@@ -875,6 +875,10 @@ steps and its column names; adding software is a data change in `IMPORT_SOURCES`
   `canSendInvoice` / `sendInvoice`, Buyer Communication role). `order_invoices.sent_at` /
   `sent_by` record it, the order's invoice request closes, and it's audited
   (`order_invoice.sent`). Downloading for Seller Central stays available.
+- **By order number (API/MCP):** `loadInvoiceDraftAction`, `saveOrderInvoiceAction` and
+  `sendInvoiceToAmazonAction` take the order's id or its marketplace order number
+  (`402-1234567-1234567`), resolved in the company with db `findOrderIdsByExternalId`, so an AI
+  agent can invoice an order with `call_app_action` from the number alone.
 - **Invoice requests** (`invoice_requests`, migration `0076_invoice_requests`): Amazon has no API
   for buyer messages, so each company gets a forwarding address
   `invoices-<token>@INBOUND_EMAIL_DOMAIN` (`invoice_inboxes`, 48-hex token). Resend receives the

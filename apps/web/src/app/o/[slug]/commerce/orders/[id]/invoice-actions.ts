@@ -1,7 +1,7 @@
 "use server";
 
 import type { InvoiceBuyer } from "@bookalyze/core";
-import { setInvoiceRequestStatus } from "@bookalyze/db";
+import { findOrderIdsByExternalId, setInvoiceRequestStatus } from "@bookalyze/db";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { InvoiceDraft } from "@/lib/invoice-draft";
@@ -36,20 +36,47 @@ async function admin(slug: string) {
   return { ctx, denied: isOrgAdmin(ctx) ? null : DENIED };
 }
 
-/** Opens the invoice dialog: order lines, the company, and Amazon's name and tax number when it has them. */
+const GONE = { ok: false as const, message: "This order is no longer here." };
+
+/**
+ * The order's id from either its id or its marketplace order number (e.g. Amazon's
+ * 402-1234567-1234567), so the API and AI agents can name an order the way the seller does.
+ */
+async function resolveOrder(
+  ctx: Awaited<ReturnType<typeof getCommerceContext>>,
+  ref: unknown,
+): Promise<{ ok: true; id: string } | { ok: false; message: string }> {
+  if (typeof ref !== "string") return GONE;
+  const value = ref.trim();
+  if (z.uuid().safeParse(value).success) return { ok: true, id: value };
+  if (!value || value.length > 100) return GONE;
+  const ids = await inOrg(ctx, (tx) => findOrderIdsByExternalId(tx, value));
+  if (ids.length === 1) return { ok: true, id: ids[0] as string };
+  if (ids.length > 1) {
+    return {
+      ok: false,
+      message: `More than one order is numbered ${value}. Open it from Orders to choose which one.`,
+    };
+  }
+  return {
+    ok: false,
+    message: `No order numbered ${value} in this company. Sync orders, or check it belongs to another company.`,
+  };
+}
+
+/** Opens the invoice dialog: order lines, the company, and Amazon's name and tax number when it has them. `orderId` is the order's id or its marketplace order number (e.g. 402-1234567-1234567). */
 export async function loadInvoiceDraftAction(
   slug: string,
   orderId: string,
 ): Promise<{ ok: true; draft: InvoiceDraft } | { ok: false; message: string }> {
   const { ctx, denied } = await admin(slug);
   if (denied) return denied;
-  if (!z.uuid().safeParse(orderId).success) {
-    return { ok: false, message: "This order is no longer here." };
-  }
-  return loadOrderInvoiceDraft(ctx, orderId);
+  const order = await resolveOrder(ctx, orderId);
+  if (!order.ok) return order;
+  return loadOrderInvoiceDraft(ctx, order.id);
 }
 
-/** Saves the invoice PDF. The first save assigns INV-0001; correcting it keeps that number. */
+/** Saves the invoice PDF. The first save assigns INV-0001; correcting it keeps that number. `orderId` is the order's id or its marketplace order number; `input` is { name, company, taxNumber, address } (empty strings for blanks), as loadInvoiceDraftAction suggests. */
 export async function saveOrderInvoiceAction(
   slug: string,
   orderId: string,
@@ -57,15 +84,14 @@ export async function saveOrderInvoiceAction(
 ): Promise<{ ok: true; id: string; number: string } | { ok: false; message: string }> {
   const { ctx, denied } = await admin(slug);
   if (denied) return denied;
-  if (!z.uuid().safeParse(orderId).success) {
-    return { ok: false, message: "This order is no longer here." };
-  }
+  const order = await resolveOrder(ctx, orderId);
+  if (!order.ok) return order;
   const parsed = buyerSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, message: "Check the buyer's details and try again." };
   }
   const buyer = buyerOf(parsed.data);
-  const result = await issueOrderInvoice(ctx, orderId, buyer);
+  const result = await issueOrderInvoice(ctx, order.id, buyer);
   if (!result.ok) return result;
   await inOrg(ctx, (tx) =>
     audit(tx, {
@@ -87,17 +113,16 @@ export async function saveOrderInvoiceAction(
   return { ok: true, id: result.id, number: result.number };
 }
 
-/** Sends the saved invoice to the buyer through Amazon's invoice message. */
+/** Sends the saved invoice to the buyer through Amazon's invoice message. `orderId` is the order's id or its marketplace order number. */
 export async function sendInvoiceToAmazonAction(
   slug: string,
   orderId: string,
 ): Promise<{ ok: true; number: string; sentAt: string } | { ok: false; message: string }> {
   const { ctx, denied } = await admin(slug);
   if (denied) return { ok: false, message: "Only owners and admins can send invoices." };
-  if (!z.uuid().safeParse(orderId).success) {
-    return { ok: false, message: "This order is no longer here." };
-  }
-  const result = await sendOrderInvoiceToAmazon(ctx, orderId);
+  const order = await resolveOrder(ctx, orderId);
+  if (!order.ok) return order;
+  const result = await sendOrderInvoiceToAmazon(ctx, order.id);
   if (!result.ok) return result;
   await inOrg(ctx, (tx) =>
     audit(tx, {
@@ -105,7 +130,7 @@ export async function sendInvoiceToAmazonAction(
       actorUserId: ctx.session.user.id,
       action: "order_invoice.sent",
       entityType: "order",
-      entityId: orderId,
+      entityId: order.id,
       after: { number: result.number, via: "amazon_messaging" },
     }),
   );
